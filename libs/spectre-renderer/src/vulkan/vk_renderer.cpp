@@ -176,6 +176,8 @@ void VkRenderer::set_grid_size(int cols, int rows)
 {
     grid_cols_ = cols;
     grid_rows_ = rows;
+    cursor_applied_ = false;
+    cursor_overlay_active_ = false;
 
     size_t required = ((size_t)cols * rows + 1) * sizeof(GpuCell);
     if (grid_buffer_.ensure_size(ctx_.allocator(), ctx_.device(), required))
@@ -211,6 +213,8 @@ void VkRenderer::set_grid_size(int cols, int rows)
 
 void VkRenderer::update_cells(std::span<const CellUpdate> updates)
 {
+    restore_cursor();
+
     for (const auto& u : updates)
     {
         if (u.col < 0 || u.col >= grid_cols_ || u.row < 0 || u.row >= grid_rows_)
@@ -249,12 +253,13 @@ void VkRenderer::update_atlas_region(int x, int y, int w, int h, const uint8_t* 
     atlas_.upload_region(ctx_, x, y, w, h, data);
 }
 
-void VkRenderer::set_cursor(int col, int row, CursorShape shape, Color color)
+void VkRenderer::set_cursor(int col, int row, const CursorStyle& style)
 {
+    restore_cursor();
+
     cursor_col_ = col;
     cursor_row_ = row;
-    cursor_shape_ = shape;
-    cursor_color_ = color;
+    cursor_style_ = style;
 }
 
 void VkRenderer::resize(int pixel_w, int pixel_h)
@@ -393,12 +398,26 @@ void VkRenderer::apply_cursor()
     cursor_applied_ = true;
     cursor_overlay_active_ = false;
 
-    if (cursor_shape_ == CursorShape::Block)
+    if (cursor_style_.shape == CursorShape::Block)
     {
-        std::swap(cell.fg_r, cell.bg_r);
-        std::swap(cell.fg_g, cell.bg_g);
-        std::swap(cell.fg_b, cell.bg_b);
-        std::swap(cell.fg_a, cell.bg_a);
+        if (cursor_style_.use_explicit_colors)
+        {
+            cell.fg_r = cursor_style_.fg.r;
+            cell.fg_g = cursor_style_.fg.g;
+            cell.fg_b = cursor_style_.fg.b;
+            cell.fg_a = cursor_style_.fg.a;
+            cell.bg_r = cursor_style_.bg.r;
+            cell.bg_g = cursor_style_.bg.g;
+            cell.bg_b = cursor_style_.bg.b;
+            cell.bg_a = cursor_style_.bg.a;
+        }
+        else
+        {
+            std::swap(cell.fg_r, cell.bg_r);
+            std::swap(cell.fg_g, cell.bg_g);
+            std::swap(cell.fg_b, cell.bg_b);
+            std::swap(cell.fg_a, cell.bg_a);
+        }
 
         memcpy((char*)grid_buffer_.mapped() + idx * sizeof(GpuCell),
             &cell, sizeof(GpuCell));
@@ -407,24 +426,28 @@ void VkRenderer::apply_cursor()
     {
         int overlay_idx = grid_cols_ * grid_rows_;
         GpuCell overlay = {};
-        overlay.bg_r = cursor_color_.r;
-        overlay.bg_g = cursor_color_.g;
-        overlay.bg_b = cursor_color_.b;
-        overlay.bg_a = cursor_color_.a;
+        overlay.bg_r = cursor_style_.bg.r;
+        overlay.bg_g = cursor_style_.bg.g;
+        overlay.bg_b = cursor_style_.bg.b;
+        overlay.bg_a = cursor_style_.bg.a;
 
-        if (cursor_shape_ == CursorShape::Vertical)
+        int percentage = cursor_style_.cell_percentage;
+        if (percentage <= 0)
+            percentage = (cursor_style_.shape == CursorShape::Vertical) ? 25 : 20;
+
+        if (cursor_style_.shape == CursorShape::Vertical)
         {
             overlay.pos_x = cell.pos_x;
             overlay.pos_y = cell.pos_y;
-            overlay.size_x = 2.0f;
+            overlay.size_x = std::max(1.0f, cell.size_x * percentage / 100.0f);
             overlay.size_y = cell.size_y;
         }
         else
         {
             overlay.pos_x = cell.pos_x;
-            overlay.pos_y = cell.pos_y + cell.size_y - 2.0f;
+            overlay.size_y = std::max(1.0f, cell.size_y * percentage / 100.0f);
+            overlay.pos_y = cell.pos_y + cell.size_y - overlay.size_y;
             overlay.size_x = cell.size_x;
-            overlay.size_y = 2.0f;
         }
 
         memcpy((char*)grid_buffer_.mapped() + overlay_idx * sizeof(GpuCell),
@@ -439,6 +462,9 @@ void VkRenderer::restore_cursor()
         return;
     cursor_applied_ = false;
     cursor_overlay_active_ = false;
+
+    if (cursor_col_ < 0 || cursor_col_ >= grid_cols_ || cursor_row_ < 0 || cursor_row_ >= grid_rows_)
+        return;
 
     int idx = cursor_row_ * grid_cols_ + cursor_col_;
     gpu_cells_[idx] = cursor_saved_cell_;

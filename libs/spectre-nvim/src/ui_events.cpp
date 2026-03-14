@@ -4,50 +4,90 @@
 namespace spectre
 {
 
-static uint32_t utf8_decode_first(const std::string& str)
+static bool utf8_decode_next(const std::string& str, size_t& offset, uint32_t& cp)
 {
-    if (str.empty())
-        return ' ';
-    const uint8_t* s = reinterpret_cast<const uint8_t*>(str.data());
-    uint32_t cp;
+    if (offset >= str.size())
+        return false;
+
+    const uint8_t* s = reinterpret_cast<const uint8_t*>(str.data() + offset);
     if (s[0] < 0x80)
     {
         cp = s[0];
+        offset += 1;
     }
     else if ((s[0] & 0xE0) == 0xC0)
     {
         cp = (s[0] & 0x1F) << 6;
         if (str.size() >= 2)
             cp |= (s[1] & 0x3F);
+        offset += 2;
     }
     else if ((s[0] & 0xF0) == 0xE0)
     {
         cp = (s[0] & 0x0F) << 12;
-        if (str.size() >= 2)
+        if (str.size() >= offset + 2)
             cp |= (s[1] & 0x3F) << 6;
-        if (str.size() >= 3)
+        if (str.size() >= offset + 3)
             cp |= (s[2] & 0x3F);
+        offset += 3;
     }
     else if ((s[0] & 0xF8) == 0xF0)
     {
         cp = (s[0] & 0x07) << 18;
-        if (str.size() >= 2)
+        if (str.size() >= offset + 2)
             cp |= (s[1] & 0x3F) << 12;
-        if (str.size() >= 3)
+        if (str.size() >= offset + 3)
             cp |= (s[2] & 0x3F) << 6;
-        if (str.size() >= 4)
+        if (str.size() >= offset + 4)
             cp |= (s[3] & 0x3F);
+        offset += 4;
     }
     else
     {
         cp = '?';
+        offset += 1;
     }
-    return cp;
+    return true;
 }
 
-static bool is_double_width(uint32_t cp)
+static bool is_wide_codepoint(uint32_t cp)
 {
     return (cp >= 0x1100 && cp <= 0x115F) || cp == 0x2329 || cp == 0x232A || (cp >= 0x2E80 && cp <= 0x303E) || (cp >= 0x3040 && cp <= 0xA4CF && cp != 0x303F) || (cp >= 0xAC00 && cp <= 0xD7A3) || (cp >= 0xF900 && cp <= 0xFAFF) || (cp >= 0xFE10 && cp <= 0xFE19) || (cp >= 0xFE30 && cp <= 0xFE6F) || (cp >= 0xFF01 && cp <= 0xFF60) || (cp >= 0xFFE0 && cp <= 0xFFE6) || (cp >= 0x20000 && cp <= 0x2FFFD) || (cp >= 0x30000 && cp <= 0x3FFFD);
+}
+
+static bool is_emoji_codepoint(uint32_t cp)
+{
+    return (cp >= 0x1F1E6 && cp <= 0x1F1FF) || (cp >= 0x1F300 && cp <= 0x1FAFF) || (cp >= 0x2600 && cp <= 0x27BF);
+}
+
+static int cell_display_width(const std::string& text)
+{
+    size_t offset = 0;
+    uint32_t first = 0;
+    bool have_first = false;
+    bool emoji_cluster = false;
+
+    while (offset < text.size())
+    {
+        uint32_t cp = 0;
+        if (!utf8_decode_next(text, offset, cp))
+            break;
+
+        if (!have_first)
+        {
+            first = cp;
+            have_first = true;
+        }
+
+        if (cp == 0x200D || cp == 0xFE0F || cp == 0x20E3 || is_emoji_codepoint(cp))
+            emoji_cluster = true;
+    }
+
+    if (!have_first)
+        return 1;
+    if (emoji_cluster)
+        return 2;
+    return is_wide_codepoint(first) ? 2 : 1;
 }
 
 void UiEventHandler::process_redraw(const std::vector<MpackValue>& params)
@@ -125,18 +165,16 @@ void UiEventHandler::handle_grid_line(const MpackValue& args)
             repeat = (int)cell.array_val[2].as_int();
         }
 
-        uint32_t codepoint = utf8_decode_first(text);
-        bool dw = !text.empty() && text.size() > 0 && is_double_width(codepoint);
-
         if (text.empty())
         {
             col++;
             continue;
         }
 
+        bool dw = cell_display_width(text) == 2;
         for (int r = 0; r < repeat; r++)
         {
-            grid_->set_cell(col, row, codepoint, current_hl, dw);
+            grid_->set_cell(col, row, text, current_hl, dw);
             col++;
             if (dw)
                 col++;

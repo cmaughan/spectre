@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <spectre/types.h>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -9,6 +10,7 @@ namespace spectre
 
 struct Cell
 {
+    std::string text = " ";
     uint32_t codepoint = ' ';
     uint16_t hl_attr_id = 0;
     bool dirty = true;
@@ -22,7 +24,7 @@ public:
     void resize(int cols, int rows);
     void clear();
 
-    void set_cell(int col, int row, uint32_t codepoint, uint16_t hl_id, bool double_width = false);
+    void set_cell(int col, int row, const std::string& text, uint16_t hl_id, bool double_width = false);
     const Cell& get_cell(int col, int row) const;
 
     void scroll(int top, int bot, int left, int right, int rows);

@@ -46,6 +46,15 @@ enum class CursorShape
     Vertical
 };
 
+struct CursorStyle
+{
+    CursorShape shape = CursorShape::Block;
+    Color fg = { 0.0f, 0.0f, 0.0f, 1.0f };
+    Color bg = { 1.0f, 1.0f, 1.0f, 1.0f };
+    int cell_percentage = 0;
+    bool use_explicit_colors = false;
+};
+
 // Data sent to the GPU per cell (matches SSBO layout)
 struct alignas(16) GpuCell
 {

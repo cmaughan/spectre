@@ -83,11 +83,11 @@ else()
 endif()
 
 # Copy font to build directory
-if(EXISTS ${CMAKE_SOURCE_DIR}/fonts/JetBrainsMonoNerdFontMono-Regular.ttf)
+if(EXISTS ${CMAKE_SOURCE_DIR}/fonts/JetBrainsMonoNerdFont-Regular.ttf)
     add_custom_command(TARGET spectre POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:spectre>/fonts
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${CMAKE_SOURCE_DIR}/fonts/JetBrainsMonoNerdFontMono-Regular.ttf
+            ${CMAKE_SOURCE_DIR}/fonts/JetBrainsMonoNerdFont-Regular.ttf
             $<TARGET_FILE_DIR:spectre>/fonts/
     )
 endif()

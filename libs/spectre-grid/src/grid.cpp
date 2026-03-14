@@ -1,9 +1,43 @@
 #include <algorithm>
-#include <cstring>
 #include <spectre/grid.h>
 
 namespace spectre
 {
+
+namespace
+{
+
+uint32_t decode_first_codepoint(const std::string& text)
+{
+    if (text.empty())
+        return ' ';
+
+    const uint8_t* s = reinterpret_cast<const uint8_t*>(text.data());
+    if (s[0] < 0x80)
+        return s[0];
+    if ((s[0] & 0xE0) == 0xC0 && text.size() >= 2)
+        return ((s[0] & 0x1F) << 6) | (s[1] & 0x3F);
+    if ((s[0] & 0xF0) == 0xE0 && text.size() >= 3)
+        return ((s[0] & 0x0F) << 12) | ((s[1] & 0x3F) << 6) | (s[2] & 0x3F);
+    if ((s[0] & 0xF8) == 0xF0 && text.size() >= 4)
+        return ((s[0] & 0x07) << 18) | ((s[1] & 0x3F) << 12) | ((s[2] & 0x3F) << 6) | (s[3] & 0x3F);
+    return '?';
+}
+
+Cell make_blank_cell()
+{
+    return Cell{};
+}
+
+void clear_continuation(Cell& cell)
+{
+    cell = make_blank_cell();
+    cell.text.clear();
+    cell.codepoint = ' ';
+    cell.dirty = true;
+}
+
+} // namespace
 
 void Grid::resize(int cols, int rows)
 {
@@ -17,20 +51,25 @@ void Grid::clear()
 {
     for (auto& c : cells_)
     {
-        c.codepoint = ' ';
-        c.hl_attr_id = 0;
-        c.dirty = true;
-        c.double_width = false;
-        c.double_width_cont = false;
+        c = make_blank_cell();
     }
 }
 
-void Grid::set_cell(int col, int row, uint32_t codepoint, uint16_t hl_id, bool double_width)
+void Grid::set_cell(int col, int row, const std::string& text, uint16_t hl_id, bool double_width)
 {
     if (col < 0 || col >= cols_ || row < 0 || row >= rows_)
         return;
+
     auto& cell = cells_[row * cols_ + col];
-    cell.codepoint = codepoint;
+    if (col + 1 < cols_)
+    {
+        auto& next = cells_[row * cols_ + col + 1];
+        if (next.double_width_cont)
+            clear_continuation(next);
+    }
+
+    cell.text = text;
+    cell.codepoint = decode_first_codepoint(text);
     cell.hl_attr_id = hl_id;
     cell.dirty = true;
     cell.double_width = double_width;
@@ -39,6 +78,7 @@ void Grid::set_cell(int col, int row, uint32_t codepoint, uint16_t hl_id, bool d
     if (double_width && col + 1 < cols_)
     {
         auto& next = cells_[row * cols_ + col + 1];
+        next.text.clear();
         next.codepoint = ' ';
         next.hl_attr_id = hl_id;
         next.dirty = true;
@@ -59,81 +99,40 @@ void Grid::scroll(int top, int bot, int left, int right, int rows)
     if (rows == 0)
         return;
 
-    if (left == 0 && right == cols_)
+    if (rows > 0)
     {
-        if (rows > 0)
+        for (int r = top; r < bot - rows; r++)
         {
-            int src = (top + rows) * cols_;
-            int dst = top * cols_;
-            int count = (bot - top - rows) * cols_;
-            if (count > 0)
+            for (int c = left; c < right; c++)
             {
-                memmove(&cells_[dst], &cells_[src], count * sizeof(Cell));
-            }
-            for (int r = bot - rows; r < bot; r++)
-            {
-                for (int c = 0; c < cols_; c++)
-                {
-                    cells_[r * cols_ + c] = { ' ', 0, true, false, false };
-                }
+                cells_[r * cols_ + c] = cells_[(r + rows) * cols_ + c];
+                cells_[r * cols_ + c].dirty = true;
             }
         }
-        else
+        for (int r = bot - rows; r < bot; r++)
         {
-            int shift = -rows;
-            int src = top * cols_;
-            int dst = (top + shift) * cols_;
-            int count = (bot - top - shift) * cols_;
-            if (count > 0)
+            for (int c = left; c < right; c++)
             {
-                memmove(&cells_[dst], &cells_[src], count * sizeof(Cell));
-            }
-            for (int r = top; r < top + shift; r++)
-            {
-                for (int c = 0; c < cols_; c++)
-                {
-                    cells_[r * cols_ + c] = { ' ', 0, true, false, false };
-                }
+                cells_[r * cols_ + c] = make_blank_cell();
             }
         }
     }
     else
     {
-        if (rows > 0)
+        int shift = -rows;
+        for (int r = bot - 1; r >= top + shift; r--)
         {
-            for (int r = top; r < bot - rows; r++)
+            for (int c = left; c < right; c++)
             {
-                for (int c = left; c < right; c++)
-                {
-                    cells_[r * cols_ + c] = cells_[(r + rows) * cols_ + c];
-                    cells_[r * cols_ + c].dirty = true;
-                }
-            }
-            for (int r = bot - rows; r < bot; r++)
-            {
-                for (int c = left; c < right; c++)
-                {
-                    cells_[r * cols_ + c] = { ' ', 0, true, false, false };
-                }
+                cells_[r * cols_ + c] = cells_[(r - shift) * cols_ + c];
+                cells_[r * cols_ + c].dirty = true;
             }
         }
-        else
+        for (int r = top; r < top + shift; r++)
         {
-            int shift = -rows;
-            for (int r = bot - 1; r >= top + shift; r--)
+            for (int c = left; c < right; c++)
             {
-                for (int c = left; c < right; c++)
-                {
-                    cells_[r * cols_ + c] = cells_[(r - shift) * cols_ + c];
-                    cells_[r * cols_ + c].dirty = true;
-                }
-            }
-            for (int r = top; r < top + shift; r++)
-            {
-                for (int c = left; c < right; c++)
-                {
-                    cells_[r * cols_ + c] = { ' ', 0, true, false, false };
-                }
+                cells_[r * cols_ + c] = make_blank_cell();
             }
         }
     }

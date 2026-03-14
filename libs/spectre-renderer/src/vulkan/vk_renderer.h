@@ -22,7 +22,7 @@ public:
     void update_cells(std::span<const CellUpdate> updates) override;
     void set_atlas_texture(const uint8_t* data, int w, int h) override;
     void update_atlas_region(int x, int y, int w, int h, const uint8_t* data) override;
-    void set_cursor(int col, int row, CursorShape shape, Color color) override;
+    void set_cursor(int col, int row, const CursorStyle& style) override;
     void resize(int pixel_w, int pixel_h) override;
     std::pair<int, int> cell_size_pixels() const override;
     void set_cell_size(int w, int h) override;
@@ -74,8 +74,7 @@ private:
 
     // Cursor
     int cursor_col_ = 0, cursor_row_ = 0;
-    CursorShape cursor_shape_ = CursorShape::Block;
-    Color cursor_color_ = { 1, 1, 1, 0.7f };
+    CursorStyle cursor_style_ = {};
 
     std::vector<GpuCell> gpu_cells_;
     bool needs_descriptor_update_ = true;

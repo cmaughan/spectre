@@ -124,6 +124,9 @@ static void log_display_info(SDL_Window* window)
 
 bool SdlWindow::initialize(const std::string& title, int width, int height)
 {
+    SDL_SetHint(SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN, "1");
+    SDL_SetHint(SDL_HINT_WINDOW_ACTIVATE_WHEN_RAISED, "1");
+
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS))
     {
         SDL_Log("SDL_Init failed: %s", SDL_GetError());
@@ -168,6 +171,38 @@ bool SdlWindow::initialize(const std::string& title, int width, int height)
 #endif
 
     return true;
+}
+
+void SdlWindow::activate()
+{
+    if (!window_)
+        return;
+
+    SDL_ShowWindow(window_);
+    SDL_RaiseWindow(window_);
+    SDL_SyncWindow(window_);
+
+#ifdef _WIN32
+    HWND hwnd = (HWND)SDL_GetPointerProperty(
+        SDL_GetWindowProperties(window_), SDL_PROP_WINDOW_WIN32_HWND_POINTER, NULL);
+    if (hwnd)
+    {
+        HWND foreground = GetForegroundWindow();
+        DWORD current_thread = GetCurrentThreadId();
+        DWORD foreground_thread = foreground ? GetWindowThreadProcessId(foreground, nullptr) : 0;
+
+        ShowWindow(hwnd, IsIconic(hwnd) ? SW_RESTORE : SW_SHOW);
+        if (foreground_thread && foreground_thread != current_thread)
+            AttachThreadInput(foreground_thread, current_thread, TRUE);
+
+        BringWindowToTop(hwnd);
+        SetForegroundWindow(hwnd);
+        SetFocus(hwnd);
+
+        if (foreground_thread && foreground_thread != current_thread)
+            AttachThreadInput(foreground_thread, current_thread, FALSE);
+    }
+#endif
 }
 
 void SdlWindow::shutdown()

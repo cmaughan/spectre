@@ -12,6 +12,7 @@ public:
     bool initialize(const std::string& title, int width, int height) override;
     void shutdown() override;
     bool poll_events() override;
+    void activate();
     SDL_Window* native_handle() override
     {
         return window_;

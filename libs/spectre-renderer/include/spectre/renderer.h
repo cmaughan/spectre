@@ -21,7 +21,7 @@ public:
     virtual void update_cells(std::span<const CellUpdate> updates) = 0;
     virtual void set_atlas_texture(const uint8_t* data, int w, int h) = 0;
     virtual void update_atlas_region(int x, int y, int w, int h, const uint8_t* data) = 0;
-    virtual void set_cursor(int col, int row, CursorShape shape, Color color) = 0;
+    virtual void set_cursor(int col, int row, const CursorStyle& style) = 0;
     virtual void resize(int pixel_w, int pixel_h) = 0;
     virtual std::pair<int, int> cell_size_pixels() const = 0;
     virtual void set_cell_size(int w, int h) = 0;

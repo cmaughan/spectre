@@ -2,10 +2,100 @@
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
+#include <filesystem>
 #include <vector>
 
 namespace spectre
 {
+
+namespace
+{
+
+std::vector<std::string> fallback_font_candidates()
+{
+#ifdef _WIN32
+    const char* windir = std::getenv("WINDIR");
+    std::string windows_dir = windir ? windir : "C:\\Windows";
+    return {
+        windows_dir + "\\Fonts\\seguisym.ttf",
+        windows_dir + "\\Fonts\\seguiemj.ttf",
+    };
+#elif defined(__APPLE__)
+    return {
+        "/System/Library/Fonts/Apple Color Emoji.ttc",
+        "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+    };
+#else
+    return {
+        "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",
+        "/usr/share/fonts/truetype/noto/NotoEmoji-Regular.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    };
+#endif
+}
+
+std::vector<std::string> primary_font_candidates()
+{
+#ifdef _WIN32
+    const char* windir = std::getenv("WINDIR");
+    const char* local_app_data = std::getenv("LOCALAPPDATA");
+    std::string windows_dir = windir ? windir : "C:\\Windows";
+    std::string local_fonts = local_app_data
+        ? (std::string(local_app_data) + "\\Microsoft\\Windows\\Fonts\\")
+        : "";
+
+    std::vector<std::string> candidates;
+    if (!local_fonts.empty())
+    {
+        candidates.push_back(local_fonts + "JetBrainsMonoNerdFontMono-Regular.ttf");
+        candidates.push_back(local_fonts + "JetBrainsMonoNerdFont-Regular.ttf");
+    }
+    candidates.push_back(windows_dir + "\\Fonts\\JetBrainsMonoNerdFontMono-Regular.ttf");
+    candidates.push_back(windows_dir + "\\Fonts\\JetBrainsMonoNerdFont-Regular.ttf");
+    candidates.push_back(windows_dir + "\\Fonts\\JetBrains Mono Regular Nerd Font Complete Mono Windows Compatible.ttf");
+    candidates.push_back(windows_dir + "\\Fonts\\JetBrains Mono Regular Nerd Font Complete Windows Compatible.ttf");
+    candidates.push_back("fonts/JetBrainsMonoNerdFont-Regular.ttf");
+    return candidates;
+#else
+    return { "fonts/JetBrainsMonoNerdFont-Regular.ttf" };
+#endif
+}
+
+std::string resolve_primary_font_path()
+{
+    for (const auto& path : primary_font_candidates())
+    {
+        if (std::filesystem::exists(path))
+            return path;
+    }
+
+    return "fonts/JetBrainsMonoNerdFont-Regular.ttf";
+}
+
+bool can_render_cluster(FT_Face face, TextShaper& shaper, const std::string& text)
+{
+    if (!face)
+        return false;
+
+    auto shaped = shaper.shape(text);
+    if (shaped.empty())
+        return false;
+
+    bool has_glyph = false;
+    for (const auto& glyph : shaped)
+    {
+        if (glyph.glyph_id == 0)
+            return false;
+        if (FT_Load_Glyph(face, glyph.glyph_id, FT_LOAD_DEFAULT))
+            return false;
+        has_glyph = true;
+    }
+
+    return has_glyph;
+}
+
+} // namespace
 
 bool App::initialize()
 {
@@ -31,7 +121,8 @@ bool App::initialize()
     // 3. Load font
     display_ppi_ = window_.display_ppi();
     fprintf(stderr, "[spectre] Display PPI: %.0f\n", display_ppi_);
-    font_path_ = "fonts/JetBrainsMonoNerdFontMono-Regular.ttf";
+    font_path_ = resolve_primary_font_path();
+    fprintf(stderr, "[spectre] Primary font path: %s\n", font_path_.c_str());
     if (!font_.initialize(font_path_, font_size_, display_ppi_))
     {
         fprintf(stderr, "[spectre] Failed to load font\n");
@@ -47,6 +138,7 @@ bool App::initialize()
     // Init glyph cache and shaper
     glyph_cache_.initialize(font_.face(), font_.point_size());
     shaper_.initialize(font_.hb_font());
+    initialize_fallback_fonts();
 
     // 4. Calculate grid dimensions
     auto [pw, ph] = window_.size_pixels();
@@ -128,7 +220,6 @@ bool App::initialize()
                                                                                                    }) });
 
     fprintf(stderr, "[spectre] UI attached: %dx%d\n", grid_cols_, grid_rows_);
-
     running_ = true;
     return true;
 }
@@ -137,6 +228,12 @@ void App::run()
 {
     while (running_)
     {
+        if (pending_window_activation_)
+        {
+            window_.activate();
+            pending_window_activation_ = false;
+        }
+
         if (!window_.poll_events())
         {
             rpc_.notify("nvim_input", { NvimRpc::make_str("<C-\\><C-n>:qa!<CR>") });
@@ -171,14 +268,27 @@ void App::on_flush()
     flush_count_++;
     update_grid_to_renderer();
 
+    CursorStyle cursor_style;
+    cursor_style.bg = highlights_.default_fg();
+    cursor_style.fg = highlights_.default_bg();
+
     int mode = ui_events_.current_mode();
-    CursorShape shape = CursorShape::Block;
     if (mode >= 0 && mode < (int)ui_events_.modes().size())
     {
-        shape = ui_events_.modes()[mode].cursor_shape;
+        const auto& mode_info = ui_events_.modes()[mode];
+        cursor_style.shape = mode_info.cursor_shape;
+        cursor_style.cell_percentage = mode_info.cell_percentage;
+        if (mode_info.attr_id != 0)
+        {
+            Color fg;
+            Color bg;
+            highlights_.resolve(highlights_.get((uint16_t)mode_info.attr_id), fg, bg);
+            cursor_style.fg = fg;
+            cursor_style.bg = bg;
+            cursor_style.use_explicit_colors = true;
+        }
     }
-    renderer_->set_cursor(ui_events_.cursor_col(), ui_events_.cursor_row(),
-        shape, { 1.0f, 1.0f, 1.0f, 0.7f });
+    renderer_->set_cursor(ui_events_.cursor_col(), ui_events_.cursor_row(), cursor_style);
 }
 
 void App::update_grid_to_renderer()
@@ -207,10 +317,10 @@ void App::update_grid_to_renderer()
         update.fg = fg;
         update.style_flags = hl.style_flags();
 
-        if (!cell.double_width_cont && cell.codepoint != ' ' && cell.codepoint != 0)
+        if (!cell.double_width_cont && !cell.text.empty() && cell.text != " ")
         {
-            uint32_t glyph_id = shaper_.shape_codepoint(cell.codepoint);
-            update.glyph = glyph_cache_.get_glyph(glyph_id);
+            auto [face, text_shaper] = resolve_font_for_text(cell.text);
+            update.glyph = glyph_cache_.get_cluster(cell.text, face, *text_shaper);
             if (glyph_cache_.atlas_dirty())
             {
                 atlas_updated = true;
@@ -263,6 +373,13 @@ void App::change_font_size(int new_size)
 
     glyph_cache_.reset(font_.face(), font_.point_size());
     shaper_.initialize(font_.hb_font());
+    font_choice_cache_.clear();
+
+    for (auto& fallback : fallback_fonts_)
+    {
+        fallback.font.set_point_size(font_size_);
+        fallback.shaper.initialize(fallback.font.hb_font());
+    }
 
     renderer_->set_cell_size(metrics.cell_width, metrics.cell_height);
     renderer_->set_ascender(metrics.ascender);
@@ -298,10 +415,77 @@ void App::shutdown()
     rpc_.shutdown();
 
     shaper_.shutdown();
+    for (auto& fallback : fallback_fonts_)
+    {
+        fallback.shaper.shutdown();
+        fallback.font.shutdown();
+    }
+    fallback_fonts_.clear();
+    font_choice_cache_.clear();
     font_.shutdown();
     if (renderer_)
         renderer_->shutdown();
     window_.shutdown();
+}
+
+void App::initialize_fallback_fonts()
+{
+    fallback_fonts_.clear();
+    font_choice_cache_.clear();
+
+    auto candidates = fallback_font_candidates();
+    fallback_fonts_.reserve(candidates.size());
+
+    for (const auto& path : candidates)
+    {
+        if (path == font_path_ || !std::filesystem::exists(path))
+            continue;
+
+        fallback_fonts_.emplace_back();
+        auto& fallback = fallback_fonts_.back();
+        fallback.path = path;
+        if (!fallback.font.initialize(path, font_size_, display_ppi_))
+        {
+            fallback.font.shutdown();
+            fallback_fonts_.pop_back();
+            continue;
+        }
+
+        fallback.shaper.initialize(fallback.font.hb_font());
+        fprintf(stderr, "[spectre] Fallback font loaded: %s\n", path.c_str());
+    }
+}
+
+std::pair<FT_Face, TextShaper*> App::resolve_font_for_text(const std::string& text)
+{
+    auto cached = font_choice_cache_.find(text);
+    if (cached != font_choice_cache_.end())
+    {
+        if (cached->second < 0)
+            return { font_.face(), &shaper_ };
+
+        int idx = cached->second;
+        if (idx >= 0 && idx < (int)fallback_fonts_.size())
+            return { fallback_fonts_[idx].font.face(), &fallback_fonts_[idx].shaper };
+    }
+
+    if (can_render_cluster(font_.face(), shaper_, text))
+    {
+        font_choice_cache_[text] = -1;
+        return { font_.face(), &shaper_ };
+    }
+
+    for (int i = 0; i < (int)fallback_fonts_.size(); i++)
+    {
+        if (can_render_cluster(fallback_fonts_[i].font.face(), fallback_fonts_[i].shaper, text))
+        {
+            font_choice_cache_[text] = i;
+            return { fallback_fonts_[i].font.face(), &fallback_fonts_[i].shaper };
+        }
+    }
+
+    font_choice_cache_[text] = -1;
+    return { font_.face(), &shaper_ };
 }
 
 } // namespace spectre

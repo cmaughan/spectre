@@ -1,8 +1,30 @@
 #include <hb-ft.h>
 #include <spectre/font.h>
+#include <utility>
 
 namespace spectre
 {
+
+TextShaper::TextShaper(TextShaper&& other) noexcept
+{
+    *this = std::move(other);
+}
+
+TextShaper& TextShaper::operator=(TextShaper&& other) noexcept
+{
+    if (this == &other)
+        return *this;
+
+    shutdown();
+
+    font_ = other.font_;
+    buffer_ = other.buffer_;
+
+    other.font_ = nullptr;
+    other.buffer_ = nullptr;
+
+    return *this;
+}
 
 TextShaper::~TextShaper()
 {

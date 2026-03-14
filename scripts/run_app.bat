@@ -3,6 +3,7 @@ setlocal EnableDelayedExpansion
 
 set "MODE=debug"
 set "FORCE_RECONFIGURE=0"
+set "USE_CONSOLE=0"
 set "APP_ARGS="
 
 :parse_args
@@ -21,6 +22,9 @@ if /i "%~1"=="--reconfigure" (
     set "FORCE_RECONFIGURE=1"
     shift
     goto :parse_args
+)
+if /i "%~1"=="--console" (
+    set "USE_CONSOLE=1"
 )
 set "APP_ARGS=!APP_ARGS! "%~1""
 shift
@@ -66,7 +70,11 @@ if not exist "%EXE%" (
 
 echo.
 echo ^> %EXE%%APP_ARGS%
-call "%EXE%"%APP_ARGS%
+if "%USE_CONSOLE%"=="1" (
+    call "%EXE%"%APP_ARGS%
+) else (
+    start "" /wait "%EXE%"%APP_ARGS%
+)
 set "STATUS=%errorlevel%"
 popd >nul
 exit /b %STATUS%

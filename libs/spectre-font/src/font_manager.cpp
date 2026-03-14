@@ -1,9 +1,39 @@
 #include <cmath>
 #include <cstdio>
 #include <spectre/font.h>
+#include <utility>
 
 namespace spectre
 {
+
+FontManager::FontManager(FontManager&& other) noexcept
+{
+    *this = std::move(other);
+}
+
+FontManager& FontManager::operator=(FontManager&& other) noexcept
+{
+    if (this == &other)
+        return *this;
+
+    shutdown();
+
+    ft_lib_ = other.ft_lib_;
+    face_ = other.face_;
+    hb_font_ = other.hb_font_;
+    metrics_ = other.metrics_;
+    point_size_ = other.point_size_;
+    display_ppi_ = other.display_ppi_;
+
+    other.ft_lib_ = nullptr;
+    other.face_ = nullptr;
+    other.hb_font_ = nullptr;
+    other.metrics_ = {};
+    other.point_size_ = 0;
+    other.display_ppi_ = 96.0f;
+
+    return *this;
+}
 
 bool FontManager::initialize(const std::string& font_path, int point_size, float display_ppi)
 {
