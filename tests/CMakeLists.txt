@@ -4,6 +4,7 @@ add_executable(spectre-tests
     grid_tests.cpp
     ui_events_tests.cpp
     input_tests.cpp
+    unicode_tests.cpp
 )
 
 target_include_directories(spectre-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/support)

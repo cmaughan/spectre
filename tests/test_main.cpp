@@ -5,6 +5,7 @@ void run_font_tests();
 void run_grid_tests();
 void run_ui_events_tests();
 void run_input_tests();
+void run_unicode_tests();
 
 int main()
 {
@@ -14,6 +15,7 @@ int main()
         run_grid_tests();
         run_ui_events_tests();
         run_input_tests();
+        run_unicode_tests();
         std::cout << "spectre-tests: ok\n";
         return 0;
     }

@@ -68,9 +68,9 @@ void run_ui_events_tests()
         expect_eq(resized_rows, 4, "resize callback receives rows");
     });
 
-    run_test("ui event handler preserves grapheme clusters and emoji width", []() {
+    run_test("ui event handler applies grapheme widths like nvim", []() {
         Grid grid;
-        grid.resize(4, 1);
+        grid.resize(20, 1);
 
         HighlightTable highlights;
         UiEventHandler handler;
@@ -79,14 +79,56 @@ void run_ui_events_tests()
 
         const std::string combining = "e\xCC\x81";
         const std::string emoji = "\xF0\x9F\x91\x8D\xF0\x9F\x8F\xBD";
+        const std::string flag = "\xF0\x9F\x87\xBA\xF0\x9F\x87\xB8";
+        const std::string family = "\xF0\x9F\x91\xA8\xE2\x80\x8D\xF0\x9F\x91\xA9\xE2\x80\x8D\xF0\x9F\x91\xA7\xE2\x80\x8D\xF0\x9F\x91\xA6";
+        const std::string keycap = "1\xEF\xB8\x8F\xE2\x83\xA3";
+        const std::string heart = "\xE2\x9D\xA4";
+        const std::string heart_emoji = "\xE2\x9D\xA4\xEF\xB8\x8F";
+        const std::string cjk = "\xE7\x95\x8C";
+        const std::string devanagari = "\xE0\xA4\x95\xE0\xA5\x8D\xE0\xA4\xB7";
+        const std::string lazy = "\xF3\xB0\x92\xB2";
+        const std::string devicon = "\xEE\x98\xA0";
 
-        handler.process_redraw({ redraw_event("grid_line", { grid_line_batch(1, 0, 0, { cell(combining, 1), cell(emoji, 2), cell("X", 3) }) }) });
+        handler.process_redraw({ redraw_event("grid_line", { grid_line_batch(1, 0, 0, {
+                                                                                          cell(combining, 1),
+                                                                                          cell(emoji, 2),
+                                                                                          cell(flag, 3),
+                                                                                          cell(family, 4),
+                                                                                          cell(keycap, 5),
+                                                                                          cell(heart, 6),
+                                                                                          cell(heart_emoji, 7),
+                                                                                          cell(cjk, 8),
+                                                                                          cell(devanagari, 9),
+                                                                                          cell(lazy, 10),
+                                                                                          cell(devicon, 11),
+                                                                                      }) }) });
 
         expect_eq(grid.get_cell(0, 0).text, combining, "combining cluster is preserved");
         expect_eq(grid.get_cell(0, 0).double_width, false, "combining cluster remains single width");
         expect_eq(grid.get_cell(1, 0).text, emoji, "emoji cluster is preserved");
         expect_eq(grid.get_cell(1, 0).double_width, true, "emoji cluster is treated as double width");
         expect(grid.get_cell(2, 0).double_width_cont, "emoji continuation cell is marked");
-        expect_eq(grid.get_cell(3, 0).text, std::string("X"), "following cell lands after the wide emoji");
+        expect_eq(grid.get_cell(3, 0).text, flag, "flag lands after the emoji cluster");
+        expect_eq(grid.get_cell(3, 0).double_width, true, "flag is double width");
+        expect(grid.get_cell(4, 0).double_width_cont, "flag continuation cell is marked");
+        expect_eq(grid.get_cell(5, 0).text, family, "family zwj sequence lands after the flag");
+        expect_eq(grid.get_cell(5, 0).double_width, true, "family zwj sequence is double width");
+        expect(grid.get_cell(6, 0).double_width_cont, "family continuation cell is marked");
+        expect_eq(grid.get_cell(7, 0).text, keycap, "keycap sequence remains single width");
+        expect_eq(grid.get_cell(7, 0).double_width, false, "keycap sequence is single width");
+        expect_eq(grid.get_cell(8, 0).text, heart, "text heart remains single width");
+        expect_eq(grid.get_cell(8, 0).double_width, false, "text heart stays single width");
+        expect_eq(grid.get_cell(9, 0).text, heart_emoji, "emoji heart is preserved");
+        expect_eq(grid.get_cell(9, 0).double_width, true, "emoji heart becomes double width");
+        expect(grid.get_cell(10, 0).double_width_cont, "emoji heart continuation cell is marked");
+        expect_eq(grid.get_cell(11, 0).text, cjk, "cjk glyph lands after emoji heart");
+        expect_eq(grid.get_cell(11, 0).double_width, true, "cjk glyph remains double width");
+        expect(grid.get_cell(12, 0).double_width_cont, "cjk continuation cell is marked");
+        expect_eq(grid.get_cell(13, 0).text, devanagari, "indic conjunct remains single width");
+        expect_eq(grid.get_cell(13, 0).double_width, false, "indic conjunct stays single width");
+        expect_eq(grid.get_cell(14, 0).text, lazy, "lazy icon remains single width");
+        expect_eq(grid.get_cell(14, 0).double_width, false, "lazy icon stays single width");
+        expect_eq(grid.get_cell(15, 0).text, devicon, "devicon remains single width");
+        expect_eq(grid.get_cell(15, 0).double_width, false, "devicon stays single width");
     });
 }

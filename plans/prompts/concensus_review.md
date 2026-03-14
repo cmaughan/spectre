@@ -1,0 +1,1 @@
+go read the the reviews in plans/reviews that aren't <your agent model> and write or update a review-concensus.md file in plans/review, distilling everything into one document and offering suggestions.  Treat is as a conversation and planning review for fixes.

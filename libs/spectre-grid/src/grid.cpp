@@ -1,28 +1,12 @@
 #include <algorithm>
 #include <spectre/grid.h>
+#include <spectre/unicode.h>
 
 namespace spectre
 {
 
 namespace
 {
-
-uint32_t decode_first_codepoint(const std::string& text)
-{
-    if (text.empty())
-        return ' ';
-
-    const uint8_t* s = reinterpret_cast<const uint8_t*>(text.data());
-    if (s[0] < 0x80)
-        return s[0];
-    if ((s[0] & 0xE0) == 0xC0 && text.size() >= 2)
-        return ((s[0] & 0x1F) << 6) | (s[1] & 0x3F);
-    if ((s[0] & 0xF0) == 0xE0 && text.size() >= 3)
-        return ((s[0] & 0x0F) << 12) | ((s[1] & 0x3F) << 6) | (s[2] & 0x3F);
-    if ((s[0] & 0xF8) == 0xF0 && text.size() >= 4)
-        return ((s[0] & 0x07) << 18) | ((s[1] & 0x3F) << 12) | ((s[2] & 0x3F) << 6) | (s[3] & 0x3F);
-    return '?';
-}
 
 Cell make_blank_cell()
 {
@@ -69,7 +53,7 @@ void Grid::set_cell(int col, int row, const std::string& text, uint16_t hl_id, b
     }
 
     cell.text = text;
-    cell.codepoint = decode_first_codepoint(text);
+    cell.codepoint = utf8_first_codepoint(text);
     cell.hl_attr_id = hl_id;
     cell.dirty = true;
     cell.double_width = double_width;
