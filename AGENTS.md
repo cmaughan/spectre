@@ -91,6 +91,20 @@ Use `tests/support/replay_fixture.h` for redraw-oriented tests. It provides smal
 
 This is the preferred way to reproduce UI parsing bugs without launching Neovim.
 
+## Review Consensus
+
+When the user asks to "come to consensus" on reviews, do not just concatenate or summarize review files.
+
+Treat it as a synthesis task:
+
+- read the review notes from the relevant agent folders under `plans/reviews/`
+- identify where the agents agree, where one review adds useful detail, and where there is real disagreement or just a sequencing difference
+- reconcile the review notes against the current tree so already-fixed or stale issues are called out instead of repeated blindly
+- produce a planning-oriented consensus note with suggested fix order, not just a findings list
+- where helpful, explicitly attribute points to the agent models that raised them
+
+The result should read like a conversation and planning review for fixes, with a current recommended path forward.
+
 ## Known Pitfalls
 
 - Do not include backend-private renderer headers from `app/`.
