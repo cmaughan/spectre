@@ -26,9 +26,71 @@ cmake --build build --target spectre                 # Build
 
 Run: `./build/spectre` (requires `nvim` on PATH).
 
+## Project Structure
+
+```
+spectre/
+├── CMakeLists.txt                  # Top-level: wires libraries + app
+├── CLAUDE.md
+├── libs/
+│   ├── spectre-types/              # Shared POD types (header-only)
+│   │   ├── include/spectre/
+│   │   │   ├── types.h             # GpuCell, CellUpdate, Color, AtlasRegion, CursorShape
+│   │   │   ├── font_metrics.h      # FontMetrics struct
+│   │   │   └── events.h            # WindowResizeEvent, KeyEvent, etc.
+│   │   └── CMakeLists.txt
+│   ├── spectre-window/             # Window abstraction + SDL implementation
+│   │   ├── include/spectre/
+│   │   │   ├── window.h            # IWindow interface
+│   │   │   └── sdl_window.h        # SdlWindow implementation
+│   │   ├── src/sdl_window.cpp
+│   │   └── CMakeLists.txt
+│   ├── spectre-renderer/           # Renderer interface + backends
+│   │   ├── include/spectre/
+│   │   │   └── renderer.h          # IRenderer interface
+│   │   ├── src/vulkan/             # Vulkan backend (Windows)
+│   │   ├── src/metal/              # Metal backend (macOS)
+│   │   └── CMakeLists.txt
+│   ├── spectre-font/               # Font loading, shaping, glyph cache
+│   │   ├── include/spectre/
+│   │   │   └── font.h              # FontManager, GlyphCache, TextShaper
+│   │   ├── src/
+│   │   └── CMakeLists.txt
+│   ├── spectre-grid/               # 2D cell grid + highlight table
+│   │   ├── include/spectre/
+│   │   │   └── grid.h              # Grid, Cell, HlAttr, HighlightTable
+│   │   ├── src/grid.cpp
+│   │   └── CMakeLists.txt
+│   └── spectre-nvim/               # Neovim process, RPC, UI events, input
+│       ├── include/spectre/
+│       │   └── nvim.h              # NvimProcess, NvimRpc, UiEventHandler, NvimInput
+│       ├── src/
+│       └── CMakeLists.txt
+├── app/                            # The executable — just wiring
+│   ├── app.h/cpp
+│   ├── main.cpp
+│   └── renderer_factory.cpp
+├── shaders/
+└── fonts/
+```
+
 ## Architecture
 
 Spectre is a Neovim GUI frontend. It spawns `nvim --embed`, communicates via msgpack-RPC over stdin/stdout pipes, and renders the terminal grid using the platform's GPU API (Vulkan on Windows, Metal on macOS).
+
+### Dependency Graph (libraries only link downward)
+
+```
+                    spectre-types (header-only)
+                   /      |       |       \
+          window   renderer   font    grid
+            |         |        |       |
+            └────┬────┘        └───┬───┘
+                 |                 |
+              spectre-nvim --------┘
+                 |
+                app (executable)
+```
 
 ### Data flow
 
@@ -45,9 +107,9 @@ nvim --embed (child process)
 
 ### Key abstractions
 
-- **IRenderer** (`renderer/renderer.h`) and **IWindow** (`window/window.h`) are abstract interfaces. The renderer knows nothing about fonts, neovim, or text — only colored rectangles and textured quads at grid positions.
-- **App** (`app.h/cpp`) is the orchestrator that owns all subsystems and runs the main loop.
-- Platform-specific renderer implementations live in `renderer/vulkan/` (Windows) and `renderer/metal/` (macOS).
+- **IRenderer** (`libs/spectre-renderer/include/spectre/renderer.h`) and **IWindow** (`libs/spectre-window/include/spectre/window.h`) are abstract interfaces. The renderer knows nothing about fonts, neovim, or text — only colored rectangles and textured quads at grid positions.
+- **App** (`app/app.h/cpp`) is the orchestrator that owns all subsystems and runs the main loop.
+- Platform-specific renderer implementations live in `libs/spectre-renderer/src/vulkan/` (Windows) and `libs/spectre-renderer/src/metal/` (macOS).
 
 ### Rendering
 

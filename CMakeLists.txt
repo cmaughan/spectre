@@ -26,50 +26,43 @@ else()
     include(cmake/CompileShaders.cmake)
 endif()
 
-# Collect source files (exclude platform-specific renderer dirs, then add back the right one)
-file(GLOB_RECURSE SPECTRE_SOURCES CONFIGURE_DEPENDS
-    src/*.cpp
-    src/*.h
-)
+# --- Libraries ---
+add_subdirectory(libs/spectre-types)
+add_subdirectory(libs/spectre-window)
+add_subdirectory(libs/spectre-renderer)
+add_subdirectory(libs/spectre-font)
+add_subdirectory(libs/spectre-grid)
+add_subdirectory(libs/spectre-nvim)
 
+# --- App executable ---
 if(APPLE)
-    # Remove Vulkan sources
-    file(GLOB_RECURSE VK_SOURCES CONFIGURE_DEPENDS src/renderer/vulkan/*.cpp src/renderer/vulkan/*.h)
-    list(REMOVE_ITEM SPECTRE_SOURCES ${VK_SOURCES})
-    # Add Metal sources (.mm)
-    file(GLOB_RECURSE METAL_SOURCES CONFIGURE_DEPENDS src/renderer/metal/*.mm src/renderer/metal/*.h)
-    list(APPEND SPECTRE_SOURCES ${METAL_SOURCES})
+    add_executable(spectre
+        app/main.cpp
+        app/app.cpp
+        app/renderer_factory.cpp
+    )
 else()
-    # Remove Metal sources (if any .mm files exist)
-    file(GLOB_RECURSE METAL_SOURCES CONFIGURE_DEPENDS src/renderer/metal/*.mm src/renderer/metal/*.h)
-    if(METAL_SOURCES)
-        list(REMOVE_ITEM SPECTRE_SOURCES ${METAL_SOURCES})
-    endif()
+    add_executable(spectre
+        app/main.cpp
+        app/app.cpp
+        app/renderer_factory.cpp
+    )
 endif()
 
-add_executable(spectre ${SPECTRE_SOURCES})
-target_include_directories(spectre PRIVATE src)
+target_include_directories(spectre PRIVATE app)
+# The factory needs access to internal renderer headers
+target_include_directories(spectre PRIVATE libs/spectre-renderer/src)
 
-# Common libraries
 target_link_libraries(spectre PRIVATE
-    SDL3::SDL3
-    freetype
-    harfbuzz
-    mpack_lib
+    spectre-types
+    spectre-window
+    spectre-renderer
+    spectre-font
+    spectre-grid
+    spectre-nvim
 )
 
 if(APPLE)
-    # Metal frameworks
-    find_library(METAL_FRAMEWORK Metal REQUIRED)
-    find_library(QUARTZCORE_FRAMEWORK QuartzCore REQUIRED)
-    find_library(FOUNDATION_FRAMEWORK Foundation REQUIRED)
-    target_link_libraries(spectre PRIVATE
-        ${METAL_FRAMEWORK}
-        ${QUARTZCORE_FRAMEWORK}
-        ${FOUNDATION_FRAMEWORK}
-    )
-
-    # Shader compilation dependency
     add_dependencies(spectre compile_metal_shaders)
 
     # Copy metallib to build dir next to executable
@@ -80,13 +73,6 @@ if(APPLE)
             $<TARGET_FILE_DIR:spectre>/shaders/
     )
 else()
-    target_link_libraries(spectre PRIVATE
-        Vulkan::Vulkan
-        vk-bootstrap::vk-bootstrap
-        GPUOpen::VulkanMemoryAllocator
-    )
-
-    # Shader compilation dependency
     add_dependencies(spectre compile_shaders)
 
     # Copy shaders to build dir next to executable
