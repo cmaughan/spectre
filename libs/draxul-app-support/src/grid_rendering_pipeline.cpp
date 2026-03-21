@@ -45,7 +45,7 @@ CellUpdate make_cell_update(int col, int row, const Cell& cell, HighlightTable& 
 }
 
 std::vector<Grid::DirtyCell> expand_dirty_cells_for_ligatures(
-    const Grid& grid, std::vector<Grid::DirtyCell> dirty)
+    const Grid& grid, const std::vector<Grid::DirtyCell>& dirty)
 {
     std::vector<Grid::DirtyCell> expanded = dirty;
     expanded.reserve(dirty.size() * 3);

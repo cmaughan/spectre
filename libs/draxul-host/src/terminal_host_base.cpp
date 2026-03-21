@@ -4,7 +4,6 @@
 #include <draxul/terminal_sgr.h>
 
 #include <algorithm>
-#include <array>
 #include <draxul/alt_screen_manager.h>
 #include <draxul/log.h>
 #include <draxul/mouse_reporter.h>
@@ -16,34 +15,6 @@
 
 namespace draxul
 {
-
-namespace
-{
-
-Color ansi_color(int index)
-{
-    static const std::array<Color, 16> palette = { {
-        { 0.05f, 0.06f, 0.07f, 1.0f },
-        { 0.80f, 0.24f, 0.24f, 1.0f },
-        { 0.40f, 0.73f, 0.42f, 1.0f },
-        { 0.88f, 0.73f, 0.30f, 1.0f },
-        { 0.29f, 0.51f, 0.82f, 1.0f },
-        { 0.70f, 0.41f, 0.78f, 1.0f },
-        { 0.28f, 0.73f, 0.80f, 1.0f },
-        { 0.84f, 0.84f, 0.85f, 1.0f },
-        { 0.33f, 0.34f, 0.35f, 1.0f },
-        { 0.94f, 0.38f, 0.38f, 1.0f },
-        { 0.49f, 0.82f, 0.54f, 1.0f },
-        { 0.96f, 0.82f, 0.44f, 1.0f },
-        { 0.46f, 0.65f, 0.93f, 1.0f },
-        { 0.81f, 0.55f, 0.88f, 1.0f },
-        { 0.48f, 0.86f, 0.93f, 1.0f },
-        { 0.97f, 0.98f, 0.98f, 1.0f },
-    } };
-    return palette[std::clamp(index, 0, 15)];
-}
-
-} // namespace
 
 // ---------------------------------------------------------------------------
 // Constructor
@@ -383,7 +354,8 @@ void TerminalHostBase::newline(bool carriage_return)
         // Save the top row of the scroll region to scrollback before scrolling.
         if (!alt_screen_.in_alt_screen() && vt_.scroll_top == 0 && vt_.scroll_bottom == grid_rows() - 1)
         {
-            if (Cell* slot = scrollback_.next_write_slot())
+            Cell* slot = scrollback_.next_write_slot();
+            if (slot)
             {
                 const int cols = grid_cols();
                 for (int col = 0; col < cols; ++col)

@@ -1,11 +1,14 @@
 #include "unix_pty_process.h"
 
 #include <algorithm>
+#include <array>
+#include <chrono>
 #include <csignal>
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <sys/wait.h>
 #include <termios.h>
+#include <thread>
 #include <unistd.h>
 
 #ifdef __APPLE__
@@ -112,7 +115,7 @@ void UnixPtyProcess::shutdown()
         {
             kill(pid_, SIGTERM);
             for (int i = 0; i < 10 && waitpid(pid_, &status, WNOHANG) == 0; ++i)
-                usleep(10000);
+                std::this_thread::sleep_for(std::chrono::microseconds(10000));
             kill(pid_, SIGKILL);
             waitpid(pid_, &status, 0);
         }
@@ -168,16 +171,16 @@ std::vector<std::string> UnixPtyProcess::drain_output()
 
 void UnixPtyProcess::reader_main()
 {
-    char buffer[4096];
+    std::array<char, 4096> buffer{};
     while (reader_running_)
     {
-        const ssize_t bytes_read = ::read(master_fd_, buffer, sizeof(buffer));
+        const ssize_t bytes_read = ::read(master_fd_, buffer.data(), buffer.size());
         if (bytes_read <= 0)
             break;
 
         {
             std::scoped_lock lock(output_mutex_);
-            output_chunks_.emplace_back(buffer, buffer + bytes_read);
+            output_chunks_.emplace_back(buffer.data(), buffer.data() + bytes_read);
         }
 
         if (on_output_available_)

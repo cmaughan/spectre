@@ -38,7 +38,7 @@ void run_grid_tests()
         {
             for (int col = 0; col < 3; ++col)
             {
-                grid.set_cell(col, row, std::string(1, rows[row][col]), 0);
+                grid.set_cell(col, row, std::string(1, rows[row][col]), 0, false);
             }
         }
 
@@ -95,11 +95,11 @@ void run_grid_tests()
     run_test("grid scroll supports horizontal shifts within a partial region", []() {
         Grid grid;
         grid.resize(5, 1);
-        grid.set_cell(0, 0, "a", 1);
-        grid.set_cell(1, 0, "b", 1);
-        grid.set_cell(2, 0, "c", 1);
-        grid.set_cell(3, 0, "d", 1);
-        grid.set_cell(4, 0, "e", 1);
+        grid.set_cell(0, 0, "a", 1, false);
+        grid.set_cell(1, 0, "b", 1, false);
+        grid.set_cell(2, 0, "c", 1, false);
+        grid.set_cell(3, 0, "d", 1, false);
+        grid.set_cell(4, 0, "e", 1, false);
         grid.clear_dirty();
 
         grid.scroll(0, 1, 1, 5, 0, 1);
@@ -114,11 +114,11 @@ void run_grid_tests()
     run_test("grid scroll preserves wide pairs fully inside a partial region", []() {
         Grid grid;
         grid.resize(6, 1);
-        grid.set_cell(0, 0, "a", 1);
-        grid.set_cell(1, 0, "b", 1);
+        grid.set_cell(0, 0, "a", 1, false);
+        grid.set_cell(1, 0, "b", 1, false);
         grid.set_cell(2, 0, "W", 7, true);
-        grid.set_cell(4, 0, "c", 1);
-        grid.set_cell(5, 0, "z", 1);
+        grid.set_cell(4, 0, "c", 1, false);
+        grid.set_cell(5, 0, "z", 1, false);
         grid.clear_dirty();
 
         grid.scroll(0, 1, 1, 5, 0, 1);
@@ -134,15 +134,15 @@ void run_grid_tests()
     run_test("grid scroll clears orphaned continuations at the left boundary without touching outside columns", []() {
         Grid grid;
         grid.resize(5, 2);
-        grid.set_cell(0, 0, "x", 1);
-        grid.set_cell(1, 0, "y", 1);
-        grid.set_cell(2, 0, "z", 1);
-        grid.set_cell(3, 0, "u", 1);
-        grid.set_cell(4, 0, "v", 1);
+        grid.set_cell(0, 0, "x", 1, false);
+        grid.set_cell(1, 0, "y", 1, false);
+        grid.set_cell(2, 0, "z", 1, false);
+        grid.set_cell(3, 0, "u", 1, false);
+        grid.set_cell(4, 0, "v", 1, false);
         grid.set_cell(0, 1, "W", 7, true);
-        grid.set_cell(2, 1, "a", 1);
-        grid.set_cell(3, 1, "b", 1);
-        grid.set_cell(4, 1, "c", 1);
+        grid.set_cell(2, 1, "a", 1, false);
+        grid.set_cell(3, 1, "b", 1, false);
+        grid.set_cell(4, 1, "c", 1, false);
         grid.clear_dirty();
 
         grid.scroll(0, 2, 1, 5, 1);
@@ -159,9 +159,9 @@ void run_grid_tests()
         Grid grid;
         grid.resize(5, 1);
         grid.set_cell(0, 0, "W", 7, true);
-        grid.set_cell(2, 0, "a", 1);
-        grid.set_cell(3, 0, "b", 1);
-        grid.set_cell(4, 0, "c", 1);
+        grid.set_cell(2, 0, "a", 1, false);
+        grid.set_cell(3, 0, "b", 1, false);
+        grid.set_cell(4, 0, "c", 1, false);
         grid.clear_dirty();
 
         grid.scroll(0, 1, 1, 5, 0, 1);
@@ -176,9 +176,9 @@ void run_grid_tests()
     run_test("grid scroll clears leaders at the right boundary without touching outside continuations", []() {
         Grid grid;
         grid.resize(5, 1);
-        grid.set_cell(0, 0, "a", 1);
-        grid.set_cell(1, 0, "b", 1);
-        grid.set_cell(2, 0, "c", 1);
+        grid.set_cell(0, 0, "a", 1, false);
+        grid.set_cell(1, 0, "b", 1, false);
+        grid.set_cell(2, 0, "c", 1, false);
         grid.set_cell(3, 0, "W", 7, true);
         grid.clear_dirty();
 
@@ -195,9 +195,9 @@ void run_grid_tests()
         Grid grid;
         grid.resize(5, 1);
         grid.set_cell(0, 0, "W", 7, true);
-        grid.set_cell(2, 0, "a", 1);
-        grid.set_cell(3, 0, "b", 1);
-        grid.set_cell(4, 0, "c", 1);
+        grid.set_cell(2, 0, "a", 1, false);
+        grid.set_cell(3, 0, "b", 1, false);
+        grid.set_cell(4, 0, "c", 1, false);
         grid.clear_dirty();
 
         grid.scroll(0, 1, 0, 5, 0, 1);
@@ -225,7 +225,7 @@ void run_grid_tests()
         std::string long_cluster(40, 'x');
         Grid grid;
         grid.resize(2, 1);
-        grid.set_cell(0, 0, long_cluster, 0);
+        grid.set_cell(0, 0, long_cluster, 0, false);
         bool found_warn = false;
         for (const auto& rec : cap.records)
         {
@@ -244,7 +244,7 @@ void run_grid_tests()
         grid.clear_dirty();
 
         grid.clear();
-        grid.set_cell(0, 0, "X", 1);
+        grid.set_cell(0, 0, "X", 1, false);
 
         auto dirty = grid.get_dirty_cells();
         expect(!dirty.empty(), "dirty list is repopulated after clear");

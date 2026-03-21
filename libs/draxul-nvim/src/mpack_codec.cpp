@@ -138,8 +138,8 @@ MpackValue read_value(mpack_reader_t* reader)
         uint32_t len = mpack_tag_ext_length(&tag);
         if (len <= 8)
         {
-            char ext_data[8] = {};
-            mpack_read_bytes(reader, ext_data, len);
+            std::string ext_data(8, '\0');
+            mpack_read_bytes(reader, ext_data.data(), len);
             int64_t ext_val = 0;
             for (uint32_t i = 0; i < len; i++)
                 ext_val = (ext_val << 8) | (uint8_t)ext_data[i];

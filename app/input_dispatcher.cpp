@@ -80,7 +80,7 @@ void InputDispatcher::connect(SdlWindow& window)
         {
             pending_scroll_y_ += event.dy;
             const float sign = pending_scroll_y_ > 0.0f ? 1.0f : -1.0f;
-            const int steps = static_cast<int>(std::abs(pending_scroll_y_));
+            const auto steps = static_cast<int>(std::abs(pending_scroll_y_));
             for (int i = 0; i < steps; ++i)
             {
                 MouseWheelEvent step = event;

@@ -42,8 +42,8 @@ private:
     void on_busy(bool busy);
     void refresh_cursor_style();
     BlinkTiming current_blink_timing() const;
-    MpackValue handle_rpc_request(const std::string& method, const std::vector<MpackValue>& params);
-    void handle_clipboard_set(const std::vector<MpackValue>& params);
+    MpackValue handle_rpc_request(const std::string& method, const std::vector<MpackValue>& params) const;
+    void handle_clipboard_set(const std::vector<MpackValue>& params) const;
     void wire_ui_callbacks();
 
     NvimProcess nvim_process_;

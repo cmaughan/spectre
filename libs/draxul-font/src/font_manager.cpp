@@ -91,7 +91,7 @@ void FontManager::select_best_fixed_size()
     if (!FT_HAS_FIXED_SIZES(face_) || face_->num_fixed_sizes <= 0)
         return;
 
-    int target_px = (int)std::round(point_size_ * display_ppi_ / 72.0f);
+    auto target_px = (int)std::round(point_size_ * display_ppi_ / 72.0f);
     int best = 0;
     for (int i = 1; i < face_->num_fixed_sizes; i++)
     {

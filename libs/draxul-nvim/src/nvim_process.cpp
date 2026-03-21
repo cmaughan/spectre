@@ -7,11 +7,14 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #else
+#include <array>
 #include <cerrno>
+#include <chrono>
 #include <cstring>
 #include <fcntl.h>
 #include <signal.h>
 #include <sys/wait.h>
+#include <thread>
 #include <unistd.h>
 #endif
 
@@ -173,13 +176,13 @@ void NvimProcess::shutdown()
     impl_->started_ = false;
 }
 
-bool NvimProcess::write(const uint8_t* data, size_t len)
+bool NvimProcess::write(const uint8_t* data, size_t len) const
 {
     DWORD written;
     return WriteFile(impl_->child_stdin_write_, data, (DWORD)len, &written, nullptr) && written == len;
 }
 
-int NvimProcess::read(uint8_t* buffer, size_t max_len)
+int NvimProcess::read(uint8_t* buffer, size_t max_len) const
 {
     DWORD bytes_read;
     if (!ReadFile(impl_->child_stdout_read_, buffer, (DWORD)max_len, &bytes_read, nullptr))
@@ -202,23 +205,23 @@ bool NvimProcess::is_running() const
 
 bool NvimProcess::spawn(const std::string& nvim_path, const std::vector<std::string>& extra_args, const std::string& working_dir)
 {
-    int stdin_pipe[2];
-    int stdout_pipe[2];
-    int exec_status_pipe[2];
+    std::array<int, 2> stdin_pipe;
+    std::array<int, 2> stdout_pipe;
+    std::array<int, 2> exec_status_pipe;
 
-    if (pipe(stdin_pipe) != 0)
+    if (pipe(stdin_pipe.data()) != 0)
     {
         DRAXUL_LOG_ERROR(LogCategory::Nvim, "Failed to create stdin pipe: %s", strerror(errno));
         return false;
     }
-    if (pipe(stdout_pipe) != 0)
+    if (pipe(stdout_pipe.data()) != 0)
     {
         DRAXUL_LOG_ERROR(LogCategory::Nvim, "Failed to create stdout pipe: %s", strerror(errno));
         close(stdin_pipe[0]);
         close(stdin_pipe[1]);
         return false;
     }
-    if (pipe(exec_status_pipe) != 0)
+    if (pipe(exec_status_pipe.data()) != 0)
     {
         DRAXUL_LOG_ERROR(LogCategory::Nvim, "Failed to create exec-status pipe: %s", strerror(errno));
         close(stdin_pipe[0]);
@@ -339,7 +342,7 @@ void NvimProcess::shutdown()
         if (result == 0)
         {
             kill(impl_->child_pid_, SIGTERM);
-            usleep(500000);
+            std::this_thread::sleep_for(std::chrono::microseconds(500000));
             result = waitpid(impl_->child_pid_, &status, WNOHANG);
             if (result == 0)
             {
@@ -353,7 +356,7 @@ void NvimProcess::shutdown()
     impl_->started_ = false;
 }
 
-bool NvimProcess::write(const uint8_t* data, size_t len)
+bool NvimProcess::write(const uint8_t* data, size_t len) const
 {
     size_t total_written = 0;
     while (total_written < len)
@@ -366,7 +369,7 @@ bool NvimProcess::write(const uint8_t* data, size_t len)
     return true;
 }
 
-int NvimProcess::read(uint8_t* buffer, size_t max_len)
+int NvimProcess::read(uint8_t* buffer, size_t max_len) const
 {
     ssize_t n = ::read(impl_->child_stdout_read_, buffer, max_len);
     if (n < 0)

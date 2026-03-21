@@ -77,8 +77,8 @@ private:
     void handle_default_colors_set(const MpackValue& args);
     void handle_mode_info_set(const MpackValue& args);
     void handle_mode_change(const MpackValue& args);
-    void handle_option_set(const MpackValue& args);
-    void handle_set_title(const MpackValue& args);
+    void handle_option_set(const MpackValue& args) const;
+    void handle_set_title(const MpackValue& args) const;
 
     IGridSink* grid_ = nullptr;
     HighlightTable* highlights_ = nullptr;

@@ -103,7 +103,7 @@ void RendererState::set_default_background(Color bg)
     default_bg_ = bg;
 }
 
-void RendererState::apply_update_to_cell(GpuCell& cell, const CellUpdate& u)
+void RendererState::apply_update_to_cell(GpuCell& cell, const CellUpdate& u) const
 {
     cell = {};
     cell.pos_x = (float)(u.col * cell_w_ + padding_);

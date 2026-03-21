@@ -167,7 +167,7 @@ void GridHostBase::restart_cursor_blink(std::chrono::steady_clock::time_point no
     apply_cursor_visibility();
 }
 
-void GridHostBase::update_text_input_area()
+void GridHostBase::update_text_input_area() const
 {
     auto [cell_w, cell_h] = renderer_->cell_size_pixels();
     const int x = viewport_.pixel_x + renderer_->padding() + cursor_col_ * cell_w;

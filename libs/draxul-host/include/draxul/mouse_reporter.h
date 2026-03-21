@@ -44,10 +44,10 @@ public:
     bool on_button(int button, bool pressed, int mod_bits, int col, int row);
 
     // Process cursor motion.  Returns true if consumed by the reporter.
-    bool on_move(int col, int row);
+    bool on_move(int col, int row) const;
 
     // Process scroll-wheel events.
-    void on_wheel(int button_code, int col, int row);
+    void on_wheel(int button_code, int col, int row) const;
 
     // Reset all state (called from reset_terminal_state).
     void reset();

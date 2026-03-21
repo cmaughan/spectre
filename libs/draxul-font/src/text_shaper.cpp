@@ -1,4 +1,5 @@
 #include "font_engine.h"
+#include <array>
 #include <hb-ft.h>
 #include <utility>
 
@@ -58,15 +59,15 @@ std::vector<ShapedGlyph> TextShaper::shape(const std::string& text)
     hb_buffer_add_utf8(buffer_, text.c_str(), (int)text.size(), 0, (int)text.size());
     hb_buffer_guess_segment_properties(buffer_);
 
-    constexpr hb_feature_t disabled_ligature_features[] = {
+    constexpr std::array<hb_feature_t, 4> disabled_ligature_features = { {
         { HB_TAG('l', 'i', 'g', 'a'), 0, HB_FEATURE_GLOBAL_START, HB_FEATURE_GLOBAL_END },
         { HB_TAG('c', 'l', 'i', 'g'), 0, HB_FEATURE_GLOBAL_START, HB_FEATURE_GLOBAL_END },
         { HB_TAG('c', 'a', 'l', 't'), 0, HB_FEATURE_GLOBAL_START, HB_FEATURE_GLOBAL_END },
         { HB_TAG('d', 'l', 'i', 'g'), 0, HB_FEATURE_GLOBAL_START, HB_FEATURE_GLOBAL_END },
-    };
+    } };
     hb_shape(font_, buffer_,
-        enable_ligatures_ ? nullptr : disabled_ligature_features,
-        enable_ligatures_ ? 0u : static_cast<unsigned int>(std::size(disabled_ligature_features)));
+        enable_ligatures_ ? nullptr : disabled_ligature_features.data(),
+        enable_ligatures_ ? 0u : static_cast<unsigned int>(disabled_ligature_features.size()));
 
     unsigned int glyph_count;
     hb_glyph_info_t* info = hb_buffer_get_glyph_infos(buffer_, &glyph_count);

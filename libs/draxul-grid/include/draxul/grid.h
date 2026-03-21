@@ -68,7 +68,7 @@ public:
     void resize(int cols, int rows) override;
     void clear() override;
 
-    void set_cell(int col, int row, const std::string& text, uint16_t hl_id, bool double_width = false) override;
+    void set_cell(int col, int row, const std::string& text, uint16_t hl_id, bool double_width) override;
     const Cell& get_cell(int col, int row) const;
 
     void scroll(int top, int bot, int left, int right, int rows, int cols = 0) override;

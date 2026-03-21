@@ -42,8 +42,8 @@ uint8_t unpremultiply_channel(uint8_t value, uint8_t alpha)
 
 bool bitmap_to_rgba(const FT_Bitmap& bmp, std::vector<uint8_t>& out, bool& is_color)
 {
-    int width = (int)bmp.width;
-    int height = (int)bmp.rows;
+    auto width = (int)bmp.width;
+    auto height = (int)bmp.rows;
     if (width <= 0 || height <= 0)
     {
         out.clear();
@@ -107,6 +107,9 @@ bool bitmap_to_rgba(const FT_Bitmap& bmp, std::vector<uint8_t>& out, bool& is_co
             }
         }
         return true;
+
+    default:
+        break;
     }
 
     DRAXUL_LOG_WARN(LogCategory::Font, "Unsupported FreeType pixel mode: %u", bmp.pixel_mode);
@@ -182,7 +185,7 @@ const AtlasRegion& GlyphCache::get_cluster(const std::string& text, FT_Face face
     AtlasRegion region = {};
     if (rasterize_cluster(text, face, shaper, region))
     {
-        auto [ins, _] = cluster_cache_.emplace(std::move(key), region);
+        auto [ins, _] = cluster_cache_.try_emplace(std::move(key), region);
         return ins->second;
     }
 

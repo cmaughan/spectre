@@ -331,7 +331,7 @@ BlinkTiming NvimHost::current_blink_timing() const
     return { info.blinkwait, info.blinkon, info.blinkoff };
 }
 
-MpackValue NvimHost::handle_rpc_request(const std::string& method, const std::vector<MpackValue>&)
+MpackValue NvimHost::handle_rpc_request(const std::string& method, const std::vector<MpackValue>&) const
 {
     if (method == "clipboard_get")
     {
@@ -357,7 +357,7 @@ MpackValue NvimHost::handle_rpc_request(const std::string& method, const std::ve
     return NvimRpc::make_nil();
 }
 
-void NvimHost::handle_clipboard_set(const std::vector<MpackValue>& params)
+void NvimHost::handle_clipboard_set(const std::vector<MpackValue>& params) const
 {
     if (params.size() < 3 || params[1].type() != MpackValue::Array)
         return;

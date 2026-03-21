@@ -21,8 +21,8 @@ public:
     bool spawn(const std::string& nvim_path = "nvim", const std::vector<std::string>& extra_args = {}, const std::string& working_dir = {});
     void shutdown();
 
-    bool write(const uint8_t* data, size_t len);
-    int read(uint8_t* buffer, size_t max_len);
+    bool write(const uint8_t* data, size_t len) const;
+    int read(uint8_t* buffer, size_t max_len) const;
 
     bool is_running() const;
 

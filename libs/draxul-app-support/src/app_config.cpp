@@ -97,7 +97,7 @@ int parse_atlas_size(const toml::table& document, int fallback)
 {
     if (auto parsed = toml_support::get_int(document, "atlas_size"); parsed.has_value())
     {
-        int clamped = static_cast<int>(std::clamp(*parsed, static_cast<int64_t>(kMinAtlasSize), static_cast<int64_t>(kMaxAtlasSize)));
+        auto clamped = static_cast<int>(std::clamp(*parsed, static_cast<int64_t>(kMinAtlasSize), static_cast<int64_t>(kMaxAtlasSize)));
         return floor_to_power_of_two(clamped);
     }
     return fallback;
@@ -210,9 +210,7 @@ std::string format_key_token(int32_t key)
 
 void replace_gui_keybinding(std::vector<GuiKeybinding>& bindings, GuiKeybinding binding)
 {
-    bindings.erase(std::remove_if(bindings.begin(), bindings.end(),
-                       [&](const GuiKeybinding& existing) { return existing.action == binding.action; }),
-        bindings.end());
+    std::erase_if(bindings, [&](const GuiKeybinding& existing) { return existing.action == binding.action; });
     bindings.push_back(std::move(binding));
 }
 

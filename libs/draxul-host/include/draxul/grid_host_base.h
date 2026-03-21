@@ -113,7 +113,7 @@ protected:
 private:
     void apply_cursor_visibility();
     void restart_cursor_blink(std::chrono::steady_clock::time_point now);
-    void update_text_input_area();
+    void update_text_input_area() const;
     void refresh_renderer_metrics();
 
     IWindow* window_ = nullptr;

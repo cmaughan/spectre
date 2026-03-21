@@ -179,8 +179,8 @@ Grid make_grid()
     Grid grid;
     grid.resize(2, 1);
     grid.clear_dirty();
-    grid.set_cell(0, 0, "A", 0);
-    grid.set_cell(1, 0, "B", 0);
+    grid.set_cell(0, 0, "A", 0, false);
+    grid.set_cell(1, 0, "B", 0, false);
     return grid;
 }
 
@@ -189,8 +189,8 @@ Grid make_ligature_grid()
     Grid grid;
     grid.resize(2, 1);
     grid.clear_dirty();
-    grid.set_cell(0, 0, "-", 0);
-    grid.set_cell(1, 0, ">", 0);
+    grid.set_cell(0, 0, "-", 0, false);
+    grid.set_cell(1, 0, ">", 0, false);
     return grid;
 }
 
@@ -274,7 +274,7 @@ void run_grid_rendering_pipeline_tests()
         atlas.resolved_texts.clear();
         renderer.update_batches.clear();
 
-        grid.set_cell(1, 0, "X", 0);
+        grid.set_cell(1, 0, "X", 0, false);
         pipeline.flush();
 
         expect_eq(atlas.resolve_calls, 2, "breaking a ligature should redraw both participating cells");

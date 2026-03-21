@@ -175,7 +175,7 @@ Grid make_populated_grid(int cols, int rows)
     grid.resize(cols, rows);
     for (int r = 0; r < rows; ++r)
         for (int c = 0; c < cols; ++c)
-            grid.set_cell(c, r, "A", 0);
+            grid.set_cell(c, r, "A", 0, false);
     return grid;
 }
 
@@ -221,8 +221,8 @@ void run_font_size_tests()
         // Set up a 2x1 grid with two known cells so the pipeline has work to do.
         Grid grid;
         grid.resize(2, 1);
-        grid.set_cell(0, 0, "A", 0);
-        grid.set_cell(1, 0, "B", 0);
+        grid.set_cell(0, 0, "A", 0, false);
+        grid.set_cell(1, 0, "B", 0, false);
 
         HighlightTable highlights;
         FakeGlyphAtlas atlas;
@@ -250,8 +250,8 @@ void run_font_size_tests()
     run_test("font size change: force_full_atlas_upload with no dirty cells still schedules a full upload", []() {
         Grid grid;
         grid.resize(2, 1);
-        grid.set_cell(0, 0, "A", 0);
-        grid.set_cell(1, 0, "B", 0);
+        grid.set_cell(0, 0, "A", 0, false);
+        grid.set_cell(1, 0, "B", 0, false);
 
         HighlightTable highlights;
         FakeGlyphAtlas atlas;

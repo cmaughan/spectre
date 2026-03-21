@@ -291,9 +291,9 @@ void run_ui_events_tests()
     run_test("ui event handler preserves alignment for empty-text repeated cells", []() {
         Grid grid;
         grid.resize(8, 1);
-        grid.set_cell(0, 0, "x", 1);
-        grid.set_cell(1, 0, "y", 1);
-        grid.set_cell(2, 0, "z", 1);
+        grid.set_cell(0, 0, "x", 1, false);
+        grid.set_cell(1, 0, "y", 1, false);
+        grid.set_cell(2, 0, "z", 1, false);
         grid.clear_dirty();
 
         HighlightTable highlights;
@@ -320,7 +320,7 @@ void run_ui_events_tests()
         Grid grid;
         grid.resize(8, 1);
         for (int col = 0; col < 8; ++col)
-            grid.set_cell(col, 0, std::string(1, static_cast<char>('a' + col)), 1);
+            grid.set_cell(col, 0, std::string(1, static_cast<char>('a' + col)), 1, false);
         grid.clear_dirty();
 
         HighlightTable highlights;
@@ -357,10 +357,10 @@ void run_ui_events_tests()
     run_test("ui event handler ignores malformed grid_line payloads", []() {
         Grid grid;
         grid.resize(4, 1);
-        grid.set_cell(0, 0, "x", 1);
-        grid.set_cell(1, 0, "y", 1);
-        grid.set_cell(2, 0, "z", 1);
-        grid.set_cell(3, 0, "w", 1);
+        grid.set_cell(0, 0, "x", 1, false);
+        grid.set_cell(1, 0, "y", 1, false);
+        grid.set_cell(2, 0, "z", 1, false);
+        grid.set_cell(3, 0, "w", 1, false);
         grid.clear_dirty();
 
         HighlightTable highlights;

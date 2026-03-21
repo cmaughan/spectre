@@ -88,12 +88,21 @@ ParsedArgs parse_args(const std::vector<std::string>& args)
         else if (args[i] == "--show-render-test-window")
             parsed.show_render_test_window = true;
         else if (args[i] == "--render-test" && i + 1 < args.size())
-            parsed.render_test_path = args[++i];
+        {
+            ++i;
+            parsed.render_test_path = args[i];
+        }
         else if (args[i] == "--export-render-test" && i + 1 < args.size())
-            parsed.export_render_test_path = args[++i];
+        {
+            ++i;
+            parsed.export_render_test_path = args[i];
+        }
 #endif
         else if (args[i] == "--host" && i + 1 < args.size())
-            parsed.host_kind = draxul::parse_host_kind(args[++i]);
+        {
+            ++i;
+            parsed.host_kind = draxul::parse_host_kind(args[i]);
+        }
         else if (args[i] == "--command" && i + 1 < args.size())
         {
             ++i;

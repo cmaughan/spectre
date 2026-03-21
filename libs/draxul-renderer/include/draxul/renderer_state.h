@@ -100,7 +100,7 @@ public:
     void clear_dirty();
 
 private:
-    void apply_update_to_cell(GpuCell& cell, const CellUpdate& update);
+    void apply_update_to_cell(GpuCell& cell, const CellUpdate& update) const;
     void relayout();
     void mark_all_cells_dirty();
     void mark_cell_dirty(size_t index);

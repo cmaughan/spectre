@@ -224,11 +224,8 @@ void UiEventHandler::handle_grid_line(const MpackValue& args)
         }
 
         int repeat = 1;
-        if (cell_array->size() >= 3)
-        {
-            if (!try_get_int((*cell_array)[2], repeat) || repeat < 1)
-                continue;
-        }
+        if (cell_array->size() >= 3 && (!try_get_int((*cell_array)[2], repeat) || repeat < 1))
+            continue;
 
         bool dw = cluster_cell_width(*text, options_ ? *options_ : UiOptions{}) == 2;
         for (int r = 0; r < repeat; r++)
@@ -257,17 +254,17 @@ void UiEventHandler::handle_grid_scroll(const MpackValue& args)
     if (!grid_ || args.type() != MpackValue::Array || args.as_array().size() < 7)
         return;
     const auto& args_array = args.as_array();
-    int top = (int)args_array[1].as_int();
-    int bot = (int)args_array[2].as_int();
-    int left = (int)args_array[3].as_int();
-    int right = (int)args_array[4].as_int();
-    int rows = (int)args_array[5].as_int();
+    auto top = (int)args_array[1].as_int();
+    auto bot = (int)args_array[2].as_int();
+    auto left = (int)args_array[3].as_int();
+    auto right = (int)args_array[4].as_int();
+    auto rows = (int)args_array[5].as_int();
     int cols = args_array.size() >= 7 ? (int)args_array[6].as_int() : 0;
 
     grid_->scroll(top, bot, left, right, rows, cols);
 }
 
-void UiEventHandler::handle_grid_clear(const MpackValue& args)
+void UiEventHandler::handle_grid_clear(const MpackValue& /*args*/)
 {
     if (!grid_)
         return;
@@ -279,8 +276,8 @@ void UiEventHandler::handle_grid_resize(const MpackValue& args)
     if (args.type() != MpackValue::Array || args.as_array().size() < 3)
         return;
     const auto& args_array = args.as_array();
-    int cols = (int)args_array[1].as_int();
-    int rows = (int)args_array[2].as_int();
+    auto cols = (int)args_array[1].as_int();
+    auto rows = (int)args_array[2].as_int();
     if (grid_)
         grid_->resize(cols, rows);
     if (on_grid_resize)
@@ -292,7 +289,7 @@ void UiEventHandler::handle_hl_attr_define(const MpackValue& args)
     if (!highlights_ || args.type() != MpackValue::Array || args.as_array().size() < 2)
         return;
     const auto& args_array = args.as_array();
-    uint16_t id = (uint16_t)args_array[0].as_int();
+    auto id = (uint16_t)args_array[0].as_int();
     const auto& attrs = args_array[1];
 
     HlAttr hl = {};
@@ -351,9 +348,9 @@ void UiEventHandler::handle_default_colors_set(const MpackValue& args)
     if (!highlights_ || args.type() != MpackValue::Array || args.as_array().size() < 3)
         return;
     const auto& args_array = args.as_array();
-    uint32_t fg = (uint32_t)args_array[0].as_int();
-    uint32_t bg = (uint32_t)args_array[1].as_int();
-    uint32_t sp = (uint32_t)args_array[2].as_int();
+    auto fg = (uint32_t)args_array[0].as_int();
+    auto bg = (uint32_t)args_array[1].as_int();
+    auto sp = (uint32_t)args_array[2].as_int();
 
     highlights_->set_default_fg(Color::from_rgb(fg));
     highlights_->set_default_bg(Color::from_rgb(bg));
@@ -412,7 +409,7 @@ void UiEventHandler::handle_mode_change(const MpackValue& args)
         on_mode_change(current_mode_);
 }
 
-void UiEventHandler::handle_option_set(const MpackValue& args)
+void UiEventHandler::handle_option_set(const MpackValue& args) const
 {
     if (args.type() != MpackValue::Array || args.as_array().size() < 2)
         return;
@@ -422,7 +419,7 @@ void UiEventHandler::handle_option_set(const MpackValue& args)
         on_option_set(name, args_array[1]);
 }
 
-void UiEventHandler::handle_set_title(const MpackValue& args)
+void UiEventHandler::handle_set_title(const MpackValue& args) const
 {
     if (args.type() != MpackValue::Array || args.as_array().empty())
         return;

@@ -242,7 +242,7 @@ void NvimRpc::reader_thread_func()
             if (msg.type() == MpackValue::Array && msg.as_array().size() >= 3)
             {
                 const auto& msg_array = msg.as_array();
-                int type = (int)msg_array[0].as_int();
+                auto type = (int)msg_array[0].as_int();
 
                 if (type == 1 && msg_array.size() >= 4)
                 {
@@ -257,7 +257,7 @@ void NvimRpc::reader_thread_func()
                 }
                 else if (type == 0 && msg_array.size() >= 4)
                 {
-                    uint32_t req_msgid = (uint32_t)msg_array[1].as_int();
+                    auto req_msgid = (uint32_t)msg_array[1].as_int();
                     std::string method = msg_array[2].as_str();
                     std::vector<MpackValue> params;
                     if (msg_array[3].type() == MpackValue::Array)

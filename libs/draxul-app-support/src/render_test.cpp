@@ -76,10 +76,10 @@ RenderDiff compare_frames(const CapturedFrame& actual, const CapturedFrame& refe
     uint64_t diff_sum = 0;
     for (size_t i = 0; i < actual.rgba.size(); i += 4)
     {
-        const uint8_t dr = static_cast<uint8_t>(std::abs(int(actual.rgba[i + 0]) - int(reference.rgba[i + 0])));
-        const uint8_t dg = static_cast<uint8_t>(std::abs(int(actual.rgba[i + 1]) - int(reference.rgba[i + 1])));
-        const uint8_t db = static_cast<uint8_t>(std::abs(int(actual.rgba[i + 2]) - int(reference.rgba[i + 2])));
-        const uint8_t da = static_cast<uint8_t>(std::abs(int(actual.rgba[i + 3]) - int(reference.rgba[i + 3])));
+        const auto dr = static_cast<uint8_t>(std::abs(int(actual.rgba[i + 0]) - int(reference.rgba[i + 0])));
+        const auto dg = static_cast<uint8_t>(std::abs(int(actual.rgba[i + 1]) - int(reference.rgba[i + 1])));
+        const auto db = static_cast<uint8_t>(std::abs(int(actual.rgba[i + 2]) - int(reference.rgba[i + 2])));
+        const auto da = static_cast<uint8_t>(std::abs(int(actual.rgba[i + 3]) - int(reference.rgba[i + 3])));
         const uint8_t max_delta = std::max({ dr, dg, db, da });
 
         if (max_delta > tolerance)

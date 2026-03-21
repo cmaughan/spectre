@@ -66,7 +66,7 @@ bool MouseReporter::on_button(int button, bool pressed, int mod_bits, int col, i
     return true;
 }
 
-bool MouseReporter::on_move(int col, int row)
+bool MouseReporter::on_move(int col, int row) const
 {
     // Button mode (1000) only reports press/release, never motion.
     if (mouse_mode_ == MouseMode::None || mouse_mode_ == MouseMode::Button)
@@ -93,7 +93,7 @@ bool MouseReporter::on_move(int col, int row)
     return true;
 }
 
-void MouseReporter::on_wheel(int button_code, int col, int row)
+void MouseReporter::on_wheel(int button_code, int col, int row) const
 {
     send_report(button_code, true, col, row);
 }

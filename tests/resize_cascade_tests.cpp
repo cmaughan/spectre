@@ -41,8 +41,8 @@ void run_resize_cascade_tests()
         grid.resize(80, 24);
 
         // Fill a few cells so there is something to truncate.
-        grid.set_cell(0, 0, "A", 1);
-        grid.set_cell(79, 23, "Z", 1);
+        grid.set_cell(0, 0, "A", 1, false);
+        grid.set_cell(79, 23, "Z", 1, false);
 
         grid.resize(40, 12);
         expect_eq(grid.cols(), 40, "cols updated to 40 after shrink");
@@ -56,7 +56,7 @@ void run_resize_cascade_tests()
     run_test("resize cascade: grid resize to identical dimensions is a no-op", []() {
         Grid grid;
         grid.resize(80, 24);
-        grid.set_cell(5, 3, "X", 2);
+        grid.set_cell(5, 3, "X", 2, false);
         grid.clear_dirty();
 
         grid.resize(80, 24);
@@ -94,8 +94,8 @@ void run_resize_cascade_tests()
         // are preserved.
         Grid grid;
         grid.resize(5, 3);
-        grid.set_cell(0, 0, "H", 1);
-        grid.set_cell(4, 2, "W", 1);
+        grid.set_cell(0, 0, "H", 1, false);
+        grid.set_cell(4, 2, "W", 1, false);
 
         grid.resize(10, 6);
 
