@@ -1,0 +1,1428 @@
+@startuml
+title Draxul — Class Diagram
+class "Color" as C_0010324142915769007618
+class C_0010324142915769007618 {
++operator==() constexpr const = default : bool
+..
+{static} +from_rgb() : Color
+{static} +from_rgba() : Color
+__
++a : float
++b : float
++g : float
++r : float
+}
+class "AtlasRegion" as C_0012146796098918171510
+class C_0012146796098918171510 {
+__
++bearing_x : int
++bearing_y : int
++height : int
++is_color : bool
++u0 : float
++u1 : float
++v0 : float
++v1 : float
++width : int
+}
+enum "AmbiWidth" as C_0004032974424672121036
+enum C_0004032974424672121036 {
+Single
+Double
+}
+class "UiOptions" as C_0009089183209684451817
+class C_0009089183209684451817 {
+__
++ambiwidth : AmbiWidth
+}
+enum "CursorShape" as C_0008991131998796025746
+enum C_0008991131998796025746 {
+Block
+Horizontal
+Vertical
+}
+class "CursorStyle" as C_0014885375340215176130
+class C_0014885375340215176130 {
+__
++bg : Color
++cell_percentage : int
++fg : Color
++shape : CursorShape
++use_explicit_colors : bool
+}
+class "CellUpdate" as C_0002249420174156581134
+class C_0002249420174156581134 {
+__
++bg : Color
++col : int
++fg : Color
++glyph : AtlasRegion
++row : int
++sp : Color
++style_flags : uint32_t
+}
+class "CapturedFrame" as C_0009059889585492390766
+class C_0009059889585492390766 {
++valid() const : bool
+__
++height : int
++rgba : std::vector<uint8_t>
++width : int
+}
+enum "LogLevel" as C_0010280800472026607891
+enum C_0010280800472026607891 {
+Error
+Warn
+Info
+Debug
+Trace
+}
+enum "LogCategory" as C_0003243697139157862279
+enum C_0003243697139157862279 {
+App
+Rpc
+Nvim
+Window
+Font
+Renderer
+Input
+Test
+}
+class "LogRecord" as C_0011973479318986414002
+class C_0011973479318986414002 {
+__
++category : LogCategory
++level : LogLevel
++message : std::string
+}
+class "LogOptions" as C_0011642485183388389751
+class C_0011642485183388389751 {
+__
++enable_file : bool
++enable_stderr : bool
++enabled_categories : std::vector<LogCategory>
++file_path : std::string
++min_level : LogLevel
+}
+class "LoggerState" as C_0014064801219756158812
+class C_0014064801219756158812 {
+__
++enable_stderr : bool
++enabled_categories : std::unordered_set<LogCategory>
++file : FILE *
++min_level : LogLevel
++mutex : std::mutex
++sink : LogSink
+}
+class "WindowResizeEvent" as C_0000904053879226534625
+class C_0000904053879226534625 {
+__
++height : int
++width : int
+}
+class "KeyEvent" as C_0004554744911516856214
+class C_0004554744911516856214 {
+__
++keycode : int
++mod : uint16_t
++pressed : bool
++scancode : int
+}
+class "TextInputEvent" as C_0010573512247973262064
+class C_0010573512247973262064 {
+__
++text : const char *
+}
+class "TextEditingEvent" as C_0012947217402224164272
+class C_0012947217402224164272 {
+__
++length : int
++start : int
++text : const char *
+}
+class "MouseButtonEvent" as C_0014003615002120148994
+class C_0014003615002120148994 {
+__
++button : int
++mod : uint16_t
++pressed : bool
++x : int
++y : int
+}
+class "MouseMoveEvent" as C_0017484031840388788561
+class C_0017484031840388788561 {
+__
++mod : uint16_t
++x : int
++y : int
+}
+class "MouseWheelEvent" as C_0004521521395823117055
+class C_0004521521395823117055 {
+__
++dx : float
++dy : float
++mod : uint16_t
++x : int
++y : int
+}
+abstract "IWindow" as C_0018238265155714845666
+abstract C_0018238265155714845666 {
++~IWindow() = default : void
+..
+{abstract} +clipboard_text() const = 0 : std::string
+{abstract} +display_ppi() const = 0 : float
+{abstract} +initialize() = 0 : bool
+{abstract} +native_handle() = 0 : void *
+{abstract} +poll_events() = 0 : bool
+{abstract} +set_clipboard_text() = 0 : bool
+{abstract} +set_text_input_area() = 0 : void
+{abstract} +set_title() = 0 : void
+{abstract} +shutdown() = 0 : void
+{abstract} +size_logical() const = 0 : std::pair<int,int>
+{abstract} +size_pixels() const = 0 : std::pair<int,int>
+__
++on_key : std::function<void (const KeyEvent &)>
++on_mouse_button : std::function<void (const MouseButtonEvent &)>
++on_mouse_move : std::function<void (const MouseMoveEvent &)>
++on_mouse_wheel : std::function<void (const MouseWheelEvent &)>
++on_resize : std::function<void (const WindowResizeEvent &)>
++on_text_editing : std::function<void (const TextEditingEvent &)>
++on_text_input : std::function<void (const TextInputEvent &)>
+}
+class "SdlWindow" as C_0015169190482655384108
+class C_0015169190482655384108 {
++activate() : void
++clipboard_text() const : std::string
++display_ppi() const : float
+-handle_event() : bool
++initialize() : bool
++native_handle() : void *
++poll_events() : bool
++set_clamp_to_display() : void
++set_clipboard_text() : bool
++set_size_logical() : void
++set_text_input_area() : void
++set_title() : void
++shutdown() : void
++size_logical() const : std::pair<int,int>
++size_pixels() const : std::pair<int,int>
++wait_events() : bool
++wake() : void
+__
+-clamp_to_display_ : bool
+-wake_event_type_ : unsigned int
+-window_ : SDL_Window *
+}
+abstract "IRenderer" as C_0002772003540161889413
+abstract C_0002772003540161889413 {
++~IRenderer() constexpr = default : void
+..
+{abstract} +begin_frame() = 0 : bool
+{abstract} +begin_imgui_frame() = 0 : void
+{abstract} +cell_size_pixels() const = 0 : std::pair<int,int>
+{abstract} +end_frame() = 0 : void
+{abstract} +initialize() = 0 : bool
+{abstract} +initialize_imgui_backend() = 0 : bool
+{abstract} +padding() const = 0 : int
+{abstract} +rebuild_imgui_font_texture() = 0 : void
+{abstract} +request_frame_capture() = 0 : void
+{abstract} +resize() = 0 : void
+{abstract} +set_ascender() = 0 : void
+{abstract} +set_atlas_texture() = 0 : void
+{abstract} +set_cell_size() = 0 : void
+{abstract} +set_cursor() = 0 : void
+{abstract} +set_default_background() = 0 : void
+{abstract} +set_grid_size() = 0 : void
+{abstract} +set_imgui_draw_data() = 0 : void
+{abstract} +set_overlay_cells() = 0 : void
+{abstract} +shutdown() = 0 : void
+{abstract} +shutdown_imgui_backend() = 0 : void
+{abstract} +take_captured_frame() = 0 : std::optional<CapturedFrame>
+{abstract} +update_atlas_region() = 0 : void
+{abstract} +update_cells() = 0 : void
+__
+}
+class "GpuCell" as C_0016561127799192011375
+class C_0016561127799192011375 {
+__
++_pad : uint32_t[3]
++bg_a : float
++bg_b : float
++bg_g : float
++bg_r : float
++fg_a : float
++fg_b : float
++fg_g : float
++fg_r : float
++glyph_offset_x : float
++glyph_offset_y : float
++glyph_size_x : float
++glyph_size_y : float
++pos_x : float
++pos_y : float
++size_x : float
++size_y : float
++sp_a : float
++sp_b : float
++sp_g : float
++sp_r : float
++style_flags : uint32_t
++uv_x0 : float
++uv_x1 : float
++uv_y0 : float
++uv_y1 : float
+}
+class "RendererState" as C_0000512618476368579425
+class C_0000512618476368579425 {
++apply_cursor() : void
+-apply_update_to_cell() : void
++bg_instances() const : int
++buffer_size_bytes() const : size_t
++clear_dirty() : void
++copy_dirty_cells_to() const : void
++copy_overlay_region_to() const : void
++copy_to() const : void
++default_bg() const : Color
++dirty_cell_offset_bytes() const : size_t
++dirty_cell_size_bytes() const : size_t
++fg_instances() const : int
++grid_cols() const : int
++grid_rows() const : int
++has_dirty_cells() const : bool
+-mark_all_cells_dirty() : void
+-mark_cell_dirty() : void
++overlay_offset_bytes() const : size_t
++overlay_region_dirty() const : bool
++overlay_region_size_bytes() const : size_t
+-relayout() : void
++restore_cursor() : void
++set_ascender() : void
++set_cell_size() : void
++set_cursor() : void
++set_default_background() : void
++set_grid_size() : void
++set_overlay_cells() : void
++total_cells() const : int
++update_cells() : void
+__
+{static} +OVERLAY_CELL_CAPACITY : const size_t
+-ascender_ : int
+-cell_h_ : int
+-cell_w_ : int
+-cursor_applied_ : bool
+-cursor_col_ : int
+-cursor_overlay_active_ : bool
+-cursor_row_ : int
+-cursor_saved_cell_ : GpuCell
+-cursor_style_ : CursorStyle
+-default_bg_ : Color
+-dirty_cell_begin_ : size_t
+-dirty_cell_end_ : size_t
+-gpu_cells_ : std::vector<GpuCell>
+-grid_cols_ : int
+-grid_rows_ : int
+-overlay_cell_ : GpuCell
+-overlay_cell_count_ : size_t
+-overlay_cells_ : std::vector<GpuCell>
+-overlay_dirty_ : bool
+-padding_ : int
+}
+enum "BufferResizeResult" as C_0008575958670870228884
+enum C_0008575958670870228884 {
+Unchanged
+Resized
+Failed
+}
+class "OwnedMappedBuffer<BufferHandle,AllocationHandle>" as C_0000490007747430473601
+class C_0000490007747430473601 {
+__
++allocation : AllocationHandle
++buffer : BufferHandle
++mapped : void *
++size : size_t
+}
+class "PendingAtlasUpload" as C_0010860418983741959568
+class C_0010860418983741959568 {
+__
++full_upload : bool
++h : int
++pixels : std::vector<uint8_t>
++w : int
++x : int
++y : int
+}
+class "OwnedMappedBuffer<struct VkBuffer_T *,struct VmaAllocation_T *>" as C_0003621847751287935438
+class C_0003621847751287935438 {
+__
+}
+class "VkAtlas" as C_0013138563316199776667
+class C_0013138563316199776667 {
+-begin_single_command() : VkCommandBuffer
+-end_single_command() : bool
+-ensure_staging_capacity() : bool
++image_view() const : VkImageView
++initialize() : bool
++record_uploads() : bool
++sampler() const : VkSampler
++shutdown() : void
+-transition_to_shader_read() : bool
+__
+{static} +ATLAS_SIZE : const int
+-allocation_ : VmaAllocation
+-cmd_pool_ : VkCommandPool
+-current_layout_ : VkImageLayout
+-image_ : VkImage
+-image_view_ : VkImageView
+-sampler_ : VkSampler
+-staging_ : BufferState
+}
+class "VkGridBuffer" as C_0016294685439500678326
+class C_0016294685439500678326 {
++buffer() const : VkBuffer
++ensure_size() : BufferResizeResult
++flush_range() const : void
++initialize() : bool
++mapped() const : void *
++shutdown() : void
++size() const : size_t
+__
+-buffer_ : BufferState
+}
+class "VkStagingBuffer" as C_0001192607598103025795
+class C_0001192607598103025795 {
++buffer() const : VkBuffer
++initialize() : bool
++mapped() const : void *
++shutdown() : void
+__
+-allocation_ : VmaAllocation
+-buffer_ : VkBuffer
+-mapped_ : void *
+}
+class "SwapchainInfo" as C_0012247533448581274093
+class C_0012247533448581274093 {
+__
++extent : VkExtent2D
++format : VkFormat
++framebuffers : std::vector<VkFramebuffer>
++image_views : std::vector<VkImageView>
++images : std::vector<VkImage>
++swapchain : VkSwapchainKHR
+}
+class "PendingSwapchainResources" as C_0008541660730371893783
+class C_0008541660730371893783 {
+__
++render_pass : VkRenderPass
++swapchain : SwapchainInfo
+}
+class "VkContext" as C_0011722196354582766223
+class C_0011722196354582766223 {
++allocator() const : VmaAllocator
++build_swapchain_resources() : bool
++commit_swapchain_resources() : void
+-create_framebuffers() : bool
+-create_render_pass() : bool
++destroy_pending_swapchain_resources() : void
+-destroy_swapchain() : void
++device() const : VkDevice
++graphics_queue() const : VkQueue
++graphics_queue_family() const : uint32_t
++initialize() : bool
++instance() const : VkInstance
++physical_device() const : VkPhysicalDevice
++recreate_swapchain() : bool
++render_pass() const : VkRenderPass
++shutdown() : void
++surface() const : VkSurfaceKHR
++swapchain() const : const SwapchainInfo &
+__
+-allocator_ : VmaAllocator
+-debug_messenger_ : VkDebugUtilsMessengerEXT
+-device_ : VkDevice
+-graphics_queue_ : VkQueue
+-graphics_queue_family_ : uint32_t
+-instance_ : VkInstance
+-physical_device_ : VkPhysicalDevice
+-render_pass_ : VkRenderPass
+-surface_ : VkSurfaceKHR
+-swapchain_ : SwapchainInfo
+-window_ : SDL_Window *
+}
+class "VkPipelineManager" as C_0008087458664670611121
+class C_0008087458664670611121 {
++bg_desc_layout() const : VkDescriptorSetLayout
++bg_layout() const : VkPipelineLayout
++bg_pipeline() const : VkPipeline
++fg_desc_layout() const : VkDescriptorSetLayout
++fg_layout() const : VkPipelineLayout
++fg_pipeline() const : VkPipeline
++initialize() : bool
+{static} -load_shader() : VkShaderModule
+-reset_objects() : void
++shutdown() : void
++swap() noexcept : void
+__
+-bg_desc_layout_ : VkDescriptorSetLayout
+-bg_layout_ : VkPipelineLayout
+-bg_pipeline_ : VkPipeline
+-fg_desc_layout_ : VkDescriptorSetLayout
+-fg_layout_ : VkPipelineLayout
+-fg_pipeline_ : VkPipeline
+}
+class "VkRenderer" as C_0018381994535712614603
+class C_0018381994535712614603 {
++begin_frame() : bool
++begin_imgui_frame() : void
++cell_size_pixels() const : std::pair<int,int>
+-create_command_buffers() : bool
+-create_descriptor_pool() : bool
+-create_imgui_descriptor_pool() : bool
+-create_imgui_font_texture() : bool
+-create_sync_objects() : bool
+-destroy_capture_buffer() : void
++end_frame() : void
+-ensure_capture_buffer() : bool
+-finish_capture_readback() : void
+-flush_pending_atlas_uploads() : bool
++initialize() : bool
++initialize_imgui_backend() : bool
++padding() const : int
++rebuild_imgui_font_texture() : void
+-record_command_buffer() : void
+-recreate_frame_resources() : bool
++request_frame_capture() : void
++resize() : void
++set_ascender() : void
++set_atlas_texture() : void
++set_cell_size() : void
++set_cursor() : void
++set_default_background() : void
++set_grid_size() : void
++set_imgui_draw_data() : void
++set_overlay_cells() : void
++shutdown() : void
++shutdown_imgui_backend() : void
++take_captured_frame() : std::optional<CapturedFrame>
+-update_all_descriptor_sets() : void
++update_atlas_region() : void
++update_cells() : void
+-update_descriptor_sets_for_frame() : void
+-upload_dirty_state() : void
+__
+{static} +MAX_FRAMES_IN_FLIGHT : const int
+-ascender_ : int
+-atlas_ : VkAtlas
+-bg_desc_sets_ : std::vector<VkDescriptorSet>
+-capture_allocation_ : VmaAllocation
+-capture_buffer_ : VkBuffer
+-capture_buffer_size_ : size_t
+-capture_mapped_ : void *
+-capture_requested_ : bool
+-captured_frame_ : std::optional<CapturedFrame>
+-cell_h_ : int
+-cell_w_ : int
+-clear_b_ : float
+-clear_g_ : float
+-clear_r_ : float
+-cmd_buffers_ : std::vector<VkCommandBuffer>
+-cmd_pool_ : VkCommandPool
+-ctx_ : VkContext
+-current_frame_ : uint32_t
+-current_image_ : uint32_t
+-desc_pool_ : VkDescriptorPool
+-desc_update_pending_frames_ : uint32_t
+-fg_desc_sets_ : std::vector<VkDescriptorSet>
+-framebuffer_resized_ : bool
+-grid_buffer_ : VkGridBuffer
+-image_available_sem_ : std::vector<VkSemaphore>
+-imgui_desc_pool_ : VkDescriptorPool
+-imgui_draw_data_ : const ImDrawData *
+-imgui_initialized_ : bool
+-in_flight_fences_ : std::vector<VkFence>
+-needs_descriptor_update_ : bool
+-padding_ : int
+-pending_atlas_uploads_ : std::vector<PendingAtlasUpload>
+-pipeline_ : VkPipelineManager
+-pixel_h_ : int
+-pixel_w_ : int
+-render_finished_sem_ : std::vector<VkSemaphore>
+-state_ : RendererState
+}
+class "FontMetrics" as C_0003340484793817825511
+class C_0003340484793817825511 {
+__
++ascender : int
++cell_height : int
++cell_width : int
++descender : int
+}
+class "FontManager" as C_0002835051088872355825
+class C_0002835051088872355825 {
++FontManager() = default : void
++FontManager() = deleted : void
++FontManager() noexcept : void
+..
++operator=() = deleted : FontManager &
++operator=() noexcept : FontManager &
+..
++face() const : FT_Face
++hb_font() const : hb_font_t *
++initialize() : bool
++metrics() const : const FontMetrics &
++point_size() const : int
+-select_best_fixed_size() : void
++set_point_size() : bool
++shutdown() : void
+-update_metrics() : void
+__
+-display_ppi_ : float
+-face_ : FT_Face
+-ft_lib_ : FT_Library
+-hb_font_ : hb_font_t *
+-metrics_ : FontMetrics
+-point_size_ : int
+}
+class "ShapedGlyph" as C_0015993226849957985830
+class C_0015993226849957985830 {
+__
++cluster : int
++glyph_id : uint32_t
++x_advance : int
++x_offset : int
++y_offset : int
+}
+class "TextShaper" as C_0003748778032313716081
+class C_0003748778032313716081 {
++TextShaper() = default : void
++TextShaper() = deleted : void
++TextShaper() noexcept : void
++~TextShaper() : void
+..
++operator=() = deleted : TextShaper &
++operator=() noexcept : TextShaper &
+..
++initialize() : void
++shape() : std::vector<ShapedGlyph>
++shutdown() : void
+__
+-buffer_ : hb_buffer_t *
+-enable_ligatures_ : bool
+-font_ : hb_font_t *
+}
+class "GlyphCache" as C_0014361412419076568303
+class C_0014361412419076568303 {
++atlas_data() const : const uint8_t *
++atlas_dirty() const : bool
++atlas_height() const : int
++atlas_width() const : int
++clear_dirty() : void
++consume_overflowed() : bool
++dirty_rect() const : const DirtyRect &
++get_cluster() : const AtlasRegion &
++glyph_count() const : size_t
++initialize() : bool
+-rasterize_cluster() : bool
+-reserve_region() : bool
++reset() : void
++usage_ratio() const : float
++used_pixels() const : size_t
+__
+-atlas_ : std::vector<uint8_t>
+-atlas_size_ : int
+-cluster_cache_ : std::unordered_map<ClusterKey,AtlasRegion,ClusterKeyHash>
+-dirty_ : bool
+-dirty_rect_ : DirtyRect
+-empty_region_ : AtlasRegion
+-face_ : FT_Face
+-overflowed_ : bool
+-pixel_size_ : int
+-shelf_height_ : int
+-shelf_x_ : int
+-shelf_y_ : int
+-used_pixels_ : size_t
+}
+class "GlyphCache::DirtyRect" as C_0014413368558393838477
+class C_0014413368558393838477 {
+__
++h : int
++w : int
++x : int
++y : int
+}
+class "GlyphCache::ClusterKey" as C_0002489273132542241060
+class C_0002489273132542241060 {
++operator==() constexpr const = default : bool
+__
++face : FT_Face
++text : std::string
+}
+class "GlyphCache::ClusterKeyHash" as C_0008233351805969877252
+class C_0008233351805969877252 {
++operator()() const : size_t
+__
+}
+class "RasterizedGlyph" as C_0012941679321743372622
+class C_0012941679321743372622 {
+__
++height : int
++is_color : bool
++left : int
++pixels : std::vector<uint8_t>
++top : int
++width : int
+}
+class "NvimProcess" as C_0013647190565152439814
+class C_0013647190565152439814 {
++is_running() const : bool
++read() : int
++shutdown() : void
++spawn() : bool
++write() : bool
+__
+-child_stdin_write_ : HANDLE
+-child_stdout_read_ : HANDLE
+-proc_info_ : PROCESS_INFORMATION
+-started_ : bool
+}
+class "MpackValue" as C_0010242539609610450976
+class C_0010242539609610450976 {
++as_array() const : const ArrayStorage &
++as_bool() const : bool
++as_int() const : int64_t
++as_map() const : const MapStorage &
++as_str() const : const std::string &
++is_nil() const : bool
++type() const : Type
+__
++storage : Storage
+}
+enum "MpackValue::Type" as C_0010490898731853891534
+enum C_0010490898731853891534 {
+Nil
+Bool
+Int
+UInt
+Float
+String
+Array
+Map
+Ext
+}
+class "RpcNotification" as C_0001217101451059525749
+class C_0001217101451059525749 {
+__
++method : std::string
++params : std::vector<MpackValue>
+}
+class "RpcResponse" as C_0000356283259070514785
+class C_0000356283259070514785 {
+__
++error : MpackValue
++msgid : uint32_t
++result : MpackValue
+}
+class "RpcResult" as C_0015620458544712230103
+class C_0015620458544712230103 {
++is_error() const : bool
++ok() const : bool
+__
++error : MpackValue
++result : MpackValue
++transport_ok : bool
+}
+abstract "IRpcChannel" as C_0006960110117041875260
+abstract C_0006960110117041875260 {
++~IRpcChannel() constexpr = default : void
+..
+{abstract} +notify() = 0 : void
+{abstract} +request() = 0 : RpcResult
+__
+}
+class "NvimRpc" as C_0008129042936758392656
+class C_0008129042936758392656 {
++close() : void
++drain_notifications() : std::vector<RpcNotification>
++initialize() : bool
+{static} +make_array() : MpackValue
+{static} +make_bool() : MpackValue
+{static} +make_int() : MpackValue
+{static} +make_map() : MpackValue
+{static} +make_nil() : MpackValue
+{static} +make_str() : MpackValue
+{static} +make_uint() : MpackValue
++notify() : void
+-reader_thread_func() : void
+-reply_to_request() : void
++request() : RpcResult
++shutdown() : void
+__
+-next_msgid_ : std::atomic<uint32_t>
+-notif_mutex_ : std::mutex
+-notifications_ : std::queue<RpcNotification>
++on_notification_available : std::function<void ()>
++on_request : std::function<MpackValue (const std::string &,const std::vector<MpackValue> &)>
+-process_ : NvimProcess *
+-read_buf_ : std::vector<uint8_t>
+-read_failed_ : std::atomic<bool>
+-read_len_ : size_t
+-read_pos_ : size_t
+-reader_thread_ : std::thread
+-response_cv_ : std::condition_variable
+-response_mutex_ : std::mutex
+-responses_ : std::unordered_map<uint32_t,RpcResponse>
+-running_ : std::atomic<bool>
+-write_mutex_ : std::mutex
+}
+abstract "IGridSink" as C_0009225244465983584749
+abstract C_0009225244465983584749 {
++~IGridSink() constexpr = default : void
+..
+{abstract} +clear() = 0 : void
+{abstract} +resize() = 0 : void
+{abstract} +scroll() = 0 : void
+{abstract} +set_cell() = 0 : void
+__
+}
+class "HlAttr" as C_0001083212623488271104
+class C_0001083212623488271104 {
++style_flags() const : uint32_t
+__
++bg : Color
++bold : bool
++fg : Color
++has_bg : bool
++has_fg : bool
++has_sp : bool
++italic : bool
++reverse : bool
++sp : Color
++strikethrough : bool
++undercurl : bool
++underline : bool
+}
+class "HighlightTable" as C_0002629044996361923107
+class C_0002629044996361923107 {
++default_bg() const : Color
++default_fg() const : Color
++get() const : const HlAttr &
++resolve() const : void
++set() : void
++set_default_bg() : void
++set_default_fg() : void
++set_default_sp() : void
+__
+-attrs_ : std::unordered_map<uint16_t,HlAttr>
+-default_ : HlAttr
+-default_bg_ : Color
+-default_fg_ : Color
+}
+class "ModeInfo" as C_0005290045799620495824
+class C_0005290045799620495824 {
+__
++attr_id : int
++blinkoff : int
++blinkon : int
++blinkwait : int
++cell_percentage : int
++cursor_shape : CursorShape
++name : std::string
+}
+class "UiEventHandler" as C_0000295754743228538877
+class C_0000295754743228538877 {
++current_mode() const : int
++cursor_col() const : int
++cursor_row() const : int
+-handle_default_colors_set() : void
+-handle_grid_clear() : void
+-handle_grid_cursor_goto() : void
+-handle_grid_line() : void
+-handle_grid_resize() : void
+-handle_grid_scroll() : void
+-handle_hl_attr_define() : void
+-handle_mode_change() : void
+-handle_mode_info_set() : void
+-handle_option_set() : void
+-handle_set_title() : void
++modes() const : const std::vector<ModeInfo> &
++process_redraw() : void
++set_grid() : void
++set_highlights() : void
++set_options() : void
+__
+-current_mode_ : int
+-cursor_col_ : int
+-cursor_row_ : int
+-grid_ : IGridSink *
+-highlights_ : HighlightTable *
+-modes_ : std::vector<ModeInfo>
++on_busy : std::function<void (bool)>
++on_cursor_goto : std::function<void (int,int)>
++on_flush : std::function<void ()>
++on_grid_resize : std::function<void (int,int)>
++on_mode_change : std::function<void (int)>
++on_option_set : std::function<void (const std::string &,const MpackValue &)>
++on_title : std::function<void (const std::string &)>
+-options_ : const UiOptions *
+}
+class "NvimInput" as C_0012940018510774837791
+class C_0012940018510774837791 {
++initialize() : void
+-mouse_modifiers() const : std::string
++on_key() : void
++on_mouse_button() : void
++on_mouse_move() : void
++on_mouse_wheel() : void
++on_text_editing() : void
++on_text_input() : void
++paste_text() : void
+-send_input() : void
++set_cell_size() : void
+-translate_key() : std::string
+__
+-cell_h_ : int
+-cell_w_ : int
+-mouse_button_ : std::string
+-mouse_pressed_ : bool
+-rpc_ : IRpcChannel *
+-suppress_next_text_ : bool
+}
+class "AtlasDirtyRect" as C_0001028381095562882560
+class C_0001028381095562882560 {
+__
++h : int
++w : int
++x : int
++y : int
+}
+abstract "IGlyphAtlas" as C_0004790919035446078699
+abstract C_0004790919035446078699 {
++~IGlyphAtlas() constexpr = default : void
+..
+{abstract} +atlas_data() const = 0 : const uint8_t *
+{abstract} +atlas_dirty() const = 0 : bool
+{abstract} +atlas_dirty_rect() const = 0 : AtlasDirtyRect
+{abstract} +atlas_height() const = 0 : int
+{abstract} +atlas_width() const = 0 : int
+{abstract} +clear_atlas_dirty() = 0 : void
+{abstract} +consume_atlas_reset() = 0 : bool
+{abstract} +ligature_cell_span() = 0 : int
+{abstract} +resolve_cluster() = 0 : AtlasRegion
+__
+}
+class "TextServiceConfig" as C_0008094382969928340021
+class C_0008094382969928340021 {
+__
+{static} +DEFAULT_FONT_CHOICE_CACHE_LIMIT : const size_t
++enable_ligatures : bool
++fallback_paths : std::vector<std::string>
++font_choice_cache_limit : size_t
++font_path : std::string
+}
+class "TextService" as C_0013463395175737141879
+class C_0013463395175737141879 {
++TextService() : void
++TextService() = deleted : void
++TextService() noexcept : void
++~TextService() : void
+..
++operator=() = deleted : TextService &
++operator=() noexcept : TextService &
+..
++atlas_data() const : const uint8_t *
++atlas_dirty() const : bool
++atlas_dirty_rect() const : AtlasDirtyRect
++atlas_glyph_count() const : size_t
++atlas_height() const : int
++atlas_reset_count() const : int
++atlas_usage_ratio() const : float
++atlas_width() const : int
++clear_atlas_dirty() : void
++consume_atlas_reset() : bool
++font_choice_cache_size() const : size_t
++initialize() : bool
++initialize() : bool
++ligature_cell_span() : int
++metrics() const : const FontMetrics &
++point_size() const : int
++primary_font_path() const : const std::string &
++resolve_cluster() : AtlasRegion
++set_point_size() : bool
++shutdown() : void
+__
+{static} +DEFAULT_POINT_SIZE : const int
+{static} +MAX_POINT_SIZE : const int
+{static} +MIN_POINT_SIZE : const int
+-impl_ : std::unique_ptr<Impl>
+}
+class "GuiKeybinding" as C_0014243707877127237146
+class C_0014243707877127237146 {
+__
++action : std::string
++key : SDL_Keycode
++modifiers : SDL_Keymod
+}
+class "AppConfig" as C_0010845207031617012176
+class C_0010845207031617012176 {
+{static} +load() : AppConfig
+{static} +load_from_path() : AppConfig
+{static} +parse() : AppConfig
++save() const : void
++save_to_path() const : void
++serialize() const : std::string
+__
++enable_ligatures : bool
++fallback_paths : std::vector<std::string>
++font_path : std::string
++font_size : int
++keybindings : std::vector<GuiKeybinding>
++window_height : int
++window_width : int
+}
+class "AppOptions" as C_0013918275210752016440
+class C_0013918275210752016440 {
+__
++activate_window_on_startup : bool
++clamp_window_to_display : bool
++enable_ligatures : std::optional<bool>
++fallback_paths : std::optional<std::vector<std::string>>
++font_path : std::optional<std::string>
++font_size : std::optional<int>
++load_user_config : bool
++nvim_args : std::vector<std::string>
++nvim_working_dir : std::string
++render_target_pixel_height : int
++render_target_pixel_width : int
++save_user_config : bool
++show_debug_overlay_on_startup : bool
++startup_commands : std::vector<std::string>
++window_height : std::optional<int>
++window_width : std::optional<int>
+}
+class "BlinkTiming" as C_0015660702629506309649
+class C_0015660702629506309649 {
++enabled() const : bool
+__
++blinkoff : int
++blinkon : int
++blinkwait : int
+}
+class "CursorBlinker" as C_0008434121542763503326
+class C_0008434121542763503326 {
++advance() : bool
++next_deadline() const : std::optional<std::chrono::steady_clock::time_point>
++restart() : void
++visible() const : bool
+__
+-next_deadline_ : std::optional<std::chrono::steady_clock::time_point>
+-phase_ : Phase
+-timing_ : BlinkTiming
+-visible_ : bool
+}
+enum "CursorBlinker::Phase" as C_0007326099841540977987
+enum C_0007326099841540977987 {
+Steady
+Wait
+On
+Off
+}
+class "Cell" as C_0013697049504124888447
+class C_0013697049504124888447 {
+__
++codepoint : uint32_t
++dirty : bool
++double_width : bool
++double_width_cont : bool
++hl_attr_id : uint16_t
++text : std::string
+}
+class "Grid" as C_0006358140475455255383
+class C_0006358140475455255383 {
++clear() : void
++clear_dirty() : void
++cols() const : int
++dirty_cell_count() const : size_t
++get_cell() const : const Cell &
++get_dirty_cells() const : std::vector<DirtyCell>
++is_dirty() const : bool
++mark_all_dirty() : void
++mark_dirty() : void
+-mark_dirty_index() : void
++resize() : void
++rows() const : int
++scroll() : void
++set_cell() : void
+__
+-cells_ : std::vector<Cell>
+-cols_ : int
+-dirty_cells_ : std::vector<DirtyCell>
+-dirty_marks_ : std::vector<uint8_t>
+-empty_cell_ : Cell
+-rows_ : int
+}
+class "Grid::DirtyCell" as C_0009796125902179747503
+class C_0009796125902179747503 {
+__
++col : int
++row : int
+}
+class "GridRenderingPipeline" as C_0018422502977709962875
+class C_0018422502977709962875 {
++GridRenderingPipeline() : void
+..
++flush() : void
++force_full_atlas_upload() : void
++set_enable_ligatures() : void
++set_renderer() : void
+-upload_atlas() : void
+__
+-atlas_upload_scratch_ : std::vector<uint8_t>
+-enable_ligatures_ : bool
+-force_full_atlas_upload_ : bool
+-glyph_atlas_ : IGlyphAtlas &
+-grid_ : Grid &
+-highlights_ : HighlightTable &
+-renderer_ : IRenderer *
+}
+class "StartupResizeState" as C_0012647519040437336305
+class C_0012647519040437336305 {
++consume_if_needed() : std::optional<std::pair<int,int>>
++defer() : void
++pending() const : bool
+__
+-pending_ : bool
+-pending_cols_ : int
+-pending_rows_ : int
+}
+class "PendingResizeRequest" as C_0000563074054708014987
+class C_0000563074054708014987 {
+__
++cols : int
++reason : std::string
++rows : int
+}
+class "UiRequestWorkerState" as C_0016104819840992929837
+class C_0016104819840992929837 {
++has_pending_request() const : bool
++request_resize() : bool
++running() const : bool
++start() : void
++stop() : void
++take_pending_request() : std::optional<PendingResizeRequest>
+__
+-pending_request_ : std::optional<PendingResizeRequest>
+-running_ : bool
+}
+class "UiRequestWorker" as C_0009672926976875087592
+class C_0009672926976875087592 {
++request_resize() : void
++start() : void
++stop() : void
+-thread_main() : void
+__
+-cv_ : std::condition_variable
+-mutex_ : std::mutex
+-rpc_ : IRpcChannel *
+-state_ : UiRequestWorkerState
+-thread_ : std::thread
+}
+class "DebugPanelState" as C_0005275259538482360381
+class C_0005275259538482360381 {
+__
++atlas_glyph_count : size_t
++atlas_reset_count : int
++atlas_usage_ratio : float
++average_frame_ms : double
++cell_height : int
++cell_width : int
++dirty_cells : size_t
++display_ppi : float
++frame_ms : double
++grid_cols : int
++grid_rows : int
++visible : bool
+}
+class "PanelLayout" as C_0005029256762713079393
+class C_0005029256762713079393 {
++contains_panel_point() const : bool
+__
++grid_cols : int
++grid_rows : int
++panel_height : int
++panel_y : int
++pixel_scale : float
++terminal_height : int
++visible : bool
++window_height : int
++window_width : int
+}
+class "UiPanel" as C_0012062449133196356193
+class C_0012062449133196356193 {
++UiPanel() : void
++~UiPanel() : void
+..
++begin_frame() : void
++initialize() : bool
++layout() const : const PanelLayout &
++on_key() : void
++on_mouse_button() : void
++on_mouse_move() : void
++on_mouse_wheel() : void
++on_text_input() : void
++render() : const ImDrawData *
++set_font() : void
++set_visible() : void
++set_window_metrics() : void
++shutdown() : void
++toggle_visible() : void
++update_debug_state() : void
++visible() const : bool
++wants_keyboard() const : bool
+__
+-impl_ : std::unique_ptr<Impl>
+}
+class "App" as C_0013614671583175932438
+class C_0013614671583175932438 {
++App() : void
+..
+-apply_cursor_visibility() : void
+-attach_ui() : bool
+-average_frame_ms() const : double
+-change_font_size() : void
+-current_blink_timing() const : BlinkTiming
+-dispatch_gui_action() : bool
+-execute_startup_commands() : bool
+-gui_action_for_key_event() const : std::optional<std::string_view>
+-handle_clipboard_set() : void
+-handle_rpc_request() : MpackValue
++initialize() : bool
+-initialize_nvim() : bool
+-initialize_text_service() : bool
+-initialize_window_and_renderer() : bool
++last_render_test_error() const : const std::string &
+-on_busy() : void
+-on_flush() : void
+-on_resize() : void
+-pump_once() : bool
+-queue_resize_request() : void
+-refresh_cursor_style() : void
+-refresh_window_layout() : void
+-request_frame() : void
+-request_quit() : void
+-restart_cursor_blink() : void
++run() : void
++run_render_test() : std::optional<CapturedFrame>
++run_smoke_test() : bool
+-setup_clipboard_provider() : bool
++shutdown() : void
+-toggle_debug_panel() : void
+-update_debug_panel() : void
+-update_text_input_area() : void
+-wait_timeout_ms() const : int
+-wire_ui_callbacks() : void
+-wire_window_callbacks() : void
+__
+-config_ : AppConfig
+-cursor_blinker_ : CursorBlinker
+-cursor_busy_ : bool
+-cursor_style_ : CursorStyle
+-display_ppi_ : float
+-frame_requested_ : bool
+-grid_ : Grid
+-grid_cols_ : int
+-grid_pipeline_ : GridRenderingPipeline
+-grid_rows_ : int
+-highlights_ : HighlightTable
+-input_ : NvimInput
+-last_activity_time_ : std::chrono::steady_clock::time_point
+-last_flush_dirty_cells_ : size_t
+-last_frame_ms_ : double
+-last_panel_frame_time_ : std::chrono::steady_clock::time_point
+-last_render_test_error_ : std::string
+-nvim_process_ : NvimProcess
+-options_ : AppOptions
+-pending_window_activation_ : bool
+-recent_frame_ms_ : std::array<double,32>
+-recent_frame_ms_count_ : size_t
+-recent_frame_ms_index_ : size_t
+-renderer_ : std::unique_ptr<IRenderer>
+-rpc_ : NvimRpc
+-running_ : bool
+-saw_flush_ : bool
+-saw_frame_ : bool
+-startup_resize_state_ : StartupResizeState
+-text_service_ : TextService
+-ui_events_ : UiEventHandler
+-ui_options_ : UiOptions
+-ui_panel_ : UiPanel
+-ui_request_worker_ : UiRequestWorker
+-window_ : SdlWindow
+}
+class "TextService::Impl" as C_0011015056566586597007
+class C_0011015056566586597007 {
+__
+}
+class "UiPanel::Impl" as C_0017262034355456499169
+class C_0017262034355456499169 {
+__
+}
+C_0009089183209684451817 o-- C_0004032974424672121036 : +ambiwidth
+C_0014885375340215176130 o-- C_0008991131998796025746 : +shape
+C_0014885375340215176130 o-- C_0010324142915769007618 : +fg
+C_0014885375340215176130 o-- C_0010324142915769007618 : +bg
+C_0002249420174156581134 o-- C_0010324142915769007618 : +bg
+C_0002249420174156581134 o-- C_0010324142915769007618 : +fg
+C_0002249420174156581134 o-- C_0010324142915769007618 : +sp
+C_0002249420174156581134 o-- C_0012146796098918171510 : +glyph
+C_0011973479318986414002 o-- C_0010280800472026607891 : +level
+C_0011973479318986414002 o-- C_0003243697139157862279 : +category
+C_0011642485183388389751 o-- C_0010280800472026607891 : +min_level
+C_0011642485183388389751 o-- C_0003243697139157862279 : +enabled_categories
+C_0014064801219756158812 o-- C_0010280800472026607891 : +min_level
+C_0014064801219756158812 o-- C_0003243697139157862279 : +enabled_categories
+C_0014064801219756158812 --> C_0011973479318986414002 : +sink
+C_0018238265155714845666 --> C_0000904053879226534625 : +on_resize
+C_0018238265155714845666 --> C_0004554744911516856214 : +on_key
+C_0018238265155714845666 --> C_0010573512247973262064 : +on_text_input
+C_0018238265155714845666 --> C_0012947217402224164272 : +on_text_editing
+C_0018238265155714845666 --> C_0014003615002120148994 : +on_mouse_button
+C_0018238265155714845666 --> C_0017484031840388788561 : +on_mouse_move
+C_0018238265155714845666 --> C_0004521521395823117055 : +on_mouse_wheel
+C_0018238265155714845666 <|-- C_0015169190482655384108
+C_0002772003540161889413 ..> C_0018238265155714845666
+C_0002772003540161889413 ..> C_0002249420174156581134
+C_0002772003540161889413 ..> C_0014885375340215176130
+C_0002772003540161889413 ..> C_0009059889585492390766
+C_0002772003540161889413 ..> C_0010324142915769007618
+C_0000512618476368579425 ..> C_0002249420174156581134
+C_0000512618476368579425 o-- C_0010324142915769007618 : -default_bg_
+C_0000512618476368579425 o-- C_0014885375340215176130 : -cursor_style_
+C_0000512618476368579425 o-- C_0016561127799192011375 : -gpu_cells_
+C_0000512618476368579425 o-- C_0016561127799192011375 : -overlay_cells_
+C_0000512618476368579425 o-- C_0016561127799192011375 : -overlay_cell_
+C_0000512618476368579425 o-- C_0016561127799192011375 : -cursor_saved_cell_
+C_0003621847751287935438 ..|> C_0000490007747430473601
+C_0013138563316199776667 ..> C_0011722196354582766223
+C_0013138563316199776667 ..> C_0010860418983741959568
+C_0013138563316199776667 o-- C_0003621847751287935438 : -staging_
+C_0016294685439500678326 ..> C_0011722196354582766223
+C_0016294685439500678326 ..> C_0008575958670870228884
+C_0016294685439500678326 o-- C_0003621847751287935438 : -buffer_
+C_0008541660730371893783 o-- C_0012247533448581274093 : +swapchain
+C_0011722196354582766223 ..> C_0008541660730371893783
+C_0011722196354582766223 o-- C_0012247533448581274093 : -swapchain_
+C_0018381994535712614603 ..> C_0018238265155714845666
+C_0018381994535712614603 ..> C_0002249420174156581134
+C_0018381994535712614603 ..> C_0014885375340215176130
+C_0018381994535712614603 ..> C_0010324142915769007618
+C_0018381994535712614603 o-- C_0011722196354582766223 : -ctx_
+C_0018381994535712614603 o-- C_0008087458664670611121 : -pipeline_
+C_0018381994535712614603 o-- C_0013138563316199776667 : -atlas_
+C_0018381994535712614603 o-- C_0016294685439500678326 : -grid_buffer_
+C_0018381994535712614603 o-- C_0000512618476368579425 : -state_
+C_0018381994535712614603 o-- C_0010860418983741959568 : -pending_atlas_uploads_
+C_0018381994535712614603 o-- C_0009059889585492390766 : -captured_frame_
+C_0002772003540161889413 <|-- C_0018381994535712614603
+C_0002835051088872355825 o-- C_0003340484793817825511 : -metrics_
+C_0003748778032313716081 ..> C_0015993226849957985830
+C_0014361412419076568303 ..> C_0003748778032313716081
+C_0014361412419076568303 o-- C_0012146796098918171510 : -cluster_cache_
+C_0014361412419076568303 o-- C_0014413368558393838477 : -dirty_rect_
+C_0014361412419076568303 o-- C_0012146796098918171510 : -empty_region_
+C_0014413368558393838477 --+ C_0014361412419076568303
+C_0002489273132542241060 --+ C_0014361412419076568303
+C_0008233351805969877252 --+ C_0014361412419076568303
+C_0008233351805969877252 ..> C_0002489273132542241060
+C_0010242539609610450976 ..> C_0010490898731853891534
+C_0010242539609610450976 o-- C_0010242539609610450976 : +storage
+C_0010490898731853891534 --+ C_0010242539609610450976
+C_0001217101451059525749 o-- C_0010242539609610450976 : +params
+C_0000356283259070514785 o-- C_0010242539609610450976 : +error
+C_0000356283259070514785 o-- C_0010242539609610450976 : +result
+C_0015620458544712230103 o-- C_0010242539609610450976 : +result
+C_0015620458544712230103 o-- C_0010242539609610450976 : +error
+C_0006960110117041875260 ..> C_0010242539609610450976
+C_0006960110117041875260 ..> C_0015620458544712230103
+C_0008129042936758392656 ..> C_0015620458544712230103
+C_0008129042936758392656 --> C_0010242539609610450976 : +on_request
+C_0008129042936758392656 --> C_0013647190565152439814 : -process_
+C_0008129042936758392656 o-- C_0001217101451059525749 : -notifications_
+C_0008129042936758392656 o-- C_0000356283259070514785 : -responses_
+C_0006960110117041875260 <|-- C_0008129042936758392656
+C_0001083212623488271104 o-- C_0010324142915769007618 : +fg
+C_0001083212623488271104 o-- C_0010324142915769007618 : +bg
+C_0001083212623488271104 o-- C_0010324142915769007618 : +sp
+C_0002629044996361923107 o-- C_0001083212623488271104 : -attrs_
+C_0002629044996361923107 o-- C_0010324142915769007618 : -default_fg_
+C_0002629044996361923107 o-- C_0010324142915769007618 : -default_bg_
+C_0002629044996361923107 o-- C_0001083212623488271104 : -default_
+C_0005290045799620495824 o-- C_0008991131998796025746 : +cursor_shape
+C_0000295754743228538877 --> C_0010242539609610450976 : +on_option_set
+C_0000295754743228538877 --> C_0009225244465983584749 : -grid_
+C_0000295754743228538877 --> C_0002629044996361923107 : -highlights_
+C_0000295754743228538877 --> C_0009089183209684451817 : -options_
+C_0000295754743228538877 o-- C_0005290045799620495824 : -modes_
+C_0012940018510774837791 ..> C_0004554744911516856214
+C_0012940018510774837791 ..> C_0010573512247973262064
+C_0012940018510774837791 ..> C_0012947217402224164272
+C_0012940018510774837791 ..> C_0014003615002120148994
+C_0012940018510774837791 ..> C_0017484031840388788561
+C_0012940018510774837791 ..> C_0004521521395823117055
+C_0012940018510774837791 --> C_0006960110117041875260 : -rpc_
+C_0004790919035446078699 ..> C_0012146796098918171510
+C_0004790919035446078699 ..> C_0001028381095562882560
+C_0013463395175737141879 ..> C_0008094382969928340021
+C_0013463395175737141879 ..> C_0003340484793817825511
+C_0013463395175737141879 ..> C_0012146796098918171510
+C_0013463395175737141879 ..> C_0001028381095562882560
+C_0004790919035446078699 <|-- C_0013463395175737141879
+C_0010845207031617012176 o-- C_0014243707877127237146 : +keybindings
+C_0008434121542763503326 o-- C_0007326099841540977987 : -phase_
+C_0008434121542763503326 o-- C_0015660702629506309649 : -timing_
+C_0007326099841540977987 --+ C_0008434121542763503326
+C_0006358140475455255383 ..> C_0009796125902179747503
+C_0006358140475455255383 o-- C_0013697049504124888447 : -cells_
+C_0006358140475455255383 o-- C_0013697049504124888447 : -empty_cell_
+C_0009225244465983584749 <|-- C_0006358140475455255383
+C_0009796125902179747503 --+ C_0006358140475455255383
+C_0018422502977709962875 --> C_0002772003540161889413 : -renderer_
+C_0018422502977709962875 --> C_0006358140475455255383 : -grid_
+C_0018422502977709962875 --> C_0002629044996361923107 : -highlights_
+C_0018422502977709962875 --> C_0004790919035446078699 : -glyph_atlas_
+C_0016104819840992929837 o-- C_0000563074054708014987 : -pending_request_
+C_0009672926976875087592 --> C_0006960110117041875260 : -rpc_
+C_0009672926976875087592 o-- C_0016104819840992929837 : -state_
+C_0012062449133196356193 ..> C_0005029256762713079393
+C_0012062449133196356193 ..> C_0005275259538482360381
+C_0012062449133196356193 ..> C_0004554744911516856214
+C_0012062449133196356193 ..> C_0017484031840388788561
+C_0012062449133196356193 ..> C_0014003615002120148994
+C_0012062449133196356193 ..> C_0004521521395823117055
+C_0012062449133196356193 ..> C_0010573512247973262064
+C_0013614671583175932438 ..> C_0009059889585492390766
+C_0013614671583175932438 ..> C_0004554744911516856214
+C_0013614671583175932438 ..> C_0010242539609610450976
+C_0013614671583175932438 ..> C_0015660702629506309649
+C_0013614671583175932438 o-- C_0013918275210752016440 : -options_
+C_0013614671583175932438 o-- C_0010845207031617012176 : -config_
+C_0013614671583175932438 o-- C_0015169190482655384108 : -window_
+C_0013614671583175932438 o-- C_0002772003540161889413 : -renderer_
+C_0013614671583175932438 o-- C_0013463395175737141879 : -text_service_
+C_0013614671583175932438 o-- C_0006358140475455255383 : -grid_
+C_0013614671583175932438 o-- C_0002629044996361923107 : -highlights_
+C_0013614671583175932438 o-- C_0013647190565152439814 : -nvim_process_
+C_0013614671583175932438 o-- C_0008129042936758392656 : -rpc_
+C_0013614671583175932438 o-- C_0000295754743228538877 : -ui_events_
+C_0013614671583175932438 o-- C_0012940018510774837791 : -input_
+C_0013614671583175932438 o-- C_0018422502977709962875 : -grid_pipeline_
+C_0013614671583175932438 o-- C_0012062449133196356193 : -ui_panel_
+C_0013614671583175932438 o-- C_0009089183209684451817 : -ui_options_
+C_0013614671583175932438 o-- C_0009672926976875087592 : -ui_request_worker_
+C_0013614671583175932438 o-- C_0012647519040437336305 : -startup_resize_state_
+C_0013614671583175932438 o-- C_0014885375340215176130 : -cursor_style_
+C_0013614671583175932438 o-- C_0008434121542763503326 : -cursor_blinker_
+C_0011015056566586597007 --+ C_0013463395175737141879
+C_0017262034355456499169 --+ C_0012062449133196356193
+
+'Generated with clang-uml, version 0.6.2
+'LLVM version clang version 20.1.7 (https://github.com/llvm/llvm-project.git 6146a88f60492b520a36f8f8f3231e15f3cc6082)
+@enduml

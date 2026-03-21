@@ -1,0 +1,7 @@
+// Draxul application resource file
+// The icon resource is embedded into the executable and used by Windows
+// for the taskbar button, Alt-Tab thumbnail, and file-explorer tile.
+
+#include <windows.h>
+
+IDI_ICON1 ICON "draxul.ico"

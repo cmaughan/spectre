@@ -1,0 +1,165 @@
+#include "support/test_support.h"
+
+#include <draxul/grid.h>
+#include <draxul/ui_panel.h>
+
+using namespace draxul;
+using namespace draxul::tests;
+
+// The full resize cascade (WindowResizeEvent -> App::on_resize -> renderer.resize
+// -> host.set_viewport -> grid.resize) requires a live window and renderer and
+// therefore cannot be driven headlessly. The integration glue in App::on_resize
+// is exercised by the smoke / render-test suite.
+//
+// These tests cover the independently-testable components in the cascade:
+//   1. Grid::resize() — the authoritative grid-dimension update
+//   2. compute_panel_layout() — the function that converts pixel dimensions and
+//      cell sizes into grid dimensions and HostViewport column/row counts
+//
+// If a full integration harness is ever built (mock IRenderer + IWindow), the
+// skipped tests below indicate the exact assertions to add.
+
+void run_resize_cascade_tests()
+{
+    // -------------------------------------------------------------------------
+    // Grid::resize() — unit tests
+    // -------------------------------------------------------------------------
+
+    run_test("resize cascade: grid resize 80x24 to 120x40 updates dimensions", []() {
+        Grid grid;
+        grid.resize(80, 24);
+        expect_eq(grid.cols(), 80, "initial cols are 80");
+        expect_eq(grid.rows(), 24, "initial rows are 24");
+
+        grid.resize(120, 40);
+        expect_eq(grid.cols(), 120, "cols updated to 120 after resize");
+        expect_eq(grid.rows(), 40, "rows updated to 40 after resize");
+    });
+
+    run_test("resize cascade: grid resize to smaller dimensions does not crash", []() {
+        Grid grid;
+        grid.resize(80, 24);
+
+        // Fill a few cells so there is something to truncate.
+        grid.set_cell(0, 0, "A", 1);
+        grid.set_cell(79, 23, "Z", 1);
+
+        grid.resize(40, 12);
+        expect_eq(grid.cols(), 40, "cols updated to 40 after shrink");
+        expect_eq(grid.rows(), 12, "rows updated to 12 after shrink");
+
+        // Cells within the new bounds should be accessible without crashing.
+        const auto& c = grid.get_cell(0, 0);
+        expect(!c.text.empty(), "cell (0,0) is still accessible after shrink");
+    });
+
+    run_test("resize cascade: grid resize to identical dimensions is a no-op", []() {
+        Grid grid;
+        grid.resize(80, 24);
+        grid.set_cell(5, 3, "X", 2);
+        grid.clear_dirty();
+
+        grid.resize(80, 24);
+        expect_eq(grid.cols(), 80, "cols unchanged after same-size resize");
+        expect_eq(grid.rows(), 24, "rows unchanged after same-size resize");
+    });
+
+    run_test("resize cascade: two rapid sequential resizes yield final dimensions", []() {
+        Grid grid;
+        grid.resize(80, 24);
+        grid.resize(100, 30);
+        grid.resize(120, 40);
+
+        expect_eq(grid.cols(), 120, "final cols match last resize (120)");
+        expect_eq(grid.rows(), 40, "final rows match last resize (40)");
+    });
+
+    run_test("resize cascade: grid resize marks all cells dirty", []() {
+        Grid grid;
+        grid.resize(10, 5);
+        grid.clear_dirty();
+
+        grid.resize(20, 8);
+
+        // After a resize the dirty count should cover the new grid area.
+        const int expected_cells = 20 * 8;
+        expect(static_cast<int>(grid.dirty_cell_count()) == expected_cells,
+            "all cells in the new grid are dirty after resize");
+    });
+
+    run_test("resize cascade: grid grow clears all cells (content repopulated by process)", []() {
+        // Grid::resize is a full reset — the terminal process (nvim or shell) resends
+        // all content after a resize notification, so preserving old cells would just
+        // be overwritten.  Verify that cells are blank after a grow, not that they
+        // are preserved.
+        Grid grid;
+        grid.resize(5, 3);
+        grid.set_cell(0, 0, "H", 1);
+        grid.set_cell(4, 2, "W", 1);
+
+        grid.resize(10, 6);
+
+        // After resize the grid is blank — content repopulated by the terminal process.
+        expect_eq(grid.get_cell(0, 0).text, std::string(" "),
+            "top-left cell is blank after grow (full reset)");
+        expect_eq(grid.cols(), 10, "cols updated to 10 after grow");
+        expect_eq(grid.rows(), 6, "rows updated to 6 after grow");
+    });
+
+    // -------------------------------------------------------------------------
+    // compute_panel_layout() — maps pixel dimensions to grid dimensions
+    // -------------------------------------------------------------------------
+
+    run_test("resize cascade: panel layout 80x24 equivalent pixel dimensions", []() {
+        // Typical: 8x16 cells, 1px padding, 642x386 pixels gives 80x24
+        const PanelLayout layout = compute_panel_layout(642, 386, 8, 16, 1, false);
+        // cols = (642 - 2) / 8 = 80, rows = (386 - 2) / 16 = 24
+        expect_eq(layout.grid_cols, 80, "panel layout produces 80 columns");
+        expect_eq(layout.grid_rows, 24, "panel layout produces 24 rows");
+    });
+
+    run_test("resize cascade: panel layout grow from 80x24 to 120x40", []() {
+        // 8x16 cells, 1px padding
+        const PanelLayout small_layout = compute_panel_layout(642, 386, 8, 16, 1, false);
+        // 120 cols: 120*8 + 2 = 962px;  40 rows: 40*16 + 2 = 642px
+        const PanelLayout large_layout = compute_panel_layout(962, 642, 8, 16, 1, false);
+
+        expect_eq(large_layout.grid_cols, 120, "larger window yields 120 columns");
+        expect_eq(large_layout.grid_rows, 40, "larger window yields 40 rows");
+        expect(large_layout.grid_cols > small_layout.grid_cols, "grow increases column count");
+        expect(large_layout.grid_rows > small_layout.grid_rows, "grow increases row count");
+    });
+
+    run_test("resize cascade: panel layout shrink to 40x12", []() {
+        // 40 cols: 40*8 + 2 = 322px;  12 rows: 12*16 + 2 = 194px
+        const PanelLayout layout = compute_panel_layout(322, 194, 8, 16, 1, false);
+        expect_eq(layout.grid_cols, 40, "shrunk layout has 40 columns");
+        expect_eq(layout.grid_rows, 12, "shrunk layout has 12 rows");
+    });
+
+    run_test("resize cascade: panel layout same dimensions is stable", []() {
+        const PanelLayout a = compute_panel_layout(800, 600, 8, 16, 1, false);
+        const PanelLayout b = compute_panel_layout(800, 600, 8, 16, 1, false);
+        expect_eq(a.grid_cols, b.grid_cols, "identical inputs produce identical column count");
+        expect_eq(a.grid_rows, b.grid_rows, "identical inputs produce identical row count");
+    });
+
+    // -------------------------------------------------------------------------
+    // Integration-level tests — skipped (require live renderer/window/host).
+    // To un-skip: inject mock IRenderer and IWindow into App, then synthesise
+    // a WindowResizeEvent and verify all three subsystems (renderer, host,
+    // grid) reflect the new dimensions.
+    // -------------------------------------------------------------------------
+
+    run_test("resize cascade: renderer receives new dimensions on resize [integration]", []() {
+        skip("requires live IRenderer — covered by smoke/render-test suite");
+    });
+
+    run_test("resize cascade: host viewport reflects new dimensions after resize [integration]", []() {
+        skip("requires live IHost with mock process — covered by smoke/render-test suite");
+    });
+
+    run_test("resize cascade: alt-screen resize re-dimensions main snapshot [integration]", []() {
+        skip("requires live host with alt-screen support — covered by smoke/render-test suite");
+    });
+}

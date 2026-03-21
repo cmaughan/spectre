@@ -1,0 +1,134 @@
+#include "cube_render_pass.h"
+#include <draxul/base_renderer.h>
+#include <draxul/log.h>
+#include <draxul/megacity_host.h>
+
+namespace draxul
+{
+
+MegaCityHost::MegaCityHost()
+    : cube_pass_(std::make_shared<CubeRenderPass>())
+    , last_frame_time_(std::chrono::steady_clock::now())
+{
+}
+
+MegaCityHost::~MegaCityHost() = default;
+
+bool MegaCityHost::initialize(const HostContext& context, HostCallbacks callbacks)
+{
+    callbacks_ = std::move(callbacks);
+    viewport_ = context.initial_viewport;
+    pixel_w_ = viewport_.pixel_width > 0 ? viewport_.pixel_width : 800;
+    pixel_h_ = viewport_.pixel_height > 0 ? viewport_.pixel_height : 600;
+    running_ = true;
+
+    DRAXUL_LOG_INFO(LogCategory::App, "MegaCityHost initialized (%dx%d)", pixel_w_, pixel_h_);
+    return true;
+}
+
+void MegaCityHost::attach_3d_renderer(I3DRenderer& renderer)
+{
+    renderer_3d_ = &renderer;
+    renderer_3d_->register_render_pass(cube_pass_);
+    DRAXUL_LOG_INFO(LogCategory::App, "MegaCityHost: 3D renderer attached, cube pass registered");
+}
+
+void MegaCityHost::detach_3d_renderer()
+{
+    if (renderer_3d_)
+    {
+        renderer_3d_->unregister_render_pass();
+        renderer_3d_ = nullptr;
+    }
+}
+
+void MegaCityHost::shutdown()
+{
+    detach_3d_renderer();
+    running_ = false;
+}
+
+bool MegaCityHost::is_running() const
+{
+    return running_;
+}
+
+std::string MegaCityHost::init_error() const
+{
+    return {};
+}
+
+void MegaCityHost::set_viewport(const HostViewport& viewport)
+{
+    viewport_ = viewport;
+    pixel_w_ = viewport.pixel_width > 0 ? viewport.pixel_width : pixel_w_;
+    pixel_h_ = viewport.pixel_height > 0 ? viewport.pixel_height : pixel_h_;
+}
+
+void MegaCityHost::pump()
+{
+    auto now = std::chrono::steady_clock::now();
+    float dt = std::chrono::duration<float>(now - last_frame_time_).count();
+    last_frame_time_ = now;
+
+    constexpr float kRotationSpeed = 1.2f; // radians per second
+    rotation_angle_ += dt * kRotationSpeed;
+
+    cube_pass_->set_angle(rotation_angle_);
+    callbacks_.request_frame();
+}
+
+std::optional<std::chrono::steady_clock::time_point> MegaCityHost::next_deadline() const
+{
+    // Return "now" so pump() is called every frame
+    return std::chrono::steady_clock::now();
+}
+
+bool MegaCityHost::dispatch_action(std::string_view action)
+{
+    if (action == "quit" || action == "request_quit")
+    {
+        running_ = false;
+        callbacks_.request_quit();
+        return true;
+    }
+    return false;
+}
+
+void MegaCityHost::request_close()
+{
+    // App-initiated quit: just stop running. Do NOT call callbacks_.request_quit()
+    // here — that would call back into App::request_quit(), which calls this method
+    // again, causing infinite mutual mutual recursion and a stack overflow.
+    running_ = false;
+}
+
+Color MegaCityHost::default_background() const
+{
+    return { 0.05f, 0.05f, 0.10f, 1.0f }; // dark navy — city at night
+}
+
+HostRuntimeState MegaCityHost::runtime_state() const
+{
+    HostRuntimeState s;
+    s.content_ready = true;
+    s.last_activity_time = last_frame_time_;
+    return s;
+}
+
+HostDebugState MegaCityHost::debug_state() const
+{
+    HostDebugState s;
+    s.name = "megacity";
+    s.grid_cols = 0;
+    s.grid_rows = 0;
+    s.dirty_cells = 0;
+    return s;
+}
+
+std::unique_ptr<IHost> create_megacity_host()
+{
+    return std::make_unique<MegaCityHost>();
+}
+
+} // namespace draxul

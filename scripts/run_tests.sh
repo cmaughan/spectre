@@ -1,0 +1,99 @@
+#!/usr/bin/env sh
+set -eu
+
+MODE="debug"
+FORCE_RECONFIGURE=0
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    debug|release|both)
+      MODE="$1"
+      ;;
+    --reconfigure)
+      FORCE_RECONFIGURE=1
+      ;;
+    *)
+      echo "Usage: $(basename "$0") [debug|release|both] [--reconfigure]" >&2
+      exit 2
+      ;;
+  esac
+  shift
+done
+
+ROOT_DIR=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+cd "$ROOT_DIR"
+
+run() {
+  echo
+  echo "> $*"
+  "$@"
+}
+
+cache_build_type() {
+  if [ ! -f build/CMakeCache.txt ]; then
+    return 1
+  fi
+  sed -n 's/^CMAKE_BUILD_TYPE:STRING=//p' build/CMakeCache.txt | head -n 1
+}
+
+should_configure() {
+  config="$1"
+
+  if [ "$FORCE_RECONFIGURE" -eq 1 ]; then
+    return 0
+  fi
+
+  if [ ! -f build/CMakeCache.txt ]; then
+    return 0
+  fi
+
+  cached_type=$(cache_build_type || true)
+  if [ -z "$cached_type" ]; then
+    return 0
+  fi
+
+  [ "$cached_type" != "$config" ]
+}
+
+run_config() {
+  config="$1"
+  case "$config" in
+    Debug)
+      preset="mac-debug"
+      ;;
+    Release)
+      preset="mac-release"
+      ;;
+    *)
+      echo "Unsupported config: $config" >&2
+      exit 2
+      ;;
+  esac
+
+  echo
+  echo "=== $config ==="
+  if should_configure "$config"; then
+    run cmake --preset "$preset"
+  else
+    echo
+    echo "> using existing CMake cache: build/CMakeCache.txt"
+  fi
+  run cmake --build build --parallel
+  run ctest --test-dir build --verbose --timeout 120
+}
+
+case "$MODE" in
+  debug)
+    run_config Debug
+    ;;
+  release)
+    run_config Release
+    ;;
+  both)
+    run_config Debug
+    run_config Release
+    ;;
+esac
+
+echo
+echo "All requested tests passed."

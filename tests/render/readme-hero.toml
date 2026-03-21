@@ -1,0 +1,14 @@
+name = "readme-hero"
+width = 2560
+height = 1600
+font_size = 12
+timeout_ms = 15000
+settle_ms = 1500
+pixel_tolerance = 8
+changed_pixels_threshold_pct = 0.10
+commands = [
+  "cd ${PROJECT_ROOT}",
+  "edit ${PROJECT_ROOT}/README.md",
+  "set nowrap",
+  "lua vim.defer_fn(function() vim.cmd([[normal! ggzt]]); local ok, mf = pcall(require, 'mini.files'); if ok and type(mf.open) == 'function' then mf.open(vim.api.nvim_buf_get_name(0), false) end end, 750)",
+]

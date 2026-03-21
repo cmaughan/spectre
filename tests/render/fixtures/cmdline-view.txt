@@ -1,0 +1,5 @@
+cmdline baseline
+second line for cursorline
+third line to keep a stable viewport
+fourth line
+fifth line
