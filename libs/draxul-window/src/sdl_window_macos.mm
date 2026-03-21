@@ -5,6 +5,16 @@
 namespace draxul
 {
 
+void disable_press_and_hold_macos()
+{
+    // SDL3's Cocoa event handler registers ApplePressAndHoldEnabled = YES as a
+    // default, which enables macOS's accent-picker popup when holding a key and
+    // suppresses OS key-repeat events.  Terminal emulators need the opposite:
+    // actual key repeat.  Explicitly setting the key (not just registering a
+    // default) overrides SDL's registration and restores repeat behaviour.
+    [[NSUserDefaults standardUserDefaults] setBool:NO forKey:@"ApplePressAndHoldEnabled"];
+}
+
 void apply_title_bar_color_macos(SDL_Window* window, Color color)
 {
     NSWindow* ns_window = (__bridge NSWindow*)SDL_GetPointerProperty(

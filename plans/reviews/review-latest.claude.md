@@ -1,314 +1,268 @@
-Now I have enough information to produce the full report. Here it is:
-
----
-
 # Draxul Codebase Review Report
 
-*Generated: 2026-03-20 | Reviewer: Claude Sonnet 4.6*
+*Generated: 2026-03-21 | Codebase: ~19,000 lines of C++*
 
 ---
 
 ## Executive Summary
 
-Draxul is a cross-platform Neovim GUI frontend written in C++20. It spawns `nvim --embed`, communicates via msgpack-RPC, and renders the terminal grid using Vulkan (Windows) or Metal (macOS). The codebase is mature, professionally maintained, and shows clear evidence of systematic refactoring and AI-agent-friendly design. This report covers module layout, code quality, testing coverage, feature opportunities, and worst technical debt.
+Draxul is a Neovim GUI frontend with a well-structured library decomposition, clean GPU abstraction layers, and solid platform support (Metal/macOS, Vulkan/Windows). The architecture is sound, but shows organic growth patterns: proliferating callbacks, mixed concerns in App, and insufficient input validation. The most critical risks are threading races, unbounded memory growth in the VT parser, and missing bounds checks on RPC-supplied coordinates.
 
 ---
 
-## Module Layout
+## Detailed Findings
 
-```
-draxul-types         (header-only POD types, logging, unicode)
-├── draxul-window    (IWindow + SDL3)
-├── draxul-renderer  (IGridRenderer + Vulkan/Metal backends)
-├── draxul-font      (FreeType + HarfBuzz glyph pipeline)
-├── draxul-grid      (2D cell array + dirty tracking)
-├── draxul-nvim      (NvimProcess, msgpack RPC, UiEventHandler)
-├── draxul-host      (TerminalHostBase, VtParser, PTY backends)
-├── draxul-ui        (ImGui diagnostics panel)
-├── draxul-megacity  (optional 3D demo)
-├── draxul-app-support (AppConfig, GridRenderingPipeline, CursorBlinker, render tests)
-└── app/             (App orchestrator, GuiActionHandler, InputDispatcher, HostManager)
-```
+### 1. Code Quality Issues
 
-Dependency flow is strictly downward. The app layer is intentionally thin — all logic lives in libraries.
+#### 1.1 Namespace Pollution & Abbreviated Naming
+- **Location:** Throughout codebase (e.g., `libs/draxul-font/src/text_service.cpp:13–21`)
+- Struct names like `Impl`, variables like `cw`/`ch`, `msg_`, `cbs_` — opaque to new contributors.
+
+#### 1.2 Renderer Backend Code Duplication
+- **Location:** `libs/draxul-renderer/src/vulkan/vk_renderer.h:40–50` vs. `libs/draxul-renderer/src/metal/metal_renderer.h:46–62`
+- Nearly identical method signatures across VkRenderer and MetalRenderer with no shared base implementation. Bug fixes require touching both codepaths.
+
+#### 1.3 Unsafe `void*` Bridge for Metal Objects
+- **Location:** `libs/draxul-renderer/src/metal/metal_renderer.h:83–94`
+- ObjC++ Metal objects held as `void*` in C++ compilation units. Incorrect casts are invisible to the compiler.
+
+#### 1.4 Unbounded String Accumulation in VtParser
+- **Location:** `libs/draxul-host/src/vt_parser.cpp:62–65`
+- `plain_text_`, `csi_buffer_`, `osc_buffer_` have no max size. A pathological or buggy Nvim stream causes unbounded memory growth.
+
+#### 1.5 Raw Pointer Aliasing Without Lifetime Guarantees
+- **Location:** `libs/draxul-host/src/grid_host_base.cpp:11–25`
+- `window_`, `renderer_`, `text_service_` stored as raw pointers with no lifetime enforcement. Use-after-free if App shuts down out-of-order.
+
+#### 1.6 Magic Numbers
+- **Location:** `libs/draxul-nvim/src/nvim_process.cpp:142` — `WaitForSingleObject(..., 2000)` (2 s hardcoded)
+- **Location:** `libs/draxul-renderer/src/vulkan/vk_renderer.cpp:142` — `80 * 24 * sizeof(GpuCell)` hardcoded
+
+#### 1.7 No Input Validation in UI Event Handler
+- **Location:** `libs/draxul-nvim/src/ui_events.cpp:187–200`
+- `handle_grid_line()` extracts row/col_start from msgpack with no bounds check against grid dimensions.
+
+#### 1.8 Grid Scroll Warnings Without Release Handling
+- **Location:** `libs/draxul-grid/src/grid.cpp:113–128`
+- Out-of-bounds scroll region logged as WARN + `assert()`. In Release builds the assert vanishes; undefined behaviour follows.
+
+#### 1.9 Integer Overflow in Grid Indexing
+- **Location:** `libs/draxul-grid/src/grid.cpp:54` — `int index = row * cols_ + col`
+- `cols_` from a malformed RPC resize could overflow a signed int. Should use `size_t` with bounds guard.
+
+#### 1.10 Descriptor Counts Hardcoded in Vulkan Pipeline
+- **Location:** `libs/draxul-renderer/src/vulkan/vk_renderer.cpp:232–240`
+- `VkDescriptorPoolSize` entries are hardcoded constants; pipeline changes require manual sync.
 
 ---
 
-## Source File Inventory
+### 2. Testing Gaps
 
-| Module | Files | Notable |
-|---|---|---|
-| `app/` | 9 | App, GuiActionHandler, InputDispatcher, HostManager, main |
-| `libs/draxul-types/` | 9 | Color, CellUpdate, AtlasRegion, CellText, events, logging |
-| `libs/draxul-grid/` | 3 | Grid, IGridSink, HighlightTable |
-| `libs/draxul-font/` | 8 | TextService, GlyphCache, FontEngine, LigatureAnalyser |
-| `libs/draxul-renderer/` | 11 | IRenderer, Vulkan backend, Metal backend, RendererState |
-| `libs/draxul-nvim/` | 7 | NvimProcess, NvimRpc, MpackCodec, UiEventHandler, Input |
-| `libs/draxul-host/` | 18 | TerminalHostBase, VtParser, VtState, AltScreenManager, MouseReporter, SelectionManager, ScrollbackBuffer, PTY hosts |
-| `libs/draxul-app-support/` | 10 | AppConfig, GridRenderingPipeline, CursorBlinker, RenderTest, UiRequestWorker |
-| `libs/draxul-ui/` | 2 | UiPanel |
-| `libs/draxul-megacity/` | 4 | MegacityHost, optional 3D demo |
-| `shaders/` | 10 | Metal + Vulkan (GLSL) shaders for BG/FG grid passes + 3D demo |
-| `tests/` | 53 | Unit, integration, fuzz, regression |
+#### 2.1 GPU Resource Cleanup Untested
+- `libs/draxul-renderer/src/vulkan/vk_renderer.cpp:166–189` — `shutdown()` is never validated for idempotency or full resource release.
+
+#### 2.2 Process Spawn Failure Paths
+- `libs/draxul-nvim/src/nvim_process.cpp:78–150` — 7+ early-exit points (pipe creation failures, `CreateProcessA` failure); test coverage unlikely.
+
+#### 2.3 DPI Hotplug During Active Frame
+- `on_display_scale_changed()` → TextService rebuild → glyph re-shape chain has no test validating frames don't crash mid-rebuild.
+
+#### 2.4 Atlas Exhaustion Recovery
+- `libs/draxul-font/src/text_service.cpp:179–182` — `consume_atlas_reset()` is called but no test exercises behaviour under sustained high-glyph-rate load.
+
+#### 2.5 Grid Scroll Edge Cases
+- `libs/draxul-grid/src/grid.cpp:105–231` — complex double-width char repair logic in scrolling is undertested at boundaries.
+
+#### 2.6 RPC Backpressure Under Load
+- No test simulates rapid redraw from Nvim while App is blocked on a GPU frame.
+
+#### 2.7 Shutdown Race Condition
+- Host thread servicing RPC queue vs. `App::shutdown()` — timing-dependent; no deterministic test.
+
+#### 2.8 No Fake Renderer for Headless Unit Tests
+- Every test that touches rendering requires a real GPU driver. No stub/fake renderer abstraction exists.
+
+#### 2.9 Cursor Blink State Machine
+- Cursor visibility depends on blink timing, busy state, and deadline. Complex state with no coverage of transition edge cases.
+
+#### 2.10 File Drop Path Validation
+- `app/input_dispatcher.cpp:111–114` — `open_file:` action string with colon-separated path; no test for paths containing colons or special characters.
+
+---
+
+### 3. Separation of Concerns Violations
+
+#### 3.1 App Layer Owns Too Much (567 lines)
+- `app/app.cpp` orchestrates: window lifecycle, renderer init, font loading, host creation, input dispatch, diagnostics panel, config persistence — all in one file.
+
+#### 3.2 AppConfig Leaks SDL Knowledge
+- `libs/draxul-app-support/include/draxul/app_config.h:20–26` — `GuiKeybinding::key` is typed as SDL_Keycode (a comment says so); the support library has an implicit SDL dependency.
+
+#### 3.3 GridHostBase Mixes Unrelated Concerns
+- `libs/draxul-host/src/grid_host_base.cpp` — manages grid state, cursor blinking, text input area, highlight table, rendering pipeline, and viewport math all in one base class.
+
+#### 3.4 HostManager Post-Init Dynamic Cast
+- `app/host_manager.cpp:21–82` — `dynamic_cast<I3DHost*>` after initialization attaches the renderer; implicit coupling that breaks if host lifecycle changes.
+
+#### 3.5 Generic `dispatch_action()` String Interface
+- `libs/draxul-host/include/draxul/host.h:99` — hosts accept arbitrary `std::string_view action`; typos silently do nothing, no compile-time type safety.
+
+---
+
+### 4. Threading & Synchronization Issues
+
+#### 4.1 Race in UiRequestWorker
+- `libs/draxul-app-support/include/draxul/ui_request_worker.h:24–28` — `rpc_` pointer read by worker thread while main thread may be setting it or calling `stop()`. No synchronization visible.
+
+#### 4.2 No Enforcement That Grid Is Main-Thread Only
+- `libs/draxul-grid/src/grid.cpp:28–50` — Grid is mutated by the main thread, but no `DRAXUL_ASSERT_MAIN_THREAD()` macro prevents accidental access from a background thread.
+
+#### 4.3 Reader Thread Reads Closed FD
+- POSIX NvimProcess — `shutdown()` closes `child_stdout_read_` without signaling the reader thread. Reader may call `read()` on a closed fd (EBADF) depending on timing.
+
+---
+
+### 5. Memory Management Issues
+
+#### 5.1 Pimpl Move Semantics Unclear
+- `libs/draxul-font/src/text_service.cpp:71–80` — `= default` move is used but Impl's own move-correctness is unverified; non-copyable resources could double-free or leak.
+
+#### 5.2 Shared Pointer Ownership Not Documented
+- `libs/draxul-renderer/src/vulkan/vk_renderer.h:115` — `shared_ptr<IRenderPass>` ownership transfer semantics at `register_render_pass()` vs. `unregister_render_pass()` are undocumented.
+
+---
+
+### 6. Architecture Issues
+
+#### 6.1 Polling Loop Instead of Event-Driven
+- `app/app.cpp:282–286` — `run()` is `while(running_) { pump_once(); }`. RPC notifications are polled each frame; no reactive wakeup mechanism.
+
+#### 6.2 No Configuration Validation
+- `libs/draxul-app-support/include/draxul/app_config.h:26–53` — Negative window sizes, font sizes below minimum, etc., are never rejected at parse/apply time.
+
+#### 6.3 Callback Proliferation in GuiActionHandler
+- `app/app.cpp:156–173` — `GuiActionHandler::Deps` holds 4+ callback functions with no documented invocation order or error propagation.
 
 ---
 
 ## Top 10 Good Things
 
-### 1. Clean Abstract Interfaces
-`IWindow`, `IGridRenderer`, `IHost`, `IGlyphAtlas`, `IRpcChannel` — all pure virtual interfaces. The app and test code never touch platform-specific types. Swapping Vulkan for Metal or SDL for another backend touches zero app-layer code.
+1. **Clean library decomposition** — `draxul-types`, `draxul-window`, `draxul-renderer`, `draxul-font`, `draxul-grid`, `draxul-nvim`, `draxul-host`, `draxul-app-support` are clearly bounded with explicit CMake targets and one-way dependency arrows.
 
-### 2. Dependency-Injection Seams in AppOptions
-`AppOptions` carries `window_init_fn`, `renderer_create_fn`, and `config_overrides`. Tests inject `FakeRenderer` and `FakeWindow` without forking any production path. This pattern is used consistently across all 53 test files.
+2. **Pimpl pattern used consistently** — All major subsystems (TextService, NvimProcess, SdlWindow) hide implementation behind `Impl` structs, keeping public headers clean and reducing recompile cascades.
 
-### 3. Structured InitRollback Pattern
-`App::initialize()` uses a scoped `InitRollback` struct (armed on entry, disarmed on success) that calls `shutdown()` if any step fails. Partial initialization is never leaked. Integration tests (`startup_rollback_tests.cpp`) cover this path directly.
+3. **Renderer hierarchy is well-abstracted** — `IBaseRenderer → I3DRenderer → IGridRenderer` allows new render passes to be registered without modifying the core pipeline.
 
-### 4. Unidirectional Data Flow
-Events flow: SDL → InputDispatcher → IHost → Grid → GridRenderingPipeline → IGridRenderer. No callbacks up the dependency graph. This makes reasoning about state mutation straightforward and makes the codebase easy to hand to parallel agents.
+4. **IRenderPass / IRenderContext pattern** — Any subsystem can register typed render passes; the renderer calls them each frame without knowing what they do. Excellent for extensibility.
 
-### 5. Thorough Test Suite
-53 test files covering: grid operations, VT parser (including fuzz), msgpack codec (including fuzz), RPC backpressure, DPI scaling, font fallback corpus, shell crash recovery, scrollback overflow, cursor blinker, UI panel layout, keybinding dispatch, alt-screen resize, clipboard round-trip, and more. Catch2 v3 with scoped log capture for deterministic output.
+5. **Replay fixture test infrastructure** — `tests/support/replay_fixture.h` enables deterministic RPC/redraw testing without spawning a real Nvim process. The builder pattern is clean and easy to extend.
 
-### 6. VT Parser as a Standalone State Machine
-`VtParser` takes callbacks at construction and has no knowledge of the grid, host, or process. This makes it independently fuzzable and testable. `vt_parser_fuzz_tests.cpp` and `terminal_vt_tests.cpp` exercise it in isolation.
+6. **Font pipeline is thorough** — FreeType → HarfBuzz → GlyphCache → shelf-packed atlas is a correct and complete text rendering pipeline with ligature support.
 
-### 7. Two-Level Dirty Tracking in Grid
-`Grid` maintains both a `dirty_marks_` bitfield (O(1) is-dirty query) and a `dirty_cells_` vector (O(dirty) iteration). The rendering pipeline only processes cells that changed. This keeps frame times proportional to actual change, not grid size.
+7. **Render smoke/snapshot test suite** — `do.py bless*` workflows enable per-scenario visual regression testing, which is non-trivial for GPU-rendered applications.
 
-### 8. AddressSanitizer / LeakSanitizer Integration
-The `mac-asan` CMake preset enables both ASan and LSan across all Draxul targets (not dependencies). CI runs tests under this preset. The `tests/` tree's Catch2 entrypoint is wired to run cleanly under sanitizers.
+8. **Explicit threading model documented** — Main thread owns grid and GPU; reader thread is strictly a pipe pump. The model is simple, documented, and largely respected in code.
 
-### 9. Work-Item Tracking Discipline
-Plans are tracked in `plans/work-items/`, `plans/work-items-complete/`, and `plans/work-items-icebox/` with consistent naming (`NN description -tag.md`). Every item records motivation, implementation plan, test plan, and sub-agent split. This is the most agent-friendly project-management structure in the reviewed codebases.
+9. **FetchContent for all dependencies** — No vendored source trees; all external libraries (SDL3, FreeType, HarfBuzz, MPack, vk-bootstrap, VMA) are fetched declaratively. Reproducible builds.
 
-### 10. Startup Timing Instrumentation
-`App::initialize()` measures each init step with `time_step()` and accumulates `startup_steps_` / `startup_total_ms_`. These are surfaced in the ImGui diagnostics panel at runtime. Makes startup regressions immediately visible without profiling tools.
+10. **Platform presets in CMake** — `mac-debug`, `mac-release`, `mac-asan`, `default`, `release` provide one-command configuration for all common workflows including AddressSanitizer builds.
 
 ---
 
 ## Top 10 Bad Things
 
-### 1. `CellText::kMaxLen = 32` Silent Truncation
-`CellText::assign()` silently truncates grapheme clusters longer than 32 bytes. The TODO comment (`// TODO: consider std::string for >32-byte clusters`) has existed since the type was introduced. Emoji with multiple modifiers (skin tone + ZWJ sequences) can exceed this. The truncation produces a malformed UTF-8 string in the cell with no error signal.
+1. **No bounds validation on RPC-supplied grid coordinates** — `handle_grid_line()` trusts Nvim's row/col values without checking against grid dimensions. A malformed message causes out-of-bounds memory access.
 
-```cpp
-// libs/draxul-grid/include/draxul/grid.h:31
-len = static_cast<uint8_t>(std::min(sv.size(), static_cast<size_t>(kMaxLen)));
-```
+2. **Unbounded buffers in VtParser** — `plain_text_`, `csi_buffer_`, `osc_buffer_` grow without limit. Sustained abnormal output triggers memory exhaustion.
 
-### 2. Hardcoded ANSI Palette
-The 16-colour ANSI palette is hardcoded as float literals in `terminal_host_base.cpp:22-43`. There is no way for the user to customise ANSI colours in `config.toml`. This is noted as icebox item `#33 configurable-ansi-palette` but the hardcoded values also silently ignore anything the connected terminal application sends via OSC 4 (palette assignment), which is a common terminal feature.
+3. **Threading race in UiRequestWorker** — The `rpc_` pointer is accessed by a worker thread with no visible synchronization. Concurrent set/stop from the main thread is a data race.
 
-### 3. Unbounded RPC Notification Queue
-`NvimRpc` uses an unbounded `std::vector<RpcNotification>` queue between the reader thread and the main thread. Under a burst of Neovim redraw events (large file open, bulk replace) the queue can grow without bound. Documented in `plans/design/belt-and-braces.md` as a known risk, but no backpressure mechanism or queue depth limit is implemented.
+4. **App class owns too much** — 567-line `app.cpp` orchestrates every subsystem. Changes to any one subsystem require reasoning about the whole file; hard to test in isolation.
 
-### 4. `on_display_scale_changed` Duplicates `TextServiceConfig` Construction
-`App::on_display_scale_changed()` and `App::initialize_text_service()` both manually construct `TextServiceConfig` from `config_.*` fields. If a new `TextServiceConfig` field is added, both sites must be updated. A helper such as `make_text_service_config()` would eliminate this.
+5. **Generic `dispatch_action(string)` interface** — No compile-time type safety on action names. Typos silently fail; no exhaustiveness check at call sites.
 
-```cpp
-// app/app.cpp:429-432 and 191-193 — two identical blocks
-TextServiceConfig text_config;
-text_config.font_path = config_.font_path;
-text_config.fallback_paths = config_.fallback_paths;
-text_config.enable_ligatures = config_.enable_ligatures;
-```
+6. **`void*` bridge for Metal objects** — ObjC++ objects are passed between compilation units as `void*`. A single mismatched cast causes a silent runtime crash with no compiler warning.
 
-### 5. `set_main_thread_id` Global Free Function
-`nvim_rpc.h:211` exposes a global `set_main_thread_id(std::thread::id)` function with no guard against being called multiple times or from the wrong thread. `NvimRpc::request()` uses this global to assert it is not called from the main thread. A per-instance stored thread ID would be safer and testable.
+7. **Reader thread / shutdown race on POSIX** — `shutdown()` closes the read fd without notifying the reader thread. The reader may call `read()` on a closed fd, producing EBADF or worse.
 
-### 6. `MpackValue::type()` Is O(n) via Sequential `holds_alternative`
-`MpackValue::type()` chains 9 `std::holds_alternative<T>` calls. While the variant's `index()` method would give the same info in O(1), the code deliberately avoids it to decouple enum values from variant declaration order. The comment is correct, but the cost is 9 template instantiations on every type query in the hot RPC decode path. A static lookup table keyed on `storage.index()` with compile-time enforcement would be both fast and correct.
+8. **No fake/stub renderer for unit tests** — Every rendering-adjacent test requires a real GPU. This blocks headless CI and slows the test feedback loop.
 
-### 7. `megacity` Module Is Effectively Dead Code
-`draxul-megacity` provides a 3D spinning-cube demo host that uses `dynamic_cast<I3DPassProvider*>()` to inject an extra render pass. It is linked into the production binary, adds complexity to the renderer abstraction (`I3DPassProvider`, `vk_cube_pass`, `megacity_render_vk`, `megacity_render.mm`), and has no users. Icebox item `#17 megacity-removal-refactor` exists but is unscheduled.
+9. **Magic numbers throughout** — Hardcoded 2000 ms shutdown timeout, `80 * 24` default grid size, and hardcoded descriptor pool counts all need hunting-down when constants change.
 
-### 8. `pending_window_activation_` Flag With Subtle Platform Behaviour
-`App::pump_once()` calls `window_.activate()` on the first iteration if `pending_window_activation_` is set. On CI, `options_.activate_window_on_startup` is false to avoid stealing focus. The flag and its conditioning are easy to misread. A prior bug (`38 window-activation-unconditional-ci`) was fixed here, suggesting this area is fragile.
-
-### 9. `AppConfig` SDL3 Coupling in `app-support`
-`libs/draxul-app-support/src/app_config.cpp:25` references `SDL_Keymod` and `SDL_KMOD_*` constants to parse keybinding modifiers. This couples the config library to SDL3's type system. Icebox item `#03 appconfig-sdl3-coupling-bug` calls this out but it is unresolved. A platform-neutral modifier bitmask in `draxul-types` would remove the coupling.
-
-### 10. No Mid-Frame Resize Guard
-If the window is resized between `renderer_.grid()->begin_frame()` and `renderer_.grid()->end_frame()` in `App::pump_once()`, the GPU cell buffer dimensions may not match the swapchain image. There is no explicit guard or assertion at this boundary. Icebox item `#09 grid-mid-frame-resize-test` acknowledges this gap but no fix is present.
+10. **Post-init `dynamic_cast` in HostManager** — Attaching the 3D renderer via a `dynamic_cast` after host initialization is implicit coupling. Silent no-op if the cast fails in a new host subclass.
 
 ---
 
-## Top 10 Features That Would Improve Quality of Life
+## Best 10 Quality-of-Life Features to Add
 
-### 1. IME Composition Display (Icebox #29)
-SDL3 provides `SDL_EVENT_TEXT_EDITING` with preedit text and cursor position. Draxul receives these events but does not render the in-progress composition inline. Users typing CJK, Korean, or emoji via input method editors see nothing until they confirm. Implementing an inline preedit overlay (even just an underlined region) would unblock a large class of international users.
+1. **Session restore** — Remember window position, size, and the last-opened file/directory so the editor returns to exactly where the user left off.
 
-### 2. Live Config Reload (Icebox #56)
-`config.toml` is loaded at startup only. Changing font size, ligature settings, or keybindings requires a full restart. Watching the config file with `inotify`/`FSEvents`/`ReadDirectoryChangesW` and re-applying changed fields in-place would dramatically improve the configuration experience, especially since `AppConfig::save()` already round-trips correctly.
+2. **Font fallback chain UI** — A settings panel (or config key) to specify an ordered fallback font list for CJK, emoji, and symbols, rather than relying solely on automatic resolution.
 
-### 3. Configurable ANSI Palette (Icebox #33)
-The 16-colour ANSI palette and 256-colour xterm cube are both hardcoded. A `[palette]` section in `config.toml` accepting hex colour values for indices 0–15 would allow users to match their terminal theme, and would align Draxul's terminal-emulator mode with every other modern terminal emulator.
+3. **Per-monitor DPI font scaling** — Automatically adjust font size when the window is dragged to a monitor with a different display scale, without requiring a restart.
 
-### 4. URL Detection and Click-to-Open (Icebox #20)
-Terminal output frequently contains file paths and URLs. Detecting common URL patterns (https://, file://, relative paths) and making them clickable (open in browser / open file / copy to clipboard on click) is a high-value ergonomic feature. The `SelectionManager` already tracks cell ranges; extending it to detect and highlight URL spans is a natural fit.
+4. **Live config reload** — Watch `config.toml` for changes and apply updated font size, keybindings, and ligature settings without relaunching.
 
-### 5. Native Tab Bar (Icebox #57)
-Running multiple Neovim sessions or terminal panes requires separate OS windows. A native tab bar (SDL3 has no built-in tab widget, but ImGui does) would let users switch between sessions in a single window. The `HostManager` + `IHost` abstraction is already designed to support multiple hosts.
+5. **Diagnostic overlay toggle** — A keybinding-activated overlay showing current FPS, GPU buffer write time, glyph atlas fill percentage, and RPC queue depth — useful for performance tuning.
 
-### 6. Remote Neovim Attach (Icebox #30)
-The current architecture spawns `nvim --embed` locally. Supporting `nvim --listen` / `--server` attach (connecting over TCP or a Unix socket rather than pipes) would enable remote editing, pairing workflows, and reconnect-on-disconnect without changing any rendering or input code.
+6. **Multiple window support** — Allow spawning additional Draxul windows sharing one Nvim instance (`nvim --remote`), matching the workflow of GUI Neovim clients like Neovide.
 
-### 7. Command Palette (Icebox #60)
-A fuzzy-searchable command palette (`Ctrl+Shift+P` style) exposing all `GuiAction` entries (font size, diagnostics toggle, copy/paste, etc.) would be more discoverable than reading documentation. The existing `GuiActionHandler` dispatch-map is already a clean list of actions to enumerate.
+7. **System font picker** — A GUI font picker dialog (or fuzzy search in a command popup) to browse and switch fonts without manually editing `config.toml`.
 
-### 8. Window State Persistence (Icebox #36)
-Window position is not saved. Draxul saves window width and height to `config.toml` on shutdown, but not `x`/`y`. On multi-monitor setups the window always opens on the primary display. Adding position persistence is a one-liner in `App::shutdown()` and `AppConfig`.
+8. **Smooth scrolling** — Animate `grid_scroll` events over a few frames with configurable easing, matching the UX of other modern terminal emulators.
 
-### 9. Configurable Scrollback Capacity (Icebox #34)
-`ScrollbackBuffer` has a fixed capacity. Heavy terminal users (long build logs, streaming output) hit the limit and lose history silently. A `scrollback_lines = N` key in `config.toml` with a documented default and maximum would let power users tune it.
+9. **Cursor animation** — Animate cursor movement across cells (position interpolation) with configurable speed, making large jumps easier to track visually.
 
-### 10. Font Fallback Inspector (Icebox #61)
-When a glyph is missing from the primary font and falls back (or falls through to a replacement glyph), there is no user-visible indication of which fallback font was used. A diagnostics panel section showing "last 10 glyph fallbacks" (codepoint → resolved face name) would help users debug font configuration issues without reading logs.
+10. **macOS native menu bar integration** — Wire common actions (new window, open file, copy/paste, font size) into the macOS menu bar so the application behaves as a first-class macOS citizen.
 
 ---
 
-## Top 10 Tests That Would Improve Stability
+## Best 10 Tests to Add for Stability
 
-### 1. Grid Mid-Frame Resize (Icebox #09)
-Simulate a resize event arriving between `begin_frame()` and `end_frame()` via `FakeRenderer` + `FakeWindow`. Assert that no out-of-bounds GPU buffer write occurs and that the renderer recovers cleanly on the next frame. This covers the acknowledged gap in the current test suite.
+1. **`grid_line` out-of-bounds coordinate** — Feed a `grid_line` event with row and col values outside the current grid dimensions; assert no crash, no memory corruption, and a graceful WARN log.
 
-### 2. Atlas Post-Reset Pixel Correctness (Icebox #10)
-After the glyph atlas resets (triggered by overflow), force a full re-upload and capture a render snapshot. Compare pixel-by-pixel to a pre-reset capture for the same text. This would catch any glyph-region remapping bugs that the current `ligature_atlas_reset_tests.cpp` doesn't cover at the pixel level.
+2. **Atlas exhaustion + reset cycle** — Drive enough unique glyphs to exhaust the 2048×2048 atlas, trigger `consume_atlas_reset()`, then verify subsequent renders are correct and no GPU resource leaks.
 
-### 3. SDL Key Encoding Exhaustive (Icebox #11)
-`encode_key_tests.cpp` covers common keys but not the full SDL3 keycode space. A data-driven exhaustive test that feeds every `SDL_Keycode` through `NvimInput::encode_key` and asserts the output matches the Neovim key protocol specification would prevent regressions when SDL3 updates its keycode enum.
+3. **DPI change mid-frame** — Simulate `on_display_scale_changed()` while a frame render is in-flight; verify no crash, no stale glyph data in the atlas, and correct cell sizing after rebuild.
 
-### 4. Cursor Blinker DPI Change (Icebox #07)
-`cursor_blinker_tests.cpp` tests blink timing but not what happens when DPI changes mid-session. A test that changes `display_ppi_` and asserts the cursor period is recalculated correctly (blink rate is typically a fraction of cell height) would prevent the cursor freezing or blinking at the wrong rate after a monitor change.
+4. **VtParser buffer overflow** — Feed a stream of 1 MB of CSI sequences; assert `csi_buffer_` does not grow beyond a defined max, drops bytes gracefully, and does not OOM.
 
-### 5. Input Dispatcher Modal State (Icebox #09)
-`input_dispatcher_routing_tests.cpp` covers normal key routing but not the case where the UI panel is visible and the input should be swallowed / redirected. A test asserting that keyboard input is withheld from the host while the diagnostics panel is focused, and restored when it is hidden, would prevent modal confusion regressions.
+5. **NvimProcess shutdown race (POSIX)** — Start the reader thread, then call `shutdown()` on a background thread concurrently; verify no EBADF crash and clean join of the reader thread.
 
-### 6. Alt-Screen Resize Restore (Icebox #11)
-Resize the terminal while the alternate screen is active, then restore the primary screen. Assert that the primary screen grid dimensions match the post-resize size, not the pre-resize snapshot stored in `AltScreenManager`. The related bug `#06 altscreen-resize-mismatch` was fixed but has no regression test.
+6. **Scroll at grid boundaries with double-width characters** — Scroll a region where the last cell is the left half of a double-width character; verify the orphaned half is correctly repaired to a space.
 
-### 7. Startup Rollback + Clipboard State (Icebox #22)
-`startup_rollback_tests.cpp` exercises rollback when renderer init fails. A complementary test injecting a failure after the clipboard subsystem is initialised (e.g., after `SDL_Init`) would confirm the SDL teardown path is clean and does not leak SDL state that affects subsequent test cases.
+7. **Rapid font size change** — Trigger `font_increase` / `font_decrease` in quick succession (faster than a full frame); verify no glyph atlas corruption and no use-after-free of the old TextService.
 
-### 8. VT Parser Fuzz Corpus Expansion (Icebox #02)
-`vt_parser_fuzz_tests.cpp` exists but the corpus is small. Importing libFuzzer corpus entries from other terminal emulator fuzz projects (xterm, foot, wezterm) would surface edge cases in multi-byte OSC bodies, sub-parameter CSI sequences (`38:2:r:g:b`), and malformed UTF-8 mid-sequence.
+8. **Keybinding conflict detection** — Load a config with two actions mapped to the same key; assert a clear error or last-wins with a WARN log rather than silent incorrect behaviour.
 
-### 9. RPC Codec Fuzzing (Icebox #21)
-`mpack_fuzz_tests.cpp` fuzzes the msgpack decoder but only at the byte level. A higher-level fuzzer that generates structurally valid msgpack arrays with random RPC method names and parameter shapes would test `UiEventHandler`'s dispatch table and parameter extraction without needing a real Neovim process.
+9. **Renderer `shutdown()` idempotency** — Call `shutdown()` twice on both VkRenderer and MetalRenderer; verify no double-free, no Vulkan validation layer errors, and no ObjC++ over-release.
 
-### 10. Grid Scroll Stress Under Concurrent Dirty Marks (Icebox #05)
-`grid_tests.cpp` tests `Grid::scroll()` but not under concurrent dirty-mark pressure. A stress test that interleaves `scroll()` calls with `set_cell()` calls using randomised parameters and asserts dirty-cell consistency at every step would guard against the class of wide-char boundary bugs that `#11 grid-scroll-wide-char-boundary` fixed.
+10. **File drop with path containing colons** — Simulate an SDL drop-file event with a path like `/foo:bar/file.txt`; verify the `open_file:` action is parsed correctly and the host receives the full path.
 
 ---
 
-## Worst 10 Features
+## Worst 10 Features (Most Likely to Cause Problems or Least Useful)
 
-### 1. The Megacity 3D Demo Module
-`draxul-megacity` is a spinning-cube demo with no user value. It adds ~600 lines of Vulkan and Metal render code, a `dynamic_cast` in the renderer hot path, two extra shader files, and compile-time coupling between the renderer backend and an optional guest feature. It is the textbook definition of dead weight in a production binary. Icebox item `#17 megacity-removal-refactor` exists but is unscheduled.
+1. **`dispatch_action(std::string_view)` generic string bus** — An untyped string channel for inter-module actions is fragile, ungreppable, and untestable. Every call site is a potential typo-induced silent failure.
 
-### 2. Hardcoded ANSI Palette With No OSC 4 Support
-The ANSI colour palette is baked in as magic floats with no escape hatch. OSC 4 (colour assignment), OSC 10/11 (default fg/bg query), and OSC 12 (cursor colour) are all silently ignored. Any TUI application that dynamically recolours the palette (some vim themes do this) will render incorrectly.
+2. **Hardcoded 80×24 initial grid size** — The default grid buffer sized to `80 * 24 * sizeof(GpuCell)` is a vestigial terminal assumption. It silently under-allocates for large windows until the first resize event.
 
-### 3. No IME Composition Rendering
-SDL3 fires `SDL_EVENT_TEXT_EDITING` with preedit text on every keystroke in an active input method. Draxul discards these events. Users typing CJK or using dead-key composition see no feedback until confirmation. This is a showstopper for a significant portion of the world's keyboard users.
+3. **Windows command-line quoting in `quote_windows_arg()`** — Hand-rolled Windows argument quoting for `CreateProcessA lpCommandLine` is inherently fragile (trailing backslashes, embedded quotes). This is a latent correctness bug and a potential injection surface.
 
-### 4. Silent Cluster Truncation in `CellText`
-`CellText::kMaxLen = 32` truncates any grapheme cluster longer than 32 bytes without logging, asserting, or returning an error. Modern emoji (flag sequences, multi-person skin-tone ZWJ sequences) routinely exceed 32 bytes. The truncated bytes produce a malformed UTF-8 suffix that HarfBuzz will either skip or misshape.
+4. **`(void)logical_h` suppression in app.cpp:505** — Explicitly suppressing an unused-variable warning rather than fixing the underlying logic indicates dead or misunderstood code that will confuse maintainers.
 
-### 5. No Background Transparency (Icebox #34)
-Translucent terminal windows are a mainstream feature in macOS, Windows, and Linux desktop environments. Draxul always renders fully opaque. Adding a `background_opacity` config key and updating the renderer clear-color alpha would be a modest change with high user demand.
+5. **HostManager post-init `dynamic_cast` for 3D attachment** — Silently does nothing if a new host subclass forgets to implement `I3DHost`. There is no compile-time enforcement, no runtime error, and no log entry on cast failure.
 
-### 6. Scrollback Limited to Fixed Capacity With No Config Key
-The scrollback buffer capacity is hardcoded. Once it fills, the oldest lines are evicted silently. There is no `scrollback_lines` key in `config.toml`, no log warning at overflow, and no way for users to tune the tradeoff between memory use and history depth.
+6. **Cursor blink implemented as deadline arithmetic in GridHostBase** — A timing-based cursor blink buried inside the grid host base class means any latency (slow GPU frame, heavy RPC batch) causes visible blink glitches. Should be decoupled from frame timing.
 
-### 7. No Full `guicursor` Support (Icebox #19)
-Neovim's `guicursor` option controls cursor shape, blink timing, and blink start/stop delays for each mode (normal, insert, replace, visual, etc.). Draxul partially honours cursor shape changes but does not implement per-mode blink timing from `guicursor`. Plugins that rely on mode-specific cursor behaviour (e.g., mode indicators in status lines) are partially blind.
+7. **`#ifdef DRAXUL_ENABLE_RENDER_TESTS` gating in main.cpp** — Large blocks of render-test code that are never compiled in production builds are maintenance debt. They bitrot silently between test runs and increase binary complexity for CI-only paths.
 
-### 8. No Remote Neovim Attach
-Every session requires a locally spawned `nvim --embed`. There is no support for connecting to an already-running Neovim (`nvim --server`/`--listen`) over a Unix socket or TCP. Remote development workflows (SSH + local GUI) are completely unsupported.
+8. **`log_display_info()` debug-only DPI logging** — Called only at `LogLevel::Debug`; DPI-related bugs in production (common on multi-monitor setups) produce no diagnostic output unless the user happens to have debug logging enabled.
 
-### 9. No Hierarchical Config (Icebox #37)
-`config.toml` is a flat file with no inheritance, no project-local config, and no env-based overrides (beyond `APPDATA`/`HOME`). Users cannot maintain per-project font sizes or keybinding overrides. Adding XDG_CONFIG_DIRS-style layering or a `.draxul.toml` project override would align Draxul with modern tool expectations.
+9. **AppConfig with no invariant validation** — Config fields like `font_size`, `window_width`, `window_height` accept any value including negatives and zeros. Invalid configs crash at first use rather than at parse time.
 
-### 10. `AppConfig` Coupled to SDL3 Modifier Types
-`libs/draxul-app-support/src/app_config.cpp` uses `SDL_Keymod` and `SDL_KMOD_*` to represent modifier bitmasks in the parsed keybinding table. This pulls SDL3 into what should be a platform-neutral config parsing library. Any test or tool that links `draxul-app-support` without SDL3 must work around this coupling. Icebox item `#03 appconfig-sdl3-coupling-bug` is open but unscheduled.
+10. **`GuiActionHandler::Deps` callback struct with 4+ function pointers** — No documented invocation order, no error propagation from callbacks, and no way to mock individual callbacks without touching the entire struct. Grows unbounded as new actions are added.
 
 ---
 
-## Summary Tables
-
-### Top 10 Good
-
-| # | Area | Verdict |
-|---|---|---|
-| 1 | Abstract interfaces (IWindow, IRenderer, IHost) | Excellent platform isolation |
-| 2 | DI seams in AppOptions | Enables realistic testing without mocks |
-| 3 | InitRollback pattern | Safe partial-init teardown |
-| 4 | Unidirectional data flow | Easy to reason about, agent-friendly |
-| 5 | 53-file test suite | High coverage across all layers |
-| 6 | VtParser as standalone state machine | Independently fuzzable |
-| 7 | Two-level dirty tracking in Grid | Frame time proportional to change |
-| 8 | ASan/LSan CI integration | Memory safety enforced continuously |
-| 9 | Work-item tracking discipline | Best-in-class for multi-agent development |
-| 10 | Startup timing instrumentation | Regressions visible at runtime |
-
-### Top 10 Bad
-
-| # | Area | Issue |
-|---|---|---|
-| 1 | `CellText::kMaxLen = 32` | Silent cluster truncation, data loss |
-| 2 | Hardcoded ANSI palette | No user customisation, no OSC 4 |
-| 3 | Unbounded RPC queue | Memory risk under burst load |
-| 4 | `TextServiceConfig` duplicated | Two-site maintenance hazard |
-| 5 | Global `set_main_thread_id` | Threading footgun, untestable |
-| 6 | `MpackValue::type()` O(n) | Hot-path inefficiency |
-| 7 | Megacity dead code | Maintenance burden, runtime coupling |
-| 8 | `pending_window_activation_` | Historically fragile, platform-conditional |
-| 9 | SDL3 in `app-support` config | Wrong layer coupling |
-| 10 | No mid-frame resize guard | Latent GPU corruption path |
-
-### Best 10 Features to Add
-
-| # | Feature | Impact |
-|---|---|---|
-| 1 | IME composition display | Unblocks international users |
-| 2 | Live config reload | Major QoL, no restart needed |
-| 3 | Configurable ANSI palette | TUI theme compatibility |
-| 4 | URL detection + click | High-frequency daily use |
-| 5 | Native tab bar | Multi-session UX |
-| 6 | Remote Neovim attach | Remote development workflows |
-| 7 | Command palette | Feature discoverability |
-| 8 | Window position persistence | Multi-monitor UX |
-| 9 | Configurable scrollback | Power user tuning |
-| 10 | Font fallback inspector | Font debugging UX |
-
-### Best 10 Tests to Add
-
-| # | Test | Stability Impact |
-|---|---|---|
-| 1 | Grid mid-frame resize | Prevent latent GPU corruption |
-| 2 | Atlas post-reset pixel correctness | Catch remapping bugs |
-| 3 | SDL key encoding exhaustive | Prevent keycode regressions |
-| 4 | Cursor blinker DPI change | Prevent cursor freeze after monitor change |
-| 5 | Input dispatcher modal state | Prevent key-swallowing regressions |
-| 6 | Alt-screen resize restore | Regression-test fixed bug #06 |
-| 7 | Startup rollback + clipboard | Complete SDL teardown coverage |
-| 8 | VT parser fuzz corpus expansion | Catch real-world edge cases |
-| 9 | RPC codec structural fuzzing | Test dispatch without live Neovim |
-| 10 | Grid scroll stress + dirty marks | Guard wide-char boundary invariants |
-
-### Worst 10 Features
-
-| # | Feature | Why It's Bad |
-|---|---|---|
-| 1 | Megacity 3D demo | Dead code, production coupling |
-| 2 | Hardcoded ANSI palette | Breaks dynamic TUI themes |
-| 3 | No IME composition | Unusable for CJK users |
-| 4 | Silent cluster truncation | Data corruption without signal |
-| 5 | No background transparency | Missing mainstream feature |
-| 6 | Fixed scrollback capacity | Silent history loss |
-| 7 | Partial guicursor support | Mode-specific cursor broken |
-| 8 | No remote Neovim attach | Remote dev completely unsupported |
-| 9 | No hierarchical config | No per-project overrides |
-| 10 | SDL3 in config library | Wrong-layer coupling, untestable |
+*End of report.*

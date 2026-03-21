@@ -1,125 +1,88 @@
-# Draxul Repository Review
-
-Static inspection only. I did not build, run, or modify anything.
-
-## Executive Summary
-
-The repo is better-structured than most GUI frontends: the library split is real, the tests are unusually strong, and the work-item history shows deliberate refactoring. The main drag now is not lack of intent, it is concentration of responsibility. A few files and interfaces still carry too much policy, which makes parallel work slower and increases the chance of subtle regressions.
-
-The two most concrete correctness issues I found are in the file-open path and the GUI action registry. The biggest structural issues are the `TerminalHostBase` god object, the unbounded Neovim notification queue, and public headers that pull in more subsystem detail than they should.
+# Repository Review
 
 ## Findings
 
-1. **Dropped/open-dialog file paths are passed to Neovim unsafely.**  
-   [`input_dispatcher.cpp`](/Users/cmaughan/dev/Draxul/app/input_dispatcher.cpp#L111) forwards raw paths as `"open_file:" + path`, and [`nvim_host.cpp`](/Users/cmaughan/dev/Draxul/libs/draxul-host/src/nvim_host.cpp#L156) turns that into `nvim_command("edit " + path)`. Paths with spaces, quotes, `|`, `%`, or command-like characters can misparse or do the wrong thing. This should use an escaped filename or Lua/API-based open path.
+- High: failed startup can still overwrite the user config. `App::initialize()` arms a rollback that calls `shutdown()` on any init failure, and `shutdown()` persists config whenever `save_user_config` is true. That means a failed window/renderer/font/host init can still write partial/default state back to disk. See [app/app.cpp#L73](/Users/cmaughan/dev/Draxul/app/app.cpp#L73) and [app/app.cpp#L542](/Users/cmaughan/dev/Draxul/app/app.cpp#L542).
 
-2. **`open_file_dialog` is implemented but not configurable through `config.toml`.**  
-   [`gui_action_handler.cpp`](/Users/cmaughan/dev/Draxul/app/gui_action_handler.cpp#L50) recognizes `open_file_dialog`, but [`app_config.cpp`](/Users/cmaughan/dev/Draxul/libs/draxul-app-support/src/app_config.cpp#L26) does not include it in `kKnownGuiActions`, so [`parse_gui_keybinding`](/Users/cmaughan/dev/Draxul/libs/draxul-app-support/src/app_config.cpp#L454) rejects it. That leaves the feature half-integrated.
+- Medium: mouse-event modifier state is sampled from global SDL state, not from the queued event being translated. For delayed or bursty input, Ctrl/Shift/Alt state can be wrong for click, drag, and wheel handling. See [sdl_event_translator.cpp#L32](/Users/cmaughan/dev/Draxul/libs/draxul-window/src/sdl_event_translator.cpp#L32).
 
-3. **The Neovim notification queue is still unbounded.**  
-   [`rpc.cpp`](/Users/cmaughan/dev/Draxul/libs/draxul-nvim/src/rpc.cpp#L23) stores notifications in a plain `std::vector`, drained opportunistically at [`rpc.cpp`](/Users/cmaughan/dev/Draxul/libs/draxul-nvim/src/rpc.cpp#L175). The repo’s own design note calls this out as a known risk in [`belt-and-braces.md`](/Users/cmaughan/dev/Draxul/plans/design/belt-and-braces.md#L7). Under redraw bursts or temporary UI stalls, backlog growth is unconstrained.
+- Medium: clipboard tests are drift-prone because they reimplement production logic instead of calling it. The tests even still refer to `App` in comments, but the real logic now lives in `NvimHost`. A future change in the host path can silently bypass these tests. See [clipboard_tests.cpp#L9](/Users/cmaughan/dev/Draxul/tests/clipboard_tests.cpp#L9), [nvim_host.cpp#L341](/Users/cmaughan/dev/Draxul/libs/draxul-host/src/nvim_host.cpp#L341), and [nvim_host.cpp#L367](/Users/cmaughan/dev/Draxul/libs/draxul-host/src/nvim_host.cpp#L367).
 
-4. **`TerminalHostBase` remains the main architectural bottleneck.**  
-   [`terminal_host_base.h`](/Users/cmaughan/dev/Draxul/libs/draxul-host/include/draxul/terminal_host_base.h#L3) pulls in alt-screen, scrollback, selection, mouse, parser, VT state, highlighting, and process lifecycle into one inheritance root. That makes the shell/PowerShell path hard to split safely across multiple agents and keeps tests focused on one large behavior surface instead of smaller composable units.
+- Medium: module boundaries are still blurrier than the repo guide suggests. `AppConfig`’s public header pulls in renderer and text-service types, `draxul-app-support` publicly re-exports heavy dependencies, and tests compile `app/*.cpp` directly into the test binary. That increases rebuild fan-out and makes parallel edits collide more often. See [app_config.h#L7](/Users/cmaughan/dev/Draxul/libs/draxul-app-support/include/draxul/app_config.h#L7), [app_config.h#L101](/Users/cmaughan/dev/Draxul/libs/draxul-app-support/include/draxul/app_config.h#L101), [libs/draxul-app-support/CMakeLists.txt#L24](/Users/cmaughan/dev/Draxul/libs/draxul-app-support/CMakeLists.txt#L24), and [tests/CMakeLists.txt#L54](/Users/cmaughan/dev/Draxul/tests/CMakeLists.txt#L54).
 
-5. **The config/public API boundary is still too heavy.**  
-   [`app_config.h`](/Users/cmaughan/dev/Draxul/libs/draxul-app-support/include/draxul/app_config.h#L3) exposes SDL types, renderer types, and `TextService` constants from what should be mostly data/config plumbing. [`draxul-app-support/CMakeLists.txt`](/Users/cmaughan/dev/Draxul/libs/draxul-app-support/CMakeLists.txt#L24) also links `draxul-nvim` and `draxul-renderer` publicly, which spreads those dependencies transitively.
+- Low: planning metadata has duplicate work items, which will confuse unattended multi-agent work and status tracking. Examples: [20 url-detection-click -feature.md](/Users/cmaughan/dev/Draxul/plans/work-items-icebox/20%20url-detection-click%20-feature.md), [22 url-detection-click -feature.md](/Users/cmaughan/dev/Draxul/plans/work-items-icebox/22%20url-detection-click%20-feature.md), [19 guicursor-full-support -feature.md](/Users/cmaughan/dev/Draxul/plans/work-items-icebox/19%20guicursor-full-support%20-feature.md), [23 guicursor-full-support -feature.md](/Users/cmaughan/dev/Draxul/plans/work-items-icebox/23%20guicursor-full-support%20-feature.md), [16 terminal-host-base-decomposition -refactor.md](/Users/cmaughan/dev/Draxul/plans/work-items-complete/16%20terminal-host-base-decomposition%20-refactor.md), and [17 terminal-host-base-decomposition -refactor.md](/Users/cmaughan/dev/Draxul/plans/work-items-complete/17%20terminal-host-base-decomposition%20-refactor.md).
 
-6. **`UiPanel` is still a monolith.**  
-   [`ui_panel.cpp`](/Users/cmaughan/dev/Draxul/libs/draxul-ui/src/ui_panel.cpp#L1) mixes styling, layout, window composition, metric rendering, dockspace creation, SDL-to-ImGui key translation, input forwarding, and lifecycle management in one 758-line file. That is workable today, but it is poor parallel-edit territory.
+No builds or tests were run, per instruction. This is a static review from direct file inspection.
 
-7. **`SdlWindow` mixes too many concerns in one implementation file.**  
-   [`sdl_window.cpp`](/Users/cmaughan/dev/Draxul/libs/draxul-window/src/sdl_window.cpp#L20) combines DPI diagnostics, platform activation hacks, SDL event translation, clipboard, async file dialog marshalling, and window creation/shutdown. It is test-hostile and makes platform work noisier than it needs to be.
+## General Review
 
-8. **Some tests validate copied logic instead of production paths.**  
-   [`clipboard_tests.cpp`](/Users/cmaughan/dev/Draxul/tests/clipboard_tests.cpp#L10) explicitly mirrors production logic instead of calling the real implementation. That can keep tests green while the actual path drifts.
+The codebase is directionally strong. The `libs/` split is real, `app/` is mostly orchestration, test coverage is broad, and the repo has unusually good institutional memory through `plans/` and focused work-item history. The strongest areas are `draxul-grid`, `draxul-app-support` utilities like `CursorBlinker`, the replay fixture support, and the breadth of crash/race/fuzz tests.
 
-9. **The test harness is still split between Catch auto-registration and a manual call list.**  
-   [`test_main.cpp`](/Users/cmaughan/dev/Draxul/tests/test_main.cpp#L9) declares a long manual suite list, then runs Catch separately at [`test_main.cpp`](/Users/cmaughan/dev/Draxul/tests/test_main.cpp#L50). This is maintainable only as long as people remember both registration styles.
+The main maintainability risk is concentration, not chaos. A few files remain merge hotspots: [app/app.cpp](/Users/cmaughan/dev/Draxul/app/app.cpp), [terminal_host_base.h](/Users/cmaughan/dev/Draxul/libs/draxul-host/include/draxul/terminal_host_base.h), [terminal_host_base.cpp](/Users/cmaughan/dev/Draxul/libs/draxul-host/src/terminal_host_base.cpp), [terminal_host_base_csi.cpp](/Users/cmaughan/dev/Draxul/libs/draxul-host/src/terminal_host_base_csi.cpp), [nvim_host.cpp](/Users/cmaughan/dev/Draxul/libs/draxul-host/src/nvim_host.cpp), [vk_renderer.cpp](/Users/cmaughan/dev/Draxul/libs/draxul-renderer/src/vulkan/vk_renderer.cpp), and [metal_renderer.mm](/Users/cmaughan/dev/Draxul/libs/draxul-renderer/src/metal/metal_renderer.mm). Those are the files most likely to slow parallel agent work.
 
-10. **Planning/review artifacts have started to drift from the source tree.**  
-   [`review-consensus.md`](/Users/cmaughan/dev/Draxul/plans/reviews/review-consensus.md#L1) is not a normal consensus note; it is a wrapper-style status message about what was produced. Also, `plans/work-items/` is currently empty while the repo conventions still talk as if it is the active backlog. That weakens the repo as a coordination surface.
-
-## Architecture Notes
-
-The repo’s intended dependency direction is mostly respected in spirit. `app/` is thinner than before, renderer backends are private, and pure logic such as grid, highlight handling, VT parsing, and codec work is testable. The remaining issue is that several “base” abstractions still carry subsystem ownership instead of just protocol ownership. The main examples are [`GridHostBase`](/Users/cmaughan/dev/Draxul/libs/draxul-host/include/draxul/grid_host_base.h#L15), [`TerminalHostBase`](/Users/cmaughan/dev/Draxul/libs/draxul-host/include/draxul/terminal_host_base.h#L23), [`IWindow`](/Users/cmaughan/dev/Draxul/libs/draxul-window/include/draxul/window.h#L11), and the 3D injection path in [`renderer.h`](/Users/cmaughan/dev/Draxul/libs/draxul-renderer/include/draxul/renderer.h#L71).
-
-The MegaCity path is still the least coherent part of the architecture. [`renderer.h`](/Users/cmaughan/dev/Draxul/libs/draxul-renderer/include/draxul/renderer.h#L85) exposes opaque `void*` draw callbacks, [`renderer.h`](/Users/cmaughan/dev/Draxul/libs/draxul-renderer/include/draxul/renderer.h#L128) uses `dynamic_cast` to surface them, and [`megacity_host.cpp`](/Users/cmaughan/dev/Draxul/libs/draxul-megacity/src/megacity_host.cpp#L12) continues the opaque-state pattern. It is isolated, but it still bends core renderer abstractions around a demo host.
-
-## Testing Holes
-
-- No real integration test covers dropped/open-dialog file paths with spaces or special characters through the actual `InputDispatcher -> NvimHost -> nvim_command` path.
-- No test covers the `open_file_dialog` action being bindable from config, because today it is not.
-- No direct test exercises `SdlWindow` event translation, async file-dialog event marshalling, or activation behavior.
-- No test covers `main.cpp` argument parsing, especially render-test flags and host selection.
-- No test validates overload behavior of the Neovim notification queue because there is no bounded/coalesced policy yet.
-- Diagnostics panel tests cover layout/input well, but not higher-level window composition drift or metric presentation.
-- The mixed manual/Catch harness itself is untested and easy to partially bypass.
-- Script/review plumbing under `scripts/` and `plans/` has very little self-validation despite being part of the repo’s collaboration workflow.
+The test suite is broad but still has seams where behavior is documented rather than exercised. [resize_cascade_tests.cpp#L179](/Users/cmaughan/dev/Draxul/tests/resize_cascade_tests.cpp#L179) explicitly skips the real integration path, [clipboard_tests.cpp#L9](/Users/cmaughan/dev/Draxul/tests/clipboard_tests.cpp#L9) mirrors production code instead of invoking it, and [to-be-checked.md](/Users/cmaughan/dev/Draxul/tests/to-be-checked.md) shows important behaviors still depend on manual verification.
 
 ## Top 10 Good Things
 
-1. The library split is meaningful, not cosmetic.
-2. Tests are broad for a GUI app, especially around grid, RPC, VT, DPI, startup rollback, and rendering state.
-3. [`replay_fixture.h`](/Users/cmaughan/dev/Draxul/tests/support/replay_fixture.h#L1) is a strong seam for redraw bugs.
-4. Renderer state and shader layout are protected with explicit static assertions.
-5. `App` initialization has rollback discipline instead of ad hoc cleanup.
-6. Host abstractions made shell, PowerShell, and Neovim support feasible without forking the whole app.
-7. Render-test scenarios and reference images give the project a concrete visual regression story.
-8. The work-item history in `plans/` preserves architectural context unusually well.
-9. Dependency cleanup has clearly happened over time; the tree is better than its history implies.
-10. Logging categories and diagnostics instrumentation are stronger than average for a project this size.
+1. The repo is genuinely modular instead of only nominally modular.
+2. `app/` is mostly orchestration, which matches the stated architecture.
+3. Test coverage is broad: unit, integration, fuzz, crash, shutdown-race, and render-reference tests all exist.
+4. The render-test fixture/reference setup is practical and maintainable.
+5. `tests/support/replay_fixture.h` is a good redraw-bug seam.
+6. The work-item history shows the team actually pays down architectural debt.
+7. Renderer constants and GPU layout checks are explicit and defensive.
+8. Host abstraction is useful and already supports multiple runtime modes cleanly.
+9. Cross-platform concerns are mostly pushed below the app layer.
+10. The code comments are usually purposeful rather than noisy.
 
 ## Top 10 Bad Things
 
-1. The file-open path is unsafe and under-tested.
-2. `TerminalHostBase` is still a god class.
-3. The Neovim notification queue is unbounded.
-4. `MegaCity` still distorts renderer abstractions.
-5. `app_config.h` leaks SDL and renderer/font concerns into public config surface.
-6. `UiPanel` and `SdlWindow` are still large edit-conflict magnets.
-7. Some tests mirror implementation instead of exercising it.
-8. The test harness uses two registration models.
-9. Planning artifacts have drifted and are not consistently repo-facing.
-10. Collaboration scripts under `scripts/` are visibly duplicated and lightly factored.
+1. Startup rollback can persist config on failure.
+2. Public dependency fan-out is still too wide in `draxul-app-support`.
+3. Tests bypass boundaries by compiling `app/*.cpp` directly.
+4. Some tests mirror production logic instead of calling it.
+5. `TerminalHostBase` is still a large collision surface.
+6. `app/app.cpp` still centralizes too many coordination concerns.
+7. Important behaviors remain manual-checklist-only.
+8. Agent helper scripts are visibly duplicated.
+9. Planning metadata has duplicate work items and numbering collisions.
+10. Some user-facing behavior is still hard-coded rather than configurable.
 
-## Best 10 Features To Add For Quality Of Life
+## Best 10 Quality-of-Life Features To Add
 
-1. Command palette for app actions and common host commands.
-2. Live config reload with visible parse errors.
-3. Window/session state persistence.
-4. Configurable ANSI palette and theme presets.
-5. URL detection and clickable links.
-6. Remote Neovim attach in addition to local spawn.
-7. IME composition UI and candidate positioning polish.
-8. Font fallback inspector in the diagnostics panel.
-9. Searchable scrollback/history view.
-10. Better file-open UX with recent files and safe path handling.
+1. Command palette.
+2. Live config reload.
+3. Configuration UI/editor.
+4. Window state persistence.
+5. URL detection and click-open.
+6. Full `guicursor` support.
+7. IME composition visibility/preview.
+8. Font fallback inspector.
+9. Native tab bar or session tabs.
+10. Performance HUD with frame, atlas, and host metrics.
 
-## Best 10 Tests To Add For Stability
+## Best 10 Tests To Add
 
-1. End-to-end open-file test for paths with spaces, quotes, Unicode, and shell-like characters.
-2. Config parse/serialize test proving `open_file_dialog` bindings round-trip once added.
-3. Stress test for bounded/coalesced RPC notifications under redraw flood.
-4. Extracted SDL event translation tests for `SdlWindow`.
-5. `main.cpp` argument parsing table tests.
-6. Integration test for save-on-shutdown ordering and config persistence edge cases.
-7. Diagnostics panel composition/snapshot tests at multiple DPIs and panel visibility states.
-8. Cross-platform file-dialog result marshalling test with cancellation and callback ordering.
-9. Real clipboard-provider integration test through `NvimHost`, not mirrored helpers.
-10. Refactor-guard test ensuring all non-Catch suites are either auto-registered or intentionally listed.
+1. Failed startup must not save or mutate user config.
+2. Real clipboard round-trip tests through `NvimHost`, not mirrored helpers.
+3. End-to-end resize cascade tests to unskip [resize_cascade_tests.cpp](/Users/cmaughan/dev/Draxul/tests/resize_cascade_tests.cpp).
+4. Mouse modifier fidelity tests for button/move/wheel translation.
+5. `App::on_display_scale_changed()` failure-path rollback test.
+6. Drag-drop/open-file tests with spaces, Unicode, and shell-sensitive characters.
+7. Config save/load tests covering partial init and double-shutdown interactions.
+8. `UiRequestWorker` tests for stop-while-request-pending and stale resize suppression.
+9. Diagnostics-panel-visible render smoke/reference test.
+10. Plan/script hygiene tests for duplicated work-item IDs and agent-script CLI consistency.
 
 ## Worst 10 Features
 
-1. `MegaCity` as a first-class host path.
-2. Raw `:edit {path}` file opening.
-3. The unbounded RPC notification backlog behavior.
-4. The mixed manual/Catch test registration model.
-5. Bottom-panel diagnostics coupled directly to the main app/render loop.
-6. Public config surface depending on SDL keycodes and renderer/font internals.
-7. Opaque `void*` 3D renderer callback plumbing.
-8. Native window activation hacks living directly in the SDL window implementation.
-9. Review/planning files that describe generated output instead of repository truth.
-10. Duplicated agent-wrapper scripts that will drift independently.
-
-If you want a follow-up, the best next step is a prioritized remediation plan. My recommended order would be: file-open safety, `open_file_dialog` config integration, bounded/coalesced RPC notifications, `TerminalHostBase` decomposition, then `app_config`/`draxul-app-support` dependency slimming.
+1. The Megacity host path still adds conceptual noise to a terminal/editor product.
+2. The diagnostics panel is powerful but developer-centric and permanently steals terminal height when shown.
+3. Draxul unconditionally installs its own Neovim clipboard provider.
+4. The non-Windows emoji-prefixed window title is unnecessary product chrome.
+5. Scrollback capacity is fixed instead of user-configurable.
+6. Selection limits and truncation policy are still opaque to users.
+7. Keybinding customization exists without an in-app discovery/edit surface.
+8. File opening is bare `:edit` plumbing, not a polished recent-files/workspace flow.
+9. Smooth scrolling exists but lacks tuning and visibility.
+10. Close behavior is forceful (`exit` / `:qa!`) rather than graceful and user-aware.

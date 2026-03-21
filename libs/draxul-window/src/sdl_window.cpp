@@ -21,6 +21,7 @@ namespace draxul
 
 #ifdef __APPLE__
 extern void apply_title_bar_color_macos(SDL_Window*, Color);
+extern void disable_press_and_hold_macos();
 #endif
 
 #if defined(_WIN32) || defined(__APPLE__)
@@ -139,6 +140,13 @@ bool SdlWindow::initialize(const std::string& title, int width, int height)
         DRAXUL_LOG_ERROR(LogCategory::Window, "SDL_Init failed: %s", SDL_GetError());
         return false;
     }
+
+#ifdef __APPLE__
+    // SDL3's Cocoa backend registers ApplePressAndHoldEnabled=YES via
+    // registerDefaults:, which replaces key repeat with macOS accent pickers.
+    // Override it to NO so that holding a key generates OS repeat events.
+    disable_press_and_hold_macos();
+#endif
 
     wake_event_type_ = SDL_RegisterEvents(2);
     if (wake_event_type_ == static_cast<Uint32>(-1))
