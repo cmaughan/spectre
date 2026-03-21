@@ -1019,6 +1019,63 @@ TEST_CASE("terminal: origin mode restricts cursor to scroll region on positionin
     ts.host.feed("\x1B[r"); // reset scroll region
 }
 
+TEST_CASE("terminal: nvim command-mode layout: statusline and cmdline at bottom rows", "[terminal]")
+{
+    // Simulate the sequence nvim uses when showing a statusline + cmdline:
+    // - enter alt screen
+    // - set scroll region to protect last 2 rows
+    // - position cursor to write statusline at row N-2 (0-indexed)
+    // - position cursor to write cmdline at row N-1 (0-indexed)
+    // Verifies that CUP positioning with DECSTBM lands content at the correct rows.
+    const int cols = 20;
+    const int rows = 10;
+    TermSetup ts(cols, rows);
+    INFO("host must initialize");
+    REQUIRE(ts.ok);
+
+    // Enter alt screen (nvim uses this)
+    ts.host.feed("\x1B[?1049h");
+
+    // Nvim sets scroll region to protect last 2 rows (statusline + cmdline):
+    // ESC[1;8r = rows 1..8 (1-indexed) = rows 0..7 (0-indexed) as scroll region
+    // Rows 8 and 9 (0-indexed) = rows 9 and 10 (1-indexed) are protected
+    ts.host.feed("\x1B[1;8r");
+
+    // Verify cursor reset to home after DECSTBM
+    INFO("cursor reset to row 0 after DECSTBM");
+    REQUIRE(ts.host.row() == 0);
+
+    // Fill editing area with some content
+    ts.host.feed("\x1B[1;1H"); // row 0, col 0
+    ts.host.feed("EDITING");
+
+    // Position cursor to statusline row (row 9, 1-indexed = row 8, 0-indexed)
+    ts.host.feed("\x1B[9;1H");
+    INFO("cursor at statusline row (0-indexed 8) after ESC[9;1H");
+    REQUIRE(ts.host.row() == 8);
+    ts.host.feed("STATUSLINE");
+    INFO("statusline content at row 8");
+    REQUIRE(ts.host.cell_text(0, 8) == std::string("S"));
+    REQUIRE(ts.host.cell_text(9, 8) == std::string("E")); // "STATUSLINE"[9] = 'E'
+
+    // Position cursor to cmdline row (row 10, 1-indexed = row 9, 0-indexed)
+    ts.host.feed("\x1B[10;1H");
+    INFO("cursor at cmdline row (0-indexed 9) after ESC[10;1H");
+    REQUIRE(ts.host.row() == 9);
+    ts.host.feed(":command");
+    INFO("cmdline content at row 9");
+    REQUIRE(ts.host.cell_text(0, 9) == std::string(":"));
+    REQUIRE(ts.host.cell_text(1, 9) == std::string("c"));
+
+    // Verify editing area content is at the right row
+    INFO("editing area content at row 0");
+    REQUIRE(ts.host.cell_text(0, 0) == std::string("E"));
+
+    // Verify no content at wrong rows (statusline should NOT be at row 9 or row 0)
+    INFO("statusline NOT at cmdline row");
+    REQUIRE(ts.host.cell_text(0, 9) != std::string("S"));
+}
+
 TEST_CASE("terminal: auto-wrap mode can be toggled with ?7h and ?7l", "[terminal]")
 {
     TermSetup ts(5, 3);

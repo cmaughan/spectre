@@ -393,6 +393,7 @@ bool App::pump_once(std::optional<std::chrono::steady_clock::time_point> wait_de
             {
                 const auto [cw, ch] = renderer_.grid()->cell_size_pixels();
                 renderer_.grid()->set_scroll_offset(input_dispatcher_.scroll_fraction() * static_cast<float>(ch));
+                input_dispatcher_.clear_scroll_event();
             }
             auto frame_start = std::chrono::steady_clock::now();
             if (renderer_.grid()->begin_frame())

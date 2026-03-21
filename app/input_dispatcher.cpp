@@ -69,6 +69,7 @@ void InputDispatcher::on_mouse_wheel_event(const MouseWheelEvent& event)
 
     if (deps_.smooth_scroll && event.dy != 0.0f)
     {
+        had_scroll_event_ = true;
         pending_scroll_y_ += event.dy;
         const float sign = pending_scroll_y_ > 0.0f ? 1.0f : -1.0f;
         const auto steps = static_cast<int>(std::abs(pending_scroll_y_));

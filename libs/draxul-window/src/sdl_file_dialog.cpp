@@ -23,7 +23,7 @@ void show_open_file_dialog(SDL_Window* window, Uint32 result_event_type)
                 // Heap-allocate the path; freed in handle_file_dialog_event().
                 auto* path = std::make_unique<std::string>(filelist[0]).release();
                 SDL_Event ev = {};
-                ev.type = c->event_type;
+                ev.user.type = c->event_type;
                 ev.user.data1 = path;
                 SDL_PushEvent(&ev);
             }
