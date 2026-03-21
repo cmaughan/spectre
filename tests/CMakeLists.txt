@@ -11,6 +11,7 @@ add_executable(draxul-tests
     highlight_tests.cpp
     font_tests.cpp
     grid_tests.cpp
+    grid_line_bounds_tests.cpp
     grid_rendering_pipeline_tests.cpp
     ui_events_tests.cpp
     input_tests.cpp

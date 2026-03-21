@@ -86,6 +86,15 @@ public:
         return rows_;
     }
 
+    int sink_cols() const override
+    {
+        return cols_;
+    }
+    int sink_rows() const override
+    {
+        return rows_;
+    }
+
     bool is_dirty(int col, int row) const;
     void mark_dirty(int col, int row);
     void mark_all_dirty();

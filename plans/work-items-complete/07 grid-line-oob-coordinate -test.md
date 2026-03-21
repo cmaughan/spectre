@@ -15,18 +15,18 @@ No test feeds a `grid_line` event with row or col outside the current grid dimen
 
 ## Implementation Plan
 
-- [ ] Read `tests/support/replay_fixture.h` to understand the msgpack builder helpers.
-- [ ] Read `libs/draxul-nvim/src/ui_events.cpp` around `handle_grid_line()` to understand the parsing path.
-- [ ] Write a test in `tests/grid_line_bounds_tests.cpp` (or add to existing grid tests):
+- [x] Read `tests/support/replay_fixture.h` to understand the msgpack builder helpers.
+- [x] Read `libs/draxul-nvim/src/ui_events.cpp` around `handle_grid_line()` to understand the parsing path.
+- [x] Write a test in `tests/grid_line_bounds_tests.cpp` (or add to existing grid tests):
   - Construct a Grid of known size (e.g., 80×24).
   - Build a `redraw` event with a `grid_line` payload where `row = 9999` (way out of range).
   - Feed the event through the UiEventHandler.
   - Assert: no crash, no ASAN error, a WARN log is emitted.
   - Repeat with `col_start` out of range.
   - Repeat with negative values if the type allows it.
-- [ ] Also test the integer overflow case: a grid resize to `cols = 65536`, then a `grid_line` with `col_start` near max int — verify no signed overflow.
-- [ ] Add the new file to `tests/CMakeLists.txt`.
-- [ ] Run with ASan preset: `cmake --preset mac-asan && cmake --build build --target draxul-tests && ctest --test-dir build -R draxul-tests`.
+- [x] Also test the integer overflow case: a grid resize to `cols = 65536`, then a `grid_line` with `col_start` near max int — verify no signed overflow.
+- [x] Add the new file to `tests/CMakeLists.txt`.
+- [x] Run with ASan preset: `cmake --preset mac-asan && cmake --build build --target draxul-tests && ctest --test-dir build -R draxul-tests`.
 
 ---
 

@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdio>
+#include <draxul/log.h>
 #include <draxul/nvim_ui.h>
 #include <draxul/unicode.h>
 #include <memory>
@@ -197,6 +198,18 @@ void UiEventHandler::handle_grid_line(const MpackValue& args)
     int col_start = 0;
     if (!try_get_int((*args_array)[1], row) || !try_get_int((*args_array)[2], col_start))
         return;
+
+    const int grid_rows = grid_->sink_rows();
+    const int grid_cols = grid_->sink_cols();
+    const bool rows_known = grid_rows > 0;
+    const bool cols_known = grid_cols > 0;
+    if (row < 0 || (rows_known && row >= grid_rows) || col_start < 0 || (cols_known && col_start >= grid_cols))
+    {
+        DRAXUL_LOG_WARN(LogCategory::App,
+            "handle_grid_line: out-of-range coordinates row=%d col_start=%d grid=%dx%d — dropping event",
+            row, col_start, grid_cols, grid_rows);
+        return;
+    }
 
     int col = col_start;
     uint16_t current_hl = 0;
