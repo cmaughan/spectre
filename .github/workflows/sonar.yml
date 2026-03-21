@@ -53,28 +53,26 @@ jobs:
           fi
           xcrun llvm-profdata merge "${valid[@]}" -o build/coverage.profdata
 
-      - name: Export coverage (JSON)
+      - name: Export coverage (llvm-cov show)
         run: |
-          xcrun llvm-cov export \
+          xcrun llvm-cov show \
             build/tests/draxul-tests \
-            --instr-profile=build/coverage.profdata \
-            --ignore-filename-regex='(build/_deps|tests/)' \
-            > build/coverage.json
+            -instr-profile=build/coverage.profdata \
+            -ignore-filename-regex='(build/_deps|tests/)' \
+            > build/coverage.txt
 
       - name: Check coverage report
         run: |
-          echo "=== coverage.json size ==="
-          wc -c build/coverage.json
-          echo "=== first source files ==="
-          python3 -c "import json,sys; d=json.load(open('build/coverage.json')); [print(f['filename']) for f in d['data'][0]['files'][:10]]"
-          echo "=== GITHUB_WORKSPACE ==="
-          echo "$GITHUB_WORKSPACE"
+          echo "=== coverage.txt size ==="
+          wc -c build/coverage.txt
+          echo "=== first lines ==="
+          head -20 build/coverage.txt
 
       - name: Run SonarCloud analysis
         uses: SonarSource/sonarqube-scan-action@v7
         with:
           args: >
-            -Dsonar.cfamily.llvm-cov.reportPath=${{ github.workspace }}/build/coverage.json
+            -Dsonar.cfamily.llvm-cov.reportPath=${{ github.workspace }}/build/coverage.txt
             -Dsonar.verbose=true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
