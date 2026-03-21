@@ -15,14 +15,14 @@
 
 ## Fix Plan
 
-- [ ] Read `libs/draxul-grid/src/grid.cpp` around the scroll implementation.
-- [ ] For each `assert()` guarding scroll bounds:
+- [x] Read `libs/draxul-grid/src/grid.cpp` around the scroll implementation.
+- [x] For each `assert()` guarding scroll bounds:
   - Replace with an explicit bounds check that applies in all build configurations.
   - On violation: clamp the region to valid bounds OR return early with a WARN log — do not proceed with out-of-range values.
   - Keep the Debug-only assert if desired, but always have a Release-safe fallback.
-- [ ] Check whether similar assert-only guards exist elsewhere in grid.cpp and apply the same fix.
-- [ ] Build in Release config and run smoke test: `cmake --preset mac-release && cmake --build build --target draxul draxul-tests && py do.py smoke`.
-- [ ] Run ctest in Release.
+- [x] Check whether similar assert-only guards exist elsewhere in grid.cpp and apply the same fix.
+- [x] Build in Release config and run smoke test: `cmake --preset mac-release && cmake --build build --target draxul draxul-tests && py do.py smoke`.
+- [x] Run ctest in Release.
 
 ---
 

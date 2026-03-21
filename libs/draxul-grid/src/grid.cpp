@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <cassert>
 #include <draxul/grid.h>
 #include <draxul/log.h>
 #include <draxul/unicode.h>
@@ -51,7 +50,9 @@ void Grid::set_cell(int col, int row, const std::string& text, uint16_t hl_id, b
     if (col < 0 || col >= cols_ || row < 0 || row >= rows_)
         return;
 
-    const int index = row * cols_ + col;
+    const size_t index = static_cast<size_t>(row) * static_cast<size_t>(cols_) + static_cast<size_t>(col);
+    if (index >= cells_.size())
+        return;
     auto& cell = cells_[index];
     if (col > 0)
     {
@@ -59,7 +60,7 @@ void Grid::set_cell(int col, int row, const std::string& text, uint16_t hl_id, b
         if (cell.double_width_cont || prev.double_width)
         {
             prev = make_blank_cell();
-            mark_dirty_index(index - 1);
+            mark_dirty_index(static_cast<int>(index - 1));
         }
     }
 
@@ -69,7 +70,7 @@ void Grid::set_cell(int col, int row, const std::string& text, uint16_t hl_id, b
         if (next.double_width_cont)
         {
             clear_continuation(next);
-            mark_dirty_index(index + 1);
+            mark_dirty_index(static_cast<int>(index + 1));
         }
     }
 
@@ -81,7 +82,7 @@ void Grid::set_cell(int col, int row, const std::string& text, uint16_t hl_id, b
     cell.dirty = false;
     cell.double_width = double_width;
     cell.double_width_cont = false;
-    mark_dirty_index(index);
+    mark_dirty_index(static_cast<int>(index));
 
     if (double_width && col + 1 < cols_)
     {
@@ -91,7 +92,7 @@ void Grid::set_cell(int col, int row, const std::string& text, uint16_t hl_id, b
         next.dirty = false;
         next.double_width = false;
         next.double_width_cont = true;
-        mark_dirty_index(index + 1);
+        mark_dirty_index(static_cast<int>(index + 1));
     }
 }
 
@@ -114,7 +115,6 @@ void Grid::scroll(int top, int bot, int left, int right, int rows, int cols)
         DRAXUL_LOG_WARN(LogCategory::App,
             "Grid::scroll received out-of-bounds region: top=%d bot=%d left=%d right=%d grid=%dx%d",
             top, bot, left, right, cols_, rows_);
-        assert(false && "Grid::scroll received out-of-bounds region");
         return;
     }
 

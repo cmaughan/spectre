@@ -17,15 +17,15 @@ Related: `grid.cpp:54` uses `int index = row * cols_ + col` with signed int arit
 
 ## Fix Plan
 
-- [ ] Read `libs/draxul-nvim/src/ui_events.cpp` around `handle_grid_line()`.
-- [ ] Read `libs/draxul-grid/src/grid.cpp` around the index calculation and grid bounds.
-- [ ] In `handle_grid_line()`, after extracting `row` and `col_start`, assert/guard that:
+- [x] Read `libs/draxul-nvim/src/ui_events.cpp` around `handle_grid_line()`.
+- [x] Read `libs/draxul-grid/src/grid.cpp` around the index calculation and grid bounds.
+- [x] In `handle_grid_line()`, after extracting `row` and `col_start`, assert/guard that:
   - `row >= 0 && row < grid.rows()`
   - `col_start >= 0 && col_start < grid.cols()`
   - Each subsequent `col_start + offset` stays in range
   - Log a WARN and return early (do not crash) on violation.
-- [ ] In `grid.cpp` index calculation, change to `size_t` arithmetic and add a bounds check that returns early (or asserts in debug) on overflow/OOB.
-- [ ] Build and run smoke test + ctest.
+- [x] In `grid.cpp` index calculation, change to `size_t` arithmetic and add a bounds check that returns early (or asserts in debug) on overflow/OOB.
+- [x] Build and run smoke test + ctest.
 
 ---
 
