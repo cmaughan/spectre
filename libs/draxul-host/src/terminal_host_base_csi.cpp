@@ -356,7 +356,7 @@ void TerminalHostBase::csi_mode(char final_char, bool private_mode, const std::v
         case 1002: // Button motion
         case 1003: // Any motion
         case 1006: // SGR extended format
-            mouse_reporter_.set_mode(mode, enable);
+            on_mouse_mode_changed(mode, enable);
             break;
         case 2004: // Bracketed paste mode
             bracketed_paste_mode_ = enable;

@@ -1,5 +1,5 @@
 #include "conpty_process.h"
-#include <draxul/terminal_host_base.h>
+#include <draxul/local_terminal_host.h>
 
 #include <draxul/host_kind.h>
 
@@ -56,7 +56,7 @@ std::string find_git_bash()
     return "bash.exe";
 }
 
-class ConPtyHostBase : public TerminalHostBase
+class ConPtyHostBase : public LocalTerminalHost
 {
 protected:
     bool spawn_process(const std::string& command, const std::string& hint)

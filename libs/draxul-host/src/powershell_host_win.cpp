@@ -1,5 +1,5 @@
 #include "conpty_process.h"
-#include <draxul/terminal_host_base.h>
+#include <draxul/local_terminal_host.h>
 
 namespace draxul
 {
@@ -7,7 +7,7 @@ namespace draxul
 namespace
 {
 
-class PowerShellHost : public TerminalHostBase
+class PowerShellHost : public LocalTerminalHost
 {
 public:
     std::string_view host_name() const override

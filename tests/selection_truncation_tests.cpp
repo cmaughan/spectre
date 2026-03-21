@@ -1,7 +1,7 @@
 #include "support/fake_renderer.h"
 #include "support/fake_window.h"
 
-#include <draxul/terminal_host_base.h>
+#include <draxul/local_terminal_host.h>
 
 #include <draxul/host.h>
 #include <draxul/renderer.h>
@@ -17,11 +17,14 @@
 using namespace draxul;
 using namespace draxul::tests;
 
+namespace
+{
+
 // ---------------------------------------------------------------------------
 // TestTerminalHost — exposes internals needed by selection tests.
 // ---------------------------------------------------------------------------
 
-class TestTerminalHost final : public TerminalHostBase
+class TestTerminalHost final : public LocalTerminalHost
 {
 public:
     void feed(std::string_view bytes)
@@ -221,6 +224,8 @@ static bool is_valid_utf8(const std::string& s)
     }
     return true;
 }
+
+} // anonymous namespace
 
 // ---------------------------------------------------------------------------
 // Tests

@@ -1,7 +1,7 @@
 #include "support/fake_renderer.h"
 #include "support/fake_window.h"
 
-#include <draxul/terminal_host_base.h>
+#include <draxul/local_terminal_host.h>
 
 #include <draxul/host.h>
 #include <draxul/renderer.h>
@@ -17,11 +17,14 @@
 using namespace draxul;
 using namespace draxul::tests;
 
+namespace
+{
+
 // ---------------------------------------------------------------------------
 // TestTerminalHost — exposes consume_output() and input helpers for tests.
 // ---------------------------------------------------------------------------
 
-class TestTerminalHost final : public TerminalHostBase
+class TestTerminalHost final : public LocalTerminalHost
 {
 public:
     // Feed raw VT bytes into the parser.
@@ -155,6 +158,8 @@ bool has_sgr_report(const std::string& written)
 {
     return written.size() >= 4 && written[0] == '\x1B' && written[1] == '[' && written[2] == '<';
 }
+
+} // anonymous namespace
 
 // ---------------------------------------------------------------------------
 // Tests
