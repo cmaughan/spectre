@@ -124,7 +124,7 @@ class "KeyEvent" as C_0010565110385499149884
 class C_0010565110385499149884 {
 __
 +keycode : int
-+mod : uint16_t
++mod : ModifierFlags
 +pressed : bool
 +scancode : int
 }
@@ -144,7 +144,7 @@ class "MouseButtonEvent" as C_0013373323923961518899
 class C_0013373323923961518899 {
 __
 +button : int
-+mod : uint16_t
++mod : ModifierFlags
 +pressed : bool
 +x : int
 +y : int
@@ -152,7 +152,7 @@ __
 class "MouseMoveEvent" as C_0005177588658906065630
 class C_0005177588658906065630 {
 __
-+mod : uint16_t
++mod : ModifierFlags
 +x : int
 +y : int
 }
@@ -161,7 +161,7 @@ class C_0009958399031821783594 {
 __
 +dx : float
 +dy : float
-+mod : uint16_t
++mod : ModifierFlags
 +x : int
 +y : int
 }
@@ -219,7 +219,7 @@ class C_0017708234387737448190 {
 +size_logical() const : std::pair<int,int>
 +size_pixels() const : std::pair<int,int>
 +wait_events() : bool
-+wake() : void
++wake() const : void
 __
 -clamp_to_display_ : bool
 -file_dialog_event_type_ : unsigned int
@@ -347,7 +347,7 @@ __
 class "RendererState" as C_0004074277629754559155
 class C_0004074277629754559155 {
 +apply_cursor() : void
--apply_update_to_cell() : void
+-apply_update_to_cell() const : void
 +bg_instances() const : int
 +buffer_size_bytes() const : size_t
 +clear_dirty() : void
@@ -594,10 +594,10 @@ class C_0015913343513510731058 {
 +~NvimProcess() : void
 ..
 +is_running() const : bool
-+read() : int
++read() const : int
 +shutdown() : void
 +spawn() : bool
-+write() : bool
++write() const : bool
 __
 -impl_ : std::unique_ptr<Impl>
 }
@@ -710,7 +710,7 @@ class C_0015344056630990463416 {
 -font_decrease() : void
 -font_increase() : void
 -font_reset() : void
--open_file_dialog() : void
+-open_file_dialog() const : void
 -paste() : void
 -toggle_diagnostics() : void
 __
@@ -953,11 +953,13 @@ class "GuiKeybinding" as C_0012943441053662818710
 class C_0012943441053662818710 {
 __
 +action : std::string
-+key : SDL_Keycode
-+modifiers : SDL_Keymod
++key : int32_t
++modifiers : ModifierFlags
 }
 class "AppConfig" as C_0010304326697326195617
 class C_0010304326697326195617 {
++AppConfig() : void
+..
 {static} +load() : AppConfig
 {static} +load_from_path() : AppConfig
 {static} +parse() : AppConfig
