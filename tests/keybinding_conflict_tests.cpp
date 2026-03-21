@@ -19,6 +19,7 @@
 
 #include "support/test_support.h"
 
+#include <SDL3/SDL.h>
 #include <catch2/catch_all.hpp>
 #include <draxul/app_config.h>
 #include <draxul/events.h>
