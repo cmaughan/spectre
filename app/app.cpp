@@ -278,6 +278,15 @@ bool App::initialize_host()
         return false;
     }
 
+    if (auto* h3d = dynamic_cast<I3DHost*>(host_manager_.host()))
+    {
+        const auto& metrics = text_service_.metrics();
+        const float font_size = static_cast<float>(metrics.cell_height)
+            * static_cast<float>(text_service_.point_size() - 2)
+            / static_cast<float>(text_service_.point_size());
+        h3d->set_imgui_font(text_service_.primary_font_path(), font_size);
+    }
+
     request_frame();
     return true;
 }

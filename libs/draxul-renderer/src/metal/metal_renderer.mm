@@ -362,7 +362,12 @@ void MetalRenderer::shutdown_imgui_backend()
     if (!imgui_initialized_)
         return;
 
-    ImGui_ImplMetal_Shutdown();
+    // Only call ImGui_ImplMetal_Shutdown() if a context is current. In the
+    // MegaCityHost case the host destroys its own context (and calls this
+    // method) before app-level cleanup runs a second time with no context.
+    if (ImGui::GetCurrentContext() != nullptr)
+        ImGui_ImplMetal_Shutdown();
+
     imgui_initialized_ = false;
     imgui_draw_data_ = nullptr;
 }

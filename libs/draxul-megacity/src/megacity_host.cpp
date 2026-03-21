@@ -53,6 +53,21 @@ void MegaCityHost::attach_imgui_host(IImGuiHost& host)
     DRAXUL_LOG_INFO(LogCategory::App, "MegaCityHost: ImGui context created and backend initialized");
 }
 
+void MegaCityHost::set_imgui_font(const std::string& path, float size_pixels)
+{
+    if (!imgui_ctx_ || !imgui_host_)
+        return;
+
+    ImGui::SetCurrentContext(imgui_ctx_);
+    ImGuiIO& io = ImGui::GetIO();
+    io.Fonts->Clear();
+    if (!path.empty() && size_pixels > 0.0f)
+        io.Fonts->AddFontFromFileTTF(path.c_str(), size_pixels);
+    if (io.Fonts->Fonts.empty())
+        io.Fonts->AddFontDefault();
+    imgui_host_->rebuild_imgui_font_texture();
+}
+
 ImDrawData* MegaCityHost::render_imgui(float dt)
 {
     if (!imgui_ctx_ || !imgui_host_)
@@ -95,6 +110,8 @@ void MegaCityHost::shutdown()
     if (imgui_ctx_)
     {
         ImGui::SetCurrentContext(imgui_ctx_);
+        if (imgui_host_)
+            imgui_host_->shutdown_imgui_backend();
         ImGui::DestroyContext(imgui_ctx_);
         imgui_ctx_ = nullptr;
     }

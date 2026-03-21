@@ -133,6 +133,7 @@ public:
     {
         return nullptr;
     }
+    virtual void set_imgui_font(const std::string& /*path*/, float /*size_pixels*/) {}
 };
 
 // ---------------------------------------------------------------------------

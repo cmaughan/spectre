@@ -79,6 +79,7 @@ public:
         return imgui_ctx_ != nullptr;
     }
     ImDrawData* render_imgui(float dt) override;
+    void set_imgui_font(const std::string& path, float size_pixels) override;
 
 private:
     HostCallbacks callbacks_;

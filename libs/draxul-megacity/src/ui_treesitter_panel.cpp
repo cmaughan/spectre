@@ -78,30 +78,22 @@ void render_treesitter_panel(
     int window_h,
     const std::shared_ptr<const CodebaseSnapshot>& snapshot)
 {
-    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration
-        | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings
-        | ImGuiWindowFlags_NoBringToFrontOnFocus;
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoBringToFrontOnFocus;
 
-    ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f));
+    ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(
-        ImVec2(static_cast<float>(window_w), static_cast<float>(window_h)));
-    ImGui::SetNextWindowBgAlpha(0.88f);
+        ImVec2(static_cast<float>(window_w) * 0.5f, static_cast<float>(window_h)),
+        ImGuiCond_FirstUseEver);
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12.0f, 12.0f));
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 3.0f));
 
-    if (!ImGui::Begin("##treesitter", nullptr, flags))
+    if (!ImGui::Begin("Codebase Analysis", nullptr, flags))
     {
         ImGui::PopStyleVar(2);
         ImGui::End();
         return;
     }
-
-    // Title bar
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.85f, 0.4f, 1.0f));
-    ImGui::Text("Codebase Analysis");
-    ImGui::PopStyleColor();
-    ImGui::SameLine();
 
     if (!snapshot)
     {
@@ -116,13 +108,7 @@ void render_treesitter_panel(
     if (!snapshot->complete)
     {
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.9f, 0.6f, 1.0f));
-        ImGui::Text("(scanning... %zu files)", snapshot->files.size());
-        ImGui::PopStyleColor();
-    }
-    else
-    {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.5f, 0.5f, 1.0f));
-        ImGui::Text("(complete)");
+        ImGui::Text("Scanning... %zu files", snapshot->files.size());
         ImGui::PopStyleColor();
     }
 
