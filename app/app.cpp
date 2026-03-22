@@ -1,5 +1,8 @@
 #include "app.h"
 
+#ifdef __APPLE__
+#include "macos_menu.h"
+#endif
 #include "gui_action_handler.h"
 #include "host_manager.h"
 #include "input_dispatcher.h"
@@ -189,6 +192,10 @@ bool App::initialize()
         request_frame();
     };
     gui_action_handler_ = GuiActionHandler(std::move(gui_deps));
+
+#ifdef __APPLE__
+    install_macos_menu(gui_action_handler_);
+#endif
 
     wire_window_callbacks();
 
