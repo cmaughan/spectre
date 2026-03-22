@@ -1,267 +1,186 @@
-# Draxul Codebase Review Report
-
-*Generated: 2026-03-21 | Codebase: ~19,000 lines of C++*
+Here is the full report:
 
 ---
 
-## Executive Summary
+# Draxul Codebase Review
 
-Draxul is a Neovim GUI frontend with a well-structured library decomposition, clean GPU abstraction layers, and solid platform support (Metal/macOS, Vulkan/Windows). The architecture is sound, but shows organic growth patterns: proliferating callbacks, mixed concerns in App, and insufficient input validation. The most critical risks are threading races, unbounded memory growth in the VT parser, and missing bounds checks on RPC-supplied coordinates.
-
----
-
-## Detailed Findings
-
-### 1. Code Quality Issues
-
-#### 1.1 Namespace Pollution & Abbreviated Naming
-- **Location:** Throughout codebase (e.g., `libs/draxul-font/src/text_service.cpp:13–21`)
-- Struct names like `Impl`, variables like `cw`/`ch`, `msg_`, `cbs_` — opaque to new contributors.
-
-#### 1.2 Renderer Backend Code Duplication
-- **Location:** `libs/draxul-renderer/src/vulkan/vk_renderer.h:40–50` vs. `libs/draxul-renderer/src/metal/metal_renderer.h:46–62`
-- Nearly identical method signatures across VkRenderer and MetalRenderer with no shared base implementation. Bug fixes require touching both codepaths.
-
-#### 1.3 Unsafe `void*` Bridge for Metal Objects
-- **Location:** `libs/draxul-renderer/src/metal/metal_renderer.h:83–94`
-- ObjC++ Metal objects held as `void*` in C++ compilation units. Incorrect casts are invisible to the compiler.
-
-#### 1.4 Unbounded String Accumulation in VtParser
-- **Location:** `libs/draxul-host/src/vt_parser.cpp:62–65`
-- `plain_text_`, `csi_buffer_`, `osc_buffer_` have no max size. A pathological or buggy Nvim stream causes unbounded memory growth.
-
-#### 1.5 Raw Pointer Aliasing Without Lifetime Guarantees
-- **Location:** `libs/draxul-host/src/grid_host_base.cpp:11–25`
-- `window_`, `renderer_`, `text_service_` stored as raw pointers with no lifetime enforcement. Use-after-free if App shuts down out-of-order.
-
-#### 1.6 Magic Numbers
-- **Location:** `libs/draxul-nvim/src/nvim_process.cpp:142` — `WaitForSingleObject(..., 2000)` (2 s hardcoded)
-- **Location:** `libs/draxul-renderer/src/vulkan/vk_renderer.cpp:142` — `80 * 24 * sizeof(GpuCell)` hardcoded
-
-#### 1.7 No Input Validation in UI Event Handler
-- **Location:** `libs/draxul-nvim/src/ui_events.cpp:187–200`
-- `handle_grid_line()` extracts row/col_start from msgpack with no bounds check against grid dimensions.
-
-#### 1.8 Grid Scroll Warnings Without Release Handling
-- **Location:** `libs/draxul-grid/src/grid.cpp:113–128`
-- Out-of-bounds scroll region logged as WARN + `assert()`. In Release builds the assert vanishes; undefined behaviour follows.
-
-#### 1.9 Integer Overflow in Grid Indexing
-- **Location:** `libs/draxul-grid/src/grid.cpp:54` — `int index = row * cols_ + col`
-- `cols_` from a malformed RPC resize could overflow a signed int. Should use `size_t` with bounds guard.
-
-#### 1.10 Descriptor Counts Hardcoded in Vulkan Pipeline
-- **Location:** `libs/draxul-renderer/src/vulkan/vk_renderer.cpp:232–240`
-- `VkDescriptorPoolSize` entries are hardcoded constants; pipeline changes require manual sync.
-
----
-
-### 2. Testing Gaps
-
-#### 2.1 GPU Resource Cleanup Untested
-- `libs/draxul-renderer/src/vulkan/vk_renderer.cpp:166–189` — `shutdown()` is never validated for idempotency or full resource release.
-
-#### 2.2 Process Spawn Failure Paths
-- `libs/draxul-nvim/src/nvim_process.cpp:78–150` — 7+ early-exit points (pipe creation failures, `CreateProcessA` failure); test coverage unlikely.
-
-#### 2.3 DPI Hotplug During Active Frame
-- `on_display_scale_changed()` → TextService rebuild → glyph re-shape chain has no test validating frames don't crash mid-rebuild.
-
-#### 2.4 Atlas Exhaustion Recovery
-- `libs/draxul-font/src/text_service.cpp:179–182` — `consume_atlas_reset()` is called but no test exercises behaviour under sustained high-glyph-rate load.
-
-#### 2.5 Grid Scroll Edge Cases
-- `libs/draxul-grid/src/grid.cpp:105–231` — complex double-width char repair logic in scrolling is undertested at boundaries.
-
-#### 2.6 RPC Backpressure Under Load
-- No test simulates rapid redraw from Nvim while App is blocked on a GPU frame.
-
-#### 2.7 Shutdown Race Condition
-- Host thread servicing RPC queue vs. `App::shutdown()` — timing-dependent; no deterministic test.
-
-#### 2.8 No Fake Renderer for Headless Unit Tests
-- Every test that touches rendering requires a real GPU driver. No stub/fake renderer abstraction exists.
-
-#### 2.9 Cursor Blink State Machine
-- Cursor visibility depends on blink timing, busy state, and deadline. Complex state with no coverage of transition edge cases.
-
-#### 2.10 File Drop Path Validation
-- `app/input_dispatcher.cpp:111–114` — `open_file:` action string with colon-separated path; no test for paths containing colons or special characters.
-
----
-
-### 3. Separation of Concerns Violations
-
-#### 3.1 App Layer Owns Too Much (567 lines)
-- `app/app.cpp` orchestrates: window lifecycle, renderer init, font loading, host creation, input dispatch, diagnostics panel, config persistence — all in one file.
-
-#### 3.2 AppConfig Leaks SDL Knowledge
-- `libs/draxul-app-support/include/draxul/app_config.h:20–26` — `GuiKeybinding::key` is typed as SDL_Keycode (a comment says so); the support library has an implicit SDL dependency.
-
-#### 3.3 GridHostBase Mixes Unrelated Concerns
-- `libs/draxul-host/src/grid_host_base.cpp` — manages grid state, cursor blinking, text input area, highlight table, rendering pipeline, and viewport math all in one base class.
-
-#### 3.4 HostManager Post-Init Dynamic Cast
-- `app/host_manager.cpp:21–82` — `dynamic_cast<I3DHost*>` after initialization attaches the renderer; implicit coupling that breaks if host lifecycle changes.
-
-#### 3.5 Generic `dispatch_action()` String Interface
-- `libs/draxul-host/include/draxul/host.h:99` — hosts accept arbitrary `std::string_view action`; typos silently do nothing, no compile-time type safety.
-
----
-
-### 4. Threading & Synchronization Issues
-
-#### 4.1 Race in UiRequestWorker
-- `libs/draxul-app-support/include/draxul/ui_request_worker.h:24–28` — `rpc_` pointer read by worker thread while main thread may be setting it or calling `stop()`. No synchronization visible.
-
-#### 4.2 No Enforcement That Grid Is Main-Thread Only
-- `libs/draxul-grid/src/grid.cpp:28–50` — Grid is mutated by the main thread, but no `DRAXUL_ASSERT_MAIN_THREAD()` macro prevents accidental access from a background thread.
-
-#### 4.3 Reader Thread Reads Closed FD
-- POSIX NvimProcess — `shutdown()` closes `child_stdout_read_` without signaling the reader thread. Reader may call `read()` on a closed fd (EBADF) depending on timing.
-
----
-
-### 5. Memory Management Issues
-
-#### 5.1 Pimpl Move Semantics Unclear
-- `libs/draxul-font/src/text_service.cpp:71–80` — `= default` move is used but Impl's own move-correctness is unverified; non-copyable resources could double-free or leak.
-
-#### 5.2 Shared Pointer Ownership Not Documented
-- `libs/draxul-renderer/src/vulkan/vk_renderer.h:115` — `shared_ptr<IRenderPass>` ownership transfer semantics at `register_render_pass()` vs. `unregister_render_pass()` are undocumented.
-
----
-
-### 6. Architecture Issues
-
-#### 6.1 Polling Loop Instead of Event-Driven
-- `app/app.cpp:282–286` — `run()` is `while(running_) { pump_once(); }`. RPC notifications are polled each frame; no reactive wakeup mechanism.
-
-#### 6.2 No Configuration Validation
-- `libs/draxul-app-support/include/draxul/app_config.h:26–53` — Negative window sizes, font sizes below minimum, etc., are never rejected at parse/apply time.
-
-#### 6.3 Callback Proliferation in GuiActionHandler
-- `app/app.cpp:156–173` — `GuiActionHandler::Deps` holds 4+ callback functions with no documented invocation order or error propagation.
+*Generated: 2026-03-22. Based on direct file reads of `app/`, `libs/`, `shaders/`, `tests/`, `scripts/`, and `plans/`.*
 
 ---
 
 ## Top 10 Good Things
 
-1. **Clean library decomposition** — `draxul-types`, `draxul-window`, `draxul-renderer`, `draxul-font`, `draxul-grid`, `draxul-nvim`, `draxul-host`, `draxul-app-support` are clearly bounded with explicit CMake targets and one-way dependency arrows.
+### 1. Clean Interface Hierarchy with RendererBundle
+The renderer hierarchy (`IBaseRenderer → I3DRenderer → IGridRenderer`) is well-designed. The diamond `IRenderer` interface is wrapped by `RendererBundle`, which provides typed accessors without exposing the diamond inheritance to callers. This pattern prevents accidental coupling and makes platform switching (Metal/Vulkan) transparent to the app layer.
 
-2. **Pimpl pattern used consistently** — All major subsystems (TextService, NvimProcess, SdlWindow) hide implementation behind `Impl` structs, keeping public headers clean and reducing recompile cascades.
+### 2. Comprehensive, Targeted Test Suite (65+ files)
+The test coverage is genuinely impressive for a native GUI application. Nearly every library module has dedicated test files: RPC integration and backpressure, grid mutations, VT parser fuzz testing, font fallback corpus, scrollback overflow, host lifecycle races, and render state. The `replay_fixture.h` builders allow reproducing UI parsing bugs without spawning Neovim — a practical, well-designed test-support investment.
 
-3. **Renderer hierarchy is well-abstracted** — `IBaseRenderer → I3DRenderer → IGridRenderer` allows new render passes to be registered without modifying the core pipeline.
+### 3. Deterministic Visual Regression Tests
+The render snapshot workflow (scenario `.toml` files → renderer backbuffer capture → BMP reference diff → bless commands) is the right solution for a GPU-rendered application. Capturing from the swapchain/drawable rather than the desktop avoids compositor noise and DPI artifacts. The `do.py` entry point makes the workflow accessible without memorising raw command lines.
 
-4. **IRenderPass / IRenderContext pattern** — Any subsystem can register typed render passes; the renderer calls them each frame without knowing what they do. Excellent for extensibility.
+### 4. Robust Process Management (UnixPtyProcess)
+`UnixPtyProcess` demonstrates careful systems programming: a self-pipe for clean reader thread wakeup, multi-phase SIGTERM/SIGKILL with a 100 ms grace period, foreground process group handling via `tcgetpgrp()`, FD_CLOEXEC on all descriptors, SIGPIPE suppression, and login-shell argv convention. This level of care prevents hangs and zombie processes on edge cases.
 
-5. **Replay fixture test infrastructure** — `tests/support/replay_fixture.h` enables deterministic RPC/redraw testing without spawning a real Nvim process. The builder pattern is clean and easy to extend.
+### 5. Shared Shader Constants (`decoration_constants_shared.h`)
+A single header is consumed by both Metal (`.metal`) and GLSL (`.vert`/`.frag`) shader files via `#define` macros written to be valid in both languages. This eliminates the common pitfall of shader magic-number drift between backends. Combined with `static_assert` verification of the `GpuCell` layout, the CPU/GPU boundary is reliably typed.
 
-6. **Font pipeline is thorough** — FreeType → HarfBuzz → GlyphCache → shelf-packed atlas is a correct and complete text rendering pipeline with ligature support.
+### 6. PIMPL and Deps Patterns Used Consistently
+`TextService`, `NvimProcess`, and `NvimRpc` use PIMPL to hide implementation headers (FreeType, HarfBuzz, MPack) from callers. The `Deps` struct pattern (`InputDispatcher::Deps`, `GuiActionHandler::Deps`, `HostManager::Deps`) provides explicit, testable dependency injection without complex framework machinery. Both patterns are applied consistently rather than selectively.
 
-7. **Render smoke/snapshot test suite** — `do.py bless*` workflows enable per-scenario visual regression testing, which is non-trivial for GPU-rendered applications.
+### 7. `do.py` Central Entry Point
+A single root-level `do.py` with a `--help` screen and memorable short commands (`smoke`, `blessall`, `shot`, `test`, `syncboard`) dramatically reduces friction for the safety nets already built. This is especially valuable in an AI-assisted workflow where agents and humans need a shared, discoverable command vocabulary.
 
-8. **Explicit threading model documented** — Main thread owns grid and GPU; reader thread is strictly a pipe pump. The model is simple, documented, and largely respected in code.
+### 8. Init Rollback Guard in App::initialize()
+`App::initialize()` uses an RAII rollback guard that undoes any partially-completed initialisation on failure. This prevents resource leaks and partially-initialised objects from reaching the main loop — a pattern rarely seen in GUI applications and important for clean error recovery.
 
-9. **FetchContent for all dependencies** — No vendored source trees; all external libraries (SDL3, FreeType, HarfBuzz, MPack, vk-bootstrap, VMA) are fetched declaratively. Reproducible builds.
+### 9. GpuCell `static_assert` Layout Verification
+`renderer_state.h` uses `static_assert` to verify the exact byte size (112) and field offsets of `GpuCell` against the shader struct layout. This catches ABI mismatches at compile time rather than producing silent rendering corruption — a strong example of compile-time safety applied to a CPU/GPU data interface.
 
-10. **Platform presets in CMake** — `mac-debug`, `mac-release`, `mac-asan`, `default`, `release` provide one-command configuration for all common workflows including AddressSanitizer builds.
+### 10. Living Engineering Commentary (`docs/learnings.md`)
+The learnings file is updated as work happens, capturing cross-cutting lessons (color emoji pipeline requirements, CJK fallback strategy, multi-line TOML parsing pitfalls, Windows command-line quoting hazards, parallel agent integration patterns). This is a practical institutional memory that reduces re-discovery cost for both humans and agents.
 
 ---
 
 ## Top 10 Bad Things
 
-1. **No bounds validation on RPC-supplied grid coordinates** — `handle_grid_line()` trusts Nvim's row/col values without checking against grid dimensions. A malformed message causes out-of-bounds memory access.
+### 1. ImGui Host Rendering Duplicated Between `pump_once()` and `run_render_test()`
+The I3DHost ImGui detection and rendering block (~20 lines) appears identically in both `App::pump_once()` and `App::run_render_test()`. Any change to the logic (e.g., how the active host is found, how ImGui draw calls are issued) must be made in two places. This is a latent divergence bug. Extract a private `draw_host_imgui()` helper.
 
-2. **Unbounded buffers in VtParser** — `plain_text_`, `csi_buffer_`, `osc_buffer_` grow without limit. Sustained abnormal output triggers memory exhaustion.
+### 2. ImGui Font Size Formula Duplicated Three Times in `app.cpp`
+The expression `static_cast<float>(text_service_.point_size() - 2)` (or equivalent derived from cell metrics) appears three times when computing the ImGui font size. A private helper or a named constant would eliminate the silent divergence risk.
 
-3. **Threading race in UiRequestWorker** — The `rpc_` pointer is accessed by a worker thread with no visible synchronization. Concurrent set/stop from the main thread is a data race.
+### 3. `SplitTree::find_leaf_node()` is `const` but Returns Mutable `Node*`
+The method is declared `const` but returns `Node*` (non-const), which silently discards the const qualifier of `this`. The implementation uses a recursive `std::function<Node*(Node*)>` on `root_.get()`. This is technically undefined behaviour if the returned pointer is ever used for mutation through a const `SplitTree`. It should either return `const Node*` or remove the `const` qualifier from the method.
 
-4. **App class owns too much** — 567-line `app.cpp` orchestrates every subsystem. Changes to any one subsystem require reasoning about the whole file; hard to test in isolation.
+### 4. Chord Prefix Mode Never Cancelled on Key Release
+`InputDispatcher`'s chord prefix state is activated on a specific key-down and is only consumed on the next key-down. If the user presses the prefix key and releases it without pressing a chord key (e.g., prefix activated accidentally), the dispatcher remains in prefix mode silently until the next key event. The comment in the code acknowledges this but leaves it as a known issue. A key-release handler should reset the prefix flag.
 
-5. **Generic `dispatch_action(string)` interface** — No compile-time type safety on action names. Typos silently fail; no exhaustiveness check at call sites.
+### 5. `log_would_emit()` Acquires a Mutex
+The logging system acquires a `std::mutex` on every call to `log_would_emit()`. In hot rendering paths, any conditional logging check incurs mutex overhead even when logging is disabled. Consider `std::atomic<LogLevel>` for the active level comparison to make the common "disabled" path lock-free.
 
-6. **`void*` bridge for Metal objects** — ObjC++ objects are passed between compilation units as `void*`. A single mismatched cast causes a silent runtime crash with no compiler warning.
+### 6. Hardcoded Default Terminal Colors in ShellHost
+`shell_host_unix.cpp` hardcodes foreground (`{0.92, 0.92, 0.92}`) and background (`{0.08, 0.09, 0.10}`) colors. These are not read from `config.toml`. A terminal emulator that ignores user color preferences in its default shell host is a usability regression waiting to happen when a user changes their theme.
 
-7. **Reader thread / shutdown race on POSIX** — `shutdown()` closes the read fd without notifying the reader thread. The reader may call `read()` on a closed fd, producing EBADF or worse.
+### 7. `App::pump_once()` is ~110 Lines — Too Large for a Single Function
+The frame loop function handles window activation, dead-pane closure, host pumping, ImGui frame lifecycle, dirty rect rendering, host-specific draw, vsync wait, and shutdown transitions sequentially. This makes it difficult to understand the frame budget, test individual stages, or extend the loop with new phases. The stages should be named private helpers.
 
-8. **No fake/stub renderer for unit tests** — Every rendering-adjacent test requires a real GPU. This blocks headless CI and slows the test feedback loop.
+### 8. Hand-Rolled Windows Command-Line Quoting (Latent Security Bug)
+`quote_windows_arg()` in the Windows process spawn code is a hand-rolled implementation of a notoriously tricky algorithm (trailing backslashes before closing quotes, embedded quote escaping). The work item correctly identifies this as both a correctness and an argument-injection risk for user-supplied paths (file drop, config). The preferred fix — using `lpApplicationName` + separately-quoted `lpCommandLine` per MSVC spec — is documented but not yet implemented.
 
-9. **Magic numbers throughout** — Hardcoded 2000 ms shutdown timeout, `80 * 24` default grid size, and hardcoded descriptor pool counts all need hunting-down when constants change.
+### 9. `Grid::scroll()` is ~125 Lines with Four Inline Direction Cases
+The four scroll directions (up/down/left/right) are all implemented inline in a single function. Each direction is a clear `for` loop, but the combined length makes the function hard to read and test in isolation. Extracting `scroll_up()`, `scroll_down()`, `scroll_left()`, `scroll_right()` helpers would also make individual direction tests straightforward.
 
-10. **Post-init `dynamic_cast` in HostManager** — Attaching the 3D renderer via a `dynamic_cast` after host initialization is implicit coupling. Silent no-op if the cast fails in a new host subclass.
-
----
-
-## Best 10 Quality-of-Life Features to Add
-
-1. **Session restore** — Remember window position, size, and the last-opened file/directory so the editor returns to exactly where the user left off.
-
-2. **Font fallback chain UI** — A settings panel (or config key) to specify an ordered fallback font list for CJK, emoji, and symbols, rather than relying solely on automatic resolution.
-
-3. **Per-monitor DPI font scaling** — Automatically adjust font size when the window is dragged to a monitor with a different display scale, without requiring a restart.
-
-4. **Live config reload** — Watch `config.toml` for changes and apply updated font size, keybindings, and ligature settings without relaunching.
-
-5. **Diagnostic overlay toggle** — A keybinding-activated overlay showing current FPS, GPU buffer write time, glyph atlas fill percentage, and RPC queue depth — useful for performance tuning.
-
-6. **Multiple window support** — Allow spawning additional Draxul windows sharing one Nvim instance (`nvim --remote`), matching the workflow of GUI Neovim clients like Neovide.
-
-7. **System font picker** — A GUI font picker dialog (or fuzzy search in a command popup) to browse and switch fonts without manually editing `config.toml`.
-
-8. **Smooth scrolling** — Animate `grid_scroll` events over a few frames with configurable easing, matching the UX of other modern terminal emulators.
-
-9. **Cursor animation** — Animate cursor movement across cells (position interpolation) with configurable speed, making large jumps easier to track visually.
-
-10. **macOS native menu bar integration** — Wire common actions (new window, open file, copy/paste, font size) into the macOS menu bar so the application behaves as a first-class macOS citizen.
+### 10. `CellText::kMaxLen = 32` with a TODO Comment
+The 32-byte inline storage cap for grapheme clusters is a hardcoded limit with an acknowledged `TODO: consider std::string for >32-byte clusters`. Zero-width joiner emoji sequences (e.g., family emoji) can exceed 32 bytes. Truncation is logged as a warning but the glyph is silently corrupted. This is a known correctness hole for a Neovim frontend likely to encounter complex emoji in code comments and markdown.
 
 ---
 
-## Best 10 Tests to Add for Stability
+## Best 10 Features to Add (Quality of Life)
 
-1. **`grid_line` out-of-bounds coordinate** — Feed a `grid_line` event with row and col values outside the current grid dimensions; assert no crash, no memory corruption, and a graceful WARN log.
+### 1. Configurable Terminal Default Colors
+Read `fg` and `bg` defaults for `ShellHost` from `config.toml` (a new `[terminal]` section). This aligns the shell pane with the user's preferred color scheme and makes Draxul usable as a general-purpose terminal without hardcoded grey-on-dark defaults.
 
-2. **Atlas exhaustion + reset cycle** — Drive enough unique glyphs to exhaust the 2048×2048 atlas, trigger `consume_atlas_reset()`, then verify subsequent renders are correct and no GPU resource leaks.
+### 2. Persistent Split Layout (Session Restore)
+Serialize the `SplitTree` layout, host kinds, and per-pane working directories to a session file on clean exit. On startup, restore the previous layout. This is the single most-requested feature for terminal multiplexer-style applications and makes Draxul a genuine `tmux` replacement candidate.
 
-3. **DPI change mid-frame** — Simulate `on_display_scale_changed()` while a frame render is in-flight; verify no crash, no stale glyph data in the atlas, and correct cell sizing after rebuild.
+### 3. Searchable Scrollback (`/pattern` in Scrollback Mode)
+Extend `LocalTerminalHost` scrollback with a simple pattern-match search that highlights matching lines and jumps to the next/previous match. The `scrollback_buffer.h` infrastructure already exists; adding a search index over the stored rows is straightforward.
 
-4. **VtParser buffer overflow** — Feed a stream of 1 MB of CSI sequences; assert `csi_buffer_` does not grow beyond a defined max, drops bytes gracefully, and does not OOM.
+### 4. URL Detection and Mouse-Clickable Links
+Scan rendered terminal lines for URL patterns (`https?://...`, file paths) and underline them on hover. On click (with modifier), open via `xdg-open`/`open`. The decoration layer already supports underline styles; the detection is a post-render pass over the display grid.
 
-5. **NvimProcess shutdown race (POSIX)** — Start the reader thread, then call `shutdown()` on a background thread concurrently; verify no EBADF crash and clean join of the reader thread.
+### 5. Per-Pane Environment Overrides in Config
+Allow `config.toml` to specify environment variable overrides per host kind (e.g., `[hosts.shell] env = {COLORTERM = "truecolor"}`). Currently there is no way to inject `TERM`, `COLORTERM`, or `DRAXUL_VERSION` into the child process environment from config.
 
-6. **Scroll at grid boundaries with double-width characters** — Scroll a region where the last cell is the left half of a double-width character; verify the orphaned half is correctly repaired to a space.
+### 6. Font Fallback Configuration in `config.toml`
+Expose the font fallback chain as a user-configurable list under `[fonts]`. Right now fallback selection is heuristic. A user with a specific CJK font preference has no way to control the order. The existing `FontSelector` / `FontResolver` PIMPL is the right place to wire this.
 
-7. **Rapid font size change** — Trigger `font_increase` / `font_decrease` in quick succession (faster than a full frame); verify no glyph atlas corruption and no use-after-free of the old TextService.
+### 7. `pump_once()` Frame Timing Diagnostics (Debug Overlay)
+Add an optional `debug_overlay = true` config flag that renders a small frame-time graph in a corner (last 128 frames, ms/frame, P99 spike marker). The ImGui host overlay infrastructure already exists; this is a few hours of work and permanently improves diagnosability of jank reports.
 
-8. **Keybinding conflict detection** — Load a config with two actions mapped to the same key; assert a clear error or last-wins with a WARN log rather than silent incorrect behaviour.
+### 8. Shell Pane Title Bar Reflects CWD
+Hook into the OSC 7 escape sequence (`file://hostname/path`) that most modern shells emit on directory change, and use it to update the pane title bar. The VT parser already handles OSC sequences; adding a `on_osc_7` callback to `TerminalHostBase` is the only new plumbing needed.
 
-9. **Renderer `shutdown()` idempotency** — Call `shutdown()` twice on both VkRenderer and MetalRenderer; verify no double-free, no Vulkan validation layer errors, and no ObjC++ over-release.
+### 9. Bracketed Paste Confirmation for Large Pastes
+When pasting more than N lines (configurable, default 5) into a terminal pane, show a one-line confirmation banner ("Paste 47 lines? [y/n]"). This is a standard safety feature in modern terminal emulators that prevents accidental execution of multi-line clipboard content.
 
-10. **File drop with path containing colons** — Simulate an SDL drop-file event with a path like `/foo:bar/file.txt`; verify the `open_file:` action is parsed correctly and the host receives the full path.
+### 10. `config.toml` Live Reload
+Watch `config.toml` with a filesystem event (kqueue on macOS, `ReadDirectoryChangesW` on Windows) and apply non-structural settings (colors, keybindings, scroll speed) without restart. Font size and split layout would still require restart. The `AppConfig` serialisation layer already exists; wiring hot-reload is primarily an `INotifyFileChange` abstraction plus `App::apply_config_delta()`.
 
 ---
 
-## Worst 10 Features (Most Likely to Cause Problems or Least Useful)
+## Best 10 Tests to Add
 
-1. **`dispatch_action(std::string_view)` generic string bus** — An untyped string channel for inter-module actions is fragile, ungreppable, and untestable. Every call site is a potential typo-induced silent failure.
+### 1. `App` Smoke Test with `FakeWindow` + `FakeRenderer`
+An end-to-end `App::initialize()` → `pump_once()` × N → `shutdown()` test using the existing `FakeWindow` and `FakeRenderer` stubs. Currently there is no test that exercises the full orchestrator. This would catch startup/shutdown sequencing bugs, host manager lifecycle errors, and frame loop panics that only surface when all subsystems are wired together.
 
-2. **Hardcoded 80×24 initial grid size** — The default grid buffer sized to `80 * 24 * sizeof(GpuCell)` is a vestigial terminal assumption. It silently under-allocates for large windows until the first resize event.
+### 2. `InputDispatcher` Prefix-Mode Stuck State
+Test that pressing the chord prefix key and then releasing it (without pressing a chord key) correctly resets `prefix_active` to `false` before the next unrelated key-down. This directly covers the known bug in item #4 of the bad list.
 
-3. **Windows command-line quoting in `quote_windows_arg()`** — Hand-rolled Windows argument quoting for `CreateProcessA lpCommandLine` is inherently fragile (trailing backslashes, embedded quotes). This is a latent correctness bug and a potential injection surface.
+### 3. `Grid::scroll()` Per-Direction Unit Tests
+Isolated tests for each of the four scroll directions (`up`, `down`, `left`, `right`) covering: single-row scroll, multi-row scroll, scroll at boundary (scroll region start/end), and wide-character boundary repair. The existing `grid_tests.cpp` covers some scroll cases but not the full matrix.
 
-4. **`(void)logical_h` suppression in app.cpp:505** — Explicitly suppressing an unused-variable warning rather than fixing the underlying logic indicates dead or misunderstood code that will confuse maintainers.
+### 4. `SplitTree` Const-Correctness Regression
+A test that calls `find_leaf_node()` through a `const SplitTree&` reference and verifies the returned identity matches the expected leaf — this will fail at compile time if the method signature is corrected to return `const Node*` and the callers are not updated, surfacing the fix opportunity.
 
-5. **HostManager post-init `dynamic_cast` for 3D attachment** — Silently does nothing if a new host subclass forgets to implement `I3DHost`. There is no compile-time enforcement, no runtime error, and no log entry on cast failure.
+### 5. Windows `quote_windows_arg()` Edge Cases
+Unit tests for:
+- paths with spaces (`C:\Program Files\nvim\nvim.exe`)
+- paths ending in backslash (`C:\nvim\`)
+- paths with embedded double-quotes (hypothetical, must not corrupt command line)
+- round-trip: constructed command line parsed by `CommandLineToArgvW` yields original tokens
 
-6. **Cursor blink implemented as deadline arithmetic in GridHostBase** — A timing-based cursor blink buried inside the grid host base class means any latency (slow GPU frame, heavy RPC batch) causes visible blink glitches. Should be decoupled from frame timing.
+These tests can run on all platforms if the quoting function is extracted to a pure function in a header.
 
-7. **`#ifdef DRAXUL_ENABLE_RENDER_TESTS` gating in main.cpp** — Large blocks of render-test code that are never compiled in production builds are maintenance debt. They bitrot silently between test runs and increase binary complexity for CI-only paths.
+### 6. `CellText` Truncation at Boundary
+Test that storing a grapheme cluster of exactly 32 bytes succeeds, exactly 33 bytes logs a warning and truncates, and the resulting `CellText` does not contain a split UTF-8 sequence (i.e., truncation is clean at a code-point boundary, not mid-sequence).
 
-8. **`log_display_info()` debug-only DPI logging** — Called only at `LogLevel::Debug`; DPI-related bugs in production (common on multi-monitor setups) produce no diagnostic output unless the user happens to have debug logging enabled.
+### 7. `HighlightTable::resolve()` Reverse Video Interaction
+Test all combinations of reverse-video with explicit fg/bg override, default fg/default bg, and the normal → visual mode transition. The `resolve()` method handles attribute swapping but the interaction with partial overrides (fg set, bg default) is complex and currently has no targeted test.
 
-9. **AppConfig with no invariant validation** — Config fields like `font_size`, `window_width`, `window_height` accept any value including negatives and zeros. Invalid configs crash at first use rather than at parse time.
+### 8. `log_would_emit()` Concurrency Test
+A stress test that calls `log_would_emit()` and `log_printf()` from N threads simultaneously for 1000 iterations each, asserting no output corruption or deadlock. This validates the mutex-based log system under contention and would catch the lock-free migration (replacing the mutex with `std::atomic<LogLevel>`) if it is ever attempted.
 
-10. **`GuiActionHandler::Deps` callback struct with 4+ function pointers** — No documented invocation order, no error propagation from callbacks, and no way to mock individual callbacks without touching the entire struct. Grows unbounded as new actions are added.
+### 9. `AppConfig` Hot-Reload Delta Application
+Test that calling `AppConfig::load()` a second time with a modified `config.toml` (changed `scroll_speed`, changed keybinding) produces a config struct where only the changed fields differ from the first load, and that out-of-range values (`scroll_speed = 0.0`) are rejected with a warning and fall back to the previous valid value.
+
+### 10. Render Scenario: Wide-Character Scroll Boundary Repair
+A deterministic render scenario that fills a 40-column grid with CJK characters, scrolls by one line, and asserts that no half-width cells from split wide characters appear in the reference BMP. This directly stress-tests the wide-character boundary repair in `Grid::scroll()` and produces a visual artifact that is immediately obvious in a BMP diff.
+
+---
+
+## Worst 10 Features
+
+### 1. `MegaCityHost` 3D Cube Demo
+The spinning cube render pass in `libs/draxul-megacity/` is framed as a "code analysis host" but in practice it is a tech demo with no production utility. It adds a full 3D render pipeline (Metal + Vulkan cube shaders, `CubeRenderPass`, `MegaCityHost`), a TreeSitter panel stub, and a dedicated library module — all for a feature that does not solve any Neovim GUI problem. The presence of this module increases build complexity, shader count, and host-manager code paths. Unless MegaCityHost evolves into a real feature, it should be removed or quarantined behind a CMake option.
+
+### 2. Hand-Rolled BMP Read/Write in `bmp.h/bmp.cpp`
+The BMP serialisation library exists solely to support render-test reference images. Using an established single-header library (STB Image) would eliminate ~300 lines of custom BMP code, support more formats, and remove the risk of format-parsing bugs. The `write_bmp_rgba()` function also creates parent directories, mixing I/O concerns with format logic.
+
+### 3. `(void)pixel_h; (void)logical_h;` Suppression Comments (×5 in `app.cpp`)
+Using `(void)var` to suppress unused-variable warnings from structured bindings is a code smell that indicates the bindings should be decomposed differently (only bind what is used, or use `std::ignore`). Five occurrences in a single file suggest the structured binding style is being used in places where a simpler access pattern would be cleaner.
+
+### 4. `app_config.h` Monolith (~400 lines)
+`AppConfig` combines config struct definition, TOML parse logic, file I/O, serialization, `AppConfigOverrides` merge, and `GuiKeybinding` chord parsing — all in one header. This makes it impossible to use any of these subsystems independently and causes recompilation of all dependents when any config field changes. Splitting into `app_config_types.h`, `app_config_io.cpp`, and `keybinding_parser.cpp` would reduce coupling.
+
+### 5. Linear String Dispatch in `GuiActionHandler::execute()`
+The `execute()` method uses an `if-else` chain of `action == "toggle_diagnostics"`, `action == "copy"`, etc. This is fine at 9 actions but grows linearly and is easy to mistype. A `static const std::unordered_map<std::string_view, std::function<void()>>` built once at construction would be O(1), self-documenting, and would produce a compile-time warning if a handler is accidentally omitted.
+
+### 6. `UiEventHandler` Not Split from `NvimInput` in `nvim_ui.h`
+Both `UiEventHandler` (processes Neovim → app redraw events) and `NvimInput` (translates app → Neovim key events) live in the same header. These are opposite data-flow directions with no shared state. Splitting them into `nvim_ui_handler.h` and `nvim_input.h` would make their responsibilities clearer and allow tests to include only the direction they exercise.
+
+### 7. `TextInputEvent` Holds a Raw `const char*`
+The `TextInputEvent` struct stores a raw pointer to SDL's internal buffer. The lifetime guarantee is implicit (valid until the next SDL event) and is not documented in the struct definition. A misuse — storing the event and processing it one frame later — would produce silent use-after-free. At minimum, the struct should have a `std::string` copy or a `std::string_view` with a lifetime comment.
+
+### 8. Render Scenario TOML Parser is a Custom Ad-Hoc Implementation
+`app/render_test.cpp` implements a hand-rolled TOML-like parser for scenario files (including the multi-line array fix documented in `learnings.md`). The project already has TOML parsing machinery in `app_config.h`. Using the same parser for both config and render scenarios would eliminate the custom parser, fix multi-line array handling by default, and close the documented regression category.
+
+### 9. `startup_resize_state.h` as a Separate Type
+`StartupResizeState` is a small state machine (~30 lines) that exists only to defer a resize acknowledgement until the first Neovim flush. Its logic could live directly in `GridHostBase` as a two-field state enum without a dedicated header and source file. The current separate-type approach adds a header include and a named object member for what is effectively 3 states and 2 transitions.
+
+### 10. `for_each_host()` Using `std::function<void(LeafId, IHost&)>`
+`HostManager::for_each_host()` accepts a `std::function` callback. This allocates a heap closure object on every call. The function is called per-frame for each host to perform updates. Using a template parameter (`template<typename F> void for_each_host(F&& fn)`) would make the callback zero-cost and is a straightforward change with no API impact at the call sites (the lambdas at the call sites are unchanged).
 
 ---
 

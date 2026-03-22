@@ -32,6 +32,7 @@ private:
     void reader_main();
 
     int master_fd_ = -1;
+    int shutdown_pipe_[2] = { -1, -1 };
     pid_t pid_ = -1;
     std::thread reader_thread_;
     std::atomic<bool> reader_running_{ false };

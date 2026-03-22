@@ -388,3 +388,22 @@ Lesson:
 - a stale bundled font can make the app look broken even when the user's machine actually has the right glyphs
 
 ---
+
+### Claude can generate architecture diagrams as SVG on demand
+
+Asking Claude to "draw an SVG diagram of this application showing how things are inherited/linked" produces a usable class hierarchy and data flow diagram directly in the repo.
+
+What worked:
+- Claude explored the full codebase (renderer, host, window, font, grid, app layers), mapped all inheritance and composition relationships, and generated a single self-contained SVG
+- the output uses color-coded boxes (interfaces, abstract bases, concrete classes, orchestrators, support types), hollow arrows for inheritance, dashed arrows for composition
+- includes a data flow section at the bottom showing both the nvim and terminal paths
+
+Why this is useful:
+- the diagram lives in `docs/architecture.svg` and can be opened in any browser
+- it updates in minutes whenever the architecture changes — just re-run the prompt
+- the stored prompt is in `plans/prompts/architecture_diagram.md` for repeatable generation
+
+Lesson:
+- SVG architecture diagrams are cheap to regenerate — treat them as living documents, not one-off artifacts
+
+---
