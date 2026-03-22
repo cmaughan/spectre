@@ -202,7 +202,8 @@ bool App::initialize()
     gui_deps.on_panel_toggled = [this]() {
         refresh_window_layout();
         auto [pixel_w, pixel_h] = window_.size_pixels();
-        host_manager_.recompute_viewports(pixel_w, pixel_h);
+        (void)pixel_h;
+        host_manager_.recompute_viewports(pixel_w, ui_panel_.layout().terminal_height);
         update_diagnostics_panel();
         request_frame();
     };
@@ -268,7 +269,8 @@ void App::apply_font_metrics()
         host_manager_.host()->on_font_metrics_changed();
     refresh_window_layout();
     auto [pixel_w, pixel_h] = window_.size_pixels();
-    host_manager_.recompute_viewports(pixel_w, pixel_h);
+    (void)pixel_h;
+    host_manager_.recompute_viewports(pixel_w, ui_panel_.layout().terminal_height);
     request_frame();
 }
 
@@ -288,8 +290,9 @@ bool App::initialize_host()
     host_manager_ = HostManager(std::move(host_deps));
 
     auto [pixel_w, pixel_h] = window_.size_pixels();
+    (void)pixel_h;
     auto callbacks = make_host_callbacks();
-    if (!host_manager_.create(std::move(callbacks), pixel_w, pixel_h))
+    if (!host_manager_.create(std::move(callbacks), pixel_w, ui_panel_.layout().terminal_height))
     {
         last_init_error_ = host_manager_.error();
         return false;
@@ -539,7 +542,7 @@ void App::on_resize(int pixel_w, int pixel_h)
 {
     renderer_.grid()->resize(pixel_w, pixel_h);
     refresh_window_layout();
-    host_manager_.recompute_viewports(pixel_w, pixel_h);
+    host_manager_.recompute_viewports(pixel_w, ui_panel_.layout().terminal_height);
     request_frame();
 }
 
@@ -632,22 +635,22 @@ void App::refresh_window_layout()
 
 HostViewport App::viewport_from_descriptor(const PaneDescriptor& desc) const
 {
-    const auto& layout = ui_panel_.layout();
     const int padding = renderer_.grid()->padding();
     const auto [cell_w, cell_h] = renderer_.grid()->cell_size_pixels();
+    const auto& layout = ui_panel_.layout();
 
     HostViewport viewport;
     viewport.pixel_x = desc.pixel_x;
     viewport.pixel_y = desc.pixel_y;
-    const int panel_h = (layout.window_height - layout.terminal_height);
     viewport.pixel_width = desc.pixel_width;
-    viewport.pixel_height = desc.pixel_height - panel_h;
+    viewport.pixel_height = desc.pixel_height;
     viewport.padding = padding;
     viewport.pixel_scale = layout.pixel_scale;
 
     const int usable_w = viewport.pixel_width - 2 * padding;
+    const int usable_h = viewport.pixel_height - 2 * padding;
     viewport.cols = cell_w > 0 ? std::max(1, usable_w / cell_w) : 1;
-    viewport.rows = layout.grid_rows;
+    viewport.rows = cell_h > 0 ? std::max(1, usable_h / cell_h) : 1;
     return viewport;
 }
 
