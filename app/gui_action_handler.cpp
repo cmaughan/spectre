@@ -57,6 +57,11 @@ bool GuiActionHandler::execute(std::string_view action)
         split_vertical();
         return true;
     }
+    if (action == "split_horizontal")
+    {
+        split_horizontal();
+        return true;
+    }
     return false;
 }
 
@@ -104,6 +109,12 @@ void GuiActionHandler::split_vertical() const
 {
     if (deps_.on_split_vertical)
         deps_.on_split_vertical();
+}
+
+void GuiActionHandler::split_horizontal() const
+{
+    if (deps_.on_split_horizontal)
+        deps_.on_split_horizontal();
 }
 
 void GuiActionHandler::change_font_size(float new_size)

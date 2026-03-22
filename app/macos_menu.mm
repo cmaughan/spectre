@@ -87,6 +87,10 @@ void install_macos_menu(GuiActionHandler& handler)
                           NSEventModifierFlagCommand | NSEventModifierFlagShift, ^{
                               handler.execute("split_vertical");
                           })];
+    [viewMenu addItem:make_item(@"Split Horizontal", @"_",
+                          NSEventModifierFlagCommand | NSEventModifierFlagShift, ^{
+                              handler.execute("split_horizontal");
+                          })];
     [viewMenu addItem:[NSMenuItem separatorItem]];
     [viewMenu addItem:make_item(
                           @"Increase Font Size", @"+", NSEventModifierFlagCommand, ^{

@@ -190,6 +190,15 @@ bool App::initialize()
             request_frame();
         }
     };
+    gui_deps.on_split_horizontal = [this]() {
+        auto cbs = make_host_callbacks();
+        LeafId new_leaf = host_manager_.split_focused(SplitDirection::Horizontal, std::move(cbs));
+        if (new_leaf != kInvalidLeaf)
+        {
+            input_dispatcher_.set_host(host_manager_.focused_host());
+            request_frame();
+        }
+    };
     gui_deps.on_panel_toggled = [this]() {
         refresh_window_layout();
         auto [pixel_w, pixel_h] = window_.size_pixels();

@@ -24,7 +24,7 @@ constexpr int kMaxWindowHeight = 2160;
 constexpr int kMinAtlasSize = 1024;
 constexpr int kMaxAtlasSize = 8192;
 // kGuiModifierMask is defined in input_types.h as kGuiModifierMask (same bit values).
-constexpr std::array<std::string_view, 8> kKnownGuiActions = {
+constexpr std::array<std::string_view, 9> kKnownGuiActions = {
     "toggle_diagnostics",
     "copy",
     "paste",
@@ -33,6 +33,7 @@ constexpr std::array<std::string_view, 8> kKnownGuiActions = {
     "font_reset",
     "open_file_dialog",
     "split_vertical",
+    "split_horizontal",
 };
 constexpr std::array<std::string_view, 13> kKnownTopLevelKeys = {
     "window_width",
@@ -409,6 +410,9 @@ AppConfig::AppConfig()
         // split_vertical = Ctrl+S, | (Shift+Backslash on US keyboard; SDL3 reports SDLK_BACKSLASH + kModShift)
         { "split_vertical", static_cast<int32_t>(SDLK_S), kModCtrl,
             static_cast<int32_t>(SDLK_BACKSLASH), kModShift },
+        // split_horizontal = Ctrl+S, -
+        { "split_horizontal", static_cast<int32_t>(SDLK_S), kModCtrl,
+            static_cast<int32_t>(SDLK_MINUS), kModNone },
     };
 }
 
