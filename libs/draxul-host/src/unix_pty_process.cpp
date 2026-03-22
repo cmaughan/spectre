@@ -99,23 +99,26 @@ void UnixPtyProcess::shutdown()
 {
     reader_running_ = false;
 
-    // Kill the child process BEFORE closing master_fd_ and joining the reader
-    // thread. On macOS, close(master_fd_) does NOT interrupt a blocking
+    // Kill the entire process group BEFORE closing master_fd_ and joining the
+    // reader thread. On macOS, close(master_fd_) does NOT interrupt a blocking
     // ::read(master_fd_) in another thread — the kernel holds a reference to
     // the file description for the duration of the syscall, so close() just
     // removes the fd-table entry. The read only unblocks when the PTY slave
-    // side closes, which happens when the child process exits.
+    // side closes, which happens when ALL processes in the session exit.
+    // Using -pid_ sends the signal to the entire process group (created by
+    // setsid() in the child), which reaches grandchildren like nvim running
+    // inside a shell.
     if (pid_ > 0)
     {
         int status = 0;
         if (waitpid(pid_, &status, WNOHANG) == 0)
         {
-            kill(pid_, SIGTERM);
+            kill(-pid_, SIGTERM);
             for (int i = 0; i < 10 && waitpid(pid_, &status, WNOHANG) == 0; ++i)
                 std::this_thread::sleep_for(std::chrono::microseconds(10000));
             if (waitpid(pid_, &status, WNOHANG) == 0)
             {
-                kill(pid_, SIGKILL);
+                kill(-pid_, SIGKILL);
                 waitpid(pid_, &status, 0);
             }
         }
