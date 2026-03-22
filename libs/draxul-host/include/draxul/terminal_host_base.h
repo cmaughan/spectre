@@ -2,9 +2,6 @@
 
 #include <draxul/alt_screen_manager.h>
 #include <draxul/grid_host_base.h>
-#include <draxul/mouse_reporter.h>
-#include <draxul/scrollback_buffer.h>
-#include <draxul/selection_manager.h>
 #include <draxul/vt_parser.h>
 #include <draxul/vt_state.h>
 #include <string>
@@ -20,6 +17,9 @@ namespace draxul
 // standard IHost implementations. Concrete subclasses implement the five
 // do_process_* pure virtuals to wire up a process back-end, plus
 // initialize_host() and host_name().
+//
+// Scrollback, selection, and mouse reporting live in LocalTerminalHost, which
+// is the intermediate base for all local-process hosts.
 class TerminalHostBase : public GridHostBase
 {
 public:
@@ -44,9 +44,6 @@ public:
     void pump() override;
     void on_key(const KeyEvent& event) override;
     void on_text_input(const TextInputEvent& event) override;
-    void on_mouse_button(const MouseButtonEvent& event) override;
-    void on_mouse_move(const MouseMoveEvent& event) override;
-    void on_mouse_wheel(const MouseWheelEvent& event) override;
     bool dispatch_action(std::string_view action) override;
 
 protected:
@@ -63,21 +60,35 @@ protected:
     virtual void do_process_shutdown() = 0;
 
     // Terminal helpers available to subclasses.
-    void reset_terminal_state();
+    virtual void reset_terminal_state();
     void update_cursor_style();
     void consume_output(std::string_view bytes);
     void set_init_error(std::string error)
     {
         init_error_ = std::move(error);
     }
+    const VtState& vt_state() const
+    {
+        return vt_;
+    }
+
+    // Hook called by newline() when a line scrolls off the top of the visible
+    // area (full-screen scroll region, main screen only). Override in
+    // LocalTerminalHost to capture the row into the scrollback buffer.
+    virtual void on_line_scrolled_off(int /*row*/)
+    {
+        // Intentionally empty — LocalTerminalHost overrides to capture rows into scrollback.
+    }
+
+    // Hook called by csi_mode() when the terminal process requests a mouse
+    // reporting mode change. Override in LocalTerminalHost to forward to the
+    // MouseReporter.
+    virtual void on_mouse_mode_changed(int /*mode*/, bool /*enable*/)
+    {
+        // Intentionally empty — LocalTerminalHost overrides to forward to MouseReporter.
+    }
 
 private:
-    struct GridPos
-    {
-        int col = 0;
-        int row = 0;
-    };
-
     uint16_t attr_id();
     void clear_cell(int col, int row);
     void newline(bool carriage_return);
@@ -102,8 +113,6 @@ private:
     void enter_alt_screen();
     void leave_alt_screen();
 
-    GridPos pixel_to_cell(int px, int py) const;
-
     // SGR / highlight state
     HlAttr current_attr_ = {};
     // perf: O(1) via unordered_map (replaced linear std::vector scan)
@@ -119,17 +128,8 @@ private:
     // Alternate screen
     AltScreenManager alt_screen_;
 
-    // Mouse reporting
-    MouseReporter mouse_reporter_;
-
     // Bracketed paste
     bool bracketed_paste_mode_ = false;
-
-    // Selection manager
-    SelectionManager selection_;
-
-    // Scrollback buffer
-    ScrollbackBuffer scrollback_;
 
     std::string init_error_;
 };

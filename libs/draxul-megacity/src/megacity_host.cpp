@@ -1,7 +1,14 @@
 #include "cube_render_pass.h"
+#include "ui_treesitter_panel.h"
 #include <draxul/base_renderer.h>
 #include <draxul/log.h>
 #include <draxul/megacity_host.h>
+#include <draxul/renderer.h>
+#include <imgui.h>
+
+#ifndef DRAXUL_REPO_ROOT
+#define DRAXUL_REPO_ROOT "."
+#endif
 
 namespace draxul
 {
@@ -22,8 +29,104 @@ bool MegaCityHost::initialize(const HostContext& context, HostCallbacks callback
     pixel_h_ = viewport_.pixel_height > 0 ? viewport_.pixel_height : 600;
     running_ = true;
 
-    DRAXUL_LOG_INFO(LogCategory::App, "MegaCityHost initialized (%dx%d)", pixel_w_, pixel_h_);
+    scanner_.start(DRAXUL_REPO_ROOT);
+
+    DRAXUL_LOG_INFO(LogCategory::App, "MegaCityHost initialized (%dx%d), scanning %s",
+        pixel_w_, pixel_h_, DRAXUL_REPO_ROOT);
     return true;
+}
+
+void MegaCityHost::attach_imgui_host(IImGuiHost& host)
+{
+    imgui_host_ = &host;
+
+    IMGUI_CHECKVERSION();
+    imgui_ctx_ = ImGui::CreateContext();
+    ImGui::SetCurrentContext(imgui_ctx_);
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
+    io.IniFilename = nullptr;
+    io.LogFilename = nullptr;
+    ImGui::StyleColorsDark();
+    host.initialize_imgui_backend();
+
+    DRAXUL_LOG_INFO(LogCategory::App, "MegaCityHost: ImGui context created and backend initialized");
+}
+
+void MegaCityHost::on_mouse_move(const MouseMoveEvent& event)
+{
+    if (!imgui_ctx_)
+        return;
+    ImGui::SetCurrentContext(imgui_ctx_);
+    const float scale = viewport_.pixel_scale;
+    ImGui::GetIO().AddMousePosEvent(
+        static_cast<float>(event.x) * scale, static_cast<float>(event.y) * scale);
+}
+
+void MegaCityHost::on_mouse_button(const MouseButtonEvent& event)
+{
+    if (!imgui_ctx_)
+        return;
+    ImGui::SetCurrentContext(imgui_ctx_);
+    int button = -1;
+    switch (event.button)
+    {
+    case 1:
+        button = 0;
+        break;
+    case 2:
+        button = 2;
+        break;
+    case 3:
+        button = 1;
+        break;
+    default:
+        break;
+    }
+    if (button >= 0)
+        ImGui::GetIO().AddMouseButtonEvent(button, event.pressed);
+}
+
+void MegaCityHost::on_mouse_wheel(const MouseWheelEvent& event)
+{
+    if (!imgui_ctx_)
+        return;
+    ImGui::SetCurrentContext(imgui_ctx_);
+    ImGui::GetIO().AddMouseWheelEvent(event.dx, event.dy);
+}
+
+void MegaCityHost::set_imgui_font(const std::string& path, float size_pixels)
+{
+    if (!imgui_ctx_ || !imgui_host_)
+        return;
+
+    ImGui::SetCurrentContext(imgui_ctx_);
+    ImGuiIO& io = ImGui::GetIO();
+    io.Fonts->Clear();
+    if (!path.empty() && size_pixels > 0.0f)
+        io.Fonts->AddFontFromFileTTF(path.c_str(), size_pixels);
+    if (io.Fonts->Fonts.empty())
+        io.Fonts->AddFontDefault();
+    imgui_host_->rebuild_imgui_font_texture();
+}
+
+ImDrawData* MegaCityHost::render_imgui(float dt)
+{
+    if (!imgui_ctx_ || !imgui_host_)
+        return nullptr;
+
+    ImGui::SetCurrentContext(imgui_ctx_);
+    imgui_host_->begin_imgui_frame();
+
+    ImGuiIO& io = ImGui::GetIO();
+    io.DisplaySize = ImVec2(static_cast<float>(pixel_w_), static_cast<float>(pixel_h_));
+    io.DeltaTime = dt > 0.0f ? dt : (1.0f / 60.0f);
+
+    ImGui::NewFrame();
+    render_treesitter_panel(pixel_w_, pixel_h_, scanner_.snapshot());
+    ImGui::Render();
+
+    return ImGui::GetDrawData();
 }
 
 void MegaCityHost::attach_3d_renderer(I3DRenderer& renderer)
@@ -44,6 +147,18 @@ void MegaCityHost::detach_3d_renderer()
 
 void MegaCityHost::shutdown()
 {
+    scanner_.stop();
+
+    if (imgui_ctx_)
+    {
+        ImGui::SetCurrentContext(imgui_ctx_);
+        if (imgui_host_)
+            imgui_host_->shutdown_imgui_backend();
+        ImGui::DestroyContext(imgui_ctx_);
+        imgui_ctx_ = nullptr;
+    }
+    imgui_host_ = nullptr;
+
     detach_3d_renderer();
     running_ = false;
 }

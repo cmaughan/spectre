@@ -1,5 +1,8 @@
 add_library(draxul-ui
+    src/sdl_imgui_input.cpp
+    src/ui_metrics_panel.cpp
     src/ui_panel.cpp
+    src/ui_panel_style.cpp
 )
 
 target_include_directories(draxul-ui PUBLIC include)

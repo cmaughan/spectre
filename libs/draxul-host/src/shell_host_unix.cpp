@@ -1,5 +1,5 @@
 #include "unix_pty_process.h"
-#include <draxul/terminal_host_base.h>
+#include <draxul/local_terminal_host.h>
 
 #include <draxul/host_kind.h>
 
@@ -9,7 +9,7 @@ namespace draxul
 namespace
 {
 
-class ShellHost : public TerminalHostBase
+class ShellHost : public LocalTerminalHost
 {
 public:
     std::string_view host_name() const override

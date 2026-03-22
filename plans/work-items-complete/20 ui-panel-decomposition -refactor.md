@@ -3,7 +3,7 @@
 **Type:** refactor
 **Priority:** 20
 **Raised by:** GPT (#6 bad — "758-line edit-conflict magnet")
-**Status:** open
+**Status:** complete
 
 ## Problem
 
@@ -25,12 +25,12 @@ This is workable today but is an edit-conflict magnet. Any two agents working on
 
 ## Implementation Plan
 
-- [ ] Extract ImGui styling into `ui_panel_style.cpp/.h` (colour palette, font push/pop, padding constants). `UiPanel` calls `push_style()`/`pop_style()`.
-- [ ] Extract SDL-to-ImGui key translation into `sdl_imgui_input.cpp/.h` (free functions that take `SDL_Event` and call ImGui IO). This is also useful for the input modal-state test (work item 10).
-- [ ] Extract metric rendering into `ui_metrics_panel.cpp/.h` — a standalone `render_metrics(const DiagnosticsData&)` function that `UiPanel` calls. This allows metrics display to be tested without a full `UiPanel`.
-- [ ] Keep the dockspace and window composition in `ui_panel.cpp` (it is the legitimate orchestrator).
-- [ ] Update `CMakeLists.txt` to add new source files.
-- [ ] Run smoke test after splitting.
+- [x] Extract ImGui styling into `ui_panel_style.cpp/.h` (colour palette, font push/pop, padding constants). `UiPanel` calls `push_style()`/`pop_style()`.
+- [x] Extract SDL-to-ImGui key translation into `sdl_imgui_input.cpp/.h` (free functions that take `SDL_Event` and call ImGui IO). This is also useful for the input modal-state test (work item 10).
+- [x] Extract metric rendering into `ui_metrics_panel.cpp/.h` — a standalone `render_metrics(const DiagnosticsData&)` function that `UiPanel` calls. This allows metrics display to be tested without a full `UiPanel`.
+- [x] Keep the dockspace and window composition in `ui_panel.cpp` (it is the legitimate orchestrator).
+- [x] Update `CMakeLists.txt` to add new source files.
+- [x] Run smoke test after splitting.
 
 ## Test Plan
 

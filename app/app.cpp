@@ -74,12 +74,29 @@ bool App::initialize()
     {
         App* app = nullptr;
         bool armed = true;
+        explicit InitRollback(App* a)
+            : app(a)
+        {
+        }
+        InitRollback(const InitRollback&) = delete;
+        InitRollback& operator=(const InitRollback&) = delete;
+        InitRollback(InitRollback&&) = delete;
+        InitRollback& operator=(InitRollback&&) = delete;
         ~InitRollback()
         {
             if (armed)
-                app->shutdown();
+            {
+                try
+                {
+                    app->shutdown();
+                }
+                catch (...)
+                {
+                    // Swallow: destructors must not propagate exceptions.
+                }
+            }
         }
-    } rollback{ this };
+    } rollback(this);
 
     if (!ok)
         return false;
@@ -242,6 +259,7 @@ bool App::initialize_host()
     host_deps.config = &config_;
     host_deps.window = &window_;
     host_deps.grid_renderer = renderer_.grid();
+    host_deps.imgui_host = renderer_.imgui();
     host_deps.text_service = &text_service_;
     host_deps.display_ppi = &display_ppi_;
     host_deps.get_viewport = [this]() { return current_host_viewport(); };
@@ -258,6 +276,15 @@ bool App::initialize_host()
     {
         last_init_error_ = host_manager_.error();
         return false;
+    }
+
+    if (auto* h3d = dynamic_cast<I3DHost*>(host_manager_.host()))
+    {
+        const auto& metrics = text_service_.metrics();
+        const float font_size = static_cast<float>(metrics.cell_height)
+            * static_cast<float>(text_service_.point_size() - 2)
+            / static_cast<float>(text_service_.point_size());
+        h3d->set_imgui_font(text_service_.primary_font_path(), font_size);
     }
 
     request_frame();
@@ -322,7 +349,13 @@ std::optional<CapturedFrame> App::run_render_test(std::chrono::milliseconds time
             {
                 const float delta_seconds = std::chrono::duration<float>(now - last_panel_frame_time_).count();
                 last_panel_frame_time_ = now;
-                if (ui_panel_.visible())
+                auto* h3d = dynamic_cast<I3DHost*>(host_manager_.host());
+                if (h3d && h3d->has_imgui())
+                {
+                    renderer_.imgui()->set_imgui_draw_data(
+                        h3d->render_imgui(delta_seconds));
+                }
+                else if (ui_panel_.visible())
                 {
                     renderer_.imgui()->begin_imgui_frame();
                     ui_panel_.begin_frame(delta_seconds);
@@ -376,6 +409,7 @@ bool App::pump_once(std::optional<std::chrono::steady_clock::time_point> wait_de
             {
                 const auto [cw, ch] = renderer_.grid()->cell_size_pixels();
                 renderer_.grid()->set_scroll_offset(input_dispatcher_.scroll_fraction() * static_cast<float>(ch));
+                input_dispatcher_.clear_scroll_event();
             }
             auto frame_start = std::chrono::steady_clock::now();
             if (renderer_.grid()->begin_frame())
@@ -384,7 +418,13 @@ bool App::pump_once(std::optional<std::chrono::steady_clock::time_point> wait_de
                 const float delta_seconds = std::chrono::duration<float>(now - last_panel_frame_time_).count();
                 last_panel_frame_time_ = now;
 
-                if (ui_panel_.visible())
+                auto* h3d = dynamic_cast<I3DHost*>(host_manager_.host());
+                if (h3d && h3d->has_imgui())
+                {
+                    renderer_.imgui()->set_imgui_draw_data(
+                        h3d->render_imgui(delta_seconds));
+                }
+                else if (ui_panel_.visible())
                 {
                     renderer_.imgui()->begin_imgui_frame();
                     ui_panel_.begin_frame(delta_seconds);
@@ -558,7 +598,13 @@ void App::shutdown()
 
     text_service_.shutdown();
     if (renderer_.imgui())
+    {
+        // Ensure UiPanel's context is current so the backend can clean up its
+        // per-context state. MegaCityHost (if active) already shut down its own
+        // context in host_manager_.shutdown(), leaving GImGui null.
+        ui_panel_.activate_imgui_context();
         renderer_.imgui()->shutdown_imgui_backend();
+    }
     ui_panel_.shutdown();
     if (renderer_.grid())
         renderer_.grid()->shutdown();

@@ -6,9 +6,6 @@
 #include <algorithm>
 #include <draxul/alt_screen_manager.h>
 #include <draxul/log.h>
-#include <draxul/mouse_reporter.h>
-#include <draxul/scrollback_buffer.h>
-#include <draxul/selection_manager.h>
 #include <draxul/unicode.h>
 #include <draxul/vt_parser.h>
 #include <draxul/window.h>
@@ -43,32 +40,6 @@ TerminalHostBase::TerminalHostBase()
         acc.clear_grid = [this]() { grid().clear(); };
         return acc;
     }())
-    , mouse_reporter_([this](std::string_view seq) { do_process_write(seq); })
-    , scrollback_([this]() -> ScrollbackBuffer::Callbacks {
-        ScrollbackBuffer::Callbacks cbs;
-        cbs.grid_cols = [this]() { return grid_cols(); };
-        cbs.grid_rows = [this]() { return grid_rows(); };
-        cbs.get_cell = [this](int col, int row) { return grid().get_cell(col, row); };
-        cbs.set_cell = [this](int col, int row, const Cell& c) {
-            grid().set_cell(col, row, std::string(c.text.view()), c.hl_attr_id, c.double_width);
-        };
-        cbs.force_full_redraw = [this]() { force_full_redraw(); };
-        cbs.flush_grid = [this]() { flush_grid(); };
-        return cbs;
-    }())
-    , selection_([this]() -> SelectionManager::Callbacks {
-        SelectionManager::Callbacks cbs;
-        cbs.set_overlay_cells = [this](std::vector<CellUpdate> cells) {
-            renderer().set_overlay_cells(cells);
-        };
-        cbs.get_cell = [this](int col, int row) -> const Cell& {
-            return grid().get_cell(col, row);
-        };
-        cbs.grid_cols = [this]() { return grid_cols(); };
-        cbs.grid_rows = [this]() { return grid_rows(); };
-        cbs.request_frame = [this]() { callbacks().request_frame(); };
-        return cbs;
-    }())
 {
 }
 
@@ -81,9 +52,6 @@ void TerminalHostBase::pump()
     auto chunks = do_process_drain();
     if (!chunks.empty())
     {
-        if (scrollback_.is_scrolled_back())
-            scrollback_.scroll_to_live();
-        selection_.clear();
         for (const auto& chunk : chunks)
             consume_output(chunk);
         flush_grid();
@@ -95,8 +63,6 @@ void TerminalHostBase::on_key(const KeyEvent& event)
 {
     if (!event.pressed)
         return;
-    if (scrollback_.is_scrolled_back())
-        scrollback_.scroll_to_live();
     const std::string sequence = encode_terminal_key(event, vt_);
     if (!sequence.empty())
         do_process_write(sequence);
@@ -105,19 +71,13 @@ void TerminalHostBase::on_key(const KeyEvent& event)
 void TerminalHostBase::on_text_input(const TextInputEvent& event)
 {
     if (event.text && *event.text)
-    {
-        if (scrollback_.is_scrolled_back())
-            scrollback_.scroll_to_live();
         do_process_write(event.text);
-    }
 }
 
 bool TerminalHostBase::dispatch_action(std::string_view action)
 {
     if (action == "paste")
     {
-        if (scrollback_.is_scrolled_back())
-            scrollback_.scroll_to_live();
         const std::string clip = window().clipboard_text();
         if (bracketed_paste_mode_)
         {
@@ -134,66 +94,7 @@ bool TerminalHostBase::dispatch_action(std::string_view action)
         }
         return true;
     }
-    if (action == "copy")
-    {
-        if (selection_.is_active())
-        {
-            const std::string text = selection_.extract_text();
-            if (!text.empty())
-                window().set_clipboard_text(text);
-            selection_.clear();
-        }
-        return true;
-    }
     return false;
-}
-
-// ---------------------------------------------------------------------------
-// Mouse events
-// ---------------------------------------------------------------------------
-
-void TerminalHostBase::on_mouse_button(const MouseButtonEvent& event)
-{
-    const GridPos pos = pixel_to_cell(event.x, event.y);
-
-    if (mouse_reporter_.on_button(event.button, event.pressed, event.mod, pos.col, pos.row))
-        return;
-
-    if (event.button == 1)
-    {
-        if (event.pressed)
-        {
-            selection_.begin_drag({ pos.col, pos.row });
-        }
-        else
-        {
-            selection_.end_drag({ pos.col, pos.row });
-        }
-    }
-}
-
-void TerminalHostBase::on_mouse_move(const MouseMoveEvent& event)
-{
-    const GridPos pos = pixel_to_cell(event.x, event.y);
-
-    if (mouse_reporter_.on_move(pos.col, pos.row))
-        return;
-
-    selection_.update_drag({ pos.col, pos.row });
-}
-
-void TerminalHostBase::on_mouse_wheel(const MouseWheelEvent& event)
-{
-    if (mouse_reporter_.mode() != MouseReporter::MouseMode::None)
-    {
-        const GridPos pos = pixel_to_cell(event.x, event.y);
-        const int button_code = event.dy > 0 ? 64 : 65;
-        mouse_reporter_.on_wheel(button_code, pos.col, pos.row);
-        return;
-    }
-
-    const int lines = std::max(1, static_cast<int>(std::abs(event.dy) * 3.0f + 0.5f));
-    scrollback_.scroll(event.dy > 0 ? lines : -lines);
 }
 
 // ---------------------------------------------------------------------------
@@ -206,12 +107,6 @@ void TerminalHostBase::on_viewport_changed()
     const int new_rows = std::max(1, viewport().rows);
     if (new_cols == grid_cols() && new_rows == grid_rows())
         return;
-
-    if (new_cols != grid_cols())
-        scrollback_.resize(new_cols);
-    else if (scrollback_.is_scrolled_back())
-        scrollback_.reset();
-    selection_.clear();
 
     // If we are in alt-screen mode the saved main-screen snapshot must be
     // re-dimensioned to match the new terminal size so that restoring it on
@@ -263,11 +158,8 @@ void TerminalHostBase::reset_terminal_state()
     vt_.auto_wrap_mode = true;
     vt_.origin_mode = false;
     vt_.cursor_app_mode = false;
-    mouse_reporter_.reset();
     bracketed_paste_mode_ = false;
     alt_screen_.reset();
-    scrollback_.reset();
-    selection_.clear();
 }
 
 void TerminalHostBase::update_cursor_style()
@@ -295,25 +187,6 @@ void TerminalHostBase::enter_alt_screen()
 void TerminalHostBase::leave_alt_screen()
 {
     alt_screen_.leave(vt_.col, vt_.row, vt_.pending_wrap);
-}
-
-// ---------------------------------------------------------------------------
-// Mouse reporting helpers
-// ---------------------------------------------------------------------------
-
-TerminalHostBase::GridPos TerminalHostBase::pixel_to_cell(int px, int py) const
-{
-    auto [cell_w, cell_h] = renderer().cell_size_pixels();
-    const int pad = renderer().padding();
-    if (cell_w <= 0)
-        cell_w = 1;
-    if (cell_h <= 0)
-        cell_h = 1;
-    const int col = std::clamp(
-        (px - viewport().pixel_x - pad) / cell_w, 0, std::max(0, grid_cols() - 1));
-    const int row = std::clamp(
-        (py - viewport().pixel_y - pad) / cell_h, 0, std::max(0, grid_rows() - 1));
-    return { col, row };
 }
 
 // ---------------------------------------------------------------------------
@@ -351,17 +224,12 @@ void TerminalHostBase::newline(bool carriage_return)
 
     if (vt_.row == vt_.scroll_bottom)
     {
-        // Save the top row of the scroll region to scrollback before scrolling.
-        if (!alt_screen_.in_alt_screen() && vt_.scroll_top == 0 && vt_.scroll_bottom == grid_rows() - 1)
+        // Notify subclasses that a line is about to scroll off the top of the
+        // visible area so they can capture it (e.g. into a scrollback buffer).
+        if (!alt_screen_.in_alt_screen() && vt_.scroll_top == 0
+            && vt_.scroll_bottom == grid_rows() - 1)
         {
-            Cell* slot = scrollback_.next_write_slot();
-            if (slot)
-            {
-                const int cols = grid_cols();
-                for (int col = 0; col < cols; ++col)
-                    slot[col] = grid().get_cell(col, vt_.scroll_top);
-                scrollback_.commit_push();
-            }
+            on_line_scrolled_off(vt_.scroll_top);
         }
         grid().scroll(vt_.scroll_top, vt_.scroll_bottom + 1, 0, grid_cols(), 1);
     }

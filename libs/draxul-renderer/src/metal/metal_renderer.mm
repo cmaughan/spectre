@@ -342,10 +342,11 @@ void MetalRenderer::set_scroll_offset(float px)
 
 bool MetalRenderer::initialize_imgui_backend()
 {
-    if (imgui_initialized_)
+    // Guard per context: ImGui_ImplMetal_Init() stores backend data in the current
+    // context's BackendRendererUserData. If the current context already has it, skip.
+    if (ImGui::GetIO().BackendRendererUserData != nullptr)
         return true;
 
-    ImGui::SetCurrentContext(ImGui::GetCurrentContext());
     if (!ImGui_ImplMetal_Init(device_.get()))
     {
         DRAXUL_LOG_ERROR(LogCategory::Renderer, "Failed to initialize ImGui Metal backend");
@@ -358,12 +359,18 @@ bool MetalRenderer::initialize_imgui_backend()
 
 void MetalRenderer::shutdown_imgui_backend()
 {
-    if (!imgui_initialized_)
+    imgui_draw_data_ = nullptr;
+    imgui_initialized_ = false;
+
+    // Guard per-context: only call Shutdown if the current context has a
+    // backend attached. This allows the method to be called once per context
+    // (e.g. MegaCityHost then UiPanel) without double-free or null-deref.
+    if (ImGui::GetCurrentContext() == nullptr)
+        return;
+    if (ImGui::GetIO().BackendRendererUserData == nullptr)
         return;
 
     ImGui_ImplMetal_Shutdown();
-    imgui_initialized_ = false;
-    imgui_draw_data_ = nullptr;
 }
 
 void MetalRenderer::rebuild_imgui_font_texture()

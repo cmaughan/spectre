@@ -2,7 +2,10 @@
 
 #include <chrono>
 #include <draxul/host.h>
+#include <draxul/treesitter.h>
 #include <memory>
+
+struct ImGuiContext;
 
 namespace draxul
 {
@@ -48,18 +51,9 @@ public:
     {
         // MegaCityHost ignores text editing events; the 3D cube demo requires no input handling.
     }
-    void on_mouse_button(const MouseButtonEvent&) override
-    {
-        // MegaCityHost ignores mouse button events; the 3D cube demo requires no input handling.
-    }
-    void on_mouse_move(const MouseMoveEvent&) override
-    {
-        // MegaCityHost ignores mouse move events; the 3D cube demo requires no input handling.
-    }
-    void on_mouse_wheel(const MouseWheelEvent&) override
-    {
-        // MegaCityHost ignores mouse wheel events; the 3D cube demo requires no input handling.
-    }
+    void on_mouse_button(const MouseButtonEvent& event) override;
+    void on_mouse_move(const MouseMoveEvent& event) override;
+    void on_mouse_wheel(const MouseWheelEvent& event) override;
 
     bool dispatch_action(std::string_view action) override;
     void request_close() override;
@@ -70,12 +64,22 @@ public:
     // I3DHost
     void attach_3d_renderer(I3DRenderer& renderer) override;
     void detach_3d_renderer() override;
+    void attach_imgui_host(IImGuiHost& host) override;
+    bool has_imgui() const override
+    {
+        return imgui_ctx_ != nullptr;
+    }
+    ImDrawData* render_imgui(float dt) override;
+    void set_imgui_font(const std::string& path, float size_pixels) override;
 
 private:
     HostCallbacks callbacks_;
     HostViewport viewport_;
     std::shared_ptr<CubeRenderPass> cube_pass_;
     I3DRenderer* renderer_3d_ = nullptr;
+    IImGuiHost* imgui_host_ = nullptr;
+    ImGuiContext* imgui_ctx_ = nullptr;
+    CodebaseScanner scanner_;
     float rotation_angle_ = 0.0f;
     int pixel_w_ = 800;
     int pixel_h_ = 600;
