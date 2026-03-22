@@ -30,8 +30,8 @@ NSUInteger align_capture_row_bytes(NSUInteger width)
 MetalRenderer::MetalRenderer(int atlas_size)
     : atlas_size_(atlas_size)
 {
-    // Always start with one pane (pane 0)
-    panes_.emplace_back();
+    // Panes are allocated on-demand via alloc_pane(). The first call returns 0,
+    // which matches the hardcoded pane_id=0 used by HostManager::create().
 }
 MetalRenderer::~MetalRenderer() = default;
 
@@ -692,6 +692,15 @@ void MetalRenderer::set_grid_size(int pane_id, int cols, int rows)
         return;
 
     panes_[static_cast<size_t>(pane_id)].state.set_grid_size(cols, rows, padding_);
+
+    // When a pane is resized its total_cells() changes, which shifts the GPU buffer
+    // offsets for all subsequent panes. Force-dirty all other active panes so their
+    // cells are re-uploaded at their new offsets.
+    for (int i = 0; i < static_cast<int>(panes_.size()); ++i)
+    {
+        if (i != pane_id && panes_[static_cast<size_t>(i)].active)
+            panes_[static_cast<size_t>(i)].state.force_dirty();
+    }
 
     // Resize the shared GPU buffer to accommodate all panes
     const size_t total_cells = compute_total_buffer_cells();

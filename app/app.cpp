@@ -323,6 +323,13 @@ void App::wire_window_callbacks()
     };
     disp_deps.smooth_scroll = config_.smooth_scroll;
     disp_deps.scroll_speed = config_.scroll_speed;
+    {
+        auto [pixel_w, pixel_h] = window_.size_pixels();
+        auto [logical_w, logical_h] = window_.size_logical();
+        (void)pixel_h;
+        (void)logical_h;
+        disp_deps.pixel_scale = logical_w > 0 ? static_cast<float>(pixel_w) / static_cast<float>(logical_w) : 1.0f;
+    }
     disp_deps.request_frame = [this]() { request_frame(); };
     disp_deps.on_resize = [this](int w, int h) { on_resize(w, h); };
     disp_deps.on_display_scale_changed = [this](float ppi) { on_display_scale_changed(ppi); };
@@ -537,6 +544,14 @@ void App::on_display_scale_changed(float new_ppi)
     // DPI change also requires an ImGui font texture rebuild (different from on_font_changed).
     renderer_.imgui()->rebuild_imgui_font_texture();
     apply_font_metrics();
+
+    // Keep the input dispatcher's pixel_scale in sync so mouse hit-testing remains correct.
+    auto [pixel_w, pixel_h] = window_.size_pixels();
+    auto [logical_w, logical_h] = window_.size_logical();
+    (void)pixel_h;
+    (void)logical_h;
+    if (logical_w > 0)
+        input_dispatcher_.set_pixel_scale(static_cast<float>(pixel_w) / static_cast<float>(logical_w));
 }
 
 void App::request_frame()
@@ -645,11 +660,16 @@ HostViewport App::viewport_for_pane(int pane_id) const
         viewport.padding = padding;
         viewport.pixel_scale = layout.pixel_scale;
 
-        // Compute col/row counts from available pixel area
+        // Compute col count from the pane's pixel width.
+        // Row count comes directly from the layout: compute_panel_layout already
+        // accounts for the panel height and the terminal_height snapping, so
+        // recomputing from pixel dimensions would be one row short (the snapped
+        // terminal_height = padding + rows*cell_h; subtracting 2*padding then
+        // dividing gives rows-1). Vertical splits share the same height as the
+        // full window, so layout.grid_rows is always correct here.
         const int usable_w = viewport.pixel_width - 2 * padding;
-        const int usable_h = viewport.pixel_height - 2 * padding;
         viewport.cols = cell_w > 0 ? std::max(1, usable_w / cell_w) : 1;
-        viewport.rows = cell_h > 0 ? std::max(1, usable_h / cell_h) : 1;
+        viewport.rows = layout.grid_rows;
         return viewport;
     }
 

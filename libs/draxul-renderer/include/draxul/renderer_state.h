@@ -98,6 +98,10 @@ public:
     size_t overlay_region_size_bytes() const;
     void copy_overlay_region_to(void* dst) const;
     void clear_dirty();
+    // Mark all cells and overlay dirty so they are re-uploaded on the next
+    // upload_dirty_state() call. Called when a sibling pane is resized and the
+    // shared GPU buffer offsets shift.
+    void force_dirty();
 
 private:
     void apply_update_to_cell(GpuCell& cell, const CellUpdate& update) const;

@@ -18,14 +18,25 @@ InputDispatcher::InputDispatcher(Deps deps)
 {
 }
 
+// Convert a logical pixel coordinate to a physical pixel coordinate.
+// SDL3 mouse events use logical (point) coordinates; pane descriptors and host
+// viewports store physical (device) pixel coordinates. On Retina displays the
+// two differ by the pixel_scale factor.
+int InputDispatcher::to_physical(int logical) const
+{
+    return static_cast<int>(std::round(static_cast<float>(logical) * deps_.pixel_scale));
+}
+
 // Returns the host that should receive a mouse event at (px, py).
-// If split_layout + host_manager are available, hit-test to find the pane.
-// Falls back to deps_.host for single-pane or when multi-pane is not wired.
+// px, py are SDL logical coordinates. PaneDescriptor boundaries are stored in
+// physical pixels, so we scale before hit-testing.
 IHost* InputDispatcher::host_for_mouse_pos(int px, int py)
 {
     if (deps_.split_layout && deps_.host_manager)
     {
-        const int pane_index = deps_.split_layout->hit_test(px, py);
+        const int phys_x = to_physical(px);
+        const int phys_y = to_physical(py);
+        const int pane_index = deps_.split_layout->hit_test(phys_x, phys_y);
         if (pane_index >= 0)
         {
             // Update focus if needed
@@ -105,7 +116,14 @@ void InputDispatcher::on_mouse_button_event(const MouseButtonEvent& event)
     }
     IHost* target = host_for_mouse_pos(event.x, event.y);
     if (target)
-        target->on_mouse_button(event);
+    {
+        // Hosts store viewports and cell sizes in physical pixels; translate
+        // the SDL logical coordinates to physical before forwarding.
+        MouseButtonEvent phys = event;
+        phys.x = to_physical(event.x);
+        phys.y = to_physical(event.y);
+        target->on_mouse_button(phys);
+    }
 }
 
 void InputDispatcher::on_mouse_move_event(const MouseMoveEvent& event)
@@ -119,7 +137,12 @@ void InputDispatcher::on_mouse_move_event(const MouseMoveEvent& event)
     }
     IHost* target = host_for_mouse_pos(event.x, event.y);
     if (target)
-        target->on_mouse_move(event);
+    {
+        MouseMoveEvent phys = event;
+        phys.x = to_physical(event.x);
+        phys.y = to_physical(event.y);
+        target->on_mouse_move(phys);
+    }
 }
 
 void InputDispatcher::on_mouse_wheel_event(const MouseWheelEvent& event)
@@ -135,6 +158,11 @@ void InputDispatcher::on_mouse_wheel_event(const MouseWheelEvent& event)
     if (!wheel_host)
         return;
 
+    // Build a physical-coordinate version of the event for forwarding to the host.
+    MouseWheelEvent phys_event = event;
+    phys_event.x = to_physical(event.x);
+    phys_event.y = to_physical(event.y);
+
     if (deps_.smooth_scroll && event.dy != 0.0f)
     {
         had_scroll_event_ = true;
@@ -143,7 +171,7 @@ void InputDispatcher::on_mouse_wheel_event(const MouseWheelEvent& event)
         const auto steps = static_cast<int>(std::abs(pending_scroll_y_));
         for (int i = 0; i < steps; ++i)
         {
-            MouseWheelEvent step = event;
+            MouseWheelEvent step = phys_event;
             step.dy = sign;
             wheel_host->on_mouse_wheel(step);
         }
@@ -154,7 +182,7 @@ void InputDispatcher::on_mouse_wheel_event(const MouseWheelEvent& event)
     else
     {
         pending_scroll_y_ = 0.0f;
-        wheel_host->on_mouse_wheel(event);
+        wheel_host->on_mouse_wheel(phys_event);
     }
 }
 

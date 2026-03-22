@@ -291,6 +291,12 @@ void RendererState::copy_to(void* dst) const
     copy_overlay_region_to(bytes + gpu_cells_.size() * sizeof(GpuCell));
 }
 
+void RendererState::force_dirty()
+{
+    mark_all_cells_dirty();
+    overlay_dirty_ = true;
+}
+
 void RendererState::mark_all_cells_dirty()
 {
     dirty_cell_begin_ = 0;
