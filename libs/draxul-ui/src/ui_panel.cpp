@@ -150,6 +150,7 @@ bool UiPanel::initialize()
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     io.ConfigFlags |= ImGuiConfigFlags_IsSRGB;
+    io.ConfigWindowsResizeFromEdges = true;
     io.IniFilename = nullptr;
     io.LogFilename = nullptr;
     ImGui::StyleColorsDark();
