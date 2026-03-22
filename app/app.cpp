@@ -572,8 +572,12 @@ void App::request_frame()
 
 void App::request_quit()
 {
-    if (host_manager_.host())
-        host_manager_.host()->request_close();
+    for (int i = 0; i < host_manager_.slot_count(); ++i)
+    {
+        IHost* slot_host = host_manager_.host_at(i);
+        if (slot_host)
+            slot_host->request_close();
+    }
     running_ = false;
 }
 

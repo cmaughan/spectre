@@ -99,15 +99,12 @@ void UnixPtyProcess::shutdown()
 {
     reader_running_ = false;
 
-    if (master_fd_ >= 0)
-    {
-        close(master_fd_);
-        master_fd_ = -1;
-    }
-
-    if (reader_thread_.joinable())
-        reader_thread_.join();
-
+    // Kill the child process BEFORE closing master_fd_ and joining the reader
+    // thread. On macOS, close(master_fd_) does NOT interrupt a blocking
+    // ::read(master_fd_) in another thread — the kernel holds a reference to
+    // the file description for the duration of the syscall, so close() just
+    // removes the fd-table entry. The read only unblocks when the PTY slave
+    // side closes, which happens when the child process exits.
     if (pid_ > 0)
     {
         int status = 0;
@@ -116,11 +113,23 @@ void UnixPtyProcess::shutdown()
             kill(pid_, SIGTERM);
             for (int i = 0; i < 10 && waitpid(pid_, &status, WNOHANG) == 0; ++i)
                 std::this_thread::sleep_for(std::chrono::microseconds(10000));
-            kill(pid_, SIGKILL);
-            waitpid(pid_, &status, 0);
+            if (waitpid(pid_, &status, WNOHANG) == 0)
+            {
+                kill(pid_, SIGKILL);
+                waitpid(pid_, &status, 0);
+            }
         }
         pid_ = -1;
     }
+
+    if (master_fd_ >= 0)
+    {
+        close(master_fd_);
+        master_fd_ = -1;
+    }
+
+    if (reader_thread_.joinable())
+        reader_thread_.join();
 
     std::scoped_lock lock(output_mutex_);
     output_chunks_.clear();
