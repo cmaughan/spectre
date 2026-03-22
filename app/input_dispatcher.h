@@ -14,7 +14,6 @@ class UiPanel;
 class IHost;
 class HostManager;
 class SdlWindow;
-struct SplitLayout;
 struct KeyEvent;
 struct MouseButtonEvent;
 struct MouseMoveEvent;
@@ -37,11 +36,8 @@ public:
         GuiActionHandler* gui_action_handler = nullptr;
         UiPanel* ui_panel = nullptr;
         IHost* host = nullptr;
-        // Multi-pane: optional. If set, mouse events are hit-tested against split_layout.
+        // Multi-pane: if set, mouse events are hit-tested via HostManager's SplitTree.
         HostManager* host_manager = nullptr;
-        SplitLayout* split_layout = nullptr;
-        // Callback to notify App that focused pane changed (so App can update focused_slot).
-        std::function<void(int)> on_pane_focus_changed;
         bool smooth_scroll = false;
         float scroll_speed = 1.0f;
         // Ratio of physical pixels to logical pixels (1.0 on non-HiDPI, 2.0 on Retina).

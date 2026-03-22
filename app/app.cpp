@@ -6,7 +6,6 @@
 #include "gui_action_handler.h"
 #include "host_manager.h"
 #include "input_dispatcher.h"
-#include "split_layout.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <chrono>
@@ -180,16 +179,21 @@ bool App::initialize()
     gui_deps.host = host_manager_.host();
     gui_deps.imgui_host = renderer_.imgui();
     gui_deps.config = &config_;
-    // GuiActionHandler already reinitializes TextService; we just apply the resulting metrics.
-    // Intentional difference from on_display_scale_changed: no rebuild_imgui_font_texture()
-    // needed here because the font size change does not alter the DPI scaling path.
     gui_deps.on_font_changed = [this]() { apply_font_metrics(); };
     gui_deps.on_open_file_dialog = [this]() { window_.show_open_file_dialog(); };
-    gui_deps.on_split_vertical = [this]() { split_vertical(); };
+    gui_deps.on_split_vertical = [this]() {
+        auto cbs = make_host_callbacks();
+        LeafId new_leaf = host_manager_.split_focused(SplitDirection::Vertical, std::move(cbs));
+        if (new_leaf != kInvalidLeaf)
+        {
+            input_dispatcher_.set_host(host_manager_.focused_host());
+            request_frame();
+        }
+    };
     gui_deps.on_panel_toggled = [this]() {
         refresh_window_layout();
-        if (host_manager_.host())
-            host_manager_.host()->set_viewport(current_host_viewport());
+        auto [pixel_w, pixel_h] = window_.size_pixels();
+        host_manager_.recompute_viewports(pixel_w, pixel_h);
         update_diagnostics_panel();
         request_frame();
     };
@@ -235,9 +239,6 @@ bool App::initialize_text_service()
         return false;
     }
 
-    // Intentional difference from on_display_scale_changed / on_font_changed: at startup
-    // ImGui is not yet initialized, so ui_panel_.set_font(), rebuild_imgui_font_texture(),
-    // on_font_metrics_changed(), set_viewport(), and request_frame() are called later.
     const auto& metrics = text_service_.metrics();
     renderer_.grid()->set_cell_size(metrics.cell_width, metrics.cell_height);
     renderer_.grid()->set_ascender(metrics.ascender);
@@ -257,8 +258,8 @@ void App::apply_font_metrics()
     if (host_manager_.host())
         host_manager_.host()->on_font_metrics_changed();
     refresh_window_layout();
-    if (host_manager_.host())
-        host_manager_.host()->set_viewport(current_host_viewport());
+    auto [pixel_w, pixel_h] = window_.size_pixels();
+    host_manager_.recompute_viewports(pixel_w, pixel_h);
     request_frame();
 }
 
@@ -272,22 +273,14 @@ bool App::initialize_host()
     host_deps.imgui_host = renderer_.imgui();
     host_deps.text_service = &text_service_;
     host_deps.display_ppi = &display_ppi_;
-
-    // Initialize the split layout with a single pane (slot 0)
-    auto [pixel_w, pixel_h] = window_.size_pixels();
-    split_layout_.set_single(0, pixel_w, pixel_h);
-
-    host_deps.get_viewport = [this]() { return current_host_viewport(); };
+    host_deps.compute_viewport = [this](const PaneDescriptor& desc) {
+        return viewport_from_descriptor(desc);
+    };
     host_manager_ = HostManager(std::move(host_deps));
 
-    HostCallbacks callbacks;
-    callbacks.request_frame = [this]() { request_frame(); };
-    callbacks.request_quit = [this]() { request_quit(); };
-    callbacks.wake_window = [this]() { window_.wake(); };
-    callbacks.set_window_title = [this](const std::string& title) { window_.set_title(title); };
-    callbacks.set_text_input_area = [this](int x, int y, int w, int h) { window_.set_text_input_area(x, y, w, h); };
-
-    if (!host_manager_.create(std::move(callbacks)))
+    auto [pixel_w, pixel_h] = window_.size_pixels();
+    auto callbacks = make_host_callbacks();
+    if (!host_manager_.create(std::move(callbacks), pixel_w, pixel_h))
     {
         last_init_error_ = host_manager_.error();
         return false;
@@ -306,6 +299,17 @@ bool App::initialize_host()
     return true;
 }
 
+HostCallbacks App::make_host_callbacks()
+{
+    HostCallbacks callbacks;
+    callbacks.request_frame = [this]() { request_frame(); };
+    callbacks.request_quit = [this]() { request_quit(); };
+    callbacks.wake_window = [this]() { window_.wake(); };
+    callbacks.set_window_title = [this](const std::string& title) { window_.set_title(title); };
+    callbacks.set_text_input_area = [this](int x, int y, int w, int h) { window_.set_text_input_area(x, y, w, h); };
+    return callbacks;
+}
+
 void App::wire_window_callbacks()
 {
     InputDispatcher::Deps disp_deps;
@@ -314,11 +318,6 @@ void App::wire_window_callbacks()
     disp_deps.ui_panel = &ui_panel_;
     disp_deps.host = host_manager_.host();
     disp_deps.host_manager = &host_manager_;
-    disp_deps.split_layout = &split_layout_;
-    disp_deps.on_pane_focus_changed = [this](int pane_index) {
-        host_manager_.set_focused_slot(pane_index);
-        input_dispatcher_.set_host(host_manager_.focused_host());
-    };
     disp_deps.smooth_scroll = config_.smooth_scroll;
     disp_deps.scroll_speed = config_.scroll_speed;
     {
@@ -379,15 +378,14 @@ std::optional<CapturedFrame> App::run_render_test(std::chrono::milliseconds time
                 const float delta_seconds = std::chrono::duration<float>(now - last_panel_frame_time_).count();
                 last_panel_frame_time_ = now;
                 I3DHost* h3d = nullptr;
-                for (int i = 0; i < host_manager_.slot_count(); ++i)
-                {
-                    auto* c = dynamic_cast<I3DHost*>(host_manager_.host_at(i));
-                    if (c && c->has_imgui())
+                host_manager_.for_each_host([&](LeafId, IHost& h) {
+                    if (!h3d)
                     {
-                        h3d = c;
-                        break;
+                        auto* c = dynamic_cast<I3DHost*>(&h);
+                        if (c && c->has_imgui())
+                            h3d = c;
                     }
-                }
+                });
                 if (h3d)
                 {
                     renderer_.imgui()->set_imgui_draw_data(
@@ -428,21 +426,21 @@ bool App::pump_once(std::optional<std::chrono::steady_clock::time_point> wait_de
             return false;
         }
 
-        // Close any panes whose hosts have exited. Iterate in reverse so removing
-        // a slot doesn't invalidate the remaining indices. If the last pane exits, stop.
+        // Close any panes whose hosts have exited. If the last pane exits, stop.
         auto close_dead_panes = [this]() -> bool {
-            for (int i = host_manager_.slot_count() - 1; i >= 0; --i)
+            std::vector<LeafId> dead;
+            host_manager_.for_each_host([&](LeafId id, IHost& h) {
+                if (!h.is_running())
+                    dead.push_back(id);
+            });
+            for (LeafId id : dead)
             {
-                IHost* slot_host = host_manager_.host_at(i);
-                if (slot_host && !slot_host->is_running())
+                if (host_manager_.host_count() == 1)
                 {
-                    if (host_manager_.slot_count() == 1)
-                    {
-                        running_ = false;
-                        return false;
-                    }
-                    close_pane(i);
+                    running_ = false;
+                    return false;
                 }
+                host_manager_.close_leaf(id);
             }
             return host_manager_.host() != nullptr;
         };
@@ -450,13 +448,11 @@ bool App::pump_once(std::optional<std::chrono::steady_clock::time_point> wait_de
         if (!close_dead_panes())
             return false;
 
-        // Pump all host slots
-        for (int i = 0; i < host_manager_.slot_count(); ++i)
-        {
-            IHost* slot_host = host_manager_.host_at(i);
-            if (slot_host && slot_host->is_running())
-                slot_host->pump();
-        }
+        // Pump all hosts
+        host_manager_.for_each_host([](LeafId, IHost& h) {
+            if (h.is_running())
+                h.pump();
+        });
 
         // Re-check after pumping (hosts can die during pump).
         if (!close_dead_panes())
@@ -478,19 +474,16 @@ bool App::pump_once(std::optional<std::chrono::steady_clock::time_point> wait_de
                 const float delta_seconds = std::chrono::duration<float>(now - last_panel_frame_time_).count();
                 last_panel_frame_time_ = now;
 
-                // Find any I3DHost with ImGui across all slots — not just the
-                // focused host — so MegaCity's ImGui renders even when a
-                // different pane has focus.
+                // Find any I3DHost with ImGui across all hosts.
                 I3DHost* h3d = nullptr;
-                for (int i = 0; i < host_manager_.slot_count(); ++i)
-                {
-                    auto* c = dynamic_cast<I3DHost*>(host_manager_.host_at(i));
-                    if (c && c->has_imgui())
+                host_manager_.for_each_host([&](LeafId, IHost& h) {
+                    if (!h3d)
                     {
-                        h3d = c;
-                        break;
+                        auto* c = dynamic_cast<I3DHost*>(&h);
+                        if (c && c->has_imgui())
+                            h3d = c;
                     }
-                }
+                });
                 if (h3d)
                 {
                     renderer_.imgui()->set_imgui_draw_data(
@@ -535,29 +528,7 @@ void App::on_resize(int pixel_w, int pixel_h)
 {
     renderer_.grid()->resize(pixel_w, pixel_h);
     refresh_window_layout();
-
-    // Recompute split layout with new dimensions
-    if (split_layout_.panes.size() == 2)
-    {
-        split_layout_.set_vertical_2(
-            split_layout_.panes[0].pane_id,
-            split_layout_.panes[1].pane_id,
-            pixel_w, pixel_h);
-    }
-    else if (!split_layout_.panes.empty())
-    {
-        split_layout_.set_single(split_layout_.panes[0].pane_id, pixel_w, pixel_h);
-    }
-
-    // Update host viewports — each host's set_viewport() also updates its handle's scissor rect
-    for (int i = 0; i < static_cast<int>(split_layout_.panes.size()); ++i)
-    {
-        const auto& sp = split_layout_.panes[static_cast<size_t>(i)];
-        IHost* slot_host = host_manager_.host_at(i);
-        if (slot_host)
-            slot_host->set_viewport(viewport_for_pane(sp.pane_id));
-    }
-
+    host_manager_.recompute_viewports(pixel_w, pixel_h);
     request_frame();
 }
 
@@ -593,12 +564,9 @@ void App::request_frame()
 
 void App::request_quit()
 {
-    for (int i = 0; i < host_manager_.slot_count(); ++i)
-    {
-        IHost* slot_host = host_manager_.host_at(i);
-        if (slot_host)
-            slot_host->request_close();
-    }
+    host_manager_.for_each_host([](LeafId, IHost& h) {
+        h.request_close();
+    });
     running_ = false;
 }
 
@@ -651,167 +619,25 @@ void App::refresh_window_layout()
     ui_panel_.set_window_metrics(pixel_w, pixel_h, cell_w, cell_h, renderer_.grid()->padding(), pixel_scale);
 }
 
-HostViewport App::current_host_viewport() const
+HostViewport App::viewport_from_descriptor(const PaneDescriptor& desc) const
 {
-    // Use pane 0 (focused) for the default host viewport
-    if (!split_layout_.panes.empty())
-        return viewport_for_pane(split_layout_.panes[0].pane_id);
-
     const auto& layout = ui_panel_.layout();
+    const int padding = renderer_.grid()->padding();
+    const auto [cell_w, cell_h] = renderer_.grid()->cell_size_pixels();
+
     HostViewport viewport;
-    viewport.pixel_x = 0;
-    viewport.pixel_y = 0;
-    viewport.pixel_width = layout.window_width;
-    viewport.pixel_height = layout.terminal_height;
-    viewport.cols = layout.grid_cols;
-    viewport.rows = layout.grid_rows;
-    viewport.padding = renderer_.grid()->padding();
+    viewport.pixel_x = desc.pixel_x;
+    viewport.pixel_y = desc.pixel_y;
+    const int panel_h = (layout.window_height - layout.terminal_height);
+    viewport.pixel_width = desc.pixel_width;
+    viewport.pixel_height = desc.pixel_height - panel_h;
+    viewport.padding = padding;
     viewport.pixel_scale = layout.pixel_scale;
-    return viewport;
-}
 
-HostViewport App::viewport_for_pane(int pane_id) const
-{
-    // Find pane in split layout
-    for (const auto& sp : split_layout_.panes)
-    {
-        if (sp.pane_id != pane_id)
-            continue;
-
-        const auto& desc = sp.descriptor;
-        const auto& layout = ui_panel_.layout();
-        const int padding = renderer_.grid()->padding();
-        const auto [cell_w, cell_h] = renderer_.grid()->cell_size_pixels();
-
-        HostViewport viewport;
-        viewport.pixel_x = desc.pixel_x;
-        viewport.pixel_y = desc.pixel_y;
-        // Reserve space for the UI panel if it occupies horizontal space.
-        // For multi-pane we assign the full descriptor height and adjust panel height
-        // only for the focused pane (simplification for phase 1).
-        const int panel_h = (layout.window_height - layout.terminal_height);
-        viewport.pixel_width = desc.pixel_width;
-        viewport.pixel_height = desc.pixel_height - panel_h;
-        viewport.padding = padding;
-        viewport.pixel_scale = layout.pixel_scale;
-
-        // Compute col count from the pane's pixel width.
-        // Row count comes directly from the layout: compute_panel_layout already
-        // accounts for the panel height and the terminal_height snapping, so
-        // recomputing from pixel dimensions would be one row short (the snapped
-        // terminal_height = padding + rows*cell_h; subtracting 2*padding then
-        // dividing gives rows-1). Vertical splits share the same height as the
-        // full window, so layout.grid_rows is always correct here.
-        const int usable_w = viewport.pixel_width - 2 * padding;
-        viewport.cols = cell_w > 0 ? std::max(1, usable_w / cell_w) : 1;
-        viewport.rows = layout.grid_rows;
-        return viewport;
-    }
-
-    // Fallback to full-window viewport
-    const auto& layout = ui_panel_.layout();
-    HostViewport viewport;
-    viewport.pixel_x = 0;
-    viewport.pixel_y = 0;
-    viewport.pixel_width = layout.window_width;
-    viewport.pixel_height = layout.terminal_height;
-    viewport.cols = layout.grid_cols;
+    const int usable_w = viewport.pixel_width - 2 * padding;
+    viewport.cols = cell_w > 0 ? std::max(1, usable_w / cell_w) : 1;
     viewport.rows = layout.grid_rows;
-    viewport.padding = renderer_.grid()->padding();
-    viewport.pixel_scale = layout.pixel_scale;
     return viewport;
-}
-
-void App::split_vertical()
-{
-    auto [pixel_w, pixel_h] = window_.size_pixels();
-    DRAXUL_LOG_INFO(LogCategory::App, "split_vertical: window pixels=%dx%d", pixel_w, pixel_h);
-
-    // Use slot indices as pane IDs: existing pane is slot 0, new pane is slot 1
-    const int pane0_id = split_layout_.panes.empty() ? 0 : split_layout_.panes[0].pane_id;
-    const int new_pane_id = 1;
-
-    // Recompute layout as 2-pane vertical split
-    split_layout_.set_vertical_2(pane0_id, new_pane_id, pixel_w, pixel_h);
-
-    {
-        const auto& d0 = split_layout_.panes[0].descriptor;
-        const auto& d1 = split_layout_.panes[1].descriptor;
-        DRAXUL_LOG_INFO(LogCategory::App,
-            "split_vertical: pane0 desc={x=%d,y=%d,w=%d,h=%d} pane1 desc={x=%d,y=%d,w=%d,h=%d}",
-            d0.pixel_x, d0.pixel_y, d0.pixel_width, d0.pixel_height,
-            d1.pixel_x, d1.pixel_y, d1.pixel_width, d1.pixel_height);
-    }
-
-    // Resize the existing (pane 0) host to its new half-width viewport.
-    // set_viewport() also updates that host's handle scissor rect.
-    if (host_manager_.host_at(0))
-    {
-        const HostViewport vp0 = viewport_for_pane(pane0_id);
-        DRAXUL_LOG_INFO(LogCategory::App,
-            "split_vertical: pane0 viewport px=%d py=%d pw=%d ph=%d cols=%d rows=%d",
-            vp0.pixel_x, vp0.pixel_y, vp0.pixel_width, vp0.pixel_height, vp0.cols, vp0.rows);
-        host_manager_.host_at(0)->set_viewport(vp0);
-    }
-
-    // Launch a second host for the right-pane
-    HostCallbacks callbacks;
-    callbacks.request_frame = [this]() { request_frame(); };
-    callbacks.request_quit = [this]() { request_quit(); };
-    callbacks.wake_window = [this]() { window_.wake(); };
-    callbacks.set_window_title = [this](const std::string& title) { window_.set_title(title); };
-    callbacks.set_text_input_area = [this](int x, int y, int w, int h) { window_.set_text_input_area(x, y, w, h); };
-
-    const HostViewport right_viewport = viewport_for_pane(new_pane_id);
-    DRAXUL_LOG_INFO(LogCategory::App,
-        "split_vertical: pane1 viewport px=%d py=%d pw=%d ph=%d cols=%d rows=%d",
-        right_viewport.pixel_x, right_viewport.pixel_y,
-        right_viewport.pixel_width, right_viewport.pixel_height,
-        right_viewport.cols, right_viewport.rows);
-    if (!host_manager_.add_slot(std::move(callbacks), right_viewport))
-    {
-        // Rollback on failure
-        split_layout_.set_single(pane0_id, pixel_w, pixel_h);
-        if (host_manager_.host_at(0))
-            host_manager_.host_at(0)->set_viewport(current_host_viewport());
-        return;
-    }
-
-    // Focus the new right pane
-    split_layout_.focused_pane_index = 1;
-    const int new_slot_index = host_manager_.slot_count() - 1;
-    host_manager_.set_focused_slot(new_slot_index);
-
-    // Update input dispatcher to focus new host
-    input_dispatcher_.set_host(host_manager_.focused_host());
-
-    request_frame();
-}
-
-void App::close_pane(int slot_index)
-{
-    if (host_manager_.slot_count() <= 1)
-        return; // caller must not call this for the last pane
-
-    DRAXUL_LOG_INFO(LogCategory::App, "close_pane: removing slot %d", slot_index);
-
-    // Remove the slot (shuts down its host internally).
-    host_manager_.remove_slot(slot_index);
-
-    // Back to a single-pane layout. The surviving slot is now at index 0; use pane_id 0.
-    auto [pixel_w, pixel_h] = window_.size_pixels();
-    split_layout_.set_single(0, pixel_w, pixel_h);
-    split_layout_.focused_pane_index = 0;
-
-    // Resize the surviving host to the full window.
-    if (host_manager_.host_at(0))
-        host_manager_.host_at(0)->set_viewport(current_host_viewport());
-
-    // Wire input to the surviving host.
-    host_manager_.set_focused_slot(0);
-    input_dispatcher_.set_host(host_manager_.focused_host());
-
-    request_frame();
 }
 
 int App::wait_timeout_ms(std::optional<std::chrono::steady_clock::time_point> wait_deadline) const
@@ -853,9 +679,6 @@ void App::shutdown()
     text_service_.shutdown();
     if (renderer_.imgui())
     {
-        // Ensure UiPanel's context is current so the backend can clean up its
-        // per-context state. MegaCityHost (if active) already shut down its own
-        // context in host_manager_.shutdown(), leaving GImGui null.
         ui_panel_.activate_imgui_context();
         renderer_.imgui()->shutdown_imgui_backend();
     }

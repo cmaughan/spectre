@@ -1,10 +1,11 @@
 #pragma once
 
+#include "split_tree.h"
 #include <draxul/host.h>
 #include <functional>
 #include <memory>
 #include <string>
-#include <vector>
+#include <unordered_map>
 
 namespace draxul
 {
@@ -16,9 +17,8 @@ class TextService;
 struct AppOptions;
 struct AppConfig;
 
-// Owns the IHost instance(s) and manages their lifecycle: creation, initialisation,
-// and shutdown. App holds a HostManager and calls create() during initialisation.
-// Supports multiple host slots for multi-pane split layouts.
+// Owns the IHost instance(s), the SplitTree layout, and manages their lifecycle.
+// App holds a HostManager and calls create() during initialisation.
 class HostManager
 {
 public:
@@ -32,75 +32,63 @@ public:
         TextService* text_service = nullptr;
         const float* display_ppi = nullptr;
 
-        // Provides the initial viewport at creation time
-        std::function<HostViewport()> get_viewport;
-    };
-
-    struct HostSlot
-    {
-        std::unique_ptr<IHost> host;
+        // Converts a PaneDescriptor (pixel region) to a full HostViewport (with cols/rows/padding).
+        // Provided by App since it owns the font metrics and UI panel layout.
+        std::function<HostViewport(const PaneDescriptor&)> compute_viewport;
     };
 
     explicit HostManager(Deps deps);
 
-    // Creates and initialises the primary host (slot 0). Returns false on failure;
-    // error() contains the reason. Caller passes in the host callbacks so App can
-    // keep the lambda captures.
-    bool create(HostCallbacks callbacks);
-
-    // Creates and initialises an additional host slot with a specific viewport.
+    // Creates and initialises the primary host, resetting the tree to a single leaf.
     // Returns false on failure; error() contains the reason.
-    bool add_slot(HostCallbacks callbacks, HostViewport viewport);
+    bool create(HostCallbacks callbacks, int pixel_w, int pixel_h);
+
+    // Splits the focused leaf in the given direction and launches a new host.
+    // Returns the new leaf's ID, or kInvalidLeaf on failure.
+    LeafId split_focused(SplitDirection dir, HostCallbacks callbacks);
+
+    // Closes a leaf by ID — shuts down its host and collapses the tree.
+    // Returns false if this is the last leaf.
+    bool close_leaf(LeafId id);
+
+    // Convenience: closes the currently focused leaf.
+    bool close_focused();
+
+    // Recomputes the tree layout and updates all host viewports.
+    void recompute_viewports(int pixel_w, int pixel_h);
 
     // Shuts down and releases all hosts.
     void shutdown();
 
-    // Shuts down and removes a single slot by index.
-    // Adjusts focused_slot_ so it remains valid after the removal.
-    void remove_slot(int index);
-
-    // Returns null before create() succeeds or after shutdown().
+    // Returns the focused host, or null before create().
     IHost* host() const
     {
         return focused_host();
     }
-
-    IHost* focused_host() const
+    IHost* focused_host() const;
+    LeafId focused_leaf() const
     {
-        if (focused_slot_ < 0 || focused_slot_ >= static_cast<int>(slots_.size()))
-            return nullptr;
-        return slots_[static_cast<size_t>(focused_slot_)].host.get();
+        return tree_.focused();
     }
+    void set_focused(LeafId id);
 
-    void set_focused_slot(int index)
+    // Returns the host for a specific leaf.
+    IHost* host_for(LeafId id) const;
+
+    // Hit-test a point (physical pixels). Updates focus if a new leaf is hit.
+    // Returns the host under the point, or null.
+    IHost* host_at_point(int px, int py);
+
+    // Visit all hosts.
+    void for_each_host(const std::function<void(LeafId, IHost&)>& fn) const;
+
+    int host_count() const
     {
-        focused_slot_ = index;
+        return tree_.leaf_count();
     }
-
-    int focused_slot_index() const
+    const SplitTree& tree() const
     {
-        return focused_slot_;
-    }
-
-    int slot_count() const
-    {
-        return static_cast<int>(slots_.size());
-    }
-
-    IHost* host_at(int index) const
-    {
-        if (index < 0 || index >= static_cast<int>(slots_.size()))
-            return nullptr;
-        return slots_[static_cast<size_t>(index)].host.get();
-    }
-
-    // Transfers ownership of a new host into the manager (replaces focused slot).
-    void set_host(std::unique_ptr<IHost> h)
-    {
-        if (slots_.empty())
-            slots_.push_back({ std::move(h) });
-        else
-            slots_[static_cast<size_t>(focused_slot_)].host = std::move(h);
+        return tree_;
     }
 
     const std::string& error() const
@@ -109,12 +97,13 @@ public:
     }
 
 private:
-    bool create_slot(HostCallbacks callbacks, HostViewport viewport,
+    bool create_host_for_leaf(LeafId id, HostCallbacks callbacks,
         HostLaunchOptions launch, bool is_primary);
+    void update_all_viewports();
 
     Deps deps_;
-    std::vector<HostSlot> slots_;
-    int focused_slot_ = 0;
+    SplitTree tree_;
+    std::unordered_map<LeafId, std::unique_ptr<IHost>> hosts_;
     std::string error_;
 };
 

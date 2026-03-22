@@ -19,9 +19,12 @@ HostManager::HostManager(Deps deps)
 {
 }
 
-bool HostManager::create(HostCallbacks callbacks)
+bool HostManager::create(HostCallbacks callbacks, int pixel_w, int pixel_h)
 {
     error_.clear();
+    hosts_.clear();
+
+    LeafId root_id = tree_.reset(pixel_w, pixel_h);
 
     HostLaunchOptions launch;
     launch.kind = deps_.options->host_kind;
@@ -31,22 +34,123 @@ bool HostManager::create(HostCallbacks callbacks)
     launch.startup_commands = deps_.options->startup_commands;
     launch.enable_ligatures = deps_.config->enable_ligatures;
 
-    HostViewport viewport = deps_.get_viewport ? deps_.get_viewport() : HostViewport{};
-    return create_slot(std::move(callbacks), viewport, std::move(launch), true);
+    return create_host_for_leaf(root_id, std::move(callbacks), std::move(launch), true);
 }
 
-bool HostManager::add_slot(HostCallbacks callbacks, HostViewport viewport)
+LeafId HostManager::split_focused(SplitDirection dir, HostCallbacks callbacks)
 {
+    LeafId focused = tree_.focused();
+    if (focused == kInvalidLeaf)
+        return kInvalidLeaf;
+
+    LeafId new_id = tree_.split_leaf(focused, dir);
+    if (new_id == kInvalidLeaf)
+        return kInvalidLeaf;
+
     HostLaunchOptions launch;
-    // New panes always open a Zsh shell. A future host-picker UI will allow the user to
-    // choose the host kind at split time.
     launch.kind = HostKind::Zsh;
     launch.enable_ligatures = deps_.config->enable_ligatures;
 
-    return create_slot(std::move(callbacks), viewport, std::move(launch), false);
+    if (!create_host_for_leaf(new_id, std::move(callbacks), std::move(launch), false))
+    {
+        // Rollback the tree split
+        tree_.close_leaf(new_id);
+        return kInvalidLeaf;
+    }
+
+    // Update all viewports (tree was recomputed by split_leaf)
+    update_all_viewports();
+
+    // Focus the new pane
+    tree_.set_focused(new_id);
+
+    return new_id;
 }
 
-bool HostManager::create_slot(HostCallbacks callbacks, HostViewport viewport,
+bool HostManager::close_leaf(LeafId id)
+{
+    if (tree_.leaf_count() <= 1)
+        return false;
+
+    auto it = hosts_.find(id);
+    if (it == hosts_.end())
+        return false;
+
+    // Shut down the host
+    if (it->second)
+        it->second->shutdown();
+    hosts_.erase(it);
+
+    // Collapse the tree (this also updates focus if needed)
+    if (!tree_.close_leaf(id))
+        return false;
+
+    update_all_viewports();
+    return true;
+}
+
+bool HostManager::close_focused()
+{
+    return close_leaf(tree_.focused());
+}
+
+void HostManager::recompute_viewports(int pixel_w, int pixel_h)
+{
+    tree_.recompute(pixel_w, pixel_h);
+    update_all_viewports();
+}
+
+void HostManager::shutdown()
+{
+    for (auto& [id, host] : hosts_)
+    {
+        if (host)
+        {
+            host->shutdown();
+            host.reset();
+        }
+    }
+    hosts_.clear();
+}
+
+IHost* HostManager::focused_host() const
+{
+    return host_for(tree_.focused());
+}
+
+void HostManager::set_focused(LeafId id)
+{
+    tree_.set_focused(id);
+}
+
+IHost* HostManager::host_for(LeafId id) const
+{
+    auto it = hosts_.find(id);
+    return it != hosts_.end() ? it->second.get() : nullptr;
+}
+
+IHost* HostManager::host_at_point(int px, int py)
+{
+    auto result = tree_.hit_test(px, py);
+    if (auto* leaf_hit = std::get_if<SplitTree::LeafHit>(&result))
+    {
+        tree_.set_focused(leaf_hit->id);
+        return host_for(leaf_hit->id);
+    }
+    // If divider hit or miss, return focused host
+    return focused_host();
+}
+
+void HostManager::for_each_host(const std::function<void(LeafId, IHost&)>& fn) const
+{
+    tree_.for_each_leaf([&](LeafId id, const PaneDescriptor&) {
+        auto it = hosts_.find(id);
+        if (it != hosts_.end() && it->second)
+            fn(id, *it->second);
+    });
+}
+
+bool HostManager::create_host_for_leaf(LeafId id, HostCallbacks callbacks,
     HostLaunchOptions launch, bool is_primary)
 {
     std::unique_ptr<IHost> new_host;
@@ -72,6 +176,9 @@ bool HostManager::create_slot(HostCallbacks callbacks, HostViewport viewport,
     IGridRenderer& grid_renderer = *deps_.grid_renderer;
     const float display_ppi = deps_.display_ppi ? *deps_.display_ppi : 96.0f;
 
+    PaneDescriptor desc = tree_.descriptor_for(id);
+    HostViewport viewport = deps_.compute_viewport ? deps_.compute_viewport(desc) : HostViewport{};
+
     HostContext context{
         *deps_.window,
         grid_renderer,
@@ -90,7 +197,6 @@ bool HostManager::create_slot(HostCallbacks callbacks, HostViewport viewport,
     }
 
     // Wire 3D renderer post-init for hosts that opt into I3DHost.
-    // IGridRenderer IS-A I3DRenderer via inheritance — the upcast is always valid.
     if (auto* h3d = dynamic_cast<I3DHost*>(new_host.get()))
     {
         if (deps_.grid_renderer)
@@ -102,33 +208,20 @@ bool HostManager::create_slot(HostCallbacks callbacks, HostViewport viewport,
     if (is_primary)
         grid_renderer.set_default_background(new_host->default_background());
 
-    slots_.push_back({ std::move(new_host) });
+    hosts_[id] = std::move(new_host);
     return true;
 }
 
-void HostManager::shutdown()
+void HostManager::update_all_viewports()
 {
-    for (auto& slot : slots_)
-    {
-        if (slot.host)
-        {
-            slot.host->shutdown();
-            slot.host.reset();
-        }
-    }
-    slots_.clear();
-}
-
-void HostManager::remove_slot(int index)
-{
-    if (index < 0 || index >= slot_count())
+    if (!deps_.compute_viewport)
         return;
-    if (slots_[static_cast<size_t>(index)].host)
-        slots_[static_cast<size_t>(index)].host->shutdown();
-    slots_.erase(slots_.begin() + index);
-    // Keep focused_slot_ valid: if we removed a slot before (or at) the focused one, decrement.
-    if (focused_slot_ > index || focused_slot_ >= slot_count())
-        focused_slot_ = std::max(0, slot_count() - 1);
+
+    tree_.for_each_leaf([&](LeafId id, const PaneDescriptor& desc) {
+        auto it = hosts_.find(id);
+        if (it != hosts_.end() && it->second)
+            it->second->set_viewport(deps_.compute_viewport(desc));
+    });
 }
 
 } // namespace draxul

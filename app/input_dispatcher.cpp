@@ -2,7 +2,6 @@
 
 #include "gui_action_handler.h"
 #include "host_manager.h"
-#include "split_layout.h"
 #include <cmath>
 #include <draxul/app_config.h>
 #include <draxul/events.h>
@@ -32,21 +31,15 @@ int InputDispatcher::to_physical(int logical) const
 // physical pixels, so we scale before hit-testing.
 IHost* InputDispatcher::host_for_mouse_pos(int px, int py)
 {
-    if (deps_.split_layout && deps_.host_manager)
+    if (deps_.host_manager)
     {
         const int phys_x = to_physical(px);
         const int phys_y = to_physical(py);
-        const int pane_index = deps_.split_layout->hit_test(phys_x, phys_y);
-        if (pane_index >= 0)
+        IHost* target = deps_.host_manager->host_at_point(phys_x, phys_y);
+        if (target)
         {
-            // Update focus if needed
-            if (pane_index != deps_.split_layout->focused_pane_index)
-            {
-                deps_.split_layout->focused_pane_index = pane_index;
-                if (deps_.on_pane_focus_changed)
-                    deps_.on_pane_focus_changed(pane_index);
-            }
-            return deps_.host_manager->host_at(pane_index);
+            deps_.host = target;
+            return target;
         }
     }
     return deps_.host;
