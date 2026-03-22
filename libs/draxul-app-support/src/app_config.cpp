@@ -33,13 +33,14 @@ constexpr std::array<std::string_view, 7> kKnownGuiActions = {
     "font_reset",
     "open_file_dialog",
 };
-constexpr std::array<std::string_view, 12> kKnownTopLevelKeys = {
+constexpr std::array<std::string_view, 13> kKnownTopLevelKeys = {
     "window_width",
     "window_height",
     "font_size",
     "atlas_size",
     "enable_ligatures",
     "smooth_scroll",
+    "scroll_speed",
     "font_path",
     "bold_font_path",
     "italic_font_path",
@@ -263,11 +264,16 @@ AppConfig config_from_toml(const toml::table& document)
             DRAXUL_LOG_ERROR(LogCategory::App, "[config] Key '%s' has wrong type (expected array) — using default", key);
     };
 
-    // font_size accepts both integer and floating-point TOML values.
+    // font_size and scroll_speed accept both integer and floating-point TOML values.
     auto check_font_size_type = [&]() {
         auto node = document["font_size"];
         if (node && !node.is_integer() && !node.is_floating_point())
             DRAXUL_LOG_ERROR(LogCategory::App, "[config] Key 'font_size' has wrong type (expected integer or float) — using default");
+    };
+    auto check_float_type = [&](const char* key) {
+        auto node = document[key];
+        if (node && !node.is_integer() && !node.is_floating_point())
+            DRAXUL_LOG_ERROR(LogCategory::App, "[config] Key '%s' has wrong type (expected integer or float) — using default", key);
     };
 
     check_int_type("window_width");
@@ -276,6 +282,7 @@ AppConfig config_from_toml(const toml::table& document)
     check_int_type("atlas_size");
     check_bool_type("enable_ligatures");
     check_bool_type("smooth_scroll");
+    check_float_type("scroll_speed");
     check_string_type("font_path");
     check_string_type("bold_font_path");
     check_string_type("italic_font_path");
@@ -289,6 +296,30 @@ AppConfig config_from_toml(const toml::table& document)
     config.enable_ligatures = parse_enable_ligatures(document, config.enable_ligatures);
     if (auto parsed = toml_support::get_bool(document, "smooth_scroll"); parsed.has_value())
         config.smooth_scroll = *parsed;
+
+    {
+        constexpr float kScrollSpeedMin = 0.1f;
+        constexpr float kScrollSpeedMax = 10.0f;
+        float raw_speed = config.scroll_speed;
+        if (auto parsed = toml_support::get_double(document, "scroll_speed"); parsed.has_value())
+            raw_speed = static_cast<float>(*parsed);
+        else if (auto parsed_int = toml_support::get_int(document, "scroll_speed"); parsed_int.has_value())
+            raw_speed = static_cast<float>(*parsed_int);
+        if (document["scroll_speed"])
+        {
+            if (raw_speed < kScrollSpeedMin || raw_speed > kScrollSpeedMax)
+            {
+                DRAXUL_LOG_WARN(LogCategory::App,
+                    "[config] scroll_speed %.2f out of range (%.1f, %.1f] — using default 1.0",
+                    static_cast<double>(raw_speed), static_cast<double>(kScrollSpeedMin), static_cast<double>(kScrollSpeedMax));
+                config.scroll_speed = 1.0f;
+            }
+            else
+            {
+                config.scroll_speed = raw_speed;
+            }
+        }
+    }
 
     if (auto font_path = toml_support::get_string(document, "font_path"))
         config.font_path = *font_path;
@@ -374,6 +405,7 @@ std::string AppConfig::serialize() const
     document.insert_or_assign("atlas_size", floor_to_power_of_two(std::clamp(atlas_size, kMinAtlasSize, kMaxAtlasSize)));
     document.insert_or_assign("enable_ligatures", enable_ligatures);
     document.insert_or_assign("smooth_scroll", smooth_scroll);
+    document.insert_or_assign("scroll_speed", static_cast<double>(std::clamp(scroll_speed, 0.1f, 10.0f)));
     if (!font_path.empty())
         document.insert_or_assign("font_path", font_path);
     if (!bold_font_path.empty())

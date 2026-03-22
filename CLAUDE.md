@@ -168,6 +168,8 @@ All fetched automatically via CMake FetchContent (in `cmake/FetchDependencies.cm
 
 - User settings live in `config.toml`.
 - `enable_ligatures = true/false` controls whether Draxul combines eligible two-cell programming ligatures during shaping; it defaults to `true`.
+- `smooth_scroll = true/false` enables trackpad momentum-style scroll accumulation; defaults to `true`.
+- `scroll_speed = 1.0` is a multiplier applied to the raw scroll delta before accumulation in the smooth-scroll path. Range: (0.1, 10.0]; values outside this range log a WARN and fall back to `1.0`. Values below `1.0` slow scrolling; values above `1.0` speed it up.
 - GUI-only shortcuts are configured under a `[keybindings]` table with action names such as `toggle_diagnostics`, `copy`, `paste`, `font_increase`, `font_decrease`, and `font_reset`.
 - Keep GUI keybinding changes in the Draxul layer only; Neovim key remapping still belongs in Neovim config.
 

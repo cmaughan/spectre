@@ -20,7 +20,7 @@ namespace draxul
 struct GuiKeybinding
 {
     std::string action;
-    int32_t key = 0; // platform keycode value (e.g. SDL_Keycode); 0 = unset
+    int32_t key = 0; // platform-neutral keycode value (SDL_Keycode cast to int32_t at the SDL layer); 0 = unset
     ModifierFlags modifiers = kModNone;
 };
 
@@ -34,6 +34,7 @@ struct AppConfig
     int atlas_size = kAtlasSize;
     bool enable_ligatures = true;
     bool smooth_scroll = true;
+    float scroll_speed = 1.0f;
     std::string font_path;
     std::string bold_font_path;
     std::string italic_font_path;

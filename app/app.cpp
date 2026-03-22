@@ -300,6 +300,7 @@ void App::wire_window_callbacks()
     disp_deps.ui_panel = &ui_panel_;
     disp_deps.host = host_manager_.host();
     disp_deps.smooth_scroll = config_.smooth_scroll;
+    disp_deps.scroll_speed = config_.scroll_speed;
     disp_deps.request_frame = [this]() { request_frame(); };
     disp_deps.on_resize = [this](int w, int h) { on_resize(w, h); };
     disp_deps.on_display_scale_changed = [this](float ppi) { on_display_scale_changed(ppi); };

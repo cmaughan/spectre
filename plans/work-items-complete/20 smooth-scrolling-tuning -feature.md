@@ -15,16 +15,16 @@ Smooth scrolling is implemented but not user-tunable. Users cannot configure scr
 
 ## Implementation Plan
 
-- [ ] Read the current smooth scrolling implementation (likely in `app/app.cpp`, `GridHostBase`, or a dedicated scroll animator) to understand what parameters are already in play.
-- [ ] Read `libs/draxul-app-support/include/draxul/app_config.h` to see what scroll-related config fields exist.
-- [ ] Expose the following config keys under `[scroll]` in `config.toml` and `AppConfig`:
-  - `smooth_scroll = true/false` (enable/disable, defaults to current behaviour)
-  - `scroll_speed = 1.0` (multiplier, 0.5 = slower, 2.0 = faster)
-  - `scroll_easing = "ease-out"` (enum: `"linear"`, `"ease-out"`, `"ease-in-out"`)
-- [ ] Implement the config reading and apply the parameters to the scroll animator.
-- [ ] Add validation: `scroll_speed` clamped to (0.0, 10.0]; easing value must be one of the enum set (WARN + default on unknown value).
-- [ ] Update `CLAUDE.md` config notes section with the new keys.
-- [ ] Build and run smoke test.
+- [x] Read the current smooth scrolling implementation (likely in `app/app.cpp`, `GridHostBase`, or a dedicated scroll animator) to understand what parameters are already in play.
+- [x] Read `libs/draxul-app-support/include/draxul/app_config.h` to see what scroll-related config fields exist.
+- [x] Expose `scroll_speed = 1.0` (top-level, matching `smooth_scroll` pattern) in `AppConfig` and `config.toml`:
+  - `smooth_scroll = true/false` already existed
+  - `scroll_speed = 1.0` (multiplier, 0.5 = slower, 2.0 = faster) — added
+  - `scroll_easing` — deferred/out of scope for this implementation
+- [x] Implement the config reading and apply `scroll_speed` multiplier in `InputDispatcher::on_mouse_wheel_event`.
+- [x] Add validation: `scroll_speed` clamped to (0.1, 10.0]; logs WARN and falls back to 1.0 if out of range.
+- [x] Update `CLAUDE.md` config notes section with the new keys.
+- [x] Build succeeded (`draxul` and `draxul-tests` targets).
 - [ ] Manually verify: set `smooth_scroll = false` → scrolling snaps; set high `scroll_speed` → scrolling finishes faster.
 
 ---

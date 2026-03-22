@@ -36,6 +36,7 @@ public:
         UiPanel* ui_panel = nullptr;
         IHost* host = nullptr;
         bool smooth_scroll = false;
+        float scroll_speed = 1.0f;
 
         std::function<void()> request_frame;
         std::function<void(int, int)> on_resize;
