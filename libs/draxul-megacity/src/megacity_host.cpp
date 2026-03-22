@@ -58,9 +58,11 @@ void MegaCityHost::on_mouse_move(const MouseMoveEvent& event)
     if (!imgui_ctx_)
         return;
     ImGui::SetCurrentContext(imgui_ctx_);
-    const float scale = viewport_.pixel_scale;
+    // Coordinates arrive in physical pixels (window-relative) from InputDispatcher.
+    // Convert to pane-relative for ImGui whose DisplaySize matches the pane.
     ImGui::GetIO().AddMousePosEvent(
-        static_cast<float>(event.x) * scale, static_cast<float>(event.y) * scale);
+        static_cast<float>(event.x - viewport_.pixel_x),
+        static_cast<float>(event.y - viewport_.pixel_y));
 }
 
 void MegaCityHost::on_mouse_button(const MouseButtonEvent& event)

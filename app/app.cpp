@@ -378,8 +378,17 @@ std::optional<CapturedFrame> App::run_render_test(std::chrono::milliseconds time
             {
                 const float delta_seconds = std::chrono::duration<float>(now - last_panel_frame_time_).count();
                 last_panel_frame_time_ = now;
-                auto* h3d = dynamic_cast<I3DHost*>(host_manager_.host());
-                if (h3d && h3d->has_imgui())
+                I3DHost* h3d = nullptr;
+                for (int i = 0; i < host_manager_.slot_count(); ++i)
+                {
+                    auto* c = dynamic_cast<I3DHost*>(host_manager_.host_at(i));
+                    if (c && c->has_imgui())
+                    {
+                        h3d = c;
+                        break;
+                    }
+                }
+                if (h3d)
                 {
                     renderer_.imgui()->set_imgui_draw_data(
                         h3d->render_imgui(delta_seconds));
@@ -469,8 +478,20 @@ bool App::pump_once(std::optional<std::chrono::steady_clock::time_point> wait_de
                 const float delta_seconds = std::chrono::duration<float>(now - last_panel_frame_time_).count();
                 last_panel_frame_time_ = now;
 
-                auto* h3d = dynamic_cast<I3DHost*>(host_manager_.host());
-                if (h3d && h3d->has_imgui())
+                // Find any I3DHost with ImGui across all slots — not just the
+                // focused host — so MegaCity's ImGui renders even when a
+                // different pane has focus.
+                I3DHost* h3d = nullptr;
+                for (int i = 0; i < host_manager_.slot_count(); ++i)
+                {
+                    auto* c = dynamic_cast<I3DHost*>(host_manager_.host_at(i));
+                    if (c && c->has_imgui())
+                    {
+                        h3d = c;
+                        break;
+                    }
+                }
+                if (h3d)
                 {
                     renderer_.imgui()->set_imgui_draw_data(
                         h3d->render_imgui(delta_seconds));
