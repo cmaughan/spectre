@@ -54,8 +54,11 @@ bool should_skip_path(const std::filesystem::path& rel)
 bool is_cpp_source(const std::filesystem::path& path)
 {
     const auto ext = path.extension().string();
+    // .mm (Objective-C++) is excluded: its ObjC syntax (@autoreleasepool,
+    // message expressions, etc.) is not valid C++ and would produce spurious
+    // parse errors with the tree-sitter C++ grammar.
     return ext == ".cpp" || ext == ".h" || ext == ".cc" || ext == ".c"
-        || ext == ".mm" || ext == ".inl" || ext == ".hpp";
+        || ext == ".inl" || ext == ".hpp";
 }
 
 // Strip surrounding quotes or angle brackets from an include path node's text.
@@ -151,7 +154,7 @@ void CodebaseScanner::scan_thread(std::filesystem::path root)
 
     for (auto it = std::filesystem::begin(dir_iter),
               end = std::filesystem::end(dir_iter);
-        it != end; it.increment(ec))
+         it != end; it.increment(ec))
     {
         if (ec || stop_flag_.load(std::memory_order_relaxed))
             break;
