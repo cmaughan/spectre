@@ -52,7 +52,9 @@ public:
 private:
     friend class VkGridHandle;
 
-    // Internal single-pane grid methods (called by VkGridHandle).
+    // Legacy renderer-state helpers retained for the original single-handle
+    // Vulkan path. Multi-pane rendering now flows through VkGridHandle plus
+    // upload_dirty_state()/record_command_buffer().
     void set_grid_size(int cols, int rows);
     void update_cells(std::span<const CellUpdate> updates);
     void set_overlay_cells(std::span<const CellUpdate> updates);

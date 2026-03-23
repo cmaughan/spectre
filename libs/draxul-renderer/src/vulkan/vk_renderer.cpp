@@ -14,8 +14,9 @@ namespace draxul
 {
 
 // ---------------------------------------------------------------------------
-// VkGridHandle — single-pane grid handle for the Vulkan backend.
-// Forwards all per-host calls to VkRenderer's internal state.
+// VkGridHandle — per-host grid handle for the Vulkan backend.
+// Each handle owns its pane-local cell state, viewport, and scroll offset.
+// VkRenderer repacks all active handles into a shared SSBO each frame.
 // ---------------------------------------------------------------------------
 class VkGridHandle final : public IGridHandle
 {
