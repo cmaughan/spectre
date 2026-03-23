@@ -18,16 +18,16 @@
 
 ## Implementation Plan
 
-- [ ] Search for `CellText` and `kMaxLen` in the source tree to find the definition and the truncation site.
-- [ ] Read the `CellText` class and its string storage to understand the exact truncation behavior.
-- [ ] Write test cases:
-  - [ ] **Exact boundary** — a grapheme cluster of exactly 32 bytes stores successfully; no warning; `CellText::str()` (or equivalent) returns all 32 bytes.
-  - [ ] **One byte over** — 33 bytes; truncation occurs; warning is emitted; the stored string is valid UTF-8 (does not end mid-sequence).
-  - [ ] **ZWJ emoji (>32 bytes)** — construct a real 4-person family emoji sequence; store it; verify the result is a valid UTF-8 prefix of the original, not a mid-sequence truncation.
-  - [ ] **ASCII (well under limit)** — baseline, stores unchanged.
-- [ ] Hook into the log output to capture warnings (or use a test-aware log sink if one exists).
-- [ ] Add tests to an appropriate test file (check `tests/` for any cell or text-related test files).
-- [ ] Build and run: `cmake --build build --target draxul-tests && ctest`.
+- [x] Search for `CellText` and `kMaxLen` in the source tree to find the definition and the truncation site.
+- [x] Read the `CellText` class and its string storage to understand the exact truncation behavior.
+- [x] Write test cases:
+  - [x] **Exact boundary** — a grapheme cluster of exactly 32 bytes stores successfully; no warning; `CellText::str()` (or equivalent) returns all 32 bytes.
+  - [x] **One byte over** — 33 bytes; truncation occurs; warning is emitted; the stored string is valid UTF-8 (does not end mid-sequence).
+  - [x] **ZWJ emoji (>32 bytes)** — construct a real 4-person family emoji sequence; store it; verify the result is a valid UTF-8 prefix of the original, not a mid-sequence truncation.
+  - [x] **ASCII (well under limit)** — baseline, stores unchanged.
+- [x] Hook into the log output to capture warnings (or use a test-aware log sink if one exists).
+- [x] Add tests to an appropriate test file (check `tests/` for any cell or text-related test files).
+- [x] Build and run: `cmake --build build --target draxul-tests && ctest`.
 
 ---
 

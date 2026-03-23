@@ -337,3 +337,330 @@ TEST_CASE("grid clear resets dirty bookkeeping for later cell updates", "[grid]"
     INFO("updated cell text is preserved");
     REQUIRE(grid.get_cell(0, 0).text == std::string("X"));
 }
+
+TEST_CASE("grid scroll down shifts rows toward bottom", "[grid][scroll]")
+{
+    Grid grid;
+    grid.resize(3, 3);
+    for (int r = 0; r < 3; ++r)
+        for (int c = 0; c < 3; ++c)
+            grid.set_cell(c, r, std::string(1, 'a' + r * 3 + c), 0, false);
+    grid.clear_dirty();
+
+    // Scroll down by 1: rows shift down, top row cleared
+    grid.scroll(0, 3, 0, 3, -1);
+
+    INFO("top row is cleared after scroll down");
+    REQUIRE(grid.get_cell(0, 0).text == std::string(" "));
+    REQUIRE(grid.get_cell(1, 0).text == std::string(" "));
+    INFO("row 0 content moves to row 1");
+    REQUIRE(grid.get_cell(0, 1).text == std::string("a"));
+    REQUIRE(grid.get_cell(1, 1).text == std::string("b"));
+    INFO("row 1 content moves to row 2");
+    REQUIRE(grid.get_cell(0, 2).text == std::string("d"));
+}
+
+TEST_CASE("grid scroll right shifts columns toward right edge", "[grid][scroll]")
+{
+    Grid grid;
+    grid.resize(5, 1);
+    for (int c = 0; c < 5; ++c)
+        grid.set_cell(c, 0, std::string(1, 'a' + c), 0, false);
+    grid.clear_dirty();
+
+    // Scroll right by 1 within full row: cols shift right, left col cleared
+    grid.scroll(0, 1, 0, 5, 0, -1);
+
+    INFO("left column is cleared after scroll right");
+    REQUIRE(grid.get_cell(0, 0).text == std::string(" "));
+    INFO("original col 0 content moves to col 1");
+    REQUIRE(grid.get_cell(1, 0).text == std::string("a"));
+    INFO("original col 1 content moves to col 2");
+    REQUIRE(grid.get_cell(2, 0).text == std::string("b"));
+    INFO("original col 3 content moves to col 4");
+    REQUIRE(grid.get_cell(4, 0).text == std::string("d"));
+}
+
+TEST_CASE("grid scroll multi-row up shifts by correct amount", "[grid][scroll]")
+{
+    Grid grid;
+    grid.resize(2, 5);
+    for (int r = 0; r < 5; ++r)
+        grid.set_cell(0, r, std::string(1, 'A' + r), 0, false);
+    grid.clear_dirty();
+
+    grid.scroll(0, 5, 0, 2, 2); // scroll up by 2
+
+    INFO("row 2 moves to row 0");
+    REQUIRE(grid.get_cell(0, 0).text == std::string("C"));
+    INFO("row 3 moves to row 1");
+    REQUIRE(grid.get_cell(0, 1).text == std::string("D"));
+    INFO("row 4 moves to row 2");
+    REQUIRE(grid.get_cell(0, 2).text == std::string("E"));
+    INFO("bottom two rows are cleared");
+    REQUIRE(grid.get_cell(0, 3).text == std::string(" "));
+    REQUIRE(grid.get_cell(0, 4).text == std::string(" "));
+}
+
+TEST_CASE("grid scroll multi-row down shifts by correct amount", "[grid][scroll]")
+{
+    Grid grid;
+    grid.resize(2, 5);
+    for (int r = 0; r < 5; ++r)
+        grid.set_cell(0, r, std::string(1, 'A' + r), 0, false);
+    grid.clear_dirty();
+
+    grid.scroll(0, 5, 0, 2, -2); // scroll down by 2
+
+    INFO("top two rows are cleared");
+    REQUIRE(grid.get_cell(0, 0).text == std::string(" "));
+    REQUIRE(grid.get_cell(0, 1).text == std::string(" "));
+    INFO("row 0 moves to row 2");
+    REQUIRE(grid.get_cell(0, 2).text == std::string("A"));
+    INFO("row 1 moves to row 3");
+    REQUIRE(grid.get_cell(0, 3).text == std::string("B"));
+    INFO("row 2 moves to row 4");
+    REQUIRE(grid.get_cell(0, 4).text == std::string("C"));
+}
+
+TEST_CASE("grid scroll at top boundary of partial region", "[grid][scroll]")
+{
+    Grid grid;
+    grid.resize(3, 5);
+    for (int r = 0; r < 5; ++r)
+        for (int c = 0; c < 3; ++c)
+            grid.set_cell(c, r, std::string(1, 'a' + r), 0, false);
+    grid.clear_dirty();
+
+    // Scroll only the top 3 rows (0-2), leaving rows 3-4 untouched
+    grid.scroll(0, 3, 0, 3, 1);
+
+    INFO("row 1 moves to row 0 within partial region");
+    REQUIRE(grid.get_cell(0, 0).text == std::string("b"));
+    INFO("row 2 moves to row 1");
+    REQUIRE(grid.get_cell(0, 1).text == std::string("c"));
+    INFO("bottom of region is cleared");
+    REQUIRE(grid.get_cell(0, 2).text == std::string(" "));
+    INFO("rows outside region are untouched");
+    REQUIRE(grid.get_cell(0, 3).text == std::string("d"));
+    REQUIRE(grid.get_cell(0, 4).text == std::string("e"));
+}
+
+TEST_CASE("grid scroll at bottom boundary of partial region", "[grid][scroll]")
+{
+    Grid grid;
+    grid.resize(3, 5);
+    for (int r = 0; r < 5; ++r)
+        for (int c = 0; c < 3; ++c)
+            grid.set_cell(c, r, std::string(1, 'a' + r), 0, false);
+    grid.clear_dirty();
+
+    // Scroll only rows 2-4, leaving rows 0-1 untouched
+    grid.scroll(2, 5, 0, 3, 1);
+
+    INFO("rows outside region are untouched");
+    REQUIRE(grid.get_cell(0, 0).text == std::string("a"));
+    REQUIRE(grid.get_cell(0, 1).text == std::string("b"));
+    INFO("row 3 moves to row 2 within partial region");
+    REQUIRE(grid.get_cell(0, 2).text == std::string("d"));
+    INFO("row 4 moves to row 3");
+    REQUIRE(grid.get_cell(0, 3).text == std::string("e"));
+    INFO("bottom of region is cleared");
+    REQUIRE(grid.get_cell(0, 4).text == std::string(" "));
+}
+
+TEST_CASE("grid scroll wide-char boundary repair on scroll up", "[grid][scroll]")
+{
+    Grid grid;
+    grid.resize(4, 3);
+    // Place a wide char in row 2 that will scroll into the region
+    grid.set_cell(0, 0, "a", 0, false);
+    grid.set_cell(0, 1, "b", 0, false);
+    grid.set_cell(0, 2, "W", 7, true); // wide char at col 0-1 of row 2
+    grid.clear_dirty();
+
+    grid.scroll(0, 3, 0, 4, 1);
+
+    INFO("wide char scrolls up intact");
+    REQUIRE(grid.get_cell(0, 1).text == std::string("W"));
+    REQUIRE(grid.get_cell(0, 1).double_width);
+    REQUIRE(grid.get_cell(1, 1).double_width_cont);
+}
+
+TEST_CASE("grid scroll wide-char boundary repair on scroll down", "[grid][scroll]")
+{
+    Grid grid;
+    grid.resize(4, 3);
+    grid.set_cell(0, 0, "W", 7, true); // wide char at col 0-1 of row 0
+    grid.set_cell(0, 1, "b", 0, false);
+    grid.set_cell(0, 2, "c", 0, false);
+    grid.clear_dirty();
+
+    grid.scroll(0, 3, 0, 4, -1);
+
+    INFO("wide char scrolls down intact");
+    REQUIRE(grid.get_cell(0, 1).text == std::string("W"));
+    REQUIRE(grid.get_cell(0, 1).double_width);
+    REQUIRE(grid.get_cell(1, 1).double_width_cont);
+}
+
+TEST_CASE("grid scroll multi-column left within partial horizontal region", "[grid][scroll]")
+{
+    Grid grid;
+    grid.resize(6, 1);
+    for (int c = 0; c < 6; ++c)
+        grid.set_cell(c, 0, std::string(1, 'a' + c), 0, false);
+    grid.clear_dirty();
+
+    // Scroll columns 1-5 left by 2
+    grid.scroll(0, 1, 1, 6, 0, 2);
+
+    INFO("column outside region is untouched");
+    REQUIRE(grid.get_cell(0, 0).text == std::string("a"));
+    INFO("col 3 shifts to col 1");
+    REQUIRE(grid.get_cell(1, 0).text == std::string("d"));
+    INFO("col 4 shifts to col 2");
+    REQUIRE(grid.get_cell(2, 0).text == std::string("e"));
+    INFO("col 5 shifts to col 3");
+    REQUIRE(grid.get_cell(3, 0).text == std::string("f"));
+    INFO("right two columns are cleared");
+    REQUIRE(grid.get_cell(4, 0).text == std::string(" "));
+    REQUIRE(grid.get_cell(5, 0).text == std::string(" "));
+}
+
+// --- CellText truncation tests ---
+
+TEST_CASE("CellText stores ASCII text correctly", "[celltext]")
+{
+    CellText ct;
+    ct.assign("hello");
+    REQUIRE(ct.view() == "hello");
+    REQUIRE(ct.len == 5);
+    REQUIRE_FALSE(ct.empty());
+}
+
+TEST_CASE("CellText stores empty string", "[celltext]")
+{
+    CellText ct;
+    ct.assign("");
+    REQUIRE(ct.view() == "");
+    REQUIRE(ct.len == 0);
+    REQUIRE(ct.empty());
+}
+
+TEST_CASE("CellText stores exactly kMaxLen bytes", "[celltext]")
+{
+    std::string exact(CellText::kMaxLen, 'X');
+    CellText ct;
+    ct.assign(exact);
+    REQUIRE(ct.len == CellText::kMaxLen);
+    REQUIRE(ct.view() == exact);
+}
+
+TEST_CASE("CellText truncates at kMaxLen and emits warning", "[celltext]")
+{
+    ScopedLogCapture cap;
+
+    std::string over(CellText::kMaxLen + 1, 'Y');
+    CellText ct;
+    ct.assign(over);
+
+    INFO("stored length is clamped to kMaxLen");
+    REQUIRE(ct.len == CellText::kMaxLen);
+    INFO("stored bytes match the first kMaxLen bytes of input");
+    REQUIRE(ct.view() == over.substr(0, CellText::kMaxLen));
+
+    bool found_warn = false;
+    for (const auto& rec : cap.records)
+    {
+        if (rec.level == LogLevel::Warn)
+        {
+            found_warn = true;
+            break;
+        }
+    }
+    INFO("WARN is emitted for oversized cluster");
+    REQUIRE(found_warn);
+}
+
+TEST_CASE("CellText truncation of multi-byte UTF-8 input", "[celltext]")
+{
+    ScopedLogCapture cap;
+
+    // U+4E00 (一) = 0xE4 0xB8 0x80 (3 bytes each)
+    // 11 chars = 33 bytes — one byte over the limit.
+    std::string cjk;
+    for (int i = 0; i < 11; i++)
+        cjk += "\xe4\xb8\x80";
+    REQUIRE(cjk.size() == 33);
+
+    CellText ct;
+    ct.assign(cjk);
+
+    INFO("stored length is clamped to 32");
+    REQUIRE(ct.len == 32);
+
+    // Simple byte truncation — the last 2 bytes are an incomplete UTF-8 sequence.
+    // This is the documented current behavior.
+    std::string_view stored = ct.view();
+    INFO("stored bytes match the first 32 bytes of input");
+    REQUIRE(stored == std::string_view(cjk.data(), 32));
+}
+
+TEST_CASE("CellText ZWJ emoji sequence truncation", "[celltext]")
+{
+    ScopedLogCapture cap;
+
+    // Family emoji: 👨‍👩‍👧‍👦 = 25 bytes. Two copies = 50 bytes.
+    std::string family = "\xF0\x9F\x91\xA8\xE2\x80\x8D\xF0\x9F\x91\xA9\xE2\x80\x8D"
+                         "\xF0\x9F\x91\xA7\xE2\x80\x8D\xF0\x9F\x91\xA6";
+    std::string two_families = family + family;
+    REQUIRE(two_families.size() == 50);
+
+    CellText ct;
+    ct.assign(two_families);
+
+    INFO("stored length is clamped to kMaxLen");
+    REQUIRE(ct.len == CellText::kMaxLen);
+    INFO("stored bytes are first 32 bytes of the ZWJ sequence");
+    REQUIRE(ct.view() == std::string_view(two_families.data(), CellText::kMaxLen));
+
+    bool found_warn = false;
+    for (const auto& rec : cap.records)
+    {
+        if (rec.level == LogLevel::Warn)
+        {
+            found_warn = true;
+            break;
+        }
+    }
+    INFO("WARN is emitted for oversized ZWJ cluster");
+    REQUIRE(found_warn);
+}
+
+TEST_CASE("CellText via Grid::set_cell warns on oversized cluster", "[celltext]")
+{
+    ScopedLogCapture cap;
+
+    Grid grid;
+    grid.resize(4, 1);
+
+    std::string over(40, 'Z');
+    grid.set_cell(0, 0, over, 0, false);
+
+    const auto& cell = grid.get_cell(0, 0);
+    INFO("cell text is truncated via Grid::set_cell");
+    REQUIRE(cell.text.len == CellText::kMaxLen);
+
+    bool found_warn = false;
+    for (const auto& rec : cap.records)
+    {
+        if (rec.level == LogLevel::Warn)
+        {
+            found_warn = true;
+            break;
+        }
+    }
+    INFO("WARN is emitted through Grid::set_cell path");
+    REQUIRE(found_warn);
+}

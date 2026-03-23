@@ -108,3 +108,59 @@ TEST_CASE("input dispatcher: null keybindings pointer returns no action", "[inpu
     auto action = dispatcher.gui_action_for_key_event(event);
     REQUIRE_FALSE(action.has_value());
 }
+
+// ---------------------------------------------------------------------------
+// Chord (tmux-style prefix) regression tests
+// ---------------------------------------------------------------------------
+
+namespace
+{
+
+std::vector<GuiKeybinding> make_chord_bindings()
+{
+    return {
+        // Chord: Ctrl+B (prefix) then | (pipe) -> split_vertical
+        { "split_vertical", SDLK_B, kModCtrl, SDLK_BACKSLASH, kModShift },
+        // Single-key binding (not a chord)
+        { "toggle_diagnostics", 0, kModNone, SDLK_F12, kModNone },
+    };
+}
+
+} // namespace
+
+TEST_CASE("input dispatcher: chord prefix activates on matching key", "[input_dispatcher][chord]")
+{
+    auto bindings = make_chord_bindings();
+    auto dispatcher = make_test_dispatcher(bindings);
+
+    // Press Ctrl+B (the prefix key)
+    KeyEvent prefix_press{ 0, SDLK_B, kModCtrl, true };
+    auto action = dispatcher.gui_action_for_key_event(prefix_press);
+    // gui_action_for_key_event only checks single-key bindings (skips chords with prefix_key != 0)
+    // so it should NOT match here
+    REQUIRE_FALSE(action.has_value());
+}
+
+TEST_CASE("input dispatcher: non-chord binding still works alongside chord bindings", "[input_dispatcher][chord]")
+{
+    auto bindings = make_chord_bindings();
+    auto dispatcher = make_test_dispatcher(bindings);
+
+    KeyEvent f12{ 0, SDLK_F12, kModNone, true };
+    auto action = dispatcher.gui_action_for_key_event(f12);
+    REQUIRE(action.has_value());
+    REQUIRE(*action == "toggle_diagnostics");
+}
+
+TEST_CASE("input dispatcher: gui_action_for_key_event skips chord bindings", "[input_dispatcher][chord]")
+{
+    // Verify that gui_action_for_key_event correctly ignores bindings with prefix_key != 0
+    auto bindings = make_chord_bindings();
+    auto dispatcher = make_test_dispatcher(bindings);
+
+    // Press Shift+Backslash (the chord's second key) - should NOT match because
+    // gui_action_for_key_event skips chord bindings
+    KeyEvent chord_key{ 0, SDLK_BACKSLASH, kModShift, true };
+    auto action = dispatcher.gui_action_for_key_event(chord_key);
+    REQUIRE_FALSE(action.has_value());
+}

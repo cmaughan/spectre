@@ -20,12 +20,12 @@ Neovim itself should not produce malformed redraws in normal operation, but the 
 
 ## Fix Plan
 
-- [ ] Read `libs/draxul-nvim/src/ui_events.cpp` from the `grid_line` handler entry point. Trace the `repeat` and wide-glyph column advancement loop.
-- [ ] Identify every place where `col` is incremented beyond `col_start` and check whether the final column value is bounds-checked before the `IGridSink::set_cell()` call.
-- [ ] Add clamping: before each `set_cell()` call, assert/check `col < grid_width`. If out-of-range, truncate the batch (log a WARN once, not per-cell) and return early from the handler.
-- [ ] Do the same for `row` on any subsequent `grid_line` entries within the same `redraw` array.
-- [ ] Write a test (see `07-test`) that replays a malformed `grid_line` batch with `repeat` values that extend past the right edge and verifies no out-of-bounds access occurs.
-- [ ] Build and run: `cmake --build build --target draxul draxul-tests && py do.py smoke`.
+- [x] Read `libs/draxul-nvim/src/ui_events.cpp` from the `grid_line` handler entry point. Trace the `repeat` and wide-glyph column advancement loop.
+- [x] Identify every place where `col` is incremented beyond `col_start` and check whether the final column value is bounds-checked before the `IGridSink::set_cell()` call.
+- [x] Add clamping: before each `set_cell()` call, assert/check `col < grid_width`. If out-of-range, truncate the batch (log a WARN once, not per-cell) and return early from the handler.
+- [x] Do the same for `row` on any subsequent `grid_line` entries within the same `redraw` array.
+- [x] Write a test (see `07-test`) that replays a malformed `grid_line` batch with `repeat` values that extend past the right edge and verifies no out-of-bounds access occurs.
+- [x] Build and run: `cmake --build build --target draxul draxul-tests && py do.py smoke`.
 
 ---
 

@@ -15,17 +15,17 @@
 
 ## Implementation Plan
 
-- [ ] Read `app/render_test.cpp` and an existing render scenario `.toml` file to understand the scenario format.
-- [ ] Read `tests/scenarios/` (or wherever scenario files live) to understand naming and structure.
-- [ ] Design a deterministic scenario:
+- [x] Read `app/render_test.cpp` and an existing render scenario `.toml` file to understand the scenario format.
+- [x] Read `tests/scenarios/` (or wherever scenario files live) to understand naming and structure.
+- [x] Design a deterministic scenario:
   - Grid dimensions: 40 columns × 10 rows.
   - Fill rows with CJK characters (e.g., U+4E00 through U+4E13, 20 wide characters × 2 cells each = 40 columns per row).
   - Scroll the grid up by 1 row (equivalent to `grid_scroll` with `top=0, bot=9, rows=1`).
   - Assert that no half-width artifact cells appear in the result (all cells are either a full wide character start, a wide-char second-cell placeholder, or a blank repair cell).
-- [ ] Write the `.toml` scenario file.
-- [ ] Run the scenario to generate an initial reference BMP: `py do.py blessbasic` (or the appropriate bless command for the new scenario name).
-- [ ] Add the scenario to the CI render test run and verify it appears in `do.py test`.
-- [ ] Build and run: `cmake --build build --target draxul && py do.py test`.
+- [x] Write the `.toml` scenario file.
+- [x] Run the scenario to generate an initial reference BMP: `py do.py blessbasic` (or the appropriate bless command for the new scenario name).
+- [x] Add the scenario to the CI render test run and verify it appears in `do.py test`.
+- [x] Build and run: `cmake --build build --target draxul && py do.py test`.
 
 ---
 

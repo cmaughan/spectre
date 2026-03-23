@@ -657,8 +657,11 @@ HostViewport App::viewport_from_descriptor(const PaneDescriptor& desc) const
 int App::wait_timeout_ms(std::optional<std::chrono::steady_clock::time_point> wait_deadline) const
 {
     std::optional<std::chrono::steady_clock::time_point> deadline;
-    if (host_manager_.host())
-        deadline = host_manager_.host()->next_deadline();
+    host_manager_.for_each_host([&](LeafId, IHost& host) {
+        auto d = host.next_deadline();
+        if (d && (!deadline || *d < *deadline))
+            deadline = d;
+    });
     if (wait_deadline && (!deadline || *wait_deadline < *deadline))
         deadline = wait_deadline;
 

@@ -69,6 +69,7 @@ std::string quote_windows_arg(const std::string& value)
         backslashes = 0;
         quoted.push_back(ch);
     }
+    quoted.append(backslashes, '\\');
     quoted.push_back('"');
     return quoted;
 }

@@ -15,13 +15,13 @@
 
 ## Fix Plan
 
-- [ ] Read `app/app.cpp` around the deadline computation site. Understand how `next_deadline()` is called and how the sleep/wait is performed.
-- [ ] Read `libs/draxul-host/include/draxul/host.h` to understand the `next_deadline()` interface on `IHost`.
-- [ ] Change the deadline arbitration to take the **minimum** across all live hosts, not just the focused one.
+- [x] Read `app/app.cpp` around the deadline computation site. Understand how `next_deadline()` is called and how the sleep/wait is performed.
+- [x] Read `libs/draxul-host/include/draxul/host.h` to understand the `next_deadline()` interface on `IHost`.
+- [x] Change the deadline arbitration to take the **minimum** across all live hosts, not just the focused one.
   - Use `host_manager_.for_each_host()` to collect all per-host deadlines and compute `min`.
   - If no host has a deadline, use the existing fallback (vsync or unbounded wait).
-- [ ] Verify that the focused-host fast-path (if any) is preserved for common single-pane use.
-- [ ] Build and run smoke test: `cmake --build build --target draxul draxul-tests && py do.py smoke`.
+- [x] Verify that the focused-host fast-path (if any) is preserved for common single-pane use.
+- [x] Build and run smoke test: `cmake --build build --target draxul draxul-tests && py do.py smoke`.
 
 ---
 

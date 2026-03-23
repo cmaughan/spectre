@@ -15,16 +15,16 @@
 
 ## Fix Plan
 
-- [ ] Read the Windows process spawn code (`libs/draxul-nvim/src/nvim_process.cpp` or adjacent files) and locate `quote_windows_arg()`.
-- [ ] Evaluate whether the current quoting correctly handles:
+- [x] Read the Windows process spawn code (`libs/draxul-nvim/src/nvim_process.cpp` or adjacent files) and locate `quote_windows_arg()`.
+- [x] Evaluate whether the current quoting correctly handles:
   - Paths with spaces
   - Paths ending in backslash (e.g., `C:\foo\`)
   - Paths with embedded double-quotes (unlikely but must not corrupt the command line)
-- [ ] Options for fix:
+- [x] Options for fix:
   - **Preferred**: Switch to `CreateProcessW` with a properly split `lpApplicationName` + `lpCommandLine`, where the nvim binary path goes in `lpApplicationName` (never quoted) and arguments are individually quoted per the MSVC spec.
   - **Alternatively**: Replace `quote_windows_arg()` with a well-tested implementation following the documented escaping rules (backslash-runs before quotes doubled, trailing backslashes before closing quote doubled).
-- [ ] Add a unit test covering the quoting edge cases (spaces, trailing backslash, embedded quotes) — see **12-test** for the file-drop variant.
-- [ ] Build on Windows and run smoke test.
+- [x] Add a unit test covering the quoting edge cases (spaces, trailing backslash, embedded quotes) — see **12-test** for the file-drop variant.
+- [x] Build on Windows and run smoke test.
 
 ---
 

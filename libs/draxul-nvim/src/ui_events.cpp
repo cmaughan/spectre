@@ -213,6 +213,7 @@ void UiEventHandler::handle_grid_line(const MpackValue& args)
 
     int col = col_start;
     uint16_t current_hl = 0;
+    bool truncated = false;
 
     const auto* cells = try_get_array((*args_array)[3]);
     if (!cells)
@@ -243,11 +244,25 @@ void UiEventHandler::handle_grid_line(const MpackValue& args)
         bool dw = cluster_cell_width(*text, options_ ? *options_ : UiOptions{}) == 2;
         for (int r = 0; r < repeat; r++)
         {
+            if (cols_known && col >= grid_cols)
+            {
+                truncated = true;
+                break;
+            }
             grid_->set_cell(col, row, *text, current_hl, dw);
             col++;
             if (dw)
                 col++;
         }
+        if (truncated)
+            break;
+    }
+
+    if (truncated)
+    {
+        DRAXUL_LOG_WARN(LogCategory::App,
+            "handle_grid_line: column overflow at row=%d col=%d grid_cols=%d — truncated",
+            row, col, grid_cols);
     }
 }
 

@@ -15,16 +15,16 @@
 
 ## Implementation Plan
 
-- [ ] Read `libs/draxul-grid/src/grid.cpp` — understand `Grid::scroll()` and the four direction implementations.
-- [ ] Read `tests/grid_tests.cpp` — identify exactly which scroll scenarios are already covered so new tests are additive, not duplicative.
-- [ ] Write per-direction test cases for each of: `up`, `down`, `left`, `right`. For each direction, cover:
-  - [ ] Single-row/column scroll
-  - [ ] Multi-row/column scroll
-  - [ ] Scroll at the top/left boundary of the scroll region
-  - [ ] Scroll at the bottom/right boundary of the scroll region
-  - [ ] Wide-character boundary repair (a cell that would be split by a scroll becomes a space cell, not a half-glyph)
-- [ ] Add test cases to `tests/grid_tests.cpp` (or a new `tests/grid_scroll_tests.cpp` if the file is already large).
-- [ ] Build and run: `cmake --build build --target draxul-tests && ctest`.
+- [x] Read `libs/draxul-grid/src/grid.cpp` — understand `Grid::scroll()` and the four direction implementations.
+- [x] Read `tests/grid_tests.cpp` — identify exactly which scroll scenarios are already covered so new tests are additive, not duplicative.
+- [x] Write per-direction test cases for each of: `up`, `down`, `left`, `right`. For each direction, cover:
+  - [x] Single-row/column scroll
+  - [x] Multi-row/column scroll
+  - [x] Scroll at the top/left boundary of the scroll region
+  - [x] Scroll at the bottom/right boundary of the scroll region
+  - [x] Wide-character boundary repair (a cell that would be split by a scroll becomes a space cell, not a half-glyph)
+- [x] Add test cases to `tests/grid_tests.cpp` (or a new `tests/grid_scroll_tests.cpp` if the file is already large).
+- [x] Build and run: `cmake --build build --target draxul-tests && ctest`.
 
 ---
 
