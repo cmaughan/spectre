@@ -82,14 +82,16 @@ void GuiActionHandler::font_reset()
 
 void GuiActionHandler::copy()
 {
-    if (deps_.host)
-        deps_.host->dispatch_action("copy");
+    IHost* host = deps_.focused_host ? deps_.focused_host() : nullptr;
+    if (host)
+        host->dispatch_action("copy");
 }
 
 void GuiActionHandler::paste()
 {
-    if (deps_.host)
-        deps_.host->dispatch_action("paste");
+    IHost* host = deps_.focused_host ? deps_.focused_host() : nullptr;
+    if (host)
+        host->dispatch_action("paste");
 }
 
 void GuiActionHandler::toggle_diagnostics()

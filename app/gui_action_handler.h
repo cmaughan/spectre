@@ -21,8 +21,8 @@ public:
     {
         TextService* text_service = nullptr;
         UiPanel* ui_panel = nullptr;
-        // Non-owning pointer to the current host (null when no host is active).
-        IHost* host = nullptr;
+        // Returns the currently focused host (null when no host is active).
+        std::function<IHost*()> focused_host;
         IImGuiHost* imgui_host = nullptr;
         AppConfig* config = nullptr;
 

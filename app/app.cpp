@@ -309,7 +309,7 @@ void App::wire_gui_actions()
     GuiActionHandler::Deps gui_deps;
     gui_deps.text_service = &text_service_;
     gui_deps.ui_panel = &ui_panel_;
-    gui_deps.host = host_manager_.host();
+    gui_deps.focused_host = [this]() -> IHost* { return host_manager_.focused_host(); };
     gui_deps.imgui_host = renderer_.imgui();
     gui_deps.config = &config_;
     gui_deps.on_font_changed = [this]() { apply_font_metrics(); };
