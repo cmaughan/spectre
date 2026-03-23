@@ -23,14 +23,14 @@
 
 ## Implementation Plan
 
-- [ ] Read `terminal_host_base.h` and `terminal_host_base.cpp` to understand the full `attr_cache_` API and how `next_attr_id_` is used.
-- [ ] Create a minimal `TerminalHostBase` subclass (or use an existing test double) that exposes `attr_cache_` for inspection.
-- [ ] Write a test that feeds 65 536 + 1 unique SGR attribute combinations (e.g., use RGB color triples to generate unique `HlAttr` values):
+- [x] Read `terminal_host_base.h` and `terminal_host_base.cpp` to understand the full `attr_cache_` API and how `next_attr_id_` is used.
+- [x] Create a minimal `TerminalHostBase` subclass (or use an existing test double) that exposes `attr_cache_` for inspection.
+- [x] Write a test that feeds 65 536 + 1 unique SGR attribute combinations (e.g., use RGB color triples to generate unique `HlAttr` values):
   - After 65 536 insertions, verify that the next insertion either: (a) triggers eviction and the total cache size does not exceed the cap, or (b) asserts/logs at debug level that a reset is happening.
   - Assert no ID aliasing: the ID assigned to combination N is not the same as the ID assigned to any other combination still present in the cache.
-- [ ] Write a second test: after eviction/reset, verify that cells queried against the cache return the correct `HlAttr` for IDs that were re-assigned.
-- [ ] Build and run tests.
-- [ ] Run `clang-format`.
+- [x] Write a second test: after eviction/reset, verify that cells queried against the cache return the correct `HlAttr` for IDs that were re-assigned.
+- [x] Build and run tests.
+- [x] Run `clang-format`.
 
 ---
 

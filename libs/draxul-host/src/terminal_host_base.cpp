@@ -9,6 +9,7 @@
 #include <draxul/unicode.h>
 #include <draxul/vt_parser.h>
 #include <draxul/window.h>
+#include <unordered_map>
 
 namespace draxul
 {
@@ -213,10 +214,71 @@ uint16_t TerminalHostBase::attr_id()
     if (it != attr_cache_.end())
         return it->second;
 
+    if (next_attr_id_ >= kAttrCompactionThreshold)
+        compact_attr_ids();
+
+    it = attr_cache_.find(current_attr_);
+    if (it != attr_cache_.end())
+        return it->second;
+
     const uint16_t id = next_attr_id_++;
     attr_cache_.try_emplace(current_attr_, id);
     highlights().set(id, current_attr_);
     return id;
+}
+
+void TerminalHostBase::compact_attr_ids()
+{
+    std::unordered_map<uint16_t, HlAttr> active_attrs;
+    active_attrs.reserve(attr_cache_.size());
+
+    for (int row = 0; row < grid_rows(); ++row)
+    {
+        for (int col = 0; col < grid_cols(); ++col)
+        {
+            const uint16_t id = grid().get_cell(col, row).hl_attr_id;
+            if (id == 0)
+                continue;
+            active_attrs.try_emplace(id, highlights().get(id));
+        }
+    }
+
+    alt_screen_.for_each_saved_cell([&](const Cell& cell) {
+        if (cell.hl_attr_id == 0)
+            return;
+        active_attrs.try_emplace(cell.hl_attr_id, highlights().get(cell.hl_attr_id));
+    });
+
+    std::unordered_map<uint16_t, uint16_t> remap;
+    remap.reserve(active_attrs.size());
+
+    uint16_t next_id = 1;
+    attr_cache_.clear();
+    for (const auto& [old_id, attr] : active_attrs)
+    {
+        const uint16_t new_id = next_id++;
+        remap.emplace(old_id, new_id);
+        attr_cache_.emplace(attr, new_id);
+        highlights().set(new_id, attr);
+    }
+
+    grid().remap_highlight_ids([&](uint16_t id) {
+        if (id == 0)
+            return id;
+        const auto it = remap.find(id);
+        return it != remap.end() ? it->second : static_cast<uint16_t>(0);
+    });
+    alt_screen_.remap_saved_highlight_ids([&](uint16_t id) {
+        if (id == 0)
+            return id;
+        const auto it = remap.find(id);
+        return it != remap.end() ? it->second : static_cast<uint16_t>(0);
+    });
+
+    next_attr_id_ = next_id;
+    DRAXUL_LOG_DEBUG(LogCategory::App,
+        "Compacted terminal highlight cache from %zu historical attrs to %zu active attrs",
+        active_attrs.size(), attr_cache_.size());
 }
 
 void TerminalHostBase::clear_cell(int col, int row)

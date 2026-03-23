@@ -259,8 +259,6 @@ bool HostManager::create_host_for_leaf(LeafId id, HostCallbacks callbacks,
     {
         if (deps_.grid_renderer)
             h3d->attach_3d_renderer(*static_cast<I3DRenderer*>(deps_.grid_renderer));
-        if (deps_.imgui_host)
-            h3d->attach_imgui_host(*deps_.imgui_host);
     }
 
     if (is_primary)

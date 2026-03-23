@@ -23,15 +23,15 @@ Terminal mouse reporting encodes modifier state (Shift/Alt/Ctrl) in the protocol
 
 ## Implementation Plan
 
-- [ ] Read `mouse_reporter.h` and `mouse_reporter.cpp` to see the full function signatures for `report_motion`, `report_button`, and `report_wheel`.
-- [ ] Read `local_terminal_host.cpp` around line 132 to see how SDL mouse events are translated before being passed to the reporter.
-- [ ] Identify where SDL provides modifier state (`SDL_GetModState()` or the event `mod` field).
-- [ ] Update `report_motion()` signature to accept a `SDL_Keymod` (or equivalent bitmask) modifier parameter.
-- [ ] Update `report_wheel()` signature similarly.
-- [ ] In the encoding logic, OR the modifier bits into the protocol byte using the same encoding already used for button events (Shift = bit 2, Meta = bit 3, Ctrl = bit 4 in X10 extended encoding).
-- [ ] Update the call sites in `local_terminal_host.cpp` to pass the current modifier state.
-- [ ] Build: `cmake --build build --target draxul draxul-tests && py do.py smoke`
-- [ ] Run `clang-format` on all modified files.
+- [x] Read `mouse_reporter.h` and `mouse_reporter.cpp` to see the full function signatures for `report_motion`, `report_button`, and `report_wheel`.
+- [x] Read `local_terminal_host.cpp` around line 132 to see how SDL mouse events are translated before being passed to the reporter.
+- [x] Identify where SDL provides modifier state (`SDL_GetModState()` or the event `mod` field).
+- [x] Update `report_motion()` signature to accept a `SDL_Keymod` (or equivalent bitmask) modifier parameter.
+- [x] Update `report_wheel()` signature similarly.
+- [x] In the encoding logic, OR the modifier bits into the protocol byte using the same encoding already used for button events (Shift = bit 2, Meta = bit 3, Ctrl = bit 4 in X10 extended encoding).
+- [x] Update the call sites in `local_terminal_host.cpp` to pass the current modifier state.
+- [x] Build: `cmake --build build --target draxul draxul-tests && py do.py smoke`
+- [x] Run `clang-format` on all modified files.
 
 ---
 

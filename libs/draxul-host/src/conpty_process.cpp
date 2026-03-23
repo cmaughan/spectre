@@ -188,6 +188,15 @@ void ConPtyProcess::shutdown()
     output_chunks_.clear();
 }
 
+void ConPtyProcess::request_close()
+{
+    if (input_write_ != INVALID_HANDLE_VALUE)
+    {
+        CloseHandle(input_write_);
+        input_write_ = INVALID_HANDLE_VALUE;
+    }
+}
+
 bool ConPtyProcess::is_running() const
 {
     if (!proc_info_.hProcess)

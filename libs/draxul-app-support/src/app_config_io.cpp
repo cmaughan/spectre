@@ -115,6 +115,13 @@ void replace_gui_keybinding(std::vector<GuiKeybinding>& bindings, GuiKeybinding 
     bindings.push_back(std::move(binding));
 }
 
+bool remove_gui_keybinding(std::vector<GuiKeybinding>& bindings, std::string_view action)
+{
+    const size_t original_size = bindings.size();
+    std::erase_if(bindings, [action](const GuiKeybinding& existing) { return existing.action == action; });
+    return bindings.size() != original_size;
+}
+
 const GuiKeybinding* first_binding_for_action(const std::vector<GuiKeybinding>& bindings, std::string_view action)
 {
     auto it = std::find_if(bindings.begin(), bindings.end(),
@@ -241,6 +248,16 @@ AppConfig config_from_toml(const toml::table& document)
             auto combo = value.value<std::string_view>();
             if (!combo)
                 continue;
+
+            if (combo->empty())
+            {
+                if (remove_gui_keybinding(config.keybindings, action))
+                {
+                    DRAXUL_LOG_DEBUG(LogCategory::App,
+                        "Keybinding '%s' removed by user config.", action.c_str());
+                }
+                continue;
+            }
 
             if (auto parsed = parse_gui_keybinding(action, *combo))
                 replace_gui_keybinding(config.keybindings, std::move(*parsed));

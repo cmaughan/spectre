@@ -5,6 +5,7 @@
 #include <draxul/grid_sink.h>
 #include <draxul/highlight.h>
 #include <draxul/log.h>
+#include <functional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -99,6 +100,7 @@ public:
     void mark_dirty(int col, int row);
     void mark_all_dirty();
     void clear_dirty();
+    void remap_highlight_ids(const std::function<uint16_t(uint16_t)>& remap);
     size_t dirty_cell_count() const
     {
         return dirty_cells_.size();

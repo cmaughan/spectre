@@ -133,7 +133,7 @@ void LocalTerminalHost::on_mouse_move(const MouseMoveEvent& event)
 {
     const GridPos pos = pixel_to_cell(event.pos.x, event.pos.y);
 
-    if (mouse_reporter_.on_move(pos.col, pos.row))
+    if (mouse_reporter_.on_move(event.mod, pos.col, pos.row))
         return;
 
     selection_.update_drag({ { pos.col, pos.row } });
@@ -145,7 +145,7 @@ void LocalTerminalHost::on_mouse_wheel(const MouseWheelEvent& event)
     {
         const GridPos pos = pixel_to_cell(event.pos.x, event.pos.y);
         const int button_code = event.delta.y > 0 ? 64 : 65;
-        mouse_reporter_.on_wheel(button_code, pos.col, pos.row);
+        mouse_reporter_.on_wheel(button_code, event.mod, pos.col, pos.row);
         return;
     }
 

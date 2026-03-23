@@ -200,6 +200,20 @@ void UnixPtyProcess::shutdown()
     output_chunks_.clear();
 }
 
+void UnixPtyProcess::request_close()
+{
+    reader_running_ = false;
+
+    if (shutdown_pipe_[1] >= 0)
+        (void)::write(shutdown_pipe_[1], "x", 1);
+
+    if (master_fd_ >= 0)
+    {
+        close(master_fd_);
+        master_fd_ = -1;
+    }
+}
+
 bool UnixPtyProcess::is_running() const
 {
     if (pid_ <= 0)

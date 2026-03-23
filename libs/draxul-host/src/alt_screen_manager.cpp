@@ -101,6 +101,18 @@ void AltScreenManager::clamp_saved_cursor(int max_col, int max_row)
     saved_main_.row = std::clamp(saved_main_.row, 0, max_row);
 }
 
+void AltScreenManager::for_each_saved_cell(const std::function<void(const Cell&)>& fn) const
+{
+    for (const auto& cell : saved_main_.cells)
+        fn(cell);
+}
+
+void AltScreenManager::remap_saved_highlight_ids(const std::function<uint16_t(uint16_t)>& remap)
+{
+    for (auto& cell : saved_main_.cells)
+        cell.hl_attr_id = remap(cell.hl_attr_id);
+}
+
 void AltScreenManager::reset()
 {
     in_alt_screen_ = false;

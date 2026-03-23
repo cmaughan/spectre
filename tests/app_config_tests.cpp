@@ -217,6 +217,42 @@ TEST_CASE("app config parse reads keybindings table and preserves unspecified de
     REQUIRE(copy->modifiers == (kModCtrl | kModShift));
 }
 
+TEST_CASE("app config parse removes a default keybinding when user config sets an empty string", "[config]")
+{
+    ScopedLogCapture capture(LogLevel::Debug);
+    AppConfig config = AppConfig::parse("[keybindings]\ncopy = \"\"\n");
+
+    INFO("copy binding should be removed");
+    REQUIRE(find_keybinding(config, "copy") == nullptr);
+    INFO("other defaults stay intact");
+    REQUIRE(find_keybinding(config, "paste") != nullptr);
+    INFO("removal should be logged at debug level");
+    REQUIRE(contains_message(capture.records, "Keybinding 'copy' removed by user config."));
+}
+
+TEST_CASE("app config parse ignores empty-string removal for a non-existent keybinding", "[config]")
+{
+    AppConfig config = AppConfig::parse("[keybindings]\nlaunch_rockets = \"\"\n");
+
+    INFO("unknown binding should not be created");
+    REQUIRE(find_keybinding(config, "launch_rockets") == nullptr);
+    INFO("defaults remain unchanged");
+    REQUIRE(find_keybinding(config, "copy") != nullptr);
+}
+
+TEST_CASE("app config parse removes only the requested keybinding", "[config]")
+{
+    AppConfig config = AppConfig::parse("[keybindings]\ncopy = \"\"\nfont_reset = \"Alt+0\"\n");
+
+    INFO("copy binding should be removed");
+    REQUIRE(find_keybinding(config, "copy") == nullptr);
+    INFO("other bindings in the same table should still be applied");
+    const GuiKeybinding* font_reset = find_keybinding(config, "font_reset");
+    REQUIRE(font_reset != nullptr);
+    REQUIRE(font_reset->key == static_cast<int32_t>(SDLK_0));
+    REQUIRE(font_reset->modifiers == kModAlt);
+}
+
 TEST_CASE("app config parse clamps out-of-range window dimensions to defaults", "[config]")
 {
     const char* content = "window_width = 99999\n"

@@ -131,11 +131,21 @@ struct TermSetup
         host.on_mouse_button(ev);
     }
 
-    void move(int px, int py)
+    void move(int px, int py, int mod = 0)
     {
         MouseMoveEvent ev;
         ev.pos = { px, py };
+        ev.mod = static_cast<uint16_t>(mod);
         host.on_mouse_move(ev);
+    }
+
+    void wheel(int px, int py, float dy, int mod = 0)
+    {
+        MouseWheelEvent ev;
+        ev.pos = { px, py };
+        ev.delta = { 0.0f, dy };
+        ev.mod = static_cast<uint16_t>(mod);
+        host.on_mouse_wheel(ev);
     }
 };
 
@@ -336,6 +346,34 @@ TEST_CASE("mouse: SGR press and release use correct final chars", "[terminal]")
     // SGR release uses 'm' as final char.
     INFO("SGR release uses 'm'");
     REQUIRE(ts.host.written.find('m') != std::string::npos);
+}
+
+TEST_CASE("mouse: drag report encodes modifier bits", "[terminal]")
+{
+    TermSetup ts;
+    INFO("host must initialize");
+    REQUIRE(ts.ok);
+    ts.host.feed("\x1B[?1002h\x1B[?1006h");
+
+    ts.press(1, 0, 0, kModNone);
+    ts.host.written.clear();
+    ts.move(8, 0, kModShift | kModCtrl);
+
+    INFO("drag should include Shift and Ctrl modifier bits");
+    REQUIRE(ts.host.written == "\x1B[<52;2;1M");
+}
+
+TEST_CASE("mouse: wheel report encodes modifier bits", "[terminal]")
+{
+    TermSetup ts;
+    INFO("host must initialize");
+    REQUIRE(ts.ok);
+    ts.host.feed("\x1B[?1000h\x1B[?1006h");
+
+    ts.wheel(0, 0, 1.0f, kModCtrl);
+
+    INFO("wheel should include Ctrl modifier bit");
+    REQUIRE(ts.host.written == "\x1B[<80;1;1M");
 }
 
 TEST_CASE("mouse: disabling DECSET 1003 reverts to no-output on motion", "[terminal]")

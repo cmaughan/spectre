@@ -209,6 +209,7 @@ TEST_CASE("SplitTree: hit_test finds divider", "[split_tree]")
     auto result = tree.hit_test(499, 400);
     REQUIRE(std::holds_alternative<SplitTree::DividerHit>(result));
     CHECK(std::get<SplitTree::DividerHit>(result).direction == SplitDirection::Vertical);
+    CHECK(std::get<SplitTree::DividerHit>(result).id != kInvalidDivider);
 }
 
 TEST_CASE("SplitTree: hit_test outside returns monostate", "[split_tree]")
@@ -251,7 +252,7 @@ TEST_CASE("SplitTree: set_divider_ratio", "[split_tree]")
     auto& hit = std::get<SplitTree::DividerHit>(result);
 
     // Set ratio to 0.3 (left pane gets 30%)
-    tree.set_divider_ratio(hit.node, 0.3f);
+    tree.set_divider_ratio(hit.id, 0.3f);
 
     auto ad = tree.descriptor_for(a);
     auto bd = tree.descriptor_for(b);
@@ -272,14 +273,36 @@ TEST_CASE("SplitTree: set_divider_ratio clamps", "[split_tree]")
     auto& hit = std::get<SplitTree::DividerHit>(result);
 
     // Extreme low — clamped to 0.1
-    tree.set_divider_ratio(hit.node, 0.01f);
+    tree.set_divider_ratio(hit.id, 0.01f);
     CHECK(tree.descriptor_for(a).pixel_size.x > 0);
     CHECK(tree.descriptor_for(b).pixel_size.x > 0);
 
     // Extreme high — clamped to 0.9
-    tree.set_divider_ratio(hit.node, 0.99f);
+    tree.set_divider_ratio(hit.id, 0.99f);
     CHECK(tree.descriptor_for(a).pixel_size.x > 0);
     CHECK(tree.descriptor_for(b).pixel_size.x > 0);
+}
+
+TEST_CASE("SplitTree: stale divider id is ignored", "[split_tree]")
+{
+    SplitTree tree;
+    auto a = tree.reset(1000, 800);
+    auto b = tree.split_leaf(a, SplitDirection::Vertical);
+
+    auto result = tree.hit_test(499, 400);
+    REQUIRE(std::holds_alternative<SplitTree::DividerHit>(result));
+    const DividerId stale_id = std::get<SplitTree::DividerHit>(result).id;
+
+    REQUIRE(tree.close_leaf(b));
+
+    const PaneDescriptor before = tree.descriptor_for(a);
+    tree.set_divider_ratio(stale_id, 0.3f);
+    const PaneDescriptor after = tree.descriptor_for(a);
+
+    CHECK(after.pixel_pos.x == before.pixel_pos.x);
+    CHECK(after.pixel_pos.y == before.pixel_pos.y);
+    CHECK(after.pixel_size.x == before.pixel_size.x);
+    CHECK(after.pixel_size.y == before.pixel_size.y);
 }
 
 TEST_CASE("SplitTree: for_each_leaf visits all in order", "[split_tree]")

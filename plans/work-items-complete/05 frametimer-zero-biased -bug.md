@@ -24,13 +24,13 @@ For a terminal application, frame 1 might take 50ms due to font loading but the 
 
 ## Implementation Plan
 
-- [ ] Read `frame_timer.h` to find the ring buffer size, the insertion index, and the `average_ms()` / `average_fps()` calculation.
-- [ ] Add a `count_` field (or reuse an existing fill-level counter) that tracks how many valid samples have been inserted since construction or last reset.
-- [ ] In `average_ms()`, divide by `std::min(count_, ring_buffer_size)` instead of always dividing by the full ring size.
-- [ ] This ensures the average reflects only real frames until the ring fills.
-- [ ] No change to the ring buffer insertion logic — only the average calculation.
-- [ ] Build: `cmake --build build --target draxul draxul-tests && py do.py smoke`
-- [ ] Run `clang-format` on all modified files.
+- [x] Read `frame_timer.h` to find the ring buffer size, the insertion index, and the `average_ms()` / `average_fps()` calculation.
+- [x] Add a `count_` field (or reuse an existing fill-level counter) that tracks how many valid samples have been inserted since construction or last reset.
+- [x] In `average_ms()`, divide by `std::min(count_, ring_buffer_size)` instead of always dividing by the full ring size.
+- [x] This ensures the average reflects only real frames until the ring fills.
+- [x] No change to the ring buffer insertion logic — only the average calculation.
+- [x] Build: `cmake --build build --target draxul draxul-tests && py do.py smoke`
+- [x] Run `clang-format` on all modified files.
 
 ---
 

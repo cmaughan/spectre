@@ -15,9 +15,10 @@ struct ScopedLogCapture
 {
     std::vector<LogRecord> records;
 
-    ScopedLogCapture()
+    explicit ScopedLogCapture(LogLevel min_level = LogLevel::Info)
     {
         LogOptions options;
+        options.min_level = min_level;
         options.enable_stderr = false;
         options.enable_file = false;
         configure_logging(options);

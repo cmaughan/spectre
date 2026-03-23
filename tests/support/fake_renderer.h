@@ -2,6 +2,7 @@
 
 #include <draxul/renderer.h>
 #include <draxul/types.h>
+#include <imgui.h>
 
 #include <optional>
 #include <span>
@@ -84,8 +85,26 @@ public:
     }
     void shutdown_imgui_backend() override {}
     void rebuild_imgui_font_texture() override {}
-    void begin_imgui_frame() override {}
-    void set_imgui_draw_data(const ImDrawData*) override {}
+    void begin_imgui_frame() override
+    {
+        if (ImGuiContext* context = ImGui::GetCurrentContext())
+        {
+            ImGui::SetCurrentContext(context);
+            ImGuiIO& io = ImGui::GetIO();
+            unsigned char* pixels = nullptr;
+            int width = 0;
+            int height = 0;
+            io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
+            (void)pixels;
+            (void)width;
+            (void)height;
+        }
+    }
+    void set_imgui_draw_data(const ImDrawData* draw_data) override
+    {
+        last_imgui_draw_data = draw_data;
+        ++set_imgui_draw_data_calls;
+    }
     void request_frame_capture() override {}
     std::optional<CapturedFrame> take_captured_frame() override
     {
@@ -97,11 +116,15 @@ public:
 
     // Recorded state — read by tests (overlay forwarded from the default handle).
     std::vector<CellUpdate> last_overlay;
+    const ImDrawData* last_imgui_draw_data = nullptr;
+    int set_imgui_draw_data_calls = 0;
 
     void reset()
     {
         last_overlay.clear();
         last_handle = nullptr;
+        last_imgui_draw_data = nullptr;
+        set_imgui_draw_data_calls = 0;
     }
 };
 

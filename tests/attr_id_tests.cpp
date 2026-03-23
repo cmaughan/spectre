@@ -39,6 +39,16 @@ public:
         return grid().get_cell(col, row).hl_attr_id;
     }
 
+    size_t cache_size() const
+    {
+        return attr_cache_size();
+    }
+
+    const HlAttr& highlight_for_id(uint16_t id) const
+    {
+        return highlights().get(id);
+    }
+
     int cols_ = 20;
     int rows_ = 5;
 
@@ -277,4 +287,33 @@ TEST_CASE("attr_id: default attr (no SGR) is stable and returns id 0", "[grid]")
     const uint16_t id_C = ts.host.cell_hl(2, 0);
     INFO("default attr must always return id 0");
     REQUIRE(id_C == static_cast<uint16_t>(0));
+}
+
+TEST_CASE("attr_id: historical cache compacts before uint16 wraparound", "[grid]")
+{
+    AttrSetup ts(1, 1);
+    INFO("host must initialize");
+    REQUIRE(ts.ok);
+
+    for (int i = 0; i < 65000; ++i)
+    {
+        const int r = (i >> 16) & 0xFF;
+        const int g = (i >> 8) & 0xFF;
+        const int b = i & 0xFF;
+        ts.host.feed("\x1B[38;2;" + std::to_string(r) + ";" + std::to_string(g) + ";" + std::to_string(b) + "mA");
+    }
+
+    INFO("cache should have been compacted instead of growing to wraparound");
+    REQUIRE(ts.host.cache_size() < 65000);
+
+    ts.host.feed("\x1B[38;2;1;2;3mB");
+    const uint16_t id = ts.host.cell_hl(0, 0);
+    const HlAttr& attr = ts.host.highlight_for_id(id);
+
+    INFO("reused colors should still resolve to the correct highlight");
+    REQUIRE(id != 0);
+    REQUIRE(attr.has_fg);
+    REQUIRE(attr.fg.r == Catch::Approx(1.0f / 255.0f).margin(0.0001f));
+    REQUIRE(attr.fg.g == Catch::Approx(2.0f / 255.0f).margin(0.0001f));
+    REQUIRE(attr.fg.b == Catch::Approx(3.0f / 255.0f).margin(0.0001f));
 }

@@ -23,6 +23,7 @@ public:
         const std::string& working_dir, std::function<void()> on_output_available,
         int initial_cols = 80, int initial_rows = 24);
     void shutdown();
+    void request_close();
     bool is_running() const;
     bool resize(int cols, int rows) const;
     bool write(std::string_view text) const;

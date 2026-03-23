@@ -126,20 +126,16 @@ public:
     virtual void attach_3d_renderer(I3DRenderer& renderer) = 0;
     virtual void detach_3d_renderer() = 0;
 
-    // Optional ImGui overlay. attach_imgui_host() is called by HostManager after
-    // attach_3d_renderer() if an IImGuiHost is available. render_imgui() is called
-    // each frame inside begin_frame()/end_frame(); it must call
-    // imgui_host.begin_imgui_frame() internally before building the frame.
-    // Default implementations are no-ops so existing subclasses need no changes.
+    // Optional ImGui contribution. The app owns the ImGui frame lifecycle and
+    // calls render_imgui() after it has already begun a frame on the shared
+    // application ImGui context. Hosts may add windows or other chrome to the
+    // current frame but must not call NewFrame() or Render() themselves.
     virtual void attach_imgui_host(IImGuiHost& /*host*/) {}
     virtual bool has_imgui() const
     {
         return false;
     }
-    virtual ImDrawData* render_imgui(float /*dt*/)
-    {
-        return nullptr;
-    }
+    virtual void render_imgui(float /*dt*/) {}
     virtual void set_imgui_font(const std::string& /*path*/, float /*size_pixels*/) {}
 };
 

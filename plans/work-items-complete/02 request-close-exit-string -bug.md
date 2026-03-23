@@ -32,15 +32,15 @@ The correct mechanism is to close the write end of the pipe (sending EOF), which
 
 ## Implementation Plan
 
-- [ ] Read `terminal_host_base.cpp` to find the current `request_close()` implementation.
-- [ ] Read `shell_host_unix.cpp` and `shell_host_win.cpp` to understand how the write pipe is held.
-- [ ] Add a virtual `do_close()` method to `TerminalHostBase` (or expose a `close_stdin()` hook) that derived classes can override.
-- [ ] In `shell_host_unix.cpp`: override to close the write end of the stdin pipe (call `close(write_fd_)` or equivalent). The shell will receive EOF and exit cleanly.
-- [ ] In `shell_host_win.cpp` / `powershell_host_win.cpp`: override to call `CloseHandle(write_pipe_)`.
-- [ ] If the process is still alive after a short timeout (e.g., 500ms), send SIGHUP on Unix / `TerminateProcess` on Windows as a fallback. Keep the timeout non-blocking (post a deferred check, do not sleep on the main thread).
-- [ ] Remove the `"exit\r"` write path.
-- [ ] Build: `cmake --build build --target draxul draxul-tests && py do.py smoke`
-- [ ] Run `clang-format` on all modified files.
+- [x] Read `terminal_host_base.cpp` to find the current `request_close()` implementation.
+- [x] Read `shell_host_unix.cpp` and `shell_host_win.cpp` to understand how the write pipe is held.
+- [x] Add a virtual `do_close()` method to `TerminalHostBase` (or expose a `close_stdin()` hook) that derived classes can override.
+- [x] In `shell_host_unix.cpp`: override to close the write end of the stdin pipe (call `close(write_fd_)` or equivalent). The shell will receive EOF and exit cleanly.
+- [x] In `shell_host_win.cpp` / `powershell_host_win.cpp`: override to call `CloseHandle(write_pipe_)`.
+- [x] If the process is still alive after a short timeout (e.g., 500ms), send SIGHUP on Unix / `TerminateProcess` on Windows as a fallback. Keep the timeout non-blocking (post a deferred check, do not sleep on the main thread).
+- [x] Remove the `"exit\r"` write path.
+- [x] Build: `cmake --build build --target draxul draxul-tests && py do.py smoke`
+- [x] Run `clang-format` on all modified files.
 
 ---
 

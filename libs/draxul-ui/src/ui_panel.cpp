@@ -71,6 +71,44 @@ void render_startup_window(const DiagnosticPanelState& state)
     ImGui::End();
 }
 
+void render_panel_windows(const PanelLayout& layout, const DiagnosticPanelState& state)
+{
+    if (!layout.visible || layout.panel_height <= 0)
+        return;
+
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse
+        | ImGuiWindowFlags_NoDocking
+        | ImGuiWindowFlags_NoMove
+        | ImGuiWindowFlags_NoNavFocus
+        | ImGuiWindowFlags_NoResize
+        | ImGuiWindowFlags_NoSavedSettings
+        | ImGuiWindowFlags_NoTitleBar;
+
+    ImGui::SetNextWindowPos(ImVec2(0.0f, static_cast<float>(layout.panel_y)));
+    ImGui::SetNextWindowSize(ImVec2(static_cast<float>(layout.window_size.x), static_cast<float>(layout.panel_height)));
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+    const bool open = ImGui::Begin("Draxul Diagnostics", nullptr, flags);
+    ImGui::PopStyleVar();
+    bool first_render = false;
+    if (open)
+    {
+        first_render = create_dock_space();
+        ImGui::End();
+
+        render_window_tab(layout, state);
+        render_renderer_window(state);
+        render_startup_window(state);
+
+        if (first_render)
+            ImGui::SetWindowFocus(kStartupWindowName);
+    }
+    else
+    {
+        ImGui::End();
+    }
+}
+
 } // namespace
 
 struct UiPanel::Impl
@@ -241,41 +279,23 @@ const ImDrawData* UiPanel::render()
         return nullptr;
 
     ImGui::SetCurrentContext(impl_->context);
+    render_panel_windows(impl_->layout, impl_->debug_state);
+    return end_frame();
+}
 
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse
-        | ImGuiWindowFlags_NoDocking
-        | ImGuiWindowFlags_NoMove
-        | ImGuiWindowFlags_NoNavFocus
-        | ImGuiWindowFlags_NoResize
-        | ImGuiWindowFlags_NoSavedSettings
-        | ImGuiWindowFlags_NoTitleBar;
+const ImDrawData* UiPanel::end_frame()
+{
+    if (!impl_->context)
+        return nullptr;
 
-    ImGui::SetNextWindowPos(ImVec2(0.0f, static_cast<float>(impl_->layout.panel_y)));
-    ImGui::SetNextWindowSize(ImVec2(static_cast<float>(impl_->layout.window_size.x), static_cast<float>(impl_->layout.panel_height)));
-
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-    const bool open = ImGui::Begin("Draxul Diagnostics", nullptr, flags);
-    ImGui::PopStyleVar();
-    bool first_render = false;
-    if (open)
-    {
-        first_render = create_dock_space();
-        ImGui::End();
-
-        render_window_tab(impl_->layout, impl_->debug_state);
-        render_renderer_window(impl_->debug_state);
-        render_startup_window(impl_->debug_state);
-
-        if (first_render)
-            ImGui::SetWindowFocus(kStartupWindowName);
-    }
-    else
-    {
-        ImGui::End();
-    }
-
+    ImGui::SetCurrentContext(impl_->context);
     ImGui::Render();
     return ImGui::GetDrawData();
+}
+
+void UiPanel::render_into_current_context()
+{
+    render_panel_windows(impl_->layout, impl_->debug_state);
 }
 
 void UiPanel::on_mouse_move(const MouseMoveEvent& event)

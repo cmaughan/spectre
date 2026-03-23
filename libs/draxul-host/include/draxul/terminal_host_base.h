@@ -7,6 +7,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace draxul
@@ -39,7 +40,7 @@ public:
     }
     void request_close() override
     {
-        do_process_write("exit\r");
+        do_process_request_close();
     }
     void pump() override;
     void on_key(const KeyEvent& event) override;
@@ -58,6 +59,10 @@ protected:
     virtual bool do_process_resize(int cols, int rows) = 0;
     virtual bool do_process_is_running() const = 0;
     virtual void do_process_shutdown() = 0;
+    virtual void do_process_request_close()
+    {
+        do_process_shutdown();
+    }
 
     // Terminal helpers available to subclasses.
     virtual void reset_terminal_state();
@@ -70,6 +75,10 @@ protected:
     const VtState& vt_state() const
     {
         return vt_;
+    }
+    size_t attr_cache_size() const
+    {
+        return attr_cache_.size();
     }
 
     // Hook called by newline() when a line scrolls off the top of the visible
@@ -95,7 +104,10 @@ protected:
     virtual void on_osc_cwd(const std::string& path);
 
 private:
+    static constexpr uint16_t kAttrCompactionThreshold = 60000;
+
     uint16_t attr_id();
+    void compact_attr_ids();
     void clear_cell(int col, int row);
     void newline(bool carriage_return);
     void write_cluster(const std::string& cluster);

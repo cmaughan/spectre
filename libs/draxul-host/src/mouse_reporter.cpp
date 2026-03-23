@@ -8,6 +8,22 @@
 namespace draxul
 {
 
+namespace
+{
+
+int apply_mouse_modifiers(int button_code, int mod_bits)
+{
+    if (mod_bits & static_cast<int>(kModShift))
+        button_code |= 4;
+    if (mod_bits & static_cast<int>(kModAlt))
+        button_code |= 8;
+    if (mod_bits & static_cast<int>(kModCtrl))
+        button_code |= 16;
+    return button_code;
+}
+
+} // namespace
+
 MouseReporter::MouseReporter(WriteFn write_fn)
     : write_fn_(std::move(write_fn))
 {
@@ -53,12 +69,7 @@ bool MouseReporter::on_button(int button, bool pressed, int mod_bits, int col, i
     if (button_code < 0 || button_code > 2)
         return false;
 
-    if (mod_bits & static_cast<int>(kModShift))
-        button_code |= 4;
-    if (mod_bits & static_cast<int>(kModAlt))
-        button_code |= 8;
-    if (mod_bits & static_cast<int>(kModCtrl))
-        button_code |= 16;
+    button_code = apply_mouse_modifiers(button_code, mod_bits);
     if (!pressed)
         button_code = 3; // release code for non-SGR; SGR uses final char 'm'
 
@@ -66,7 +77,7 @@ bool MouseReporter::on_button(int button, bool pressed, int mod_bits, int col, i
     return true;
 }
 
-bool MouseReporter::on_move(int col, int row) const
+bool MouseReporter::on_move(int mod_bits, int col, int row) const
 {
     // Button mode (1000) only reports press/release, never motion.
     if (mouse_mode_ == MouseMode::None || mouse_mode_ == MouseMode::Button)
@@ -86,15 +97,17 @@ bool MouseReporter::on_move(int col, int row) const
         }
     }
     // For any-motion mode with no button held, use 35 (no button).
-    const int button_code = (mouse_mode_ == MouseMode::All && mouse_btn_pressed_ == 0)
+    int button_code = (mouse_mode_ == MouseMode::All && mouse_btn_pressed_ == 0)
         ? 35
         : 32 + held_btn;
+    button_code = apply_mouse_modifiers(button_code, mod_bits);
     send_report(button_code, true, col, row);
     return true;
 }
 
-void MouseReporter::on_wheel(int button_code, int col, int row) const
+void MouseReporter::on_wheel(int button_code, int mod_bits, int col, int row) const
 {
+    button_code = apply_mouse_modifiers(button_code, mod_bits);
     send_report(button_code, true, col, row);
 }
 

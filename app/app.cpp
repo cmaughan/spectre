@@ -11,6 +11,7 @@
 #include <chrono>
 #include <draxul/log.h>
 #include <draxul/sdl_window.h>
+#include <imgui.h>
 #include <utility>
 
 namespace draxul
@@ -42,6 +43,26 @@ void normalize_render_target_window_size(IWindow& window, const AppOptions& opti
     sdl->set_size_logical(target_logical_w, target_logical_h);
 }
 #endif
+
+void render_app_imgui_dockspace(const PanelLayout& layout)
+{
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDocking
+        | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse
+        | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove
+        | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus
+        | ImGuiWindowFlags_NoBackground;
+    ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f));
+    ImGui::SetNextWindowSize(ImVec2(static_cast<float>(layout.window_size.x),
+        static_cast<float>(layout.window_size.y)));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+    ImGui::Begin("##app_dockspace_root", nullptr, flags);
+    ImGui::PopStyleVar(3);
+    ImGui::DockSpace(ImGui::GetID("DraxulAppDock"),
+        ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_PassthruCentralNode);
+    ImGui::End();
+}
 
 } // namespace
 
@@ -449,25 +470,25 @@ bool App::close_dead_panes()
 
 void App::render_imgui_overlay(float delta_seconds)
 {
-    I3DHost* h3d = nullptr;
+    bool any_host_imgui = false;
     host_manager_.for_each_host([&](LeafId, IHost& h) {
-        if (!h3d)
-        {
-            auto* c = dynamic_cast<I3DHost*>(&h);
-            if (c && c->has_imgui())
-                h3d = c;
-        }
+        if (auto* c = dynamic_cast<I3DHost*>(&h); c && c->has_imgui())
+            any_host_imgui = true;
     });
-    if (h3d)
+
+    if (ui_panel_.visible() || any_host_imgui)
     {
-        renderer_.imgui()->set_imgui_draw_data(
-            h3d->render_imgui(delta_seconds));
-    }
-    else if (ui_panel_.visible())
-    {
+        ui_panel_.activate_imgui_context();
         renderer_.imgui()->begin_imgui_frame();
         ui_panel_.begin_frame(delta_seconds);
-        renderer_.imgui()->set_imgui_draw_data(ui_panel_.render());
+        render_app_imgui_dockspace(ui_panel_.layout());
+        if (ui_panel_.visible())
+            ui_panel_.render_into_current_context();
+        host_manager_.for_each_host([&](LeafId, IHost& h) {
+            if (auto* c = dynamic_cast<I3DHost*>(&h); c && c->has_imgui())
+                c->render_imgui(delta_seconds);
+        });
+        renderer_.imgui()->set_imgui_draw_data(ui_panel_.end_frame());
     }
     else
     {

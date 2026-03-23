@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <draxul/log.h>
 
 namespace draxul
 {
@@ -18,6 +19,7 @@ struct SplitTree::Node
     };
     struct SplitData
     {
+        DividerId divider_id = kInvalidDivider;
         SplitDirection direction = SplitDirection::Vertical;
         float ratio = 0.5f;
         std::unique_ptr<Node> first; // left or top
@@ -64,6 +66,7 @@ SplitTree& SplitTree::operator=(SplitTree&&) noexcept = default;
 LeafId SplitTree::reset(int pixel_w, int pixel_h)
 {
     next_id_ = 0;
+    next_divider_id_ = 0;
     root_ = std::make_unique<Node>();
     root_->data = Node::LeafData{ next_id_++, { { 0, 0 }, { pixel_w, pixel_h } } };
     focused_id_ = 0;
@@ -88,6 +91,7 @@ LeafId SplitTree::split_leaf(LeafId id, SplitDirection dir)
     second_child->data = Node::LeafData{ new_id, {} };
 
     Node::SplitData split_data;
+    split_data.divider_id = next_divider_id_++;
     split_data.direction = dir;
     split_data.ratio = 0.5f;
     split_data.first = std::move(first_child);
@@ -163,11 +167,18 @@ SplitTree::HitResult SplitTree::hit_test(int px, int py) const
     return hit_test_node(root_.get(), px, py, kDividerWidth);
 }
 
-void SplitTree::set_divider_ratio(void* node_ptr, float ratio)
+void SplitTree::set_divider_ratio(DividerId id, float ratio)
 {
-    if (!node_ptr)
+    if (id == kInvalidDivider)
         return;
-    auto* node = static_cast<Node*>(node_ptr);
+
+    auto* node = find_divider_node(id);
+    if (!node)
+    {
+        DRAXUL_LOG_DEBUG(LogCategory::App,
+            "Ignoring stale divider id %d during ratio update", id);
+        return;
+    }
     if (node->is_leaf())
         return;
     node->split().ratio = std::clamp(ratio, 0.1f, 0.9f);
@@ -221,6 +232,26 @@ const SplitTree::Node* SplitTree::find_leaf_node(LeafId id) const
 SplitTree::Node* SplitTree::find_leaf_node(LeafId id)
 {
     return const_cast<Node*>(static_cast<const SplitTree&>(*this).find_leaf_node(id));
+}
+
+const SplitTree::Node* SplitTree::find_divider_node(DividerId id) const
+{
+    std::function<const Node*(const Node*)> search = [&](const Node* node) -> const Node* {
+        if (!node || node->is_leaf())
+            return nullptr;
+        const auto& s = node->split();
+        if (s.divider_id == id)
+            return node;
+        if (const auto* found = search(s.first.get()))
+            return found;
+        return search(s.second.get());
+    };
+    return search(root_.get());
+}
+
+SplitTree::Node* SplitTree::find_divider_node(DividerId id)
+{
+    return const_cast<Node*>(static_cast<const SplitTree&>(*this).find_divider_node(id));
 }
 
 const SplitTree::Node* SplitTree::find_parent_of(const Node* child) const
@@ -298,7 +329,7 @@ SplitTree::HitResult SplitTree::hit_test_node(const Node* node, int px, int py, 
     const auto& s = node->split();
     // Check divider region first.
     if (px >= s.div_x && px < s.div_x + s.div_w && py >= s.div_y && py < s.div_y + s.div_h)
-        return DividerHit{ s.direction, const_cast<Node*>(node) };
+        return DividerHit{ s.direction, s.divider_id };
 
     // Recurse into children.
     auto result = hit_test_node(s.first.get(), px, py, div_w);

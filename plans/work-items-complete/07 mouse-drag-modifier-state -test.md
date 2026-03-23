@@ -23,16 +23,16 @@ No tests verify that modifier keys (Shift, Ctrl, Alt) are correctly encoded in m
 
 ## Implementation Plan
 
-- [ ] Read `mouse_reporter.h` and `mouse_reporter.cpp` to understand the public API and how to construct test inputs.
-- [ ] Check `tests/` for any existing mouse reporter tests.
-- [ ] Write a test for `report_motion()` with Shift modifier active: assert the output byte sequence encodes the Shift bit.
-- [ ] Write a test for `report_motion()` with Ctrl modifier active.
-- [ ] Write a test for `report_wheel()` with Ctrl modifier active (Ctrl+scroll is the most important — used for zoom in many CLI apps).
-- [ ] Write a test for `report_wheel()` with Shift modifier active.
-- [ ] Write a test for `report_motion()` with no modifier — assert the bit is not set (regression guard for existing behaviour).
-- [ ] Use the X10 extended mouse encoding bit positions: Shift=bit 2, Meta=bit 3, Ctrl=bit 4.
-- [ ] Build and run tests.
-- [ ] Run `clang-format` on modified test files.
+- [x] Read `mouse_reporter.h` and `mouse_reporter.cpp` to understand the public API and how to construct test inputs.
+- [x] Check `tests/` for any existing mouse reporter tests.
+- [x] Write a test for `report_motion()` with Shift modifier active: assert the output byte sequence encodes the Shift bit.
+- [x] Write a test for `report_motion()` with Ctrl modifier active.
+- [x] Write a test for `report_wheel()` with Ctrl modifier active (Ctrl+scroll is the most important — used for zoom in many CLI apps).
+- [x] Write a test for `report_wheel()` with Shift modifier active.
+- [x] Write a test for `report_motion()` with no modifier — assert the bit is not set (regression guard for existing behaviour).
+- [x] Use the X10 extended mouse encoding bit positions: Shift=bit 2, Meta=bit 3, Ctrl=bit 4.
+- [x] Build and run tests.
+- [x] Run `clang-format` on modified test files.
 
 ---
 

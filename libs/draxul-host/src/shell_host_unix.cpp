@@ -68,6 +68,10 @@ protected:
     {
         process_.shutdown();
     }
+    void do_process_request_close() override
+    {
+        process_.request_close();
+    }
 
 private:
     UnixPtyProcess process_;

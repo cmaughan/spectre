@@ -2,6 +2,7 @@
 #include "support/fake_window.h"
 
 #include <catch2/catch_all.hpp>
+#include <cstdint>
 #include <draxul/app_config.h>
 #include <filesystem>
 

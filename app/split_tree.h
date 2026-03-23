@@ -9,7 +9,9 @@ namespace draxul
 {
 
 using LeafId = int;
+using DividerId = int;
 constexpr LeafId kInvalidLeaf = -1;
+constexpr DividerId kInvalidDivider = -1;
 
 enum class SplitDirection
 {
@@ -29,7 +31,7 @@ public:
     struct DividerHit
     {
         SplitDirection direction;
-        void* node = nullptr; // opaque handle for set_divider_ratio()
+        DividerId id = kInvalidDivider;
     };
     using HitResult = std::variant<std::monostate, LeafHit, DividerHit>;
 
@@ -57,7 +59,7 @@ public:
 
     // Set the split ratio for a divider (from DividerHit::node).
     // Ratio is clamped to [0.1, 0.9].
-    void set_divider_ratio(void* node, float ratio);
+    void set_divider_ratio(DividerId id, float ratio);
 
     // Focus
     LeafId focused() const
@@ -79,12 +81,15 @@ private:
 
     std::unique_ptr<Node> root_;
     LeafId next_id_ = 0;
+    DividerId next_divider_id_ = 0;
     LeafId focused_id_ = kInvalidLeaf;
     int total_w_ = 0;
     int total_h_ = 0;
 
     Node* find_leaf_node(LeafId id);
     const Node* find_leaf_node(LeafId id) const;
+    Node* find_divider_node(DividerId id);
+    const Node* find_divider_node(DividerId id) const;
     Node* find_parent_of(const Node* child);
     const Node* find_parent_of(const Node* child) const;
     static void recompute_node(Node* node, int x, int y, int w, int h, int div_w);

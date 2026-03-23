@@ -23,14 +23,14 @@
 
 ## Implementation Plan
 
-- [ ] Read `app_config_io.cpp` around line 233 and `keybinding_parser.cpp` around line 183 to understand the exact parse path.
-- [ ] Determine the in-memory representation: where are default bindings stored before user config is applied? (likely `AppConfig::keybindings` vector built from defaults.)
-- [ ] Decide on the removal sentinel: either treat an empty string specially before calling `parse_gui_keybinding()`, or add a `remove_binding()` path in `AppConfig` that erases any entry matching the action name.
-- [ ] When `config.toml` contains `action = ""`, remove the matching default from the keybindings table (do not silently skip).
-- [ ] Emit a log entry at `debug` level: `"Keybinding 'action' removed by user config."` so it is visible in `--log-level debug` output.
-- [ ] Update `FEATURES.md` if the documented format changes (it shouldn't).
-- [ ] Build: `cmake --build build --target draxul draxul-tests && py do.py smoke`
-- [ ] Run `clang-format` on all modified files.
+- [x] Read `app_config_io.cpp` around line 233 and `keybinding_parser.cpp` around line 183 to understand the exact parse path.
+- [x] Determine the in-memory representation: where are default bindings stored before user config is applied? (likely `AppConfig::keybindings` vector built from defaults.)
+- [x] Decide on the removal sentinel: either treat an empty string specially before calling `parse_gui_keybinding()`, or add a `remove_binding()` path in `AppConfig` that erases any entry matching the action name.
+- [x] When `config.toml` contains `action = ""`, remove the matching default from the keybindings table (do not silently skip).
+- [x] Emit a log entry at `debug` level: `"Keybinding 'action' removed by user config."` so it is visible in `--log-level debug` output.
+- [x] Update `FEATURES.md` if the documented format changes (it shouldn't).
+- [x] Build: `cmake --build build --target draxul draxul-tests && py do.py smoke`
+- [x] Run `clang-format` on all modified files.
 
 ---
 

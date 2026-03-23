@@ -51,6 +51,8 @@ public:
 
     // Clamp the saved cursor position into valid bounds after a resize.
     void clamp_saved_cursor(int max_col, int max_row);
+    void for_each_saved_cell(const std::function<void(const Cell&)>& fn) const;
+    void remap_saved_highlight_ids(const std::function<uint16_t(uint16_t)>& remap);
 
     // Reset all state (called from reset_terminal_state).
     void reset();

@@ -5,8 +5,6 @@
 #include <draxul/treesitter.h>
 #include <memory>
 
-struct ImGuiContext;
-
 namespace draxul
 {
 
@@ -64,12 +62,11 @@ public:
     // I3DHost
     void attach_3d_renderer(I3DRenderer& renderer) override;
     void detach_3d_renderer() override;
-    void attach_imgui_host(IImGuiHost& host) override;
     bool has_imgui() const override
     {
-        return imgui_ctx_ != nullptr;
+        return true;
     }
-    ImDrawData* render_imgui(float dt) override;
+    void render_imgui(float dt) override;
     void set_imgui_font(const std::string& path, float size_pixels) override;
 
 private:
@@ -77,8 +74,6 @@ private:
     HostViewport viewport_;
     std::shared_ptr<CubeRenderPass> cube_pass_;
     I3DRenderer* renderer_3d_ = nullptr;
-    IImGuiHost* imgui_host_ = nullptr;
-    ImGuiContext* imgui_ctx_ = nullptr;
     CodebaseScanner scanner_;
     float rotation_angle_ = 0.0f;
     int pixel_w_ = 800;

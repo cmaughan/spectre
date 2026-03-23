@@ -27,14 +27,14 @@ This also applies across frames: if the app holds the pointer from one frame and
 
 ## Implementation Plan
 
-- [ ] Read `split_tree.h`, `split_tree.cpp`, and the drag-handling path in `app.cpp` to understand the full hit-test → drag → ratio-set flow.
-- [ ] Introduce a `DividerId` type (a stable integer handle, similar to `LeafId`). Assign each internal node a unique `DividerId` at creation time. Store it in the `Node` struct.
-- [ ] Change `DividerHit::node` from `void*` to `DividerId`.
-- [ ] Update `set_divider_ratio()` to accept `DividerId` and look up the node in an internal map/iteration. If the `DividerId` is no longer valid (node was removed), return early (no-op + log debug).
-- [ ] Remove the `void*` and the `// NOSONAR` comment. No need for the unsafe cast.
-- [ ] The refactor item `16 dividerhit-stable-handle -refactor` covers the broader API cleanup; this item focuses on the correctness fix (validation on stale ID).
-- [ ] Build: `cmake --build build --target draxul draxul-tests && py do.py smoke`
-- [ ] Run `clang-format` on all modified files.
+- [x] Read `split_tree.h`, `split_tree.cpp`, and the drag-handling path in `app.cpp` to understand the full hit-test → drag → ratio-set flow.
+- [x] Introduce a `DividerId` type (a stable integer handle, similar to `LeafId`). Assign each internal node a unique `DividerId` at creation time. Store it in the `Node` struct.
+- [x] Change `DividerHit::node` from `void*` to `DividerId`.
+- [x] Update `set_divider_ratio()` to accept `DividerId` and look up the node in an internal map/iteration. If the `DividerId` is no longer valid (node was removed), return early (no-op + log debug).
+- [x] Remove the `void*` and the `// NOSONAR` comment. No need for the unsafe cast.
+- [x] The refactor item `16 dividerhit-stable-handle -refactor` covers the broader API cleanup; this item focuses on the correctness fix (validation on stale ID).
+- [x] Build: `cmake --build build --target draxul draxul-tests && py do.py smoke`
+- [x] Run `clang-format` on all modified files.
 
 ---
 
