@@ -108,6 +108,8 @@ private:
     void csi_insert_delete(char final_char, const std::vector<int>& params);
     void csi_sgr(const std::vector<int>& params);
     void csi_mode(char final_char, bool private_mode, const std::vector<int>& params);
+    void csi_dsr(bool private_mode, const std::vector<int>& params);
+    void csi_da(bool private_mode, const std::vector<int>& params);
     void csi_margins(bool private_mode, const std::vector<int>& params);
 
     void enter_alt_screen();

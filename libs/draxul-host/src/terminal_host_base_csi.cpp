@@ -149,6 +149,12 @@ void TerminalHostBase::handle_csi(char final_char, std::string_view body)
     case 'l':
         csi_mode(final_char, private_mode, params);
         break;
+    case 'n':
+        csi_dsr(private_mode, params);
+        break;
+    case 'c':
+        csi_da(private_mode, params);
+        break;
     case 'r':
         csi_margins(private_mode, params);
         break;
@@ -406,6 +412,41 @@ void TerminalHostBase::csi_mode(char final_char, bool private_mode, const std::v
         default:
             break;
         }
+    }
+}
+
+void TerminalHostBase::csi_dsr(bool private_mode, const std::vector<int>& params)
+{
+    if (private_mode)
+        return;
+    const int code = params.empty() ? 0 : params[0];
+    if (code == 6)
+    {
+        // CPR — Cursor Position Report: reply ESC [ row ; col R (1-based)
+        char buf[32];
+        const int n = std::snprintf(buf, sizeof(buf), "\x1B[%d;%dR", vt_.row + 1, vt_.col + 1);
+        if (n > 0)
+            do_process_write(std::string_view(buf, static_cast<size_t>(n)));
+    }
+    else if (code == 5)
+    {
+        // DSR — Device Status Report: reply "OK"
+        do_process_write("\x1B[0n");
+    }
+}
+
+void TerminalHostBase::csi_da(bool private_mode, const std::vector<int>& params)
+{
+    const int code = params.empty() ? 0 : params[0];
+    if (!private_mode && code == 0)
+    {
+        // DA1 — Primary Device Attributes: claim VT220 with ANSI color
+        do_process_write("\x1B[?62;22c");
+    }
+    else if (private_mode && code == 0)
+    {
+        // DA2 — Secondary Device Attributes: "VT220, firmware 1.0"
+        do_process_write("\x1B[>1;10;0c");
     }
 }
 
