@@ -67,5 +67,10 @@ LogLevel parse_log_level_or(std::string_view value, LogLevel fallback);
 #define DRAXUL_LOG_ERROR(category, ...) ::draxul::log_printf(::draxul::LogLevel::Error, category, __VA_ARGS__)
 #define DRAXUL_LOG_WARN(category, ...) ::draxul::log_printf(::draxul::LogLevel::Warn, category, __VA_ARGS__)
 #define DRAXUL_LOG_INFO(category, ...) ::draxul::log_printf(::draxul::LogLevel::Info, category, __VA_ARGS__)
+#ifdef NDEBUG
+#define DRAXUL_LOG_DEBUG(category, ...) ((void)0)
+#define DRAXUL_LOG_TRACE(category, ...) ((void)0)
+#else
 #define DRAXUL_LOG_DEBUG(category, ...) ::draxul::log_printf(::draxul::LogLevel::Debug, category, __VA_ARGS__)
 #define DRAXUL_LOG_TRACE(category, ...) ::draxul::log_printf(::draxul::LogLevel::Trace, category, __VA_ARGS__)
+#endif
