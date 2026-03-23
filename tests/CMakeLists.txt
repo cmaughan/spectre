@@ -60,6 +60,7 @@ add_executable(draxul-tests
     vt_parser_partial_sequences_tests.cpp
     renderer_shutdown_tests.cpp
     keybinding_conflict_tests.cpp
+    keybinding_parser_tests.cpp
     file_drop_tests.cpp
     split_tree_tests.cpp
     frame_timer_tests.cpp
