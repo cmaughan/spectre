@@ -25,22 +25,8 @@ void normalize_render_target_window_size(IWindow& window, const AppOptions& opti
 {
     if (options.render_target_pixel_width <= 0 || options.render_target_pixel_height <= 0)
         return;
-
-    auto* sdl = dynamic_cast<SdlWindow*>(&window);
-    if (!sdl)
-        return;
-
-    auto [logical_w, logical_h] = window.size_logical();
-    auto [pixel_w, pixel_h] = window.size_pixels();
-    if (logical_w <= 0 || logical_h <= 0 || pixel_w <= 0 || pixel_h <= 0)
-        return;
-    if (pixel_w == options.render_target_pixel_width && pixel_h == options.render_target_pixel_height)
-        return;
-
-    const int target_logical_w = std::max(1, static_cast<int>(std::lround(static_cast<double>(logical_w) * options.render_target_pixel_width / pixel_w)));
-    const int target_logical_h = std::max(1, static_cast<int>(std::lround(static_cast<double>(logical_h) * options.render_target_pixel_height / pixel_h)));
-
-    sdl->set_size_logical(target_logical_w, target_logical_h);
+    window.normalize_render_target_window_size(options.render_target_pixel_width,
+        options.render_target_pixel_height);
 }
 #endif
 
@@ -304,14 +290,11 @@ bool App::initialize_host()
         return false;
     }
 
-    if (auto* h3d = dynamic_cast<I3DHost*>(host_manager_.host()))
-    {
-        const auto& metrics = text_service_.metrics();
-        const float font_size = static_cast<float>(metrics.cell_height)
-            * static_cast<float>(text_service_.point_size() - 2)
-            / static_cast<float>(text_service_.point_size());
-        h3d->set_imgui_font(text_service_.primary_font_path(), font_size);
-    }
+    const auto& metrics = text_service_.metrics();
+    const float font_size = static_cast<float>(metrics.cell_height)
+        * static_cast<float>(text_service_.point_size() - 2)
+        / static_cast<float>(text_service_.point_size());
+    host_manager_.host()->set_imgui_font(text_service_.primary_font_path(), font_size);
 
     request_frame();
     return true;
@@ -458,7 +441,7 @@ void App::render_imgui_overlay(float delta_seconds)
 {
     bool any_host_imgui = false;
     host_manager_.for_each_host([&](LeafId, IHost& h) {
-        if (auto* c = dynamic_cast<I3DHost*>(&h); c && c->has_imgui())
+        if (h.has_imgui())
             any_host_imgui = true;
     });
 
@@ -471,8 +454,8 @@ void App::render_imgui_overlay(float delta_seconds)
         if (ui_panel_.visible())
             ui_panel_.render_into_current_context();
         host_manager_.for_each_host([&](LeafId, IHost& h) {
-            if (auto* c = dynamic_cast<I3DHost*>(&h); c && c->has_imgui())
-                c->render_imgui(delta_seconds);
+            if (h.has_imgui())
+                h.render_imgui(delta_seconds);
         });
         renderer_.imgui()->set_imgui_draw_data(ui_panel_.end_frame());
     }

@@ -19,6 +19,7 @@ public:
         hidden_ = hidden;
     }
     bool initialize(const std::string& title, int width, int height) override;
+    void normalize_render_target_window_size(int target_pixel_width, int target_pixel_height) override;
     void set_size_logical(int width, int height);
     void shutdown() override;
     bool poll_events() override;

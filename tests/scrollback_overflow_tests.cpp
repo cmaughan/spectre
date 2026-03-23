@@ -138,7 +138,7 @@ struct SbSetup
         vp.grid_size.x = cols;
         vp.grid_size.y = rows;
 
-        HostContext ctx{ window, renderer, text_service, {}, vp, 96.0f };
+        HostContext ctx{ &window, &renderer, &text_service, {}, vp, 96.0f };
         ok = host.initialize(ctx, callbacks);
     }
 

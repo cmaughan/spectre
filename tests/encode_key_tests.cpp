@@ -96,7 +96,7 @@ struct KeyTestSetup
         vp.grid_size.x = 20;
         vp.grid_size.y = 5;
 
-        HostContext ctx{ window, renderer, text_service, {}, vp, 96.0f };
+        HostContext ctx{ &window, &renderer, &text_service, {}, vp, 96.0f };
         ok = host.initialize(ctx, callbacks);
     }
 

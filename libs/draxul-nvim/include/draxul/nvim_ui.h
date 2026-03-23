@@ -1,4 +1,5 @@
 #pragma once
+#include <cassert>
 #include <draxul/events.h>
 #include <draxul/grid_sink.h>
 #include <draxul/highlight.h>
@@ -24,19 +25,23 @@ struct ModeInfo
     int blinkoff = 0;
 };
 
+// All pointers passed to set_* must outlive this object.
 class UiEventHandler
 {
 public:
     void set_grid(IGridSink* grid)
     {
+        assert(grid != nullptr && "UiEventHandler::set_grid requires a non-null grid");
         grid_ = grid;
     }
     void set_highlights(HighlightTable* hl)
     {
+        assert(hl != nullptr && "UiEventHandler::set_highlights requires a non-null highlight table");
         highlights_ = hl;
     }
     void set_options(const UiOptions* options)
     {
+        assert(options != nullptr && "UiEventHandler::set_options requires a non-null options object");
         options_ = options;
     }
 

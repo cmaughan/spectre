@@ -12,9 +12,9 @@ namespace draxul
 
 bool GridHostBase::initialize(const HostContext& context, IHostCallbacks& callbacks)
 {
-    window_ = &context.window;
-    renderer_ = &context.grid_renderer;
-    text_service_ = &context.text_service;
+    window_ = context.window;
+    renderer_ = context.grid_renderer;
+    text_service_ = context.text_service;
     launch_options_ = context.launch_options;
     viewport_ = context.initial_viewport;
     callbacks_ = &callbacks;

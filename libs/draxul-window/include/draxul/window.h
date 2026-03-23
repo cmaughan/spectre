@@ -24,6 +24,7 @@ public:
     virtual std::string clipboard_text() const = 0;
     virtual bool set_clipboard_text(const std::string& text) = 0;
     virtual void set_text_input_area(int x, int y, int w, int h) = 0;
+    virtual void normalize_render_target_window_size(int /*target_pixel_width*/, int /*target_pixel_height*/) {}
 
     // Wake the event loop from another thread (e.g. after a host requests a frame).
     virtual void wake() {}

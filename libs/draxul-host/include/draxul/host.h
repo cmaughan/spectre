@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <chrono>
 #include <draxul/events.h>
 #include <draxul/host_kind.h>
@@ -73,9 +74,23 @@ public:
 
 struct HostContext
 {
-    IWindow& window;
-    IGridRenderer& grid_renderer;
-    TextService& text_service;
+    HostContext(IWindow* window_in, IGridRenderer* grid_renderer_in, TextService* text_service_in,
+        HostLaunchOptions launch_options_in, HostViewport initial_viewport_in, float display_ppi_in = 96.0f)
+        : window(window_in)
+        , grid_renderer(grid_renderer_in)
+        , text_service(text_service_in)
+        , launch_options(std::move(launch_options_in))
+        , initial_viewport(std::move(initial_viewport_in))
+        , display_ppi(display_ppi_in)
+    {
+        assert(window != nullptr);
+        assert(grid_renderer != nullptr);
+        assert(text_service != nullptr);
+    }
+
+    IWindow* window = nullptr;
+    IGridRenderer* grid_renderer = nullptr;
+    TextService* text_service = nullptr;
     HostLaunchOptions launch_options;
     HostViewport initial_viewport;
     float display_ppi = 96.0f;
@@ -112,6 +127,12 @@ public:
     // Apply a sub-pixel vertical scroll offset to this host's rendered grid.
     // Grid hosts delegate to their IGridHandle; non-grid hosts ignore this.
     virtual void set_scroll_offset(float /*px*/) {}
+    virtual bool has_imgui() const
+    {
+        return false;
+    }
+    virtual void render_imgui(float /*dt*/) {}
+    virtual void set_imgui_font(const std::string& /*path*/, float /*size_pixels*/) {}
 };
 
 std::unique_ptr<IHost> create_host(HostKind kind);
@@ -132,12 +153,6 @@ public:
     // application ImGui context. Hosts may add windows or other chrome to the
     // current frame but must not call NewFrame() or Render() themselves.
     virtual void attach_imgui_host(IImGuiHost& /*host*/) {}
-    virtual bool has_imgui() const
-    {
-        return false;
-    }
-    virtual void render_imgui(float /*dt*/) {}
-    virtual void set_imgui_font(const std::string& /*path*/, float /*size_pixels*/) {}
 };
 
 // ---------------------------------------------------------------------------

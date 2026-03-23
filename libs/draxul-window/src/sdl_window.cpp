@@ -472,4 +472,23 @@ void SdlWindow::show_open_file_dialog()
     sdl::show_open_file_dialog(window_, file_dialog_event_type_);
 }
 
+void SdlWindow::normalize_render_target_window_size(int target_pixel_width, int target_pixel_height)
+{
+    if (target_pixel_width <= 0 || target_pixel_height <= 0)
+        return;
+
+    auto [logical_w, logical_h] = size_logical();
+    auto [pixel_w, pixel_h] = size_pixels();
+    if (logical_w <= 0 || logical_h <= 0 || pixel_w <= 0 || pixel_h <= 0)
+        return;
+    if (pixel_w == target_pixel_width && pixel_h == target_pixel_height)
+        return;
+
+    const int target_logical_w = std::max(1,
+        static_cast<int>(std::lround(static_cast<double>(logical_w) * target_pixel_width / pixel_w)));
+    const int target_logical_h = std::max(1,
+        static_cast<int>(std::lround(static_cast<double>(logical_h) * target_pixel_height / pixel_h)));
+    set_size_logical(target_logical_w, target_logical_h);
+}
+
 } // namespace draxul

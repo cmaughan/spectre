@@ -1,10 +1,12 @@
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <cstdio>
 #include <draxul/log.h>
 #include <draxul/nvim_ui.h>
 #include <draxul/unicode.h>
 #include <memory>
+#include <utility>
 
 namespace draxul
 {
@@ -24,6 +26,20 @@ const std::string* try_get_string(const MpackValue& value)
     if (value.type() != MpackValue::String)
         return nullptr;
     return &value.as_str();
+}
+
+template <typename Fn, typename... Args>
+void invoke_callback(std::string_view name, const Fn& fn, Args&&... args)
+{
+    if (fn)
+    {
+        fn(std::forward<Args>(args)...);
+        return;
+    }
+
+    DRAXUL_LOG_WARN(LogCategory::App,
+        "UiEventHandler callback '%.*s' is unset",
+        static_cast<int>(name.size()), name.data());
 }
 
 bool try_get_int(const MpackValue& value, int& out)
@@ -158,22 +174,19 @@ void UiEventHandler::process_redraw(const std::vector<MpackValue>& params)
 
         if (dispatch->type == RedrawEventType::Flush)
         {
-            if (on_flush)
-                on_flush();
+            invoke_callback("on_flush", on_flush);
             continue;
         }
 
         if (dispatch->type == RedrawEventType::BusyStart)
         {
-            if (on_busy)
-                on_busy(true);
+            invoke_callback("on_busy", on_busy, true);
             continue;
         }
 
         if (dispatch->type == RedrawEventType::BusyStop)
         {
-            if (on_busy)
-                on_busy(false);
+            invoke_callback("on_busy", on_busy, false);
             continue;
         }
 
@@ -273,8 +286,7 @@ void UiEventHandler::handle_grid_cursor_goto(const MpackValue& args)
     const auto& args_array = args.as_array();
     cursor_row_ = (int)args_array[1].as_int();
     cursor_col_ = (int)args_array[2].as_int();
-    if (on_cursor_goto)
-        on_cursor_goto(cursor_col_, cursor_row_);
+    invoke_callback("on_cursor_goto", on_cursor_goto, cursor_col_, cursor_row_);
 }
 
 void UiEventHandler::handle_grid_scroll(const MpackValue& args)
@@ -308,8 +320,7 @@ void UiEventHandler::handle_grid_resize(const MpackValue& args)
     auto rows = (int)args_array[2].as_int();
     if (grid_)
         grid_->resize(cols, rows);
-    if (on_grid_resize)
-        on_grid_resize(cols, rows);
+    invoke_callback("on_grid_resize", on_grid_resize, cols, rows);
 }
 
 void UiEventHandler::handle_hl_attr_define(const MpackValue& args)
@@ -433,8 +444,7 @@ void UiEventHandler::handle_mode_change(const MpackValue& args)
     if (args.type() != MpackValue::Array || args.as_array().size() < 2)
         return;
     current_mode_ = (int)args.as_array()[1].as_int();
-    if (on_mode_change)
-        on_mode_change(current_mode_);
+    invoke_callback("on_mode_change", on_mode_change, current_mode_);
 }
 
 void UiEventHandler::handle_option_set(const MpackValue& args) const
@@ -443,8 +453,7 @@ void UiEventHandler::handle_option_set(const MpackValue& args) const
         return;
     const auto& args_array = args.as_array();
     const std::string& name = args_array[0].as_str();
-    if (on_option_set)
-        on_option_set(name, args_array[1]);
+    invoke_callback("on_option_set", on_option_set, name, args_array[1]);
 }
 
 void UiEventHandler::handle_set_title(const MpackValue& args) const
@@ -453,8 +462,7 @@ void UiEventHandler::handle_set_title(const MpackValue& args) const
         return;
 
     const auto& args_array = args.as_array();
-    if (on_title)
-        on_title(args_array[0].as_str());
+    invoke_callback("on_title", on_title, args_array[0].as_str());
 }
 
 } // namespace draxul

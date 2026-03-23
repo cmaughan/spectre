@@ -6,18 +6,13 @@
 #include <chrono>
 #include <draxul/app_config.h>
 #include <draxul/host.h>
+#include <draxul/renderer.h>
+#include <draxul/text_service.h>
+#include <draxul/ui_panel.h>
 #include <draxul/window.h>
 #include <memory>
 #include <optional>
 #include <string>
-#ifdef __APPLE__
-// Metal renderer header is internal to draxul-renderer, forward declare
-#else
-// Vulkan renderer header is internal to draxul-renderer, forward declare
-#endif
-#include <draxul/renderer.h>
-#include <draxul/text_service.h>
-#include <draxul/ui_panel.h>
 
 namespace draxul
 {

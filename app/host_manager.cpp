@@ -238,9 +238,9 @@ bool HostManager::create_host_for_leaf(LeafId id, IHostCallbacks& callbacks,
     HostViewport viewport = deps_.compute_viewport ? deps_.compute_viewport(desc) : HostViewport{};
 
     HostContext context{
-        *deps_.window,
-        grid_renderer,
-        *deps_.text_service,
+        deps_.window,
+        &grid_renderer,
+        deps_.text_service,
         launch,
         viewport,
         display_ppi,

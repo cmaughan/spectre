@@ -145,7 +145,7 @@ struct SelSetup
         HostViewport vp;
         vp.grid_size = { cols, rows };
 
-        HostContext ctx{ window, renderer, text_service, {}, vp, 96.0f };
+        HostContext ctx{ &window, &renderer, &text_service, {}, vp, 96.0f };
         ok = host.initialize(ctx, callbacks);
     }
 

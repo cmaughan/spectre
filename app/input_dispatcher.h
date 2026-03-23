@@ -24,7 +24,7 @@ struct MouseWheelEvent;
 //   - Key events: checks GUI keybindings first (via GuiActionHandler), then forwards to
 //     UiPanel/host
 //   - Mouse events: forwards to UiPanel when inside the panel, otherwise to host
-//   - Text/editing events: forwarded directly to UiPanel and host
+//   - Text-editing events: forwarded directly to the host
 //
 // App creates one InputDispatcher after all subsystems are ready and calls connect() to
 // install it as the window's event handlers.
