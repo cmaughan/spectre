@@ -177,6 +177,8 @@ All grid and GPU state is only touched by the main thread.
 
 All fetched automatically via CMake FetchContent (in `cmake/FetchDependencies.cmake`): SDL3, FreeType, HarfBuzz, MPack. On Windows: vk-bootstrap, VMA. Shaders compiled from GLSL to SPIR-V via glslc (Windows, `cmake/CompileShaders.cmake`) or from Metal to metallib via xcrun (macOS, `cmake/CompileShaders_Metal.cmake`).
 
+- **GLM** is the preferred library for vector and matrix types (`glm::vec2`, `glm::vec3`, `glm::vec4`, `glm::mat4`, etc.). Use GLM rather than custom structs or other math libraries.
+
 ## Config Notes
 
 - User settings live in `config.toml`.

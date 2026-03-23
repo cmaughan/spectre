@@ -1,187 +1,133 @@
-Here is the full report:
+Now I have everything I need. Here is the full review report:
 
 ---
 
 # Draxul Codebase Review
 
-*Generated: 2026-03-22. Based on direct file reads of `app/`, `libs/`, `shaders/`, `tests/`, `scripts/`, and `plans/`.*
+## Overview
+
+Draxul is a GPU-accelerated Neovim GUI frontend written in C++20, supporting Metal (macOS) and Vulkan (Windows). The codebase spans ~13 libraries, ~100 implementation files, and 61 test files totalling ~18,000 lines. This report covers architecture, code quality, stability, and prioritised recommendations.
 
 ---
 
 ## Top 10 Good Things
 
-### 1. Clean Interface Hierarchy with RendererBundle
-The renderer hierarchy (`IBaseRenderer → I3DRenderer → IGridRenderer`) is well-designed. The diamond `IRenderer` interface is wrapped by `RendererBundle`, which provides typed accessors without exposing the diamond inheritance to callers. This pattern prevents accidental coupling and makes platform switching (Metal/Vulkan) transparent to the app layer.
+1. **Strict layered dependency graph.** The `draxul-types → window/renderer/font/grid → nvim → app-support → app` chain has no circular dependencies. CMake enforces this structurally. Multi-agent work can be done on any library without risking unexpected coupling.
 
-### 2. Comprehensive, Targeted Test Suite (65+ files)
-The test coverage is genuinely impressive for a native GUI application. Nearly every library module has dedicated test files: RPC integration and backpressure, grid mutations, VT parser fuzz testing, font fallback corpus, scrollback overflow, host lifecycle races, and render state. The `replay_fixture.h` builders allow reproducing UI parsing bugs without spawning Neovim — a practical, well-designed test-support investment.
+2. **Three-tier renderer hierarchy.** `IBaseRenderer → I3DRenderer → IGridRenderer` is a clean, extensible design. Adding a new rendering capability (e.g., a post-process pass) only requires touching one level of the hierarchy. The `IRenderPass` / `IRenderContext` abstraction cleanly replaces legacy `void*` callbacks.
 
-### 3. Deterministic Visual Regression Tests
-The render snapshot workflow (scenario `.toml` files → renderer backbuffer capture → BMP reference diff → bless commands) is the right solution for a GPU-rendered application. Capturing from the swapchain/drawable rather than the desktop avoids compositor noise and DPI artifacts. The `do.py` entry point makes the workflow accessible without memorising raw command lines.
+3. **Host abstraction hierarchy.** `IHost → I3DHost → IGridHost → GridHostBase → TerminalHostBase → LocalTerminalHost → {NvimHost, LocalTerminalHost subclasses}` is deep but well-motivated. Each layer adds exactly the right surface area. The Template Method pattern (`initialize_host()`, `do_process_*`) cleanly separates policy from mechanism.
 
-### 4. Robust Process Management (UnixPtyProcess)
-`UnixPtyProcess` demonstrates careful systems programming: a self-pipe for clean reader thread wakeup, multi-phase SIGTERM/SIGKILL with a 100 ms grace period, foreground process group handling via `tcgetpgrp()`, FD_CLOEXEC on all descriptors, SIGPIPE suppression, and login-shell argv convention. This level of care prevents hangs and zombie processes on edge cases.
+4. **Comprehensive test suite.** 61 test files, ~18,000 lines, covering VT100 compliance, msgpack RPC, key encoding, grid mutation, dirty tracking, scrollback, rendering pipeline, config, split tree, and app lifecycle. `replay_fixture.h` allows reproducing Neovim redraw bugs without spawning a process.
 
-### 5. Shared Shader Constants (`decoration_constants_shared.h`)
-A single header is consumed by both Metal (`.metal`) and GLSL (`.vert`/`.frag`) shader files via `#define` macros written to be valid in both languages. This eliminates the common pitfall of shader magic-number drift between backends. Combined with `static_assert` verification of the `GpuCell` layout, the CPU/GPU boundary is reliably typed.
+5. **RAII throughout.** The `InitRollback` guard in `app.cpp`, smart pointer ownership chains, and consistent use of `std::unique_ptr` / `std::shared_ptr` mean no raw owning pointers in application code. The shutdown path is clean and deterministic.
 
-### 6. PIMPL and Deps Patterns Used Consistently
-`TextService`, `NvimProcess`, and `NvimRpc` use PIMPL to hide implementation headers (FreeType, HarfBuzz, MPack) from callers. The `Deps` struct pattern (`InputDispatcher::Deps`, `GuiActionHandler::Deps`, `HostManager::Deps`) provides explicit, testable dependency injection without complex framework machinery. Both patterns are applied consistently rather than selectively.
+6. **Return-based error propagation.** Hot paths use `bool` / `std::optional` / out-parameters rather than exceptions. This is consistent across all library interfaces and avoids unwinding overhead in the render loop.
 
-### 7. `do.py` Central Entry Point
-A single root-level `do.py` with a `--help` screen and memorable short commands (`smoke`, `blessall`, `shot`, `test`, `syncboard`) dramatically reduces friction for the safety nets already built. This is especially valuable in an AI-assisted workflow where agents and humans need a shared, discoverable command vocabulary.
+7. **Platform separation.** Metal and Vulkan backends share only the abstract renderer interface. Process spawning (`CreateProcess` / `fork+exec`), font discovery, and clipboard are all behind platform abstractions. `#ifdef` guards are confined to dedicated files.
 
-### 8. Init Rollback Guard in App::initialize()
-`App::initialize()` uses an RAII rollback guard that undoes any partially-completed initialisation on failure. This prevents resource leaks and partially-initialised objects from reaching the main loop — a pattern rarely seen in GUI applications and important for clean error recovery.
+8. **CMake presets with sanitizer support.** The `mac-asan` preset enables AddressSanitizer + LeakSanitizer with a single flag. This is a low-friction path to catching memory errors early. Coverage flags are also wired for LLVM source-based coverage.
 
-### 9. GpuCell `static_assert` Layout Verification
-`renderer_state.h` uses `static_assert` to verify the exact byte size (112) and field offsets of `GpuCell` against the shader struct layout. This catches ABI mismatches at compile time rather than producing silent rendering corruption — a strong example of compile-time safety applied to a CPU/GPU data interface.
+9. **UTF-8 safety.** `detail::utf8_next_codepoint` and `utf8_valid_prefix_length` in `grid.h` are a hand-rolled but correct and well-commented UTF-8 validator. All grid cell writes go through this, preventing truncation mid-codepoint.
 
-### 10. Living Engineering Commentary (`docs/learnings.md`)
-The learnings file is updated as work happens, capturing cross-cutting lessons (color emoji pipeline requirements, CJK fallback strategy, multi-line TOML parsing pitfalls, Windows command-line quoting hazards, parallel agent integration patterns). This is a practical institutional memory that reduces re-discovery cost for both humans and agents.
+10. **Developer automation.** `do.py` covers build, smoke test, render test blessing, and snapshot comparison. `gen_uml.py` / `gen_deps.py` generate diagrams from source. The `clang-format` pre-commit hook enforces formatting automatically. The planning/icebox/complete work item structure gives clear project state.
 
 ---
 
 ## Top 10 Bad Things
 
-### 1. ImGui Host Rendering Duplicated Between `pump_once()` and `run_render_test()`
-The I3DHost ImGui detection and rendering block (~20 lines) appears identically in both `App::pump_once()` and `App::run_render_test()`. Any change to the logic (e.g., how the active host is found, how ImGui draw calls are issued) must be made in two places. This is a latent divergence bug. Extract a private `draw_host_imgui()` helper.
+1. **Chord-prefix-stuck bug (icebox `01-chord-prefix-stuck`).** `InputDispatcher` enters prefix mode on a configurable prefix keydown and never resets on key-up without a matching chord. The next unrelated key is silently consumed. This is a live UX bug with a known fix documented but not implemented.
 
-### 2. ImGui Font Size Formula Duplicated Three Times in `app.cpp`
-The expression `static_cast<float>(text_service_.point_size() - 2)` (or equivalent derived from cell metrics) appears three times when computing the ImGui font size. A private helper or a named constant would eliminate the silent divergence risk.
+2. **`CellText` 32-byte truncation with data loss.** `CellText::assign()` (`grid.h:136-144`) truncates clusters silently beyond 32 bytes, emitting only a `WARN`. The `TODO` comment acknowledges this but it has not been addressed. Any sufficiently large combining sequence or emoji cluster is silently corrupted.
 
-### 3. `SplitTree::find_leaf_node()` is `const` but Returns Mutable `Node*`
-The method is declared `const` but returns `Node*` (non-const), which silently discards the const qualifier of `this`. The implementation uses a recursive `std::function<Node*(Node*)>` on `root_.get()`. This is technically undefined behaviour if the returned pointer is ever used for mutation through a const `SplitTree`. It should either return `const Node*` or remove the `const` qualifier from the method.
+3. **`dynamic_cast<I3DHost*>` in `HostManager` for 3D renderer attachment (icebox `16`).** If a new host subclass does not inherit `I3DHost`, the cast silently returns null. No error, no log, no compile-time enforcement. This is an invisible correctness hazard as more host types are added.
 
-### 4. Chord Prefix Mode Never Cancelled on Key Release
-`InputDispatcher`'s chord prefix state is activated on a specific key-down and is only consumed on the next key-down. If the user presses the prefix key and releases it without pressing a chord key (e.g., prefix activated accidentally), the dispatcher remains in prefix mode silently until the next key event. The comment in the code acknowledges this but leaves it as a known issue. A key-release handler should reset the prefix flag.
+4. **`UiEventHandler` uses raw pointer setters and public `std::function` callbacks.** `set_grid()`, `set_highlights()`, `set_options()` all store raw pointers with no lifetime guarantee. Callers must keep the pointed-to objects alive for the lifetime of `UiEventHandler`. There is no interface or assertion enforcing this. The `on_flush`, `on_grid_resize`, etc. members are public `std::function` fields — a callback interface object would be safer.
 
-### 5. `log_would_emit()` Acquires a Mutex
-The logging system acquires a `std::mutex` on every call to `log_would_emit()`. In hot rendering paths, any conditional logging check incurs mutex overhead even when logging is disabled. Consider `std::atomic<LogLevel>` for the active level comparison to make the common "disabled" path lock-free.
+5. **Duplicate icebox entries.** Files `20 searchable-scrollback -feature.md`, `21 per-pane-env-overrides -feature.md`, and `22 bracketed-paste-confirmation -feature.md` each exist twice in `plans/work-items-icebox/` (with and without ` 1` suffix). This causes confusion about which copy is authoritative and whether either reflects current intent.
 
-### 6. Hardcoded Default Terminal Colors in ShellHost
-`shell_host_unix.cpp` hardcodes foreground (`{0.92, 0.92, 0.92}`) and background (`{0.08, 0.09, 0.10}`) colors. These are not read from `config.toml`. A terminal emulator that ignores user color preferences in its default shell host is a usability regression waiting to happen when a user changes their theme.
+6. **`IHost` interface is too wide.** `IHost` has 14 pure virtual methods, including mouse move, mouse wheel, mouse button, key, text input, text editing, and more. Hosts that don't handle mouse (e.g., a headless render host) must still implement stubs for all of them. A smaller base interface with optional extension interfaces (like `IMouseHost`) would reduce boilerplate.
 
-### 7. `App::pump_once()` is ~110 Lines — Too Large for a Single Function
-The frame loop function handles window activation, dead-pane closure, host pumping, ImGui frame lifecycle, dirty rect rendering, host-specific draw, vsync wait, and shutdown transitions sequentially. This makes it difficult to understand the frame budget, test individual stages, or extend the loop with new phases. The stages should be named private helpers.
+7. **Dead conditional blocks in `app.h`.** Lines 13-17 of `app.h` contain `#ifdef __APPLE__ / // Metal renderer header... #else / // Vulkan renderer header... #endif` comment blocks with no actual content. These are leftover scaffolding that adds noise and false signals to readers expecting platform-specific code.
 
-### 8. Hand-Rolled Windows Command-Line Quoting (Latent Security Bug)
-`quote_windows_arg()` in the Windows process spawn code is a hand-rolled implementation of a notoriously tricky algorithm (trailing backslashes before closing quotes, embedded quote escaping). The work item correctly identifies this as both a correctness and an argument-injection risk for user-supplied paths (file drop, config). The preferred fix — using `lpApplicationName` + separately-quoted `lpCommandLine` per MSVC spec — is documented but not yet implemented.
+8. **`MegaCityHost` (3D spinning cube demo) is production-compiled code.** The `draxul-megacity` library adds a full dependency on tree-sitter and non-trivial 3D rendering code that is never used in normal operation. Icebox item `17` calls for its removal but it remains. It consumes compile time, increases binary size, and creates maintenance burden.
 
-### 9. `Grid::scroll()` is ~125 Lines with Four Inline Direction Cases
-The four scroll directions (up/down/left/right) are all implemented inline in a single function. Each direction is a clear `for` loop, but the combined length makes the function hard to read and test in isolation. Extracting `scroll_up()`, `scroll_down()`, `scroll_left()`, `scroll_right()` helpers would also make individual direction tests straightforward.
+9. **Agent review scripts not deduplicated (icebox `22`).** Multiple `ask_agent_*.py` scripts exist with duplicated argument parsing and output logic. This makes it difficult for multiple agents to collaborate on reviews using consistent tooling.
 
-### 10. `CellText::kMaxLen = 32` with a TODO Comment
-The 32-byte inline storage cap for grapheme clusters is a hardcoded limit with an acknowledged `TODO: consider std::string for >32-byte clusters`. Zero-width joiner emoji sequences (e.g., family emoji) can exceed 32 bytes. Truncation is logged as a warning but the glyph is silently corrupted. This is a known correctness hole for a Neovim frontend likely to encounter complex emoji in code comments and markdown.
+10. **`HostContext` uses references for required dependencies.** `HostContext` contains `IWindow&`, `IGridRenderer&`, `TextService&` as references. There is no null-check possible at compile time and a caller that passes a dangling reference produces undefined behaviour with no diagnostic. Using non-null pointers or a builder pattern with explicit validation would surface this class of error earlier.
 
 ---
 
 ## Best 10 Features to Add (Quality of Life)
 
-### 1. Configurable Terminal Default Colors
-Read `fg` and `bg` defaults for `ShellHost` from `config.toml` (a new `[terminal]` section). This aligns the shell pane with the user's preferred color scheme and makes Draxul usable as a general-purpose terminal without hardcoded grey-on-dark defaults.
+1. **Live config reload (icebox `56`).** Allow changes to `config.toml` to take effect without restarting. Font size, keybindings, ligature toggle, scroll speed, and terminal colors could all be hot-reloaded. This is one of the most frequent causes of friction in day-to-day use and the config system already has the structure to support it.
 
-### 2. Persistent Split Layout (Session Restore)
-Serialize the `SplitTree` layout, host kinds, and per-pane working directories to a session file on clean exit. On startup, restore the previous layout. This is the single most-requested feature for terminal multiplexer-style applications and makes Draxul a genuine `tmux` replacement candidate.
+2. **URL detection and click-to-open (icebox `20`).** Detect http/https URLs in rendered cells and open them with `xdg-open` / `open` on click or a keybinding. Most terminal emulators support this and its absence is conspicuous. The VT parser and cell model already have enough metadata to implement this without a regex post-pass.
 
-### 3. Searchable Scrollback (`/pattern` in Scrollback Mode)
-Extend `LocalTerminalHost` scrollback with a simple pattern-match search that highlights matching lines and jumps to the next/previous match. The `scrollback_buffer.h` infrastructure already exists; adding a search index over the stored rows is straightforward.
+3. **Command palette (icebox `60`).** A `Ctrl+Shift+P`-style overlay to invoke GUI actions, open splits, switch hosts, and run config changes interactively. With ImGui already integrated for the diagnostics panel, the UI layer is already present — a command palette is an incremental addition.
 
-### 4. URL Detection and Mouse-Clickable Links
-Scan rendered terminal lines for URL patterns (`https?://...`, file paths) and underline them on hover. On click (with modifier), open via `xdg-open`/`open`. The decoration layer already supports underline styles; the detection is a post-render pass over the display grid.
+4. **IME composition visibility (icebox `29`).** CJK input via IME requires showing the composition string in-window. SDL3 already provides `SDL_TEXTEDITING` events and `on_text_editing` is wired on `NvimInput`. The missing piece is rendering the composition preedit inline.
 
-### 5. Per-Pane Environment Overrides in Config
-Allow `config.toml` to specify environment variable overrides per host kind (e.g., `[hosts.shell] env = {COLORTERM = "truecolor"}`). Currently there is no way to inject `TERM`, `COLORTERM`, or `DRAXUL_VERSION` into the child process environment from config.
+5. **Native tab bar (icebox `57`).** A native or ImGui-rendered tab bar for managing multiple splits/hosts. The `SplitTree` already tracks multiple panes; a tab bar would be a presentation layer on top of the existing host manager.
 
-### 6. Font Fallback Configuration in `config.toml`
-Expose the font fallback chain as a user-configurable list under `[fonts]`. Right now fallback selection is heuristic. A user with a specific CJK font preference has no way to control the order. The existing `FontSelector` / `FontResolver` PIMPL is the right place to wire this.
+6. **Configurable ANSI palette (icebox `33`).** Allow per-terminal ANSI color overrides in `config.toml`. Terminal users frequently need to tune the 16-color palette for readability with specific themes. The terminal color pipeline is already in place via `HighlightTable`.
 
-### 7. `pump_once()` Frame Timing Diagnostics (Debug Overlay)
-Add an optional `debug_overlay = true` config flag that renders a small frame-time graph in a corner (last 128 frames, ms/frame, P99 spike marker). The ImGui host overlay infrastructure already exists; this is a few hours of work and permanently improves diagnosability of jank reports.
+7. **Window state persistence (icebox `36`).** Save and restore window size, position, split layout, and active host kind across sessions. This requires writing a small state file at shutdown and reading it at startup, and it dramatically reduces friction when reopening the app.
 
-### 8. Shell Pane Title Bar Reflects CWD
-Hook into the OSC 7 escape sequence (`file://hostname/path`) that most modern shells emit on directory change, and use it to update the pane title bar. The VT parser already handles OSC sequences; adding a `on_osc_7` callback to `TerminalHostBase` is the only new plumbing needed.
+8. **Remote Neovim attach (icebox `30`).** Connect to an already-running `nvim --listen` instance over a socket rather than spawning a new process. This is essential for server workflows and makes Draxul viable as a drop-in replacement for SSH-forwarded Neovim sessions.
 
-### 9. Bracketed Paste Confirmation for Large Pastes
-When pasting more than N lines (configurable, default 5) into a terminal pane, show a one-line confirmation banner ("Paste 47 lines? [y/n]"). This is a standard safety feature in modern terminal emulators that prevents accidental execution of multi-line clipboard content.
+9. **Font fallback inspector (icebox `61`).** A debug panel showing which glyph came from which font face for a selected cell. Diagnosing missing glyphs or wrong-face selections is currently done by trial and error with log output. An in-app inspector would make font configuration tractable.
 
-### 10. `config.toml` Live Reload
-Watch `config.toml` with a filesystem event (kqueue on macOS, `ReadDirectoryChangesW` on Windows) and apply non-structural settings (colors, keybindings, scroll speed) without restart. Font size and split layout would still require restart. The `AppConfig` serialisation layer already exists; wiring hot-reload is primarily an `INotifyFileChange` abstraction plus `App::apply_config_delta()`.
+10. **Per-monitor DPI font scaling (icebox `19`).** On multi-monitor setups with mixed DPIs, moving the window between displays should trigger a font re-rasterisation at the new DPI. SDL3 provides the events; the font pipeline supports re-init; the missing piece is connecting the two when a display change event fires for a window move.
 
 ---
 
-## Best 10 Tests to Add
+## Best 10 Tests to Add (Stability)
 
-### 1. `App` Smoke Test with `FakeWindow` + `FakeRenderer`
-An end-to-end `App::initialize()` → `pump_once()` × N → `shutdown()` test using the existing `FakeWindow` and `FakeRenderer` stubs. Currently there is no test that exercises the full orchestrator. This would catch startup/shutdown sequencing bugs, host manager lifecycle errors, and frame loop panics that only surface when all subsystems are wired together.
+1. **Chord-prefix-stuck: key-up resets prefix mode.** Directly tests the known icebox `01` bug. Press prefix key, release without a chord, assert dispatcher is not in prefix mode and that the next key-down reaches the host.
 
-### 2. `InputDispatcher` Prefix-Mode Stuck State
-Test that pressing the chord prefix key and then releasing it (without pressing a chord key) correctly resets `prefix_active` to `false` before the next unrelated key-down. This directly covers the known bug in item #4 of the bad list.
+2. **`CellText::assign()` with a 33-byte cluster does not corrupt adjacent cell data.** Verify truncation is safe: the truncated cell's `len` matches the valid prefix length, the adjacent cell's memory is unmodified, and no crash occurs under ASan.
 
-### 3. `Grid::scroll()` Per-Direction Unit Tests
-Isolated tests for each of the four scroll directions (`up`, `down`, `left`, `right`) covering: single-row scroll, multi-row scroll, scroll at boundary (scroll region start/end), and wide-character boundary repair. The existing `grid_tests.cpp` covers some scroll cases but not the full matrix.
+3. **`UiEventHandler` with a null grid pointer does not crash.** Ensure that calling `process_redraw()` before `set_grid()` produces a graceful failure (early return or assertion) rather than a null-pointer dereference.
 
-### 4. `SplitTree` Const-Correctness Regression
-A test that calls `find_leaf_node()` through a `const SplitTree&` reference and verifies the returned identity matches the expected leaf — this will fail at compile time if the method signature is corrected to return `const Node*` and the callers are not updated, surfacing the fix opportunity.
+4. **`HostManager::split_focused()` during host initialization does not leave dangling state.** If the primary host fails `initialize()`, a subsequent `split_focused()` call should return `kInvalidLeaf` and not insert a host entry into the `hosts_` map.
 
-### 5. Windows `quote_windows_arg()` Edge Cases
-Unit tests for:
-- paths with spaces (`C:\Program Files\nvim\nvim.exe`)
-- paths ending in backslash (`C:\nvim\`)
-- paths with embedded double-quotes (hypothetical, must not corrupt command line)
-- round-trip: constructed command line parsed by `CommandLineToArgvW` yields original tokens
+5. **Atlas overflow reset does not drop dirty cells for a second host.** When the glyph atlas overflows and resets, cells belonging to a different `IGridHandle` should still be marked dirty and re-uploaded correctly, not silently skipped.
 
-These tests can run on all platforms if the quoting function is extracted to a pure function in a header.
+6. **VT scroll region clamped to grid bounds.** `CSI r` (DECSTBM) with `top >= bot` or `bot > rows` should clamp rather than scroll out-of-bounds. Current `grid_tests.cpp` covers normal scroll but not the invalid-region case.
 
-### 6. `CellText` Truncation at Boundary
-Test that storing a grapheme cluster of exactly 32 bytes succeeds, exactly 33 bytes logs a warning and truncates, and the resulting `CellText` does not contain a split UTF-8 sequence (i.e., truncation is clean at a code-point boundary, not mid-sequence).
+7. **`TerminalHostBase::handle_osc()` with malformed OSC 7 URI does not crash.** A shell emitting `\e]7;not-a-url\a` should be silently ignored (or produce a WARN) rather than causing a parse error in the URL decoder.
 
-### 7. `HighlightTable::resolve()` Reverse Video Interaction
-Test all combinations of reverse-video with explicit fg/bg override, default fg/default bg, and the normal → visual mode transition. The `resolve()` method handles attribute swapping but the interaction with partial overrides (fg set, bg default) is complex and currently has no targeted test.
+8. **Font metrics change during active rendering does not leave renderer in inconsistent state.** Simulate a DPI-change event mid-frame: call `apply_font_metrics()` while a frame is notionally in progress and verify the renderer grid handle's buffer dimensions match the new cell size.
 
-### 8. `log_would_emit()` Concurrency Test
-A stress test that calls `log_would_emit()` and `log_printf()` from N threads simultaneously for 1000 iterations each, asserting no output corruption or deadlock. This validates the mutex-based log system under contention and would catch the lock-free migration (replacing the mutex with `std::atomic<LogLevel>`) if it is ever attempted.
+9. **`shutdown_race`: reader thread drain after nvim process exit.** The reader thread may still hold queued notifications when `NvimProcess::shutdown()` is called. Verify that draining the queue after the process has exited completes within a bounded timeout and does not block indefinitely.
 
-### 9. `AppConfig` Hot-Reload Delta Application
-Test that calling `AppConfig::load()` a second time with a modified `config.toml` (changed `scroll_speed`, changed keybinding) produces a config struct where only the changed fields differ from the first load, and that out-of-range values (`scroll_speed = 0.0`) are rejected with a warning and fall back to the previous valid value.
-
-### 10. Render Scenario: Wide-Character Scroll Boundary Repair
-A deterministic render scenario that fills a 40-column grid with CJK characters, scrolls by one line, and asserts that no half-width cells from split wide characters appear in the reference BMP. This directly stress-tests the wide-character boundary repair in `Grid::scroll()` and produces a visual artifact that is immediately obvious in a BMP diff.
+10. **`SplitTree::close_leaf()` with a single leaf returns false without freeing the root node.** This edge case (last pane close) is documented in `HostManager` but a dedicated unit test for the underlying `SplitTree` invariant (`leaf_count() == 1` survives a `close_leaf()` attempt) is missing.
 
 ---
 
 ## Worst 10 Features
 
-### 1. `MegaCityHost` 3D Cube Demo
-The spinning cube render pass in `libs/draxul-megacity/` is framed as a "code analysis host" but in practice it is a tech demo with no production utility. It adds a full 3D render pipeline (Metal + Vulkan cube shaders, `CubeRenderPass`, `MegaCityHost`), a TreeSitter panel stub, and a dedicated library module — all for a feature that does not solve any Neovim GUI problem. The presence of this module increases build complexity, shader count, and host-manager code paths. Unless MegaCityHost evolves into a real feature, it should be removed or quarantined behind a CMake option.
+1. **Chord-prefix-stuck input state.** A GUI-level keybinding prefix that gets permanently stuck on accidental activation. The dispatcher swallows the next keystroke silently. This is a live usability regression that affects anyone who triggers the prefix inadvertently.
 
-### 2. Hand-Rolled BMP Read/Write in `bmp.h/bmp.cpp`
-The BMP serialisation library exists solely to support render-test reference images. Using an established single-header library (STB Image) would eliminate ~300 lines of custom BMP code, support more formats, and remove the risk of format-parsing bugs. The `write_bmp_rgba()` function also creates parent directories, mixing I/O concerns with format logic.
+2. **`MegaCityHost` spinning cube.** A 3D demo host that adds a tree-sitter dependency, a full 3D render pass registration, and ImGui lifecycle wiring for a cube that spins in a window. It is behind a feature flag but is still compiled, linked, and tested. The icebox item to remove it has been open with no progress.
 
-### 3. `(void)pixel_h; (void)logical_h;` Suppression Comments (×5 in `app.cpp`)
-Using `(void)var` to suppress unused-variable warnings from structured bindings is a code smell that indicates the bindings should be decomposed differently (only bind what is used, or use `std::ignore`). Five occurrences in a single file suggest the structured binding style is being used in places where a simpler access pattern would be cleaner.
+3. **`CellText` 32-byte hard cap with silent truncation.** Large emoji clusters (e.g., family emoji with skin tone modifiers) exceed 32 bytes. The cell silently renders a truncated glyph with no visible error. The `TODO` has been present since the data structure was introduced.
 
-### 4. `app_config.h` Monolith (~400 lines)
-`AppConfig` combines config struct definition, TOML parse logic, file I/O, serialization, `AppConfigOverrides` merge, and `GuiKeybinding` chord parsing — all in one header. This makes it impossible to use any of these subsystems independently and causes recompilation of all dependents when any config field changes. Splitting into `app_config_types.h`, `app_config_io.cpp`, and `keybinding_parser.cpp` would reduce coupling.
+4. **Bold/italic font resolution by filename substitution.** Finding the bold or italic variant of a font by appending `-Bold`, `-Italic`, etc. to the filename is fragile. It fails for fonts with non-standard naming conventions and for system fonts installed without filename predictability. The icebox item for platform font API integration has not been scheduled.
 
-### 5. Linear String Dispatch in `GuiActionHandler::execute()`
-The `execute()` method uses an `if-else` chain of `action == "toggle_diagnostics"`, `action == "copy"`, etc. This is fine at 9 actions but grows linearly and is easy to mistype. A `static const std::unordered_map<std::string_view, std::function<void()>>` built once at construction would be O(1), self-documenting, and would produce a compile-time warning if a handler is accidentally omitted.
+5. **`UiEventHandler` public `std::function` callback fields.** Exposing `on_flush`, `on_grid_resize`, `on_cursor_goto`, etc. as public data members means any code can overwrite them at any time. The callback interface is set piecemeal across `NvimHost::initialize()`, making it easy to forget to wire one up and get a no-op silently.
 
-### 6. `UiEventHandler` Not Split from `NvimInput` in `nvim_ui.h`
-Both `UiEventHandler` (processes Neovim → app redraw events) and `NvimInput` (translates app → Neovim key events) live in the same header. These are opposite data-flow directions with no shared state. Splitting them into `nvim_ui_handler.h` and `nvim_input.h` would make their responsibilities clearer and allow tests to include only the direction they exercise.
+6. **`dynamic_cast<I3DHost*>` silent failure in `HostManager`.** Adding a new host subclass that should participate in 3D rendering but forgets `I3DHost` produces no error at compile time, no warning at runtime, and no visible defect until a 3D pass is unregistered. The fix (virtual `attach_3d_renderer()` with default no-op on `IHost`) is documented in the icebox but unimplemented.
 
-### 7. `TextInputEvent` Holds a Raw `const char*`
-The `TextInputEvent` struct stores a raw pointer to SDL's internal buffer. The lifetime guarantee is implicit (valid until the next SDL event) and is not documented in the struct definition. A misuse — storing the event and processing it one frame later — would produce silent use-after-free. At minimum, the struct should have a `std::string` copy or a `std::string_view` with a lifetime comment.
+7. **Glyph atlas overflow causes full reset and full repaint.** When the atlas runs out of shelf space, it clears completely and all glyphs must be re-rasterised and re-uploaded. For a large terminal with many unique glyphs, this causes a visible frame stutter. A partial eviction strategy (LRU) would be more graceful.
 
-### 8. Render Scenario TOML Parser is a Custom Ad-Hoc Implementation
-`app/render_test.cpp` implements a hand-rolled TOML-like parser for scenario files (including the multi-line array fix documented in `learnings.md`). The project already has TOML parsing machinery in `app_config.h`. Using the same parser for both config and render scenarios would eliminate the custom parser, fix multi-line array handling by default, and close the documented regression category.
+8. **Agent review script duplication.** `scripts/ask_agent_claude.py`, `ask_agent_gpt.py`, `ask_agent_gemini.py` share boilerplate argument parsing, file reading, and output formatting with no shared base. Icebox item `22` tracks deduplication but it creates ongoing friction whenever review tooling needs to be updated.
 
-### 9. `startup_resize_state.h` as a Separate Type
-`StartupResizeState` is a small state machine (~30 lines) that exists only to defer a resize acknowledgement until the first Neovim flush. Its logic could live directly in `GridHostBase` as a two-field state enum without a dedicated header and source file. The current separate-type approach adds a header include and a named object member for what is effectively 3 states and 2 transitions.
+9. **`IHost` requires 14 pure virtual stubs for non-interactive hosts.** A headless render test host, a replay-only host, or any future specialised host must provide no-op implementations of `on_mouse_move`, `on_mouse_wheel`, `on_text_editing`, `on_text_input`, and more. This creates a maintenance tax and increases the chance of a stub silently masking a real event dispatch.
 
-### 10. `for_each_host()` Using `std::function<void(LeafId, IHost&)>`
-`HostManager::for_each_host()` accepts a `std::function` callback. This allocates a heap closure object on every call. The function is called per-frame for each host to perform updates. Using a template parameter (`template<typename F> void for_each_host(F&& fn)`) would make the callback zero-cost and is a straightforward change with no API impact at the call sites (the lambdas at the call sites are unchanged).
+10. **Duplicate icebox work items.** Three icebox work items (`20 searchable-scrollback`, `21 per-pane-env-overrides`, `22 bracketed-paste-confirmation`) exist in two copies each, with and without a ` 1` suffix. This confuses automated tooling, the do.py script references, and manual review alike. The duplicates carry risk of divergence and should be cleaned up.
 
 ---
 
-*End of report.*
+*Report generated from live source file inspection across `app/`, `libs/`, `tests/`, `shaders/`, `plans/`, and `scripts/` as of 2026-03-23.*
