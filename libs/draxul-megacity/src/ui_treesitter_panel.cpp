@@ -3,6 +3,7 @@
 #include <imgui.h>
 
 #include <algorithm>
+#include <set>
 #include <string_view>
 #include <vector>
 
@@ -188,8 +189,19 @@ void render_symbol_leaf(const char* id, const char* icon, ImVec4 color,
 
 void render_objects_tree(const CodebaseSnapshot& snap)
 {
+    // Build set of type names that have member functions
+    std::set<std::string> types_with_methods;
+    for (const auto& file : snap.files)
+    {
+        for (const auto& sym : file.symbols)
+        {
+            if (sym.kind == SymbolKind::Function && !sym.parent.empty())
+                types_with_methods.insert(sym.parent);
+        }
+    }
+
     // Collect across all files
-    std::vector<ClassEntry> concrete, abstract;
+    std::vector<ClassEntry> concrete, abstract, data_structs;
     std::vector<FuncEntry> free_functions;
 
     for (const auto& file : snap.files)
@@ -202,6 +214,9 @@ void render_objects_tree(const CodebaseSnapshot& snap)
                 ClassEntry e{ sym.name, basename, sym.line, sym.is_abstract, sym.kind };
                 if (sym.is_abstract)
                     abstract.push_back(std::move(e));
+                else if (sym.kind == SymbolKind::Struct
+                    && types_with_methods.find(sym.name) == types_with_methods.end())
+                    data_structs.push_back(std::move(e));
                 else
                     concrete.push_back(std::move(e));
             }
@@ -219,6 +234,7 @@ void render_objects_tree(const CodebaseSnapshot& snap)
     };
     std::sort(concrete.begin(), concrete.end(), by_name_then_file);
     std::sort(abstract.begin(), abstract.end(), by_name_then_file);
+    std::sort(data_structs.begin(), data_structs.end(), by_name_then_file);
     std::sort(free_functions.begin(), free_functions.end(), by_name_then_file);
 
     // ---- Classes ----
@@ -266,6 +282,25 @@ void render_objects_tree(const CodebaseSnapshot& snap)
             ImGui::TreePop();
         }
 
+        ImGui::TreePop();
+    }
+
+    // ---- Data structs (no member functions) ----
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.75f, 0.90f, 0.50f, 1.0f));
+    const bool structs_open = ImGui::TreeNodeEx(
+        "##structs", ImGuiTreeNodeFlags_SpanAvailWidth,
+        "Structs (%zu)", data_structs.size());
+    ImGui::PopStyleColor();
+    if (structs_open)
+    {
+        for (const auto& e : data_structs)
+        {
+            render_symbol_leaf(
+                (e.name + std::string(e.file)).c_str(),
+                "st ",
+                { 0.75f, 0.90f, 0.50f, 1.0f },
+                e.name, e.file, e.line);
+        }
         ImGui::TreePop();
     }
 
