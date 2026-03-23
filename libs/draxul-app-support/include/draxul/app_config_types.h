@@ -18,6 +18,8 @@
 namespace draxul
 {
 
+class IHost;
+
 struct GuiKeybinding
 {
     std::string action;
@@ -104,8 +106,11 @@ struct AppOptions
     // Optional factory overrides for testing -- leave null in production.
     // window_factory: returns a fully-initialized IWindow. Return nullptr to simulate failure.
     // renderer_create_fn: called instead of create_renderer(); return empty RendererBundle to fail.
+    // host_factory: called instead of create_host(). Return nullptr to simulate failure.
+    //   The returned IHost must not yet be initialized -- HostManager calls initialize() itself.
     std::function<std::unique_ptr<IWindow>()> window_factory;
     std::function<RendererBundle(int atlas_size)> renderer_create_fn;
+    std::function<std::unique_ptr<IHost>(HostKind)> host_factory;
 };
 
 } // namespace draxul

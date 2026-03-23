@@ -201,7 +201,11 @@ bool HostManager::create_host_for_leaf(LeafId id, HostCallbacks callbacks,
 {
     std::unique_ptr<IHost> new_host;
 
-    if (is_primary && launch.kind == HostKind::MegaCity)
+    if (deps_.options && deps_.options->host_factory)
+    {
+        new_host = deps_.options->host_factory(launch.kind);
+    }
+    else if (is_primary && launch.kind == HostKind::MegaCity)
     {
 #ifdef DRAXUL_ENABLE_MEGACITY
         new_host = create_megacity_host();

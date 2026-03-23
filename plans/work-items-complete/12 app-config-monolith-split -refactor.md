@@ -22,19 +22,19 @@ Every dependent file recompiles whenever any config field changes, even if it on
 
 ## Implementation Plan
 
-- [ ] Read `app/app_config.h` and `app/app_config.cpp` (if it exists) to understand the current structure.
-- [ ] Identify the natural split boundaries:
+- [x] Read `app/app_config.h` and `app/app_config.cpp` (if it exists) to understand the current structure.
+- [x] Identify the natural split boundaries:
   - `app_config_types.h` — struct definitions only (`AppConfig`, `AppConfigOverrides`, `GuiKeybinding`, enums). No parse logic.
   - `app_config_io.h/.cpp` — `load()`, `save()`, TOML parse, override merge. Includes `app_config_types.h` and the TOML library.
   - `keybinding_parser.h/.cpp` — chord parsing for `GuiKeybinding`. Can be tested independently.
-- [ ] Perform the split:
-  - [ ] Create `app_config_types.h` with structs only.
-  - [ ] Move I/O and parse logic to `app_config_io.cpp`.
-  - [ ] Move chord parsing to `keybinding_parser.cpp`.
-  - [ ] Update all `#include` references across `app/` and `tests/`.
-- [ ] Update `CMakeLists.txt` to include the new `.cpp` files.
-- [ ] Build and run: `cmake --build build --target draxul draxul-tests && py do.py smoke`.
-- [ ] Run `clang-format` on all modified files.
+- [x] Perform the split:
+  - [x] Create `app_config_types.h` with structs only.
+  - [x] Move I/O and parse logic to `app_config_io.cpp`.
+  - [x] Move chord parsing to `keybinding_parser.cpp`.
+  - [x] Update all `#include` references across `app/` and `tests/`.
+- [x] Update `CMakeLists.txt` to include the new `.cpp` files.
+- [x] Build and run: `cmake --build build --target draxul draxul-tests && py do.py smoke`.
+- [x] Run `clang-format` on all modified files.
 
 ---
 

@@ -15,8 +15,8 @@
 
 ## Implementation Plan
 
-- [ ] Read `app/gui_action_handler.h` and `app/gui_action_handler.cpp` to understand the current dispatch and all supported action names.
-- [ ] Change `execute()` to use a dispatch table:
+- [x] Read `app/gui_action_handler.h` and `app/gui_action_handler.cpp` to understand the current dispatch and all supported action names.
+- [x] Change `execute()` to use a dispatch table:
   ```cpp
   // In constructor or lazy-init:
   static const std::unordered_map<std::string_view, std::function<void(GuiActionHandler&)>> kActions = {
@@ -26,10 +26,10 @@
   };
   ```
   Or use member function pointers if the actions are all simple method calls.
-- [ ] Replace the `if-else` chain in `execute()` with a map lookup + call.
-- [ ] Log a WARN for unknown action names (retain the current behavior).
-- [ ] Build and run: `cmake --build build --target draxul draxul-tests && py do.py smoke`.
-- [ ] Run `clang-format`.
+- [x] Replace the `if-else` chain in `execute()` with a map lookup + call.
+- [x] Log a WARN for unknown action names (retain the current behavior).
+- [x] Build and run: `cmake --build build --target draxul draxul-tests && py do.py smoke`.
+- [x] Run `clang-format`.
 
 ---
 

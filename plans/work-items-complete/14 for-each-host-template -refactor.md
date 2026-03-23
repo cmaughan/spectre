@@ -15,8 +15,8 @@
 
 ## Implementation Plan
 
-- [ ] Find `HostManager::for_each_host()` declaration in `app/host_manager.h`.
-- [ ] Change the signature from:
+- [x] Find `HostManager::for_each_host()` declaration in `app/host_manager.h`.
+- [x] Change the signature from:
   ```cpp
   void for_each_host(std::function<void(LeafId, IHost&)> fn);
   ```
@@ -25,11 +25,11 @@
   template<typename F>
   void for_each_host(F&& fn);
   ```
-- [ ] Move the implementation to the header (templates must be defined where they are used, unless explicit instantiation is used).
-- [ ] Check all call sites — the lambdas passed should work unchanged since the signature is compatible.
-- [ ] Remove the `#include <functional>` from the header if `std::function` is no longer used there.
-- [ ] Build and run: `cmake --build build --target draxul draxul-tests && py do.py smoke`.
-- [ ] Run `clang-format` on modified files.
+- [x] Move the implementation to the header (templates must be defined where they are used, unless explicit instantiation is used).
+- [x] Check all call sites — the lambdas passed should work unchanged since the signature is compatible.
+- [x] Remove the `#include <functional>` from the header if `std::function` is no longer used there.
+- [x] Build and run: `cmake --build build --target draxul draxul-tests && py do.py smoke`.
+- [x] Run `clang-format` on modified files.
 
 ---
 

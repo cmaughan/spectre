@@ -15,14 +15,14 @@
 
 ## Implementation Plan
 
-- [ ] Find `SplitTree::find_leaf_node()` in the source (search `libs/` or `app/` for `SplitTree`).
-- [ ] Evaluate the fix strategy:
+- [x] Find `SplitTree::find_leaf_node()` in the source (search `libs/` or `app/` for `SplitTree`).
+- [x] Evaluate the fix strategy:
   - **Preferred:** Provide two overloads — a `const` version returning `const Node*` and a non-const version returning `Node*`. This is the standard C++ pattern for mutable/const access.
   - **Alternative:** Remove the `const` qualifier from the existing method if all callers actually need a mutable `Node*`.
-- [ ] Check all call sites to determine which overload they need.
-- [ ] Implement the chosen fix and update callers as needed.
-- [ ] Build and run: `cmake --build build --target draxul draxul-tests && py do.py smoke`.
-- [ ] Run `clang-format`.
+- [x] Check all call sites to determine which overload they need.
+- [x] Implement the chosen fix and update callers as needed.
+- [x] Build and run: `cmake --build build --target draxul draxul-tests && py do.py smoke`.
+- [x] Run `clang-format`.
 
 ---
 

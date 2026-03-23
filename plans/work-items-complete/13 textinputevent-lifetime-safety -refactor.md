@@ -15,16 +15,16 @@
 
 ## Implementation Plan
 
-- [ ] Search for `TextInputEvent` in `libs/draxul-types/include/draxul/events.h` and all usage sites.
-- [ ] Evaluate the two options:
+- [x] Search for `TextInputEvent` in `libs/draxul-types/include/draxul/events.h` and all usage sites.
+- [x] Evaluate the two options:
   - **Option A (preferred):** Change `const char* text` to `std::string text` in `TextInputEvent`. All construction sites (SDL event handling) copy the string once at the boundary. All consumer sites are unchanged.
   - **Option B:** Add a lifetime comment to the struct header and add a `static_assert` or `[[nodiscard]]` decoration that makes delayed use of the pointer harder to miss.
-- [ ] Implement Option A (ownership is cleaner than documentation for a safety issue at a system boundary).
-  - [ ] Update `TextInputEvent` struct.
-  - [ ] Update all event construction sites (likely in `libs/draxul-window/src/sdl_window.cpp`).
-  - [ ] Update any consumer sites that held `const char*` to use `.c_str()` or `std::string_view` as needed.
-- [ ] Build and run: `cmake --build build --target draxul draxul-tests && py do.py smoke`.
-- [ ] Run `clang-format` on all modified files.
+- [x] Implement Option A (ownership is cleaner than documentation for a safety issue at a system boundary).
+  - [x] Update `TextInputEvent` struct.
+  - [x] Update all event construction sites (likely in `libs/draxul-window/src/sdl_window.cpp`).
+  - [x] Update any consumer sites that held `const char*` to use `.c_str()` or `std::string_view` as needed.
+- [x] Build and run: `cmake --build build --target draxul draxul-tests && py do.py smoke`.
+- [x] Run `clang-format` on all modified files.
 
 ---
 
