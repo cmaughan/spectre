@@ -109,7 +109,7 @@ private:
     void mark_all_cells_dirty();
     void mark_cell_dirty(size_t index);
 
-    Color default_bg_ = { 0.1f, 0.1f, 0.1f, 1.0f };
+    Color default_bg_ = Color(0.1f, 0.1f, 0.1f, 1.0f);
 
     int grid_cols_ = 0;
     int grid_rows_ = 0;

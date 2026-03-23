@@ -120,7 +120,7 @@ TEST_CASE("ui event handler replays redraw batches into the grid", "[ui]")
     INFO("highlight attributes are stored");
     REQUIRE(highlights.get(7).bold == true);
     INFO("default background is updated");
-    REQUIRE(highlights.default_bg() == Color::from_rgb(0x101010));
+    REQUIRE(highlights.default_bg() == color_from_rgb(0x101010));
 }
 
 TEST_CASE("ui event handler forwards busy state transitions", "[ui]")

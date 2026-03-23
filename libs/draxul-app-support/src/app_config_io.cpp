@@ -327,7 +327,7 @@ std::optional<Color> parse_hex_color(std::string_view hex)
         uint32_t rgb = static_cast<uint32_t>((digits[0] << 20) | (digits[1] << 16)
             | (digits[2] << 12) | (digits[3] << 8)
             | (digits[4] << 4) | digits[5]);
-        return Color::from_rgb(rgb);
+        return color_from_rgb(rgb);
     }
 
     if (hex.size() == 3)
@@ -342,7 +342,7 @@ std::optional<Color> parse_hex_color(std::string_view hex)
         // Expand #RGB to #RRGGBB: each digit is doubled (e.g. #abc -> #aabbcc)
         uint32_t rgb = static_cast<uint32_t>(
             ((digits[0] * 17) << 16) | ((digits[1] * 17) << 8) | (digits[2] * 17));
-        return Color::from_rgb(rgb);
+        return color_from_rgb(rgb);
     }
 
     return std::nullopt;

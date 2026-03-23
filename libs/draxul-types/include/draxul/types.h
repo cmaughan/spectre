@@ -1,36 +1,30 @@
 #pragma once
 #include <cstdint>
+#include <glm/glm.hpp>
 #include <vector>
 
 namespace draxul
 {
 
-struct Color
+using Color = glm::vec4;
+
+inline Color color_from_rgb(uint32_t rgb)
 {
-    float r = 0.0f, g = 0.0f, b = 0.0f, a = 1.0f;
+    return Color(
+        ((rgb >> 16) & 0xFF) / 255.0f,
+        ((rgb >> 8) & 0xFF) / 255.0f,
+        (rgb & 0xFF) / 255.0f,
+        1.0f);
+}
 
-    bool operator==(const Color&) const = default;
-
-    static Color from_rgb(uint32_t rgb)
-    {
-        return {
-            ((rgb >> 16) & 0xFF) / 255.0f,
-            ((rgb >> 8) & 0xFF) / 255.0f,
-            (rgb & 0xFF) / 255.0f,
-            1.0f
-        };
-    }
-
-    static Color from_rgba(uint32_t rgba)
-    {
-        return {
-            ((rgba >> 24) & 0xFF) / 255.0f,
-            ((rgba >> 16) & 0xFF) / 255.0f,
-            ((rgba >> 8) & 0xFF) / 255.0f,
-            (rgba & 0xFF) / 255.0f
-        };
-    }
-};
+inline Color color_from_rgba(uint32_t rgba)
+{
+    return Color(
+        ((rgba >> 24) & 0xFF) / 255.0f,
+        ((rgba >> 16) & 0xFF) / 255.0f,
+        ((rgba >> 8) & 0xFF) / 255.0f,
+        (rgba & 0xFF) / 255.0f);
+}
 
 struct AtlasRegion
 {
@@ -61,8 +55,8 @@ enum class CursorShape
 struct CursorStyle
 {
     CursorShape shape = CursorShape::Block;
-    Color fg = { 0.0f, 0.0f, 0.0f, 1.0f };
-    Color bg = { 1.0f, 1.0f, 1.0f, 1.0f };
+    Color fg = Color(0.0f, 0.0f, 0.0f, 1.0f);
+    Color bg = Color(1.0f, 1.0f, 1.0f, 1.0f);
     int cell_percentage = 0;
     bool use_explicit_colors = false;
 };

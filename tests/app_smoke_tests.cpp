@@ -89,7 +89,7 @@ public:
 
     Color default_background() const override
     {
-        return Color{ 0.0f, 0.0f, 0.0f, 1.0f };
+        return Color(0.0f, 0.0f, 0.0f, 1.0f);
     }
 
     HostRuntimeState runtime_state() const override

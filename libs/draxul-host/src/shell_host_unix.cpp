@@ -21,9 +21,9 @@ protected:
     bool initialize_host() override
     {
         highlights().set_default_fg(
-            launch_options().terminal_fg.value_or(Color{ 0.92f, 0.92f, 0.92f, 1.0f }));
+            launch_options().terminal_fg.value_or(Color(0.92f, 0.92f, 0.92f, 1.0f)));
         highlights().set_default_bg(
-            launch_options().terminal_bg.value_or(Color{ 0.08f, 0.09f, 0.10f, 1.0f }));
+            launch_options().terminal_bg.value_or(Color(0.08f, 0.09f, 0.10f, 1.0f)));
         apply_grid_size(viewport().cols, viewport().rows);
         reset_terminal_state();
 

@@ -8,14 +8,14 @@ using namespace draxul;
 TEST_CASE("highlight table resolves explicit colors and special color", "[highlight]")
 {
     HighlightTable table;
-    table.set_default_fg(Color::from_rgb(0xFFFFFF));
-    table.set_default_bg(Color::from_rgb(0x101010));
-    table.set_default_sp(Color::from_rgb(0x00FF00));
+    table.set_default_fg(color_from_rgb(0xFFFFFF));
+    table.set_default_bg(color_from_rgb(0x101010));
+    table.set_default_sp(color_from_rgb(0x00FF00));
 
     HlAttr attr;
-    attr.fg = Color::from_rgb(0x123456);
-    attr.bg = Color::from_rgb(0x654321);
-    attr.sp = Color::from_rgb(0xABCDEF);
+    attr.fg = color_from_rgb(0x123456);
+    attr.bg = color_from_rgb(0x654321);
+    attr.sp = color_from_rgb(0xABCDEF);
     attr.has_fg = true;
     attr.has_bg = true;
     attr.has_sp = true;
@@ -25,20 +25,20 @@ TEST_CASE("highlight table resolves explicit colors and special color", "[highli
     Color sp;
     table.resolve(attr, fg, bg, &sp);
 
-    REQUIRE(fg == Color::from_rgb(0x123456));
-    REQUIRE(bg == Color::from_rgb(0x654321));
-    REQUIRE(sp == Color::from_rgb(0xABCDEF));
+    REQUIRE(fg == color_from_rgb(0x123456));
+    REQUIRE(bg == color_from_rgb(0x654321));
+    REQUIRE(sp == color_from_rgb(0xABCDEF));
 }
 
 TEST_CASE("highlight table reverses colors without losing accent color", "[highlight]")
 {
     HighlightTable table;
-    table.set_default_fg(Color::from_rgb(0xFFFFFF));
-    table.set_default_bg(Color::from_rgb(0x101010));
+    table.set_default_fg(color_from_rgb(0xFFFFFF));
+    table.set_default_bg(color_from_rgb(0x101010));
 
     HlAttr attr;
-    attr.fg = Color::from_rgb(0x123456);
-    attr.bg = Color::from_rgb(0x654321);
+    attr.fg = color_from_rgb(0x123456);
+    attr.bg = color_from_rgb(0x654321);
     attr.has_fg = true;
     attr.has_bg = true;
     attr.reverse = true;
@@ -48,16 +48,16 @@ TEST_CASE("highlight table reverses colors without losing accent color", "[highl
     Color sp;
     table.resolve(attr, fg, bg, &sp);
 
-    REQUIRE(fg == Color::from_rgb(0x654321));
-    REQUIRE(bg == Color::from_rgb(0x123456));
+    REQUIRE(fg == color_from_rgb(0x654321));
+    REQUIRE(bg == color_from_rgb(0x123456));
     REQUIRE(sp == fg);
 }
 
 TEST_CASE("highlight table: plain reverse-video swaps defaults", "[highlight]")
 {
     HighlightTable table;
-    table.set_default_fg(Color::from_rgb(0xFFFFFF));
-    table.set_default_bg(Color::from_rgb(0x000000));
+    table.set_default_fg(color_from_rgb(0xFFFFFF));
+    table.set_default_bg(color_from_rgb(0x000000));
 
     HlAttr attr;
     attr.reverse = true;
@@ -66,19 +66,19 @@ TEST_CASE("highlight table: plain reverse-video swaps defaults", "[highlight]")
     table.resolve(attr, fg, bg);
 
     INFO("reverse-video: default fg becomes bg");
-    REQUIRE(fg == Color::from_rgb(0x000000));
+    REQUIRE(fg == color_from_rgb(0x000000));
     INFO("reverse-video: default bg becomes fg");
-    REQUIRE(bg == Color::from_rgb(0xFFFFFF));
+    REQUIRE(bg == color_from_rgb(0xFFFFFF));
 }
 
 TEST_CASE("highlight table: reverse-video with explicit fg only", "[highlight]")
 {
     HighlightTable table;
-    table.set_default_fg(Color::from_rgb(0xFFFFFF));
-    table.set_default_bg(Color::from_rgb(0x000000));
+    table.set_default_fg(color_from_rgb(0xFFFFFF));
+    table.set_default_bg(color_from_rgb(0x000000));
 
     HlAttr attr;
-    attr.fg = Color::from_rgb(0xFF0000);
+    attr.fg = color_from_rgb(0xFF0000);
     attr.has_fg = true;
     attr.reverse = true;
 
@@ -86,19 +86,19 @@ TEST_CASE("highlight table: reverse-video with explicit fg only", "[highlight]")
     table.resolve(attr, fg, bg);
 
     INFO("reverse-video + explicit fg: explicit fg becomes bg");
-    REQUIRE(bg == Color::from_rgb(0xFF0000));
+    REQUIRE(bg == color_from_rgb(0xFF0000));
     INFO("reverse-video + explicit fg: default bg becomes fg");
-    REQUIRE(fg == Color::from_rgb(0x000000));
+    REQUIRE(fg == color_from_rgb(0x000000));
 }
 
 TEST_CASE("highlight table: reverse-video with explicit bg only", "[highlight]")
 {
     HighlightTable table;
-    table.set_default_fg(Color::from_rgb(0xFFFFFF));
-    table.set_default_bg(Color::from_rgb(0x000000));
+    table.set_default_fg(color_from_rgb(0xFFFFFF));
+    table.set_default_bg(color_from_rgb(0x000000));
 
     HlAttr attr;
-    attr.bg = Color::from_rgb(0x00FF00);
+    attr.bg = color_from_rgb(0x00FF00);
     attr.has_bg = true;
     attr.reverse = true;
 
@@ -106,20 +106,20 @@ TEST_CASE("highlight table: reverse-video with explicit bg only", "[highlight]")
     table.resolve(attr, fg, bg);
 
     INFO("reverse-video + explicit bg: explicit bg becomes fg");
-    REQUIRE(fg == Color::from_rgb(0x00FF00));
+    REQUIRE(fg == color_from_rgb(0x00FF00));
     INFO("reverse-video + explicit bg: default fg becomes bg");
-    REQUIRE(bg == Color::from_rgb(0xFFFFFF));
+    REQUIRE(bg == color_from_rgb(0xFFFFFF));
 }
 
 TEST_CASE("highlight table: reverse-video with both explicit fg and bg", "[highlight]")
 {
     HighlightTable table;
-    table.set_default_fg(Color::from_rgb(0xFFFFFF));
-    table.set_default_bg(Color::from_rgb(0x000000));
+    table.set_default_fg(color_from_rgb(0xFFFFFF));
+    table.set_default_bg(color_from_rgb(0x000000));
 
     HlAttr attr;
-    attr.fg = Color::from_rgb(0xFF0000);
-    attr.bg = Color::from_rgb(0x00FF00);
+    attr.fg = color_from_rgb(0xFF0000);
+    attr.bg = color_from_rgb(0x00FF00);
     attr.has_fg = true;
     attr.has_bg = true;
     attr.reverse = true;
@@ -128,19 +128,19 @@ TEST_CASE("highlight table: reverse-video with both explicit fg and bg", "[highl
     table.resolve(attr, fg, bg);
 
     INFO("reverse-video + both explicit: fg and bg are swapped");
-    REQUIRE(fg == Color::from_rgb(0x00FF00));
-    REQUIRE(bg == Color::from_rgb(0xFF0000));
+    REQUIRE(fg == color_from_rgb(0x00FF00));
+    REQUIRE(bg == color_from_rgb(0xFF0000));
 }
 
 TEST_CASE("highlight table: no reverse with explicit colors passes through", "[highlight]")
 {
     HighlightTable table;
-    table.set_default_fg(Color::from_rgb(0xFFFFFF));
-    table.set_default_bg(Color::from_rgb(0x000000));
+    table.set_default_fg(color_from_rgb(0xFFFFFF));
+    table.set_default_bg(color_from_rgb(0x000000));
 
     HlAttr attr;
-    attr.fg = Color::from_rgb(0xFF0000);
-    attr.bg = Color::from_rgb(0x00FF00);
+    attr.fg = color_from_rgb(0xFF0000);
+    attr.bg = color_from_rgb(0x00FF00);
     attr.has_fg = true;
     attr.has_bg = true;
     attr.reverse = false;
@@ -149,16 +149,16 @@ TEST_CASE("highlight table: no reverse with explicit colors passes through", "[h
     table.resolve(attr, fg, bg);
 
     INFO("no reverse: fg passes through");
-    REQUIRE(fg == Color::from_rgb(0xFF0000));
+    REQUIRE(fg == color_from_rgb(0xFF0000));
     INFO("no reverse: bg passes through");
-    REQUIRE(bg == Color::from_rgb(0x00FF00));
+    REQUIRE(bg == color_from_rgb(0x00FF00));
 }
 
 TEST_CASE("highlight table: reverse-video special color falls back to post-swap fg", "[highlight]")
 {
     HighlightTable table;
-    table.set_default_fg(Color::from_rgb(0xFFFFFF));
-    table.set_default_bg(Color::from_rgb(0x000000));
+    table.set_default_fg(color_from_rgb(0xFFFFFF));
+    table.set_default_bg(color_from_rgb(0x000000));
 
     HlAttr attr;
     attr.reverse = true;
@@ -169,17 +169,17 @@ TEST_CASE("highlight table: reverse-video special color falls back to post-swap 
 
     INFO("special color falls back to post-swap fg");
     REQUIRE(sp == fg);
-    REQUIRE(sp == Color::from_rgb(0x000000));
+    REQUIRE(sp == color_from_rgb(0x000000));
 }
 
 TEST_CASE("highlight table: reverse-video with explicit special color preserves it", "[highlight]")
 {
     HighlightTable table;
-    table.set_default_fg(Color::from_rgb(0xFFFFFF));
-    table.set_default_bg(Color::from_rgb(0x000000));
+    table.set_default_fg(color_from_rgb(0xFFFFFF));
+    table.set_default_bg(color_from_rgb(0x000000));
 
     HlAttr attr;
-    attr.sp = Color::from_rgb(0x0000FF);
+    attr.sp = color_from_rgb(0x0000FF);
     attr.has_sp = true;
     attr.reverse = true;
 
@@ -187,14 +187,14 @@ TEST_CASE("highlight table: reverse-video with explicit special color preserves 
     table.resolve(attr, fg, bg, &sp);
 
     INFO("explicit special color is not affected by reverse");
-    REQUIRE(sp == Color::from_rgb(0x0000FF));
+    REQUIRE(sp == color_from_rgb(0x0000FF));
 }
 
 TEST_CASE("highlight table: visual mode transition from normal to reverse", "[highlight]")
 {
     HighlightTable table;
-    table.set_default_fg(Color::from_rgb(0xD4D4D4));
-    table.set_default_bg(Color::from_rgb(0x1E1E1E));
+    table.set_default_fg(color_from_rgb(0xD4D4D4));
+    table.set_default_bg(color_from_rgb(0x1E1E1E));
 
     // Normal mode highlight
     HlAttr normal;
@@ -208,9 +208,9 @@ TEST_CASE("highlight table: visual mode transition from normal to reverse", "[hi
     table.resolve(visual, vis_fg, vis_bg);
 
     INFO("normal mode uses default colors");
-    REQUIRE(norm_fg == Color::from_rgb(0xD4D4D4));
-    REQUIRE(norm_bg == Color::from_rgb(0x1E1E1E));
+    REQUIRE(norm_fg == color_from_rgb(0xD4D4D4));
+    REQUIRE(norm_bg == color_from_rgb(0x1E1E1E));
     INFO("visual mode swaps the colors");
-    REQUIRE(vis_fg == Color::from_rgb(0x1E1E1E));
-    REQUIRE(vis_bg == Color::from_rgb(0xD4D4D4));
+    REQUIRE(vis_fg == color_from_rgb(0x1E1E1E));
+    REQUIRE(vis_bg == color_from_rgb(0xD4D4D4));
 }

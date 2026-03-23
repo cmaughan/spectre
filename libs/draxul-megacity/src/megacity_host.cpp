@@ -245,7 +245,7 @@ void MegaCityHost::request_close()
 
 Color MegaCityHost::default_background() const
 {
-    return { 0.05f, 0.05f, 0.10f, 1.0f }; // dark navy — city at night
+    return Color(0.05f, 0.05f, 0.10f, 1.0f); // dark navy — city at night
 }
 
 HostRuntimeState MegaCityHost::runtime_state() const

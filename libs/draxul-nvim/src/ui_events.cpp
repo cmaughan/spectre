@@ -328,17 +328,17 @@ void UiEventHandler::handle_hl_attr_define(const MpackValue& args)
             const std::string& k = key.as_str();
             if (k == "foreground")
             {
-                hl.fg = Color::from_rgb((uint32_t)val.as_int());
+                hl.fg = color_from_rgb((uint32_t)val.as_int());
                 hl.has_fg = true;
             }
             else if (k == "background")
             {
-                hl.bg = Color::from_rgb((uint32_t)val.as_int());
+                hl.bg = color_from_rgb((uint32_t)val.as_int());
                 hl.has_bg = true;
             }
             else if (k == "special")
             {
-                hl.sp = Color::from_rgb((uint32_t)val.as_int());
+                hl.sp = color_from_rgb((uint32_t)val.as_int());
                 hl.has_sp = true;
             }
             else if (k == "bold")
@@ -380,9 +380,9 @@ void UiEventHandler::handle_default_colors_set(const MpackValue& args)
     auto bg = (uint32_t)args_array[1].as_int();
     auto sp = (uint32_t)args_array[2].as_int();
 
-    highlights_->set_default_fg(Color::from_rgb(fg));
-    highlights_->set_default_bg(Color::from_rgb(bg));
-    highlights_->set_default_sp(Color::from_rgb(sp));
+    highlights_->set_default_fg(color_from_rgb(fg));
+    highlights_->set_default_bg(color_from_rgb(bg));
+    highlights_->set_default_sp(color_from_rgb(sp));
 }
 
 void UiEventHandler::handle_mode_info_set(const MpackValue& args)

@@ -108,8 +108,8 @@ void SelectionManager::update_overlay() const
         std::swap(c1, c2);
     }
 
-    static constexpr Color kSelBg = { 0.27f, 0.44f, 0.78f, 1.0f };
-    static constexpr Color kSelFg = { 1.0f, 1.0f, 1.0f, 1.0f };
+    static const Color kSelBg(0.27f, 0.44f, 0.78f, 1.0f);
+    static const Color kSelFg(1.0f, 1.0f, 1.0f, 1.0f);
 
     std::vector<CellUpdate> overlays;
     overlays.reserve(std::min(kSelectionMaxCells, (r2 - r1 + 1) * cbs_.grid_cols()));

@@ -11,9 +11,9 @@ namespace draxul
 
 struct HlAttr
 {
-    Color fg = { 1.0f, 1.0f, 1.0f, 1.0f };
-    Color bg = { 0.0f, 0.0f, 0.0f, 1.0f };
-    Color sp = { 1.0f, 1.0f, 1.0f, 1.0f };
+    Color fg = Color(1.0f, 1.0f, 1.0f, 1.0f);
+    Color bg = Color(0.0f, 0.0f, 0.0f, 1.0f);
+    Color sp = Color(1.0f, 1.0f, 1.0f, 1.0f);
     bool has_fg = false;
     bool has_bg = false;
     bool has_sp = false;
@@ -142,8 +142,8 @@ public:
 
 private:
     std::unordered_map<uint16_t, HlAttr> attrs_;
-    Color default_fg_ = { 1.0f, 1.0f, 1.0f, 1.0f };
-    Color default_bg_ = { 0.1f, 0.1f, 0.1f, 1.0f };
+    Color default_fg_ = Color(1.0f, 1.0f, 1.0f, 1.0f);
+    Color default_bg_ = Color(0.1f, 0.1f, 0.1f, 1.0f);
     HlAttr default_ = {};
 };
 
