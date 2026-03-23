@@ -1,6 +1,6 @@
 # 04 app-smoke-test -test
 
-**Status:** Superseded by work item 23 (app-testable-window-renderer)
+**Status:** Complete
 
 **Priority:** HIGH
 **Type:** Test (end-to-end orchestrator coverage)
@@ -17,17 +17,19 @@ There is no test that exercises `App::initialize()` → `App::pump_once()` × N 
 
 ## Implementation Plan
 
-- [ ] Read `app/app.h` and `app/app.cpp` to understand `App::initialize()`, `pump_once()`, and `shutdown()` signatures and dependencies.
-- [ ] Read `tests/fakes/` — locate `FakeWindow`, `FakeRenderer`, and any existing fake Neovim process stubs.
-- [ ] Read `tests/CMakeLists.txt` to understand how to add the new test file to the build.
-- [ ] Design the test:
+- [x] Read `app/app.h` and `app/app.cpp` to understand `App::initialize()`, `pump_once()`, and `shutdown()` signatures and dependencies.
+- [x] Read `tests/fakes/` — locate `FakeWindow`, `FakeRenderer`, and any existing fake Neovim process stubs.
+- [x] Read `tests/CMakeLists.txt` to understand how to add the new test file to the build.
+- [x] Design the test:
   - Construct `App` with `FakeWindow` + `FakeRenderer` + a fake or null `NvimProcess` (or a loopback pipe that immediately exits).
   - Call `App::initialize()` — assert it returns success.
   - Call `App::pump_once()` a small number of times (e.g., 3) — assert no crash, no assertion failure.
   - Call `App::shutdown()` — assert clean teardown.
-- [ ] If `App` does not currently accept injected stubs (i.e., it constructs its own concrete subsystems), a small refactor of the constructor/factory may be needed first — discuss with the user before proceeding.
-- [ ] Add the test file to `tests/CMakeLists.txt`.
-- [ ] Build and run: `cmake --build build --target draxul-tests && ctest`.
+- [x] If `App` does not currently accept injected stubs (i.e., it constructs its own concrete subsystems), a small refactor of the constructor/factory may be needed first — discuss with the user before proceeding.
+  - Added `host_factory` override to `AppOptions` (analogous to existing `window_factory` and `renderer_create_fn`).
+  - Wired into `HostManager::create_host_for_leaf()` to use the factory when set.
+- [x] Add the test file to `tests/CMakeLists.txt`.
+- [x] Build and run: `cmake --build build --target draxul-tests && ctest`.
 
 ---
 
