@@ -135,6 +135,7 @@ void TerminalHostBase::on_viewport_changed()
     vt_.scroll_bottom = grid_rows() - 1;
     do_process_resize(new_cols, new_rows);
     force_full_redraw();
+    flush_grid();
     update_cursor_style();
 }
 

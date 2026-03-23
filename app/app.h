@@ -85,6 +85,8 @@ private:
     bool pending_window_activation_ = true;
     bool saw_frame_ = false;
     bool frame_requested_ = false;
+    int last_pixel_w_ = 0;
+    int last_pixel_h_ = 0;
     FrameTimer frame_timer_;
     float display_ppi_ = 96.0f;
     std::chrono::steady_clock::time_point last_panel_frame_time_ = std::chrono::steady_clock::now();

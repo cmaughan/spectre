@@ -197,6 +197,10 @@ bool App::initialize()
 
     wire_window_callbacks();
 
+    // Snapshot the initial window size so the pump loop's size-change check
+    // has a correct baseline (avoids a spurious on_resize on the first frame).
+    std::tie(last_pixel_w_, last_pixel_h_) = window_->size_pixels();
+
     saw_frame_ = false;
     frame_requested_ = false;
     last_panel_frame_time_ = std::chrono::steady_clock::now();
@@ -514,6 +518,14 @@ bool App::pump_once(std::optional<std::chrono::steady_clock::time_point> wait_de
             return false;
         }
 
+        // Safety net: detect window size changes that SDL may not deliver as
+        // events (e.g. during a Windows modal resize drag).
+        {
+            auto [pw, ph] = window_->size_pixels();
+            if (pw != last_pixel_w_ || ph != last_pixel_h_)
+                on_resize(pw, ph);
+        }
+
         if (!close_dead_panes())
             return false;
         input_dispatcher_.set_host(host_manager_.focused_host());
@@ -550,6 +562,10 @@ bool App::pump_once(std::optional<std::chrono::steady_clock::time_point> wait_de
 
 void App::on_resize(int pixel_w, int pixel_h)
 {
+    if (pixel_w == last_pixel_w_ && pixel_h == last_pixel_h_)
+        return;
+    last_pixel_w_ = pixel_w;
+    last_pixel_h_ = pixel_h;
     renderer_.grid()->resize(pixel_w, pixel_h);
     refresh_window_layout();
     host_manager_.recompute_viewports(pixel_w, ui_panel_.layout().terminal_height);
