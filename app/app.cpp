@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <chrono>
 #include <draxul/log.h>
+#include <draxul/sdl_window.h>
 #include <utility>
 
 namespace draxul
@@ -19,9 +20,13 @@ namespace
 {
 
 #ifdef DRAXUL_ENABLE_RENDER_TESTS
-void normalize_render_target_window_size(SdlWindow& window, const AppOptions& options)
+void normalize_render_target_window_size(IWindow& window, const AppOptions& options)
 {
     if (options.render_target_pixel_width <= 0 || options.render_target_pixel_height <= 0)
+        return;
+
+    auto* sdl = dynamic_cast<SdlWindow*>(&window);
+    if (!sdl)
         return;
 
     auto [logical_w, logical_h] = window.size_logical();
@@ -34,7 +39,7 @@ void normalize_render_target_window_size(SdlWindow& window, const AppOptions& op
     const int target_logical_w = std::max(1, static_cast<int>(std::lround(static_cast<double>(logical_w) * options.render_target_pixel_width / pixel_w)));
     const int target_logical_h = std::max(1, static_cast<int>(std::lround(static_cast<double>(logical_h) * options.render_target_pixel_height / pixel_h)));
 
-    window.set_size_logical(target_logical_w, target_logical_h);
+    sdl->set_size_logical(target_logical_w, target_logical_h);
 }
 #endif
 
@@ -105,20 +110,31 @@ bool App::initialize()
         return false;
 
     if (!time_step("Window Create (SDL)", [this]() {
-            window_.set_clamp_to_display(options_.clamp_window_to_display);
+            if (options_.window_factory)
+            {
+                window_ = options_.window_factory();
+            }
+            else
+            {
+                auto sdl = std::make_unique<SdlWindow>();
+                sdl->set_clamp_to_display(options_.clamp_window_to_display);
 #ifdef DRAXUL_ENABLE_RENDER_TESTS
-            window_.set_hidden(options_.render_target_pixel_width > 0 && !options_.show_render_test_window);
+                sdl->set_hidden(options_.render_target_pixel_width > 0 && !options_.show_render_test_window);
 #endif
-            const bool ok = options_.window_init_fn
-                ? options_.window_init_fn()
-                : window_.initialize("Draxul", config_.window_width, config_.window_height);
-            if (!ok)
+                if (!sdl->initialize("Draxul", config_.window_width, config_.window_height))
+                {
+                    last_init_error_ = "Failed to create the application window.";
+                    return false;
+                }
+                window_ = std::move(sdl);
+            }
+            if (!window_)
             {
                 last_init_error_ = "Failed to create the application window.";
                 return false;
             }
 #ifdef DRAXUL_ENABLE_RENDER_TESTS
-            normalize_render_target_window_size(window_, options_);
+            normalize_render_target_window_size(*window_, options_);
 #endif
             return true;
         }))
@@ -128,7 +144,7 @@ bool App::initialize()
             renderer_ = options_.renderer_create_fn
                 ? options_.renderer_create_fn(config_.atlas_size)
                 : create_renderer(config_.atlas_size);
-            if (!renderer_ || !renderer_.grid()->initialize(window_))
+            if (!renderer_ || !renderer_.grid()->initialize(*window_))
             {
                 last_init_error_ = "Failed to initialize the renderer.";
                 return false;
@@ -204,7 +220,7 @@ TextServiceConfig App::make_text_service_config() const
 
 bool App::initialize_text_service()
 {
-    display_ppi_ = options_.override_display_ppi.value_or(window_.display_ppi());
+    display_ppi_ = options_.override_display_ppi.value_or(window_->display_ppi());
 
     const TextServiceConfig text_config = make_text_service_config();
     if (!text_service_.initialize(text_config, config_.font_size, display_ppi_))
@@ -234,7 +250,7 @@ void App::apply_font_metrics()
     if (host_manager_.host())
         host_manager_.host()->on_font_metrics_changed();
     refresh_window_layout();
-    auto [pixel_w, pixel_h] = window_.size_pixels();
+    auto [pixel_w, pixel_h] = window_->size_pixels();
     (void)pixel_h;
     host_manager_.recompute_viewports(pixel_w, ui_panel_.layout().terminal_height);
     request_frame();
@@ -245,7 +261,7 @@ bool App::initialize_host()
     HostManager::Deps host_deps;
     host_deps.options = &options_;
     host_deps.config = &config_;
-    host_deps.window = &window_;
+    host_deps.window = window_.get();
     host_deps.grid_renderer = renderer_.grid();
     host_deps.imgui_host = renderer_.imgui();
     host_deps.text_service = &text_service_;
@@ -255,7 +271,7 @@ bool App::initialize_host()
     };
     host_manager_ = HostManager(std::move(host_deps));
 
-    auto [pixel_w, pixel_h] = window_.size_pixels();
+    auto [pixel_w, pixel_h] = window_->size_pixels();
     (void)pixel_h;
     auto callbacks = make_host_callbacks();
     if (!host_manager_.create(std::move(callbacks), pixel_w, ui_panel_.layout().terminal_height))
@@ -282,9 +298,9 @@ HostCallbacks App::make_host_callbacks()
     HostCallbacks callbacks;
     callbacks.request_frame = [this]() { request_frame(); };
     callbacks.request_quit = [this]() { request_quit(); };
-    callbacks.wake_window = [this]() { window_.wake(); };
-    callbacks.set_window_title = [this](const std::string& title) { window_.set_title(title); };
-    callbacks.set_text_input_area = [this](int x, int y, int w, int h) { window_.set_text_input_area(x, y, w, h); };
+    callbacks.wake_window = [this]() { window_->wake(); };
+    callbacks.set_window_title = [this](const std::string& title) { window_->set_title(title); };
+    callbacks.set_text_input_area = [this](int x, int y, int w, int h) { window_->set_text_input_area(x, y, w, h); };
     return callbacks;
 }
 
@@ -297,7 +313,7 @@ void App::wire_gui_actions()
     gui_deps.imgui_host = renderer_.imgui();
     gui_deps.config = &config_;
     gui_deps.on_font_changed = [this]() { apply_font_metrics(); };
-    gui_deps.on_open_file_dialog = [this]() { window_.show_open_file_dialog(); };
+    gui_deps.on_open_file_dialog = [this]() { window_->show_open_file_dialog(); };
     gui_deps.on_split_vertical = [this]() {
         auto cbs = make_host_callbacks();
         LeafId new_leaf = host_manager_.split_focused(SplitDirection::Vertical, std::move(cbs));
@@ -318,7 +334,7 @@ void App::wire_gui_actions()
     };
     gui_deps.on_panel_toggled = [this]() {
         refresh_window_layout();
-        auto [pixel_w, pixel_h] = window_.size_pixels();
+        auto [pixel_w, pixel_h] = window_->size_pixels();
         (void)pixel_h;
         host_manager_.recompute_viewports(pixel_w, ui_panel_.layout().terminal_height);
         update_diagnostics_panel();
@@ -338,8 +354,8 @@ void App::wire_window_callbacks()
     disp_deps.smooth_scroll = config_.smooth_scroll;
     disp_deps.scroll_speed = config_.scroll_speed;
     {
-        auto [pixel_w, pixel_h] = window_.size_pixels();
-        auto [logical_w, logical_h] = window_.size_logical();
+        auto [pixel_w, pixel_h] = window_->size_pixels();
+        auto [logical_w, logical_h] = window_->size_logical();
         (void)pixel_h;
         (void)logical_h;
         disp_deps.pixel_scale = logical_w > 0 ? static_cast<float>(pixel_w) / static_cast<float>(logical_w) : 1.0f;
@@ -348,7 +364,7 @@ void App::wire_window_callbacks()
     disp_deps.on_resize = [this](int w, int h) { on_resize(w, h); };
     disp_deps.on_display_scale_changed = [this](float ppi) { on_display_scale_changed(ppi); };
     input_dispatcher_ = InputDispatcher(std::move(disp_deps));
-    input_dispatcher_.connect(window_);
+    input_dispatcher_.connect(*window_);
 }
 
 void App::run()
@@ -488,11 +504,11 @@ bool App::pump_once(std::optional<std::chrono::steady_clock::time_point> wait_de
     {
         if (pending_window_activation_)
         {
-            window_.activate();
+            window_->activate();
             pending_window_activation_ = false;
         }
 
-        if (!window_.poll_events())
+        if (!window_->poll_events())
         {
             request_quit();
             return false;
@@ -522,7 +538,7 @@ bool App::pump_once(std::optional<std::chrono::steady_clock::time_point> wait_de
         if (wait_deadline && std::chrono::steady_clock::now() >= *wait_deadline)
             return running_;
 
-        if (!window_.wait_events(wait_timeout_ms(wait_deadline)))
+        if (!window_->wait_events(wait_timeout_ms(wait_deadline)))
         {
             request_quit();
             return false;
@@ -556,8 +572,8 @@ void App::on_display_scale_changed(float new_ppi)
     apply_font_metrics();
 
     // Keep the input dispatcher's pixel_scale in sync so mouse hit-testing remains correct.
-    auto [pixel_w, pixel_h] = window_.size_pixels();
-    auto [logical_w, logical_h] = window_.size_logical();
+    auto [pixel_w, pixel_h] = window_->size_pixels();
+    auto [logical_w, logical_h] = window_->size_logical();
     (void)pixel_h;
     (void)logical_h;
     if (logical_w > 0)
@@ -567,7 +583,7 @@ void App::on_display_scale_changed(float new_ppi)
 void App::request_frame()
 {
     frame_requested_ = true;
-    window_.wake();
+    window_->wake();
 }
 
 void App::request_quit()
@@ -608,8 +624,8 @@ void App::update_diagnostics_panel()
 
 void App::refresh_window_layout()
 {
-    auto [pixel_w, pixel_h] = window_.size_pixels();
-    const auto [logical_w, logical_h] = window_.size_logical();
+    auto [pixel_w, pixel_h] = window_->size_pixels();
+    const auto [logical_w, logical_h] = window_->size_logical();
     auto [cell_w, cell_h] = renderer_.grid()->cell_size_pixels();
     const float pixel_scale = logical_w > 0 ? static_cast<float>(pixel_w) / static_cast<float>(logical_w) : 1.0f;
     (void)logical_h;
@@ -663,7 +679,7 @@ void App::shutdown()
     if (options_.save_user_config && init_completed_)
     {
         init_completed_ = false; // prevent double-save on repeated shutdown() calls
-        auto [window_w, window_h] = window_.size_logical();
+        auto [window_w, window_h] = window_->size_logical();
         if (window_w > 0 && window_h > 0)
         {
             config_.window_width = window_w;
@@ -685,7 +701,8 @@ void App::shutdown()
     ui_panel_.shutdown();
     if (renderer_.grid())
         renderer_.grid()->shutdown();
-    window_.shutdown();
+    if (window_)
+        window_->shutdown();
 }
 
 } // namespace draxul

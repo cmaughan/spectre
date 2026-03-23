@@ -12,6 +12,7 @@ struct GuiKeybinding;
 class GuiActionHandler;
 class UiPanel;
 class IHost;
+class IWindow;
 class HostManager;
 class SdlWindow;
 struct KeyEvent;
@@ -53,7 +54,7 @@ public:
     explicit InputDispatcher(Deps deps);
 
     // Installs this dispatcher's lambdas as the window's event callbacks.
-    void connect(SdlWindow& window);
+    void connect(IWindow& window);
 
     // Updates the host pointer (used when focus changes between panes).
     void set_host(IHost* host)

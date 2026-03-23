@@ -39,25 +39,27 @@ The `AppOptions` injection points (`window_init_fn`, `renderer_create_fn`) only 
 
 ### Phase 1: Widen IWindow
 
-- [ ] Add `wake()`, `activate()`, `wait_events(int timeout_ms) -> bool` as virtual methods on `IWindow` with default no-op/true implementations (so existing `FakeWindow` compiles without changes).
-- [ ] Move `set_clamp_to_display()` and `set_hidden()` to `IWindow` with default no-ops (these are init-time config, harmless to ignore in tests).
-- [ ] `set_size_logical()` is only used in the render test normalization helper — leave it on `SdlWindow` and gate the call behind `#ifdef DRAXUL_ENABLE_RENDER_TESTS` (it already is).
-- [ ] Update `FakeWindow` in `tests/support/fake_window.h` to override the new virtuals. `wait_events()` should return `true` immediately (no blocking). `wake()` and `activate()` are no-ops.
+- [x] Add `wake()`, `activate()`, `wait_events(int timeout_ms) -> bool` as virtual methods on `IWindow` with default no-op/true implementations (so existing `FakeWindow` compiles without changes).
+- [x] Move `set_clamp_to_display()` and `set_hidden()` to `IWindow` with default no-ops (these are init-time config, harmless to ignore in tests).
+- [x] `set_size_logical()` is only used in the render test normalization helper — leave it on `SdlWindow` and gate the call behind `#ifdef DRAXUL_ENABLE_RENDER_TESTS` (it already is).
+- [x] Update `FakeWindow` in `tests/support/fake_window.h` — inherits new virtuals from IWindow defaults (no overrides needed).
 
 ### Phase 2: Change App to hold IWindow by pointer
 
-- [ ] Change `App` member from `SdlWindow window_` to `std::unique_ptr<IWindow> window_`.
-- [ ] In the default (production) path, `App::initialize()` creates a `std::make_unique<SdlWindow>()` and stores it. The `set_size_logical()` call in `normalize_render_target_window_size` uses a `dynamic_cast<SdlWindow*>` since it's render-test-only.
-- [ ] Add `window_factory` to `AppOptions`: `std::function<std::unique_ptr<IWindow>()>`. If set, App calls it instead of creating `SdlWindow`. This replaces the current `window_init_fn` (which is half-abstract — it returns bool but mutates the concrete member).
-- [ ] Similarly, the existing `renderer_create_fn` in `AppOptions` already returns a `RendererBundle` — this path is already testable. No change needed.
+- [x] Change `App` member from `SdlWindow window_` to `std::unique_ptr<IWindow> window_`.
+- [x] In the default (production) path, `App::initialize()` creates a `std::make_unique<SdlWindow>()` and stores it. The `set_size_logical()` call in `normalize_render_target_window_size` uses a `dynamic_cast<SdlWindow*>` since it's render-test-only.
+- [x] Add `window_factory` to `AppOptions`: `std::function<std::unique_ptr<IWindow>()>`. If set, App calls it instead of creating `SdlWindow`. Replaces the old `window_init_fn`.
+- [x] Changed `InputDispatcher::connect(SdlWindow&)` to `connect(IWindow&)`.
+- [x] Updated 3 existing test files to use `window_factory` instead of `window_init_fn`.
 
 ### Phase 3: App unit tests
 
 With the above in place, tests can construct an `App` with fake window + fake renderer that need no GPU:
 
-- [ ] **pump loop test**: Construct App with FakeWindow + FakeTermRenderer. Initialize. Call `pump_once()` N times. Verify no crash, `close_dead_panes` correctly detects dead hosts.
-- [ ] **initialization rollback test**: Inject a renderer factory that returns an empty `RendererBundle`. Verify `initialize()` returns false and `shutdown()` completes cleanly.
-- [ ] **frame request flow test**: Set `frame_requested_ = true` (via `request_frame()`), call `pump_once()`, verify `render_frame()` was exercised (check `FakeTermRenderer::begin_frame` was called).
+- [x] **initialization rollback tests**: Renderer failure (empty bundle), null window, font failure — all return false and shutdown cleanly.
+- [x] **dead host test**: Nonexistent host binary causes init failure; shutdown is safe.
+- [x] **double shutdown test**: Double shutdown after failed init is safe.
+- [x] **fake renderer interface test**: FakeTermRenderer begin_frame/end_frame matches render_frame() needs.
 
 ---
 

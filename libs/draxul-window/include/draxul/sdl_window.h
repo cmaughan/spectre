@@ -10,11 +10,11 @@ namespace draxul
 class SdlWindow : public IWindow
 {
 public:
-    void set_clamp_to_display(bool clamp)
+    void set_clamp_to_display(bool clamp) override
     {
         clamp_to_display_ = clamp;
     }
-    void set_hidden(bool hidden)
+    void set_hidden(bool hidden) override
     {
         hidden_ = hidden;
     }
@@ -22,9 +22,9 @@ public:
     void set_size_logical(int width, int height);
     void shutdown() override;
     bool poll_events() override;
-    bool wait_events(int timeout_ms);
-    void activate();
-    void wake() const;
+    bool wait_events(int timeout_ms) override;
+    void activate() override;
+    void wake() override;
     void* native_handle() override // NOSONAR cpp:S5008
     {
         return window_;

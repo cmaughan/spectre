@@ -6,7 +6,8 @@
 #include <chrono>
 #include <draxul/app_config.h>
 #include <draxul/host.h>
-#include <draxul/sdl_window.h>
+#include <draxul/window.h>
+#include <memory>
 #include <optional>
 #include <string>
 #ifdef __APPLE__
@@ -71,7 +72,7 @@ private:
 
     AppOptions options_;
     AppConfig config_;
-    SdlWindow window_;
+    std::unique_ptr<IWindow> window_;
     RendererBundle renderer_;
     TextService text_service_;
     UiPanel ui_panel_;

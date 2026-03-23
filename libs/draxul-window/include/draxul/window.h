@@ -25,6 +25,20 @@ public:
     virtual bool set_clipboard_text(const std::string& text) = 0;
     virtual void set_text_input_area(int x, int y, int w, int h) = 0;
 
+    // Wake the event loop from another thread (e.g. after a host requests a frame).
+    virtual void wake() {}
+    // Bring the window to the foreground and give it input focus.
+    virtual void activate() {}
+    // Block until an event arrives or timeout_ms elapses. Returns false if quit.
+    virtual bool wait_events(int /*timeout_ms*/)
+    {
+        return true;
+    }
+    // Hint to clamp the window position to display bounds.
+    virtual void set_clamp_to_display(bool) {}
+    // Hint to create the window hidden (used for headless render tests).
+    virtual void set_hidden(bool) {}
+
     // Show the platform native file-open dialog. Non-blocking: when the user
     // picks a file (or cancels), on_drop_file is called with the path (or no
     // call is made on cancel). The default implementation does nothing.

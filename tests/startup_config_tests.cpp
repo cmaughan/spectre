@@ -2,6 +2,7 @@
 // persist config to disk (validates fix for 00-startup-config-save-on-failure).
 
 #include "support/fake_renderer.h"
+#include "support/fake_window.h"
 
 #include <atomic>
 #include <catch2/catch_all.hpp>
@@ -140,7 +141,7 @@ TEST_CASE("config not saved: window creation failure does not overwrite config [
 
     AppOptions opts = base_options();
     opts.save_user_config = true;
-    opts.window_init_fn = []() { return false; };
+    opts.window_factory = []() -> std::unique_ptr<IWindow> { return nullptr; };
 
     App app(std::move(opts));
     REQUIRE(!app.initialize());
@@ -165,7 +166,7 @@ TEST_CASE("config not saved: renderer init failure does not overwrite config [in
 
     AppOptions opts = base_options();
     opts.save_user_config = true;
-    opts.window_init_fn = []() { return true; };
+    opts.window_factory = []() { return std::make_unique<FakeWindow>(); };
     opts.renderer_create_fn = [](int) { return RendererBundle{}; };
 
     App app(std::move(opts));
@@ -191,7 +192,7 @@ TEST_CASE("config not saved: font load failure does not overwrite config [integr
 
     AppOptions opts = base_options();
     opts.save_user_config = true;
-    opts.window_init_fn = []() { return true; };
+    opts.window_factory = []() { return std::make_unique<FakeWindow>(); };
     opts.renderer_create_fn = &make_fake_renderer;
     opts.config_overrides.font_path = "/nonexistent/draxul_test_fake_font.ttf";
     opts.override_display_ppi = 96.0f;
@@ -213,7 +214,7 @@ TEST_CASE("config not saved: failed init does not create config file when none e
 
     AppOptions opts = base_options();
     opts.save_user_config = true;
-    opts.window_init_fn = []() { return false; };
+    opts.window_factory = []() -> std::unique_ptr<IWindow> { return nullptr; };
 
     App app(std::move(opts));
     REQUIRE(!app.initialize());
@@ -237,7 +238,7 @@ TEST_CASE("config not saved: save_user_config=false skips disk write on any fail
 
     AppOptions opts = base_options();
     opts.save_user_config = false; // explicit
-    opts.window_init_fn = []() { return false; };
+    opts.window_factory = []() -> std::unique_ptr<IWindow> { return nullptr; };
 
     App app(std::move(opts));
     REQUIRE(!app.initialize());

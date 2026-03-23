@@ -2,12 +2,13 @@
 
 #include "gui_action_handler.h"
 #include "host_manager.h"
+#include <SDL3/SDL.h>
 #include <cmath>
 #include <draxul/app_config.h>
 #include <draxul/events.h>
 #include <draxul/host.h>
-#include <draxul/sdl_window.h>
 #include <draxul/ui_panel.h>
+#include <draxul/window.h>
 
 namespace draxul
 {
@@ -205,7 +206,7 @@ void InputDispatcher::on_mouse_wheel_event(const MouseWheelEvent& event)
     }
 }
 
-void InputDispatcher::connect(SdlWindow& window)
+void InputDispatcher::connect(IWindow& window)
 {
     window.on_key = [this](const KeyEvent& e) { on_key_event(e); };
 

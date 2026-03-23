@@ -4,6 +4,7 @@
 // 00-startup-config-save-on-failure bug).
 
 #include "support/fake_renderer.h"
+#include "support/fake_window.h"
 
 #include <atomic>
 #include <catch2/catch_all.hpp>
@@ -140,7 +141,7 @@ TEST_CASE("config lifecycle: window-OK renderer-FAIL does not save config [integ
     AppOptions opts = base_options();
     opts.save_user_config = true;
     // Window succeeds; renderer fails (empty bundle).
-    opts.window_init_fn = []() { return true; };
+    opts.window_factory = []() { return std::make_unique<FakeWindow>(); };
     opts.renderer_create_fn = [](int) { return RendererBundle{}; };
 
     App app(std::move(opts));
@@ -166,7 +167,7 @@ TEST_CASE(
 
     AppOptions opts = base_options();
     opts.save_user_config = true;
-    opts.window_init_fn = []() { return true; };
+    opts.window_factory = []() { return std::make_unique<FakeWindow>(); };
     opts.renderer_create_fn = &make_fake_renderer;
     opts.config_overrides.font_path = "/nonexistent/draxul_lifecycle_fake_font.ttf";
     opts.override_display_ppi = 96.0f;
@@ -197,7 +198,7 @@ TEST_CASE("config lifecycle: double shutdown after failed init does not write co
 
     AppOptions opts = base_options();
     opts.save_user_config = true;
-    opts.window_init_fn = []() { return false; };
+    opts.window_factory = []() -> std::unique_ptr<IWindow> { return nullptr; };
 
     App app(std::move(opts));
     REQUIRE(!app.initialize());
@@ -226,7 +227,7 @@ TEST_CASE("config lifecycle: double shutdown after failed init does not create c
 
     AppOptions opts = base_options();
     opts.save_user_config = true;
-    opts.window_init_fn = []() { return false; };
+    opts.window_factory = []() -> std::unique_ptr<IWindow> { return nullptr; };
 
     App app(std::move(opts));
     REQUIRE(!app.initialize());
@@ -262,7 +263,7 @@ TEST_CASE("config lifecycle: config_override during failed init does not persist
     // Override font_size in memory — this would normally be persisted on
     // a clean exit.  A renderer failure must prevent that.
     opts.config_overrides.font_size = 99.0f;
-    opts.window_init_fn = []() { return true; };
+    opts.window_factory = []() { return std::make_unique<FakeWindow>(); };
     opts.renderer_create_fn = [](int) { return RendererBundle{}; };
 
     App app(std::move(opts));
@@ -291,7 +292,7 @@ TEST_CASE("config lifecycle: window_width override during failed init does not p
     AppOptions opts = base_options();
     opts.save_user_config = true;
     opts.config_overrides.window_width = 9999;
-    opts.window_init_fn = []() { return true; };
+    opts.window_factory = []() { return std::make_unique<FakeWindow>(); };
     opts.renderer_create_fn = [](int) { return RendererBundle{}; };
 
     App app(std::move(opts));

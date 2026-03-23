@@ -7,8 +7,10 @@
 #include <draxul/renderer.h>
 #include <draxul/text_service.h>
 #include <draxul/types.h>
+#include <draxul/window.h>
 #include <filesystem>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -108,9 +110,9 @@ struct AppOptions
     std::string host_working_dir;
 
     // Optional factory overrides for testing — leave null in production.
-    // window_init_fn: called instead of window_.initialize(); return false to simulate failure.
+    // window_factory: returns a fully-initialized IWindow. Return nullptr to simulate failure.
     // renderer_create_fn: called instead of create_renderer(); return empty RendererBundle to fail.
-    std::function<bool()> window_init_fn;
+    std::function<std::unique_ptr<IWindow>()> window_factory;
     std::function<RendererBundle(int atlas_size)> renderer_create_fn;
 };
 

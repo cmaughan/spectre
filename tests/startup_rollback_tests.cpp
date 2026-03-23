@@ -1,11 +1,12 @@
 #include "support/fake_renderer.h"
+#include "support/fake_window.h"
 
 #include <catch2/catch_all.hpp>
 #include <draxul/app_config.h>
 #include <filesystem>
 
 // App and HostManager live under app/; included directly (not as a library).
-// The DI seams in AppOptions (window_init_fn, renderer_create_fn) allow tests
+// The DI seams in AppOptions (window_factory, renderer_create_fn) allow tests
 // to inject failures without real SDL or GPU backends.
 #include "app.h"
 
@@ -117,7 +118,7 @@ TEST_CASE("startup rollback: window creation failure leaves app in clean state [
 {
     AppOptions opts = base_options();
     // window_init_fn returns false → window step fails
-    opts.window_init_fn = []() { return false; };
+    opts.window_factory = []() -> std::unique_ptr<IWindow> { return nullptr; };
 
     App app(std::move(opts));
     const bool ok = app.initialize();
@@ -135,7 +136,7 @@ TEST_CASE("startup rollback: renderer init failure destroys window cleanly [inte
 {
     AppOptions opts = base_options();
     // Window succeeds (DI seam, no real SDL), renderer fails (empty bundle)
-    opts.window_init_fn = []() { return true; };
+    opts.window_factory = []() { return std::make_unique<FakeWindow>(); };
     opts.renderer_create_fn = [](int) { return RendererBundle{}; };
 
     App app(std::move(opts));
@@ -151,7 +152,7 @@ TEST_CASE("startup rollback: renderer init failure destroys window cleanly [inte
 TEST_CASE("startup rollback: font load failure destroys renderer and window cleanly [integration]", "[startup]")
 {
     AppOptions opts = base_options();
-    opts.window_init_fn = []() { return true; };
+    opts.window_factory = []() { return std::make_unique<FakeWindow>(); };
     opts.renderer_create_fn = &make_fake_renderer;
     // Force font failure with a nonexistent path
     opts.config_overrides.font_path = "/nonexistent/font/draxul_test_fake_font.ttf";
@@ -178,7 +179,7 @@ TEST_CASE("startup rollback: host init failure destroys all earlier subsystems [
         SKIP("bundled font not found");
 
     AppOptions opts = base_options();
-    opts.window_init_fn = []() { return true; };
+    opts.window_factory = []() { return std::make_unique<FakeWindow>(); };
     opts.renderer_create_fn = &make_fake_renderer;
     opts.config_overrides.font_path = font;
     opts.override_display_ppi = 96.0f;
@@ -200,7 +201,7 @@ TEST_CASE("startup rollback: failed initialize sets non-empty init_error [integr
 {
     AppOptions opts = base_options();
     // Force the earliest possible failure: window
-    opts.window_init_fn = []() { return false; };
+    opts.window_factory = []() -> std::unique_ptr<IWindow> { return nullptr; };
 
     App app(std::move(opts));
     const bool ok = app.initialize();
@@ -214,7 +215,7 @@ TEST_CASE("startup rollback: failed initialize sets non-empty init_error [integr
 TEST_CASE("startup rollback: double shutdown does not crash [integration]", "[startup]")
 {
     AppOptions opts = base_options();
-    opts.window_init_fn = []() { return false; };
+    opts.window_factory = []() -> std::unique_ptr<IWindow> { return nullptr; };
 
     App app(std::move(opts));
     app.initialize(); // fails

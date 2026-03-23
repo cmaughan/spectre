@@ -373,7 +373,7 @@ bool SdlWindow::wait_events(int timeout_ms)
     return poll_events();
 }
 
-void SdlWindow::wake() const
+void SdlWindow::wake()
 {
     if (!window_ || wake_event_type_ == 0 || wake_event_type_ == static_cast<Uint32>(-1))
         return;
