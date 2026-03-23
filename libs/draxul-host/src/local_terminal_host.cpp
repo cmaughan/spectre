@@ -53,8 +53,19 @@ void LocalTerminalHost::pump()
         if (scrollback_.is_scrolled_back())
             scrollback_.scroll_to_live();
         selection_.clear();
-        for (const auto& chunk : chunks)
-            consume_output(chunk);
+
+        // Process all available output, re-draining after each batch so that
+        // closely-spaced bursts (e.g. fzf exit: cleanup then prompt redraw)
+        // are coalesced into a single flush instead of rendering a partial
+        // intermediate frame.
+        do
+        {
+            for (const auto& chunk : chunks)
+                consume_output(chunk);
+            // Re-drain: coalesces bursts that arrived during processing.
+            chunks = do_process_drain();
+        } while (!chunks.empty());
+
         flush_grid();
     }
     advance_cursor_blink(std::chrono::steady_clock::now());

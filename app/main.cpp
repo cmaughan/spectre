@@ -71,6 +71,8 @@ struct ParsedArgs
 #endif
     std::optional<draxul::HostKind> host_kind;
     std::string host_command;
+    std::string log_file;
+    std::string log_level;
 };
 
 ParsedArgs parse_args(const std::vector<std::string>& args)
@@ -108,6 +110,16 @@ ParsedArgs parse_args(const std::vector<std::string>& args)
             ++i;
             parsed.host_command = args[i];
         }
+        else if (args[i] == "--log-file" && i + 1 < args.size())
+        {
+            ++i;
+            parsed.log_file = args[i];
+        }
+        else if (args[i] == "--log-level" && i + 1 < args.size())
+        {
+            ++i;
+            parsed.log_level = args[i];
+        }
     }
     return parsed;
 }
@@ -140,6 +152,20 @@ static int draxul_main(std::vector<std::string> args)
     update_current_directory(args);
 
     draxul::configure_default_logging();
+
+    // CLI overrides for logging — these always work, unlike env vars which
+    // may not propagate to macOS .app bundles.
+    if (!parsed.log_file.empty() || !parsed.log_level.empty())
+    {
+        draxul::LogOptions log_overrides;
+        log_overrides.min_level = parsed.log_level.empty()
+            ? draxul::LogLevel::Debug
+            : draxul::parse_log_level_or(parsed.log_level, draxul::LogLevel::Debug);
+        log_overrides.enable_stderr = true;
+        log_overrides.enable_file = !parsed.log_file.empty();
+        log_overrides.file_path = parsed.log_file;
+        draxul::configure_logging(log_overrides);
+    }
 
 #ifdef DRAXUL_ENABLE_RENDER_TESTS
     std::optional<draxul::RenderTestScenario> render_test;

@@ -174,6 +174,12 @@ const char* to_string(LogCategory category)
     return "app";
 }
 
+LogLevel parse_log_level_or(std::string_view value, LogLevel fallback)
+{
+    auto parsed = parse_log_level(value);
+    return parsed ? *parsed : fallback;
+}
+
 void configure_logging(const LogOptions& options)
 {
     auto& logger_state = state();

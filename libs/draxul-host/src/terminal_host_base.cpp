@@ -52,8 +52,15 @@ void TerminalHostBase::pump()
     auto chunks = do_process_drain();
     if (!chunks.empty())
     {
-        for (const auto& chunk : chunks)
-            consume_output(chunk);
+        // Process all available output, re-draining after each batch so that
+        // closely-spaced bursts are coalesced into a single flush.
+        do
+        {
+            for (const auto& chunk : chunks)
+                consume_output(chunk);
+            chunks = do_process_drain();
+        } while (!chunks.empty());
+
         flush_grid();
     }
     advance_cursor_blink(std::chrono::steady_clock::now());

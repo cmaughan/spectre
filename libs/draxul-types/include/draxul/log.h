@@ -60,6 +60,7 @@ void log_printf(LogLevel level, LogCategory category, const char* fmt, ...);
 
 const char* to_string(LogLevel level);
 const char* to_string(LogCategory category);
+LogLevel parse_log_level_or(std::string_view value, LogLevel fallback);
 
 } // namespace draxul
 
