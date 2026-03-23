@@ -30,6 +30,19 @@ Run: `./build/draxul.app/Contents/MacOS/draxul` or `open ./build/draxul.app` (re
 
 To run the unit test suite under ASan: `cmake --preset mac-asan && cmake --build build --target draxul-tests && ctest --test-dir build -R draxul-tests`.
 
+### Debugging / Logging
+
+Use the `--log-file` and `--log-level` CLI flags for debug logging. These are reliable on all platforms (env vars like `DRAXUL_LOG_FILE` do not propagate into macOS `.app` bundles).
+
+```bash
+./build/draxul.app/Contents/MacOS/draxul --host zsh --log-file /tmp/debug.log --log-level debug
+```
+
+- `--log-level <level>` — set minimum log level: `error`, `warn`, `info`, `debug`, `trace`. Defaults to `debug` when `--log-file` is given without `--log-level`. Logs always go to stderr (the launching terminal), so `--log-level debug` alone is enough for console debugging.
+- `--log-file <path>` — additionally write logs to a file (useful when stderr is not visible).
+- Use `DRAXUL_LOG_DEBUG(LogCategory::App, "fmt", ...)` for temporary instrumentation; these compile to real calls (not stripped) so they appear whenever the level is set to `debug` or lower.
+- Env vars (`DRAXUL_LOG`, `DRAXUL_LOG_FILE`, `DRAXUL_LOG_CATEGORIES`) still work when launching the binary directly (not via `open`), but prefer the CLI flags.
+
 ## Project Structure
 
 ```
