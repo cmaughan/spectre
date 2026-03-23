@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -12,6 +13,109 @@
 
 namespace draxul
 {
+
+namespace detail
+{
+
+inline bool is_utf8_continuation_byte(uint8_t byte)
+{
+    return (byte & 0xC0) == 0x80;
+}
+
+inline bool utf8_next_codepoint(std::string_view text, size_t offset, size_t limit, size_t& next_offset)
+{
+    if (offset >= limit)
+        return false;
+
+    const auto* bytes = reinterpret_cast<const uint8_t*>(text.data());
+    const uint8_t lead = bytes[offset];
+    const size_t remaining = limit - offset;
+
+    if (lead < 0x80)
+    {
+        next_offset = offset + 1;
+        return true;
+    }
+
+    if (lead >= 0xC2 && lead <= 0xDF && remaining >= 2 && is_utf8_continuation_byte(bytes[offset + 1]))
+    {
+        next_offset = offset + 2;
+        return true;
+    }
+
+    if (remaining >= 3)
+    {
+        const uint8_t b1 = bytes[offset + 1];
+        const uint8_t b2 = bytes[offset + 2];
+        if (lead == 0xE0 && b1 >= 0xA0 && b1 <= 0xBF && is_utf8_continuation_byte(b2))
+        {
+            next_offset = offset + 3;
+            return true;
+        }
+        if (lead >= 0xE1 && lead <= 0xEC && is_utf8_continuation_byte(b1) && is_utf8_continuation_byte(b2))
+        {
+            next_offset = offset + 3;
+            return true;
+        }
+        if (lead == 0xED && b1 >= 0x80 && b1 <= 0x9F && is_utf8_continuation_byte(b2))
+        {
+            next_offset = offset + 3;
+            return true;
+        }
+        if (lead >= 0xEE && lead <= 0xEF && is_utf8_continuation_byte(b1) && is_utf8_continuation_byte(b2))
+        {
+            next_offset = offset + 3;
+            return true;
+        }
+    }
+
+    if (remaining >= 4)
+    {
+        const uint8_t b1 = bytes[offset + 1];
+        const uint8_t b2 = bytes[offset + 2];
+        const uint8_t b3 = bytes[offset + 3];
+        if (lead == 0xF0 && b1 >= 0x90 && b1 <= 0xBF && is_utf8_continuation_byte(b2)
+            && is_utf8_continuation_byte(b3))
+        {
+            next_offset = offset + 4;
+            return true;
+        }
+        if (lead >= 0xF1 && lead <= 0xF3 && is_utf8_continuation_byte(b1) && is_utf8_continuation_byte(b2)
+            && is_utf8_continuation_byte(b3))
+        {
+            next_offset = offset + 4;
+            return true;
+        }
+        if (lead == 0xF4 && b1 >= 0x80 && b1 <= 0x8F && is_utf8_continuation_byte(b2)
+            && is_utf8_continuation_byte(b3))
+        {
+            next_offset = offset + 4;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+inline size_t utf8_valid_prefix_length(std::string_view text, size_t max_len)
+{
+    const size_t limit = std::min(text.size(), max_len);
+    size_t offset = 0;
+    size_t valid = 0;
+
+    while (offset < limit)
+    {
+        size_t next = offset;
+        if (!utf8_next_codepoint(text, offset, limit, next))
+            break;
+        offset = next;
+        valid = next;
+    }
+
+    return valid;
+}
+
+} // namespace detail
 
 struct CellText
 {
@@ -29,11 +133,13 @@ struct CellText
 
     void assign(std::string_view sv)
     {
-        // TODO: consider std::string for >32-byte clusters
+        // TODO: consider std::string for >32-byte clusters instead of truncating.
         if (sv.size() > static_cast<size_t>(kMaxLen))
             DRAXUL_LOG_WARN(LogCategory::App, "CellText: cluster truncated from %zu to %d bytes",
                 sv.size(), static_cast<int>(kMaxLen));
-        len = static_cast<uint8_t>(std::min(sv.size(), static_cast<size_t>(kMaxLen)));
+        len = static_cast<uint8_t>(sv.size() > static_cast<size_t>(kMaxLen)
+                ? detail::utf8_valid_prefix_length(sv, static_cast<size_t>(kMaxLen))
+                : sv.size());
         std::memcpy(data.data(), sv.data(), len);
     }
 

@@ -24,7 +24,7 @@ public:
     MegaCityHost();
     ~MegaCityHost() override;
 
-    bool initialize(const HostContext& context, HostCallbacks callbacks) override;
+    bool initialize(const HostContext& context, IHostCallbacks& callbacks) override;
     void shutdown() override;
     bool is_running() const override;
     std::string init_error() const override;
@@ -70,7 +70,7 @@ public:
     void set_imgui_font(const std::string& path, float size_pixels) override;
 
 private:
-    HostCallbacks callbacks_;
+    IHostCallbacks* callbacks_ = nullptr;
     HostViewport viewport_;
     std::shared_ptr<CubeRenderPass> cube_pass_;
     I3DRenderer* renderer_3d_ = nullptr;

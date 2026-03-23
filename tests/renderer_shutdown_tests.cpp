@@ -39,6 +39,56 @@
 using namespace draxul;
 using namespace draxul::tests;
 
+namespace
+{
+
+class TestRenderPass final : public IRenderPass
+{
+public:
+    void record(IRenderContext&) override
+    {
+        ++record_calls;
+    }
+
+    int record_calls = 0;
+};
+
+class FakeThreeDRenderer final : public I3DRenderer
+{
+public:
+    bool initialize(IWindow&) override
+    {
+        return true;
+    }
+    void shutdown() override {}
+    bool begin_frame() override
+    {
+        return true;
+    }
+    void end_frame() override {}
+    void resize(int, int) override {}
+    void set_default_background(Color) override {}
+    void register_render_pass(std::shared_ptr<IRenderPass> pass) override
+    {
+        render_pass_ = std::move(pass);
+    }
+    void unregister_render_pass() override
+    {
+        render_pass_.reset();
+    }
+    void set_3d_viewport(int, int, int, int) override {}
+
+    const std::shared_ptr<IRenderPass>& render_pass() const
+    {
+        return render_pass_;
+    }
+
+private:
+    std::shared_ptr<IRenderPass> render_pass_;
+};
+
+} // namespace
+
 // ---------------------------------------------------------------------------
 // FakeTermRenderer: double-shutdown is a no-op (verifies the contract)
 // ---------------------------------------------------------------------------
@@ -59,6 +109,29 @@ TEST_CASE("renderer shutdown: FakeTermRenderer tolerates shutdown without initia
     // Construct but never call initialize() — shutdown() must still be safe.
     FakeTermRenderer renderer;
     REQUIRE_NOTHROW(renderer.shutdown());
+}
+
+TEST_CASE("renderer pass lifecycle: double unregister is a no-op", "[renderer]")
+{
+    FakeThreeDRenderer renderer;
+    auto pass = std::make_shared<TestRenderPass>();
+
+    renderer.register_render_pass(pass);
+    REQUIRE(renderer.render_pass() == pass);
+
+    REQUIRE_NOTHROW(renderer.unregister_render_pass());
+    CHECK(renderer.render_pass() == nullptr);
+
+    REQUIRE_NOTHROW(renderer.unregister_render_pass());
+    CHECK(renderer.render_pass() == nullptr);
+}
+
+TEST_CASE("renderer pass lifecycle: unregister without register is a no-op", "[renderer]")
+{
+    FakeThreeDRenderer renderer;
+
+    REQUIRE_NOTHROW(renderer.unregister_render_pass());
+    CHECK(renderer.render_pass() == nullptr);
 }
 
 // ---------------------------------------------------------------------------

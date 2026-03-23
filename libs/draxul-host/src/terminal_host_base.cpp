@@ -394,9 +394,6 @@ void TerminalHostBase::erase_display(int mode)
 
 void TerminalHostBase::on_osc_cwd(const std::string& path)
 {
-    if (!callbacks().set_window_title)
-        return;
-
     // Show the last path component (directory name) as the window title,
     // matching the convention used by most terminal emulators.
     std::string_view sv = path;

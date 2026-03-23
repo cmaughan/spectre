@@ -1,9 +1,180 @@
 #include <catch2/catch_all.hpp>
 
+#include "support/fake_renderer.h"
+#include "support/fake_window.h"
+#include "support/test_host_callbacks.h"
+
+#include <draxul/app_config.h>
+#include <draxul/text_service.h>
+
 #include "host_manager.h"
 #include "split_tree.h"
 
 using namespace draxul;
+using namespace draxul::tests;
+
+namespace
+{
+
+std::string bundled_font_path()
+{
+    return std::string(DRAXUL_PROJECT_ROOT) + "/fonts/JetBrainsMonoNerdFont-Regular.ttf";
+}
+
+class LifetimeTestHost final : public IHost
+{
+public:
+    explicit LifetimeTestHost(std::shared_ptr<int> shutdown_calls)
+        : shutdown_calls_(std::move(shutdown_calls))
+    {
+    }
+
+    bool initialize(const HostContext&, IHostCallbacks& callbacks) override
+    {
+        callbacks_ = &callbacks;
+        return true;
+    }
+
+    void shutdown() override
+    {
+        if (shutdown_calls_)
+            ++(*shutdown_calls_);
+        if (fire_callback_on_shutdown_ && callbacks_)
+            callbacks_->request_frame();
+        running_ = false;
+    }
+
+    bool is_running() const override
+    {
+        return running_;
+    }
+
+    std::string init_error() const override
+    {
+        return {};
+    }
+
+    void set_viewport(const HostViewport&) override {}
+    void on_font_metrics_changed() override {}
+    void pump() override {}
+    std::optional<std::chrono::steady_clock::time_point> next_deadline() const override
+    {
+        return std::nullopt;
+    }
+
+    void on_key(const KeyEvent&) override {}
+    void on_text_input(const TextInputEvent&) override {}
+    void on_text_editing(const TextEditingEvent&) override {}
+    void on_mouse_button(const MouseButtonEvent&) override {}
+    void on_mouse_move(const MouseMoveEvent&) override {}
+    void on_mouse_wheel(const MouseWheelEvent&) override {}
+
+    bool dispatch_action(std::string_view) override
+    {
+        return false;
+    }
+
+    void request_close() override
+    {
+        running_ = false;
+    }
+
+    Color default_background() const override
+    {
+        return Color(0.0f, 0.0f, 0.0f, 1.0f);
+    }
+
+    HostRuntimeState runtime_state() const override
+    {
+        HostRuntimeState state;
+        state.content_ready = true;
+        return state;
+    }
+
+    HostDebugState debug_state() const override
+    {
+        HostDebugState state;
+        state.name = "lifetime-test";
+        return state;
+    }
+
+    void trigger_frame_request() const
+    {
+        REQUIRE(callbacks_ != nullptr);
+        callbacks_->request_frame();
+    }
+
+    void set_fire_callback_on_shutdown(bool enabled)
+    {
+        fire_callback_on_shutdown_ = enabled;
+    }
+
+    int shutdown_calls() const
+    {
+        return shutdown_calls_ ? *shutdown_calls_ : 0;
+    }
+
+private:
+    IHostCallbacks* callbacks_ = nullptr;
+    std::shared_ptr<int> shutdown_calls_;
+    bool running_ = true;
+    bool fire_callback_on_shutdown_ = false;
+};
+
+struct HostManagerHarness
+{
+    FakeWindow window;
+    FakeTermRenderer renderer;
+    TextService text_service;
+    TestHostCallbacks callbacks;
+    AppOptions options;
+    AppConfig config;
+    float display_ppi = 96.0f;
+    std::vector<LifetimeTestHost*> created_hosts;
+    std::vector<std::shared_ptr<int>> shutdown_counters;
+    HostManager manager;
+
+    HostManagerHarness()
+        : manager(make_deps())
+    {
+        TextServiceConfig ts_cfg;
+        ts_cfg.font_path = bundled_font_path();
+        const bool ok = text_service.initialize(ts_cfg, TextService::DEFAULT_POINT_SIZE, display_ppi);
+        REQUIRE(ok);
+    }
+
+    HostManager::Deps make_deps()
+    {
+        options.load_user_config = false;
+        options.save_user_config = false;
+        options.host_kind = HostKind::Nvim;
+        options.host_factory = [this](HostKind) -> std::unique_ptr<IHost> {
+            auto shutdown_calls = std::make_shared<int>(0);
+            shutdown_counters.push_back(shutdown_calls);
+            auto host = std::make_unique<LifetimeTestHost>(std::move(shutdown_calls));
+            created_hosts.push_back(host.get());
+            return host;
+        };
+
+        HostManager::Deps deps;
+        deps.options = &options;
+        deps.config = &config;
+        deps.window = &window;
+        deps.grid_renderer = &renderer;
+        deps.text_service = &text_service;
+        deps.display_ppi = &display_ppi;
+        deps.compute_viewport = [](const PaneDescriptor& desc) {
+            HostViewport viewport;
+            viewport.pixel_pos = desc.pixel_pos;
+            viewport.pixel_size = desc.pixel_size;
+            viewport.grid_size = { 80, 24 };
+            return viewport;
+        };
+        return deps;
+    }
+};
+
+} // namespace
 
 TEST_CASE("host manager: split panes use the platform shell for non-shell primary hosts", "[host_manager]")
 {
@@ -195,4 +366,29 @@ TEST_CASE("split tree: double split creates three panes", "[host_manager]")
     REQUIRE(tree.descriptor_for(root).pixel_size.x > 0);
     REQUIRE(tree.descriptor_for(second).pixel_size.x > 0);
     REQUIRE(tree.descriptor_for(third).pixel_size.x > 0);
+}
+
+TEST_CASE("host manager: callbacks remain valid across pane teardown", "[host_manager]")
+{
+    HostManagerHarness harness;
+
+    REQUIRE(harness.manager.create(harness.callbacks, 800, 600));
+    REQUIRE(harness.created_hosts.size() == 1);
+
+    const LeafId new_leaf = harness.manager.split_focused(SplitDirection::Vertical, harness.callbacks);
+    REQUIRE(new_leaf != kInvalidLeaf);
+    REQUIRE(harness.created_hosts.size() == 2);
+
+    auto* primary = harness.created_hosts[0];
+    auto* secondary = harness.created_hosts[1];
+    REQUIRE(primary != nullptr);
+    REQUIRE(secondary != nullptr);
+
+    secondary->set_fire_callback_on_shutdown(true);
+    REQUIRE(harness.manager.close_leaf(new_leaf));
+    REQUIRE(harness.callbacks.request_frame_calls == 1);
+    REQUIRE(*harness.shutdown_counters[1] == 1);
+
+    primary->trigger_frame_request();
+    REQUIRE(harness.callbacks.request_frame_calls == 2);
 }

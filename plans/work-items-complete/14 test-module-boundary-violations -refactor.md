@@ -27,16 +27,16 @@
 
 ## Implementation Plan
 
-- [ ] Read `tests/CMakeLists.txt` to understand which `app/*.cpp` files are compiled into the test binary and why (what do the tests need from them?).
-- [ ] Read `tests/clipboard_tests.cpp` to understand what the private header provides and whether the same interface is available via a public header.
-- [ ] For each `app/*.cpp` source compiled into tests:
+- [x] Read `tests/CMakeLists.txt` to understand which `app/*.cpp` files are compiled into the test binary and why (what do the tests need from them?).
+- [x] Read `tests/clipboard_tests.cpp` to understand what the private header provides and whether the same interface is available via a public header.
+- [x] For each `app/*.cpp` source compiled into tests:
   - If it contains genuinely testable logic that belongs in a library, move it to `draxul-app-support` (if appropriate) or a new thin `draxul-app-logic` library.
   - If it is only wiring code that tests should not need, remove it from the test link and use fakes/stubs instead.
-- [ ] For `clipboard_tests.cpp`: replace the private header include with the public `include/draxul/` equivalent. If no public header exposes the needed interface, that is evidence the interface should be promoted.
-- [ ] After the change, `draxul-tests` should link only against public library targets (`draxul-app-support`, `draxul-host`, `draxul-grid`, etc.) and not compile `app/*.cpp` directly.
-- [ ] Build: `cmake --build build --target draxul draxul-tests && py do.py smoke`
-- [ ] Run all tests: `ctest --test-dir build -R draxul-tests`
-- [ ] Run `clang-format`.
+- [x] For `clipboard_tests.cpp`: replace the private header include with the public `include/draxul/` equivalent. If no public header exposes the needed interface, that is evidence the interface should be promoted.
+- [x] After the change, `draxul-tests` should link only against public library targets (`draxul-app-support`, `draxul-host`, `draxul-grid`, etc.) and not compile `app/*.cpp` directly.
+- [x] Build: `cmake --build build --target draxul draxul-tests && py do.py smoke`
+- [x] Run all tests: `ctest --test-dir build -R draxul-tests`
+- [x] Run `clang-format`.
 
 ---
 

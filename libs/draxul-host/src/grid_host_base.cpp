@@ -10,14 +10,14 @@
 namespace draxul
 {
 
-bool GridHostBase::initialize(const HostContext& context, HostCallbacks callbacks)
+bool GridHostBase::initialize(const HostContext& context, IHostCallbacks& callbacks)
 {
     window_ = &context.window;
     renderer_ = &context.grid_renderer;
     text_service_ = &context.text_service;
     launch_options_ = context.launch_options;
     viewport_ = context.initial_viewport;
-    callbacks_ = std::move(callbacks);
+    callbacks_ = &callbacks;
 
     // Create a per-host GPU handle. The handle owns its own buffer and state.
     grid_handle_ = renderer_->create_grid_handle();
@@ -112,7 +112,7 @@ void GridHostBase::apply_grid_size(int cols, int rows)
         grid_handle_->set_grid_size(cols, rows);
     grid_pipeline_->force_full_atlas_upload();
     update_text_input_area();
-    callbacks_.request_frame();
+    callbacks().request_frame();
 }
 
 void GridHostBase::force_full_redraw()
@@ -136,7 +136,7 @@ void GridHostBase::flush_grid()
         window_->set_title_bar_color(bg);
     }
     apply_cursor_visibility();
-    callbacks_.request_frame();
+    callbacks().request_frame();
 }
 
 void GridHostBase::set_overlay_cells(std::span<const CellUpdate> cells)
@@ -186,7 +186,7 @@ void GridHostBase::apply_cursor_visibility()
     const int visible_row = cursor_blinker_.visible() ? cursor_row_ : -1;
     if (grid_handle_)
         grid_handle_->set_cursor(visible_col, visible_row, cursor_style_);
-    callbacks_.request_frame();
+    callbacks().request_frame();
 }
 
 void GridHostBase::restart_cursor_blink(std::chrono::steady_clock::time_point now)
@@ -200,7 +200,7 @@ void GridHostBase::update_text_input_area() const
     auto [cell_w, cell_h] = renderer_->cell_size_pixels();
     const int x = viewport_.pixel_pos.x + renderer_->padding() + cursor_col_ * cell_w;
     const int y = viewport_.pixel_pos.y + renderer_->padding() + cursor_row_ * cell_h;
-    callbacks_.set_text_input_area(x, y, cell_w, cell_h);
+    callbacks().set_text_input_area(x, y, cell_w, cell_h);
 }
 
 void GridHostBase::refresh_renderer_metrics()

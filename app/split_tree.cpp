@@ -288,9 +288,10 @@ void SplitTree::recompute_node(Node* node, int x, int y, int w, int h, int div_w
     auto& s = node->split();
     if (s.direction == SplitDirection::Vertical)
     {
-        const int available = w - div_w;
-        const int first_w = static_cast<int>(std::floor(static_cast<float>(available) * s.ratio));
-        const int second_w = available - first_w;
+        const int available = std::max(0, w - div_w);
+        const int first_w = std::max(1,
+            static_cast<int>(std::floor(static_cast<float>(available) * s.ratio)));
+        const int second_w = std::max(1, available - first_w);
         s.div_x = x + first_w;
         s.div_y = y;
         s.div_w = div_w;
@@ -300,9 +301,10 @@ void SplitTree::recompute_node(Node* node, int x, int y, int w, int h, int div_w
     }
     else
     {
-        const int available = h - div_w;
-        const int first_h = static_cast<int>(std::floor(static_cast<float>(available) * s.ratio));
-        const int second_h = available - first_h;
+        const int available = std::max(0, h - div_w);
+        const int first_h = std::max(1,
+            static_cast<int>(std::floor(static_cast<float>(available) * s.ratio)));
+        const int second_h = std::max(1, available - first_h);
         s.div_x = x;
         s.div_y = y + first_h;
         s.div_w = w;

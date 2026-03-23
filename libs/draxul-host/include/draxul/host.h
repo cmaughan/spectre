@@ -4,7 +4,6 @@
 #include <draxul/events.h>
 #include <draxul/host_kind.h>
 #include <draxul/types.h>
-#include <functional>
 #include <glm/glm.hpp>
 #include <memory>
 #include <optional>
@@ -61,13 +60,15 @@ struct HostRuntimeState
     std::chrono::steady_clock::time_point last_activity_time = std::chrono::steady_clock::now();
 };
 
-struct HostCallbacks
+class IHostCallbacks
 {
-    std::function<void()> request_frame;
-    std::function<void()> request_quit;
-    std::function<void()> wake_window;
-    std::function<void(const std::string&)> set_window_title;
-    std::function<void(int, int, int, int)> set_text_input_area;
+public:
+    virtual ~IHostCallbacks() = default;
+    virtual void request_frame() = 0;
+    virtual void request_quit() = 0;
+    virtual void wake_window() = 0;
+    virtual void set_window_title(const std::string& title) = 0;
+    virtual void set_text_input_area(int x, int y, int w, int h) = 0;
 };
 
 struct HostContext
@@ -85,7 +86,7 @@ class IHost
 public:
     virtual ~IHost() = default;
 
-    virtual bool initialize(const HostContext& context, HostCallbacks callbacks) = 0;
+    virtual bool initialize(const HostContext& context, IHostCallbacks& callbacks) = 0;
     virtual void shutdown() = 0;
     virtual bool is_running() const = 0;
     virtual std::string init_error() const = 0;

@@ -61,10 +61,8 @@ class ConPtyHostBase : public LocalTerminalHost
 protected:
     bool spawn_process(const std::string& command, const std::string& hint)
     {
-        auto wake = callbacks().wake_window;
-        if (!process_.spawn(command, launch_options().args, launch_options().working_dir, grid_cols(), grid_rows(), [wake]() {
-                if (wake)
-                    wake();
+        if (!process_.spawn(command, launch_options().args, launch_options().working_dir, grid_cols(), grid_rows(), [this]() {
+                callbacks().wake_window();
             }))
         {
             set_init_error("Could not start " + command + ". " + hint);

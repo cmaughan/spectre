@@ -21,9 +21,9 @@ MegaCityHost::MegaCityHost()
 
 MegaCityHost::~MegaCityHost() = default;
 
-bool MegaCityHost::initialize(const HostContext& context, HostCallbacks callbacks)
+bool MegaCityHost::initialize(const HostContext& context, IHostCallbacks& callbacks)
 {
-    callbacks_ = std::move(callbacks);
+    callbacks_ = &callbacks;
     viewport_ = context.initial_viewport;
     pixel_w_ = viewport_.pixel_size.x > 0 ? viewport_.pixel_size.x : 800;
     pixel_h_ = viewport_.pixel_size.y > 0 ? viewport_.pixel_size.y : 600;
@@ -129,7 +129,7 @@ void MegaCityHost::pump()
     rotation_angle_ += dt * kRotationSpeed;
 
     cube_pass_->set_angle(rotation_angle_);
-    callbacks_.request_frame();
+    callbacks_->request_frame();
 }
 
 std::optional<std::chrono::steady_clock::time_point> MegaCityHost::next_deadline() const
@@ -143,7 +143,7 @@ bool MegaCityHost::dispatch_action(std::string_view action)
     if (action == "quit" || action == "request_quit")
     {
         running_ = false;
-        callbacks_.request_quit();
+        callbacks_->request_quit();
         return true;
     }
     return false;
@@ -151,7 +151,7 @@ bool MegaCityHost::dispatch_action(std::string_view action)
 
 void MegaCityHost::request_close()
 {
-    // App-initiated quit: just stop running. Do NOT call callbacks_.request_quit()
+    // App-initiated quit: just stop running. Do NOT call callbacks_->request_quit()
     // here — that would call back into App::request_quit(), which calls this method
     // again, causing infinite mutual mutual recursion and a stack overflow.
     running_ = false;

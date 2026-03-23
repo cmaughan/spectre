@@ -25,15 +25,15 @@ The `TODO` comment at `grid.h:15` has existed since initial commit without resol
 
 ## Implementation Plan
 
-- [ ] Read `grid.h` `CellText::assign()` to see exactly what happens on truncation (is there a log call? does it assert?).
-- [ ] Find where `CellText` bytes are handed to HarfBuzz (look in `TextService` or `GlyphCache`). Understand what happens if the input is not valid UTF-8.
-- [ ] Construct a 33-byte ZWJ family emoji sequence in a test. Good candidate: `"\xF0\x9F\x91\xA8\xE2\x80\x8D\xF0\x9F\x91\xA9\xE2\x80\x8D\xF0\x9F\x91\xA7\xE2\x80\x8D\xF0\x9F\x91\xA6"` (👨‍👩‍👧‍👦, 25 bytes but demonstrates the class). Use a longer synthetic sequence if needed to exceed 32 bytes.
-- [ ] Test 1: assert that `CellText::assign()` with a 33-byte input does NOT crash.
-- [ ] Test 2: assert that a `WARN` or `DEBUG` log is emitted (if the implementation promises this).
-- [ ] Test 3: assert that the stored bytes are valid UTF-8 after truncation (truncation must not break in the middle of a multi-byte codepoint). Even if the cluster is semantically incomplete, the bytes passed to the shaper should be well-formed.
-- [ ] If the truncation currently breaks UTF-8 validity, fix `CellText::assign()` to truncate at a valid UTF-8 codepoint boundary.
-- [ ] Build and run tests.
-- [ ] Run `clang-format`.
+- [x] Read `grid.h` `CellText::assign()` to see exactly what happens on truncation (is there a log call? does it assert?).
+- [x] Find where `CellText` bytes are handed to HarfBuzz (look in `TextService` or `GlyphCache`). Understand what happens if the input is not valid UTF-8.
+- [x] Construct a 33-byte ZWJ family emoji sequence in a test. Good candidate: `"\xF0\x9F\x91\xA8\xE2\x80\x8D\xF0\x9F\x91\xA9\xE2\x80\x8D\xF0\x9F\x91\xA7\xE2\x80\x8D\xF0\x9F\x91\xA6"` (👨‍👩‍👧‍👦, 25 bytes but demonstrates the class). Use a longer synthetic sequence if needed to exceed 32 bytes.
+- [x] Test 1: assert that `CellText::assign()` with a 33-byte input does NOT crash.
+- [x] Test 2: assert that a `WARN` or `DEBUG` log is emitted (if the implementation promises this).
+- [x] Test 3: assert that the stored bytes are valid UTF-8 after truncation (truncation must not break in the middle of a multi-byte codepoint). Even if the cluster is semantically incomplete, the bytes passed to the shaper should be well-formed.
+- [x] If the truncation currently breaks UTF-8 validity, fix `CellText::assign()` to truncate at a valid UTF-8 codepoint boundary.
+- [x] Build and run tests.
+- [x] Run `clang-format`.
 
 ---
 

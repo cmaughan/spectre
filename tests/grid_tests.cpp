@@ -9,6 +9,41 @@
 using namespace draxul;
 using namespace draxul::tests;
 
+namespace
+{
+
+static bool is_valid_utf8(std::string_view s)
+{
+    size_t i = 0;
+    while (i < s.size())
+    {
+        const uint8_t b = static_cast<uint8_t>(s[i]);
+        size_t seq_len = 0;
+        if (b < 0x80)
+            seq_len = 1;
+        else if ((b & 0xE0) == 0xC0)
+            seq_len = 2;
+        else if ((b & 0xF0) == 0xE0)
+            seq_len = 3;
+        else if ((b & 0xF8) == 0xF0)
+            seq_len = 4;
+        else
+            return false;
+
+        if (i + seq_len > s.size())
+            return false;
+        for (size_t j = 1; j < seq_len; ++j)
+        {
+            if ((static_cast<uint8_t>(s[i + j]) & 0xC0) != 0x80)
+                return false;
+        }
+        i += seq_len;
+    }
+    return true;
+}
+
+} // namespace
+
 TEST_CASE("grid tracks double-width continuations", "[grid]")
 {
     Grid grid;
@@ -597,14 +632,13 @@ TEST_CASE("CellText truncation of multi-byte UTF-8 input", "[celltext]")
     CellText ct;
     ct.assign(cjk);
 
-    INFO("stored length is clamped to 32");
-    REQUIRE(ct.len == 32);
-
-    // Simple byte truncation — the last 2 bytes are an incomplete UTF-8 sequence.
-    // This is the documented current behavior.
+    INFO("stored length is clamped to the largest valid UTF-8 prefix");
+    REQUIRE(ct.len == 30);
     std::string_view stored = ct.view();
-    INFO("stored bytes match the first 32 bytes of input");
-    REQUIRE(stored == std::string_view(cjk.data(), 32));
+    INFO("stored bytes end on a UTF-8 codepoint boundary");
+    REQUIRE(is_valid_utf8(stored));
+    INFO("stored bytes match the largest valid prefix of input");
+    REQUIRE(stored == std::string_view(cjk.data(), 30));
 }
 
 TEST_CASE("CellText ZWJ emoji sequence truncation", "[celltext]")
@@ -622,7 +656,9 @@ TEST_CASE("CellText ZWJ emoji sequence truncation", "[celltext]")
 
     INFO("stored length is clamped to kMaxLen");
     REQUIRE(ct.len == CellText::kMaxLen);
-    INFO("stored bytes are first 32 bytes of the ZWJ sequence");
+    INFO("stored bytes remain valid UTF-8");
+    REQUIRE(is_valid_utf8(ct.view()));
+    INFO("stored bytes match the first 32 bytes of the ZWJ sequence");
     REQUIRE(ct.view() == std::string_view(two_families.data(), CellText::kMaxLen));
 
     bool found_warn = false;

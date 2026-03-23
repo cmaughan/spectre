@@ -25,8 +25,8 @@ Additionally, every new callback requires updating all construction sites, and t
 
 ## Implementation Plan
 
-- [ ] Read `host.h`, `app.cpp::make_host_callbacks()`, and `host_manager.cpp` to understand all five callbacks and their call sites.
-- [ ] Design a replacement: an `IHostObserver` pure-virtual interface with one virtual method per callback. Example:
+- [x] Read `host.h`, `app.cpp::make_host_callbacks()`, and `host_manager.cpp` to understand all five callbacks and their call sites.
+- [x] Design a replacement: an `IHostObserver` pure-virtual interface with one virtual method per callback. Example:
   ```cpp
   struct IHostObserver {
       virtual void on_request_frame() = 0;
@@ -37,13 +37,13 @@ Additionally, every new callback requires updating all construction sites, and t
       virtual ~IHostObserver() = default;
   };
   ```
-- [ ] Make `App` implement `IHostObserver`. The five `App` methods replace the five lambdas.
-- [ ] In `App::initialize()` / `make_host_callbacks()`, pass `this` as `IHostObserver*` to hosts instead of constructing `HostCallbacks`.
-- [ ] The `running_` guard can be enforced in `IHostObserver` implementations: each method checks `running_` before acting. This is explicit and in one place.
-- [ ] Retain `HostCallbacks` as a deprecated alias or remove it entirely.
-- [ ] Ensure the test `10 multipane-callback-lifetime -test` passes after this change.
-- [ ] Build: `cmake --build build --target draxul draxul-tests && py do.py smoke`
-- [ ] Run `clang-format`.
+- [x] Make `App` implement `IHostObserver`. The five `App` methods replace the five lambdas.
+- [x] In `App::initialize()` / `make_host_callbacks()`, pass `this` as `IHostObserver*` to hosts instead of constructing `HostCallbacks`.
+- [x] The `running_` guard can be enforced in `IHostObserver` implementations: each method checks `running_` before acting. This is explicit and in one place.
+- [x] Retain `HostCallbacks` as a deprecated alias or remove it entirely.
+- [x] Ensure the test `10 multipane-callback-lifetime -test` passes after this change.
+- [x] Build: `cmake --build build --target draxul draxul-tests && py do.py smoke`
+- [x] Run `clang-format`.
 
 ---
 

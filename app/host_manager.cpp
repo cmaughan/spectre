@@ -61,7 +61,7 @@ HostKind HostManager::split_host_kind_for(HostKind primary_kind)
     return platform_default_split_host_kind_impl();
 }
 
-bool HostManager::create(HostCallbacks callbacks, int pixel_w, int pixel_h)
+bool HostManager::create(IHostCallbacks& callbacks, int pixel_w, int pixel_h)
 {
     error_.clear();
     hosts_.clear();
@@ -80,10 +80,10 @@ bool HostManager::create(HostCallbacks callbacks, int pixel_w, int pixel_h)
     if (!deps_.config->terminal.bg.empty())
         launch.terminal_bg = parse_hex_color(deps_.config->terminal.bg);
 
-    return create_host_for_leaf(root_id, std::move(callbacks), std::move(launch), true);
+    return create_host_for_leaf(root_id, callbacks, std::move(launch), true);
 }
 
-LeafId HostManager::split_focused(SplitDirection dir, HostCallbacks callbacks)
+LeafId HostManager::split_focused(SplitDirection dir, IHostCallbacks& callbacks)
 {
     LeafId focused = tree_.focused();
     if (focused == kInvalidLeaf)
@@ -114,7 +114,7 @@ LeafId HostManager::split_focused(SplitDirection dir, HostCallbacks callbacks)
         }
     }
 
-    if (!create_host_for_leaf(new_id, std::move(callbacks), std::move(launch), false))
+    if (!create_host_for_leaf(new_id, callbacks, std::move(launch), false))
     {
         // Rollback the tree split
         tree_.close_leaf(new_id);
@@ -204,7 +204,7 @@ IHost* HostManager::host_at_point(int px, int py)
     return focused_host();
 }
 
-bool HostManager::create_host_for_leaf(LeafId id, HostCallbacks callbacks,
+bool HostManager::create_host_for_leaf(LeafId id, IHostCallbacks& callbacks,
     HostLaunchOptions launch, bool is_primary)
 {
     std::unique_ptr<IHost> new_host;
@@ -246,7 +246,7 @@ bool HostManager::create_host_for_leaf(LeafId id, HostCallbacks callbacks,
         display_ppi,
     };
 
-    if (!new_host->initialize(context, std::move(callbacks)))
+    if (!new_host->initialize(context, callbacks))
     {
         error_ = new_host->init_error();
         if (error_.empty())

@@ -3,6 +3,7 @@
 #include <draxul/terminal_host_base.h>
 
 #include "support/fake_renderer.h"
+#include "support/test_host_callbacks.h"
 #include <draxul/host.h>
 #include <draxul/text_service.h>
 #include <draxul/window.h>
@@ -141,6 +142,7 @@ struct PsSetup
     PsFakeRenderer renderer;
     TextService text_service;
     PsTestHost host;
+    draxul::tests::TestHostCallbacks callbacks;
     bool ok = false;
 
     explicit PsSetup(int cols = 40, int rows = 10)
@@ -156,15 +158,7 @@ struct PsSetup
         vp.grid_size.y = rows;
 
         HostContext ctx{ window, renderer, text_service, {}, vp, 96.0f };
-
-        HostCallbacks cbs;
-        cbs.request_frame = [] {};
-        cbs.request_quit = [] {};
-        cbs.wake_window = [] {};
-        cbs.set_window_title = [](const std::string&) {};
-        cbs.set_text_input_area = [](int, int, int, int) {};
-
-        ok = host.initialize(ctx, std::move(cbs));
+        ok = host.initialize(ctx, callbacks);
     }
 };
 

@@ -23,16 +23,16 @@
 
 ## Implementation Plan
 
-- [ ] Read `terminal_vt_tests.cpp` to understand existing parser test patterns and how the parser is instantiated.
-- [ ] Identify a representative set of CSI sequences to test: `"\x1b[2J"` (clear screen), `"\x1b[1;31m"` (SGR with params), `"\x1b[?1049h"` (DEC private mode), `"\x1b]0;title\x07"` (OSC), and a plain text run.
-- [ ] For each test sequence, write a parameterised test that:
+- [x] Read `terminal_vt_tests.cpp` to understand existing parser test patterns and how the parser is instantiated.
+- [x] Identify a representative set of CSI sequences to test: `"\x1b[2J"` (clear screen), `"\x1b[1;31m"` (SGR with params), `"\x1b[?1049h"` (DEC private mode), `"\x1b]0;title\x07"` (OSC), and a plain text run.
+- [x] For each test sequence, write a parameterised test that:
   1. Feeds the whole sequence in one call — captures emitted callbacks.
   2. Feeds the sequence split at byte index `i` for every `i` from 1 to `len-1` — captures emitted callbacks for each split.
   3. Asserts all split variants produce the same callback sequence as the single-call version.
-- [ ] Use a simple callback-capture shim (a struct with `std::vector<Event>` that records all emissions).
-- [ ] Cover the edge case where the split falls in the middle of a multi-byte UTF-8 codepoint within a plain-text run.
-- [ ] Build and run tests.
-- [ ] Run `clang-format`.
+- [x] Use a simple callback-capture shim (a struct with `std::vector<Event>` that records all emissions).
+- [x] Cover the edge case where the split falls in the middle of a multi-byte UTF-8 codepoint within a plain-text run.
+- [x] Build and run tests.
+- [x] Run `clang-format`.
 
 ---
 

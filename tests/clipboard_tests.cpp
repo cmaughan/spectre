@@ -3,7 +3,7 @@
 // Pull in the real production conversion functions from draxul-host.
 // Any change to the clipboard algorithm in clipboard_util.h will be caught
 // by these tests rather than silently bypassing them.
-#include "../libs/draxul-host/src/clipboard_util.h"
+#include <draxul/clipboard_util.h>
 
 #include <draxul/nvim.h>
 #include <string>

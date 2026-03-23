@@ -23,16 +23,16 @@
 
 ## Implementation Plan
 
-- [ ] Read `split_tree.cpp` and `split_tree.h` to understand the recursion structure and any existing depth limits.
-- [ ] Check if there are existing `SplitTree` tests; add new tests to the same file if so.
-- [ ] Write a test: programmatically split the same leaf 100 times (always split the first leaf). Assert:
+- [x] Read `split_tree.cpp` and `split_tree.h` to understand the recursion structure and any existing depth limits.
+- [x] Check if there are existing `SplitTree` tests; add new tests to the same file if so.
+- [x] Write a test: programmatically split the same leaf 100 times (always split the first leaf). Assert:
   - `recompute()` completes without crashing.
   - `hit_test()` at an arbitrary pixel coordinate completes without crashing.
   - `for_each_leaf()` enumerates exactly 101 leaves.
-- [ ] Write a second test: split until panes are narrower than 1 pixel. Assert that `recompute()` either clamps sizes to a minimum (1 column / 1 row) or marks zero-size panes as not-renderable. The renderer should never receive a zero-dimension viewport.
-- [ ] If the implementation does not handle these cases safely, add a depth cap or minimum-size clamp and document it in `split_tree.h`.
-- [ ] Build and run tests.
-- [ ] Run `clang-format`.
+- [x] Write a second test: split until panes are narrower than 1 pixel. Assert that `recompute()` either clamps sizes to a minimum (1 column / 1 row) or marks zero-size panes as not-renderable. The renderer should never receive a zero-dimension viewport.
+- [x] If the implementation does not handle these cases safely, add a depth cap or minimum-size clamp and document it in `split_tree.h`.
+- [x] Build and run tests.
+- [x] Run `clang-format`.
 
 ---
 

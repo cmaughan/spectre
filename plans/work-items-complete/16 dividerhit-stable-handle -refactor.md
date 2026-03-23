@@ -29,14 +29,14 @@ This refactor completes the cleanup started by the bug fix item `04`.
 
 ## Implementation Plan
 
-- [ ] Read `split_tree.h`, `split_tree.cpp`, and the relevant section of `app.cpp`.
-- [ ] Verify that `04 dividerhit-dangling-void-ptr -bug` has already introduced `DividerId` as an integer type and wired it into `set_divider_ratio()`.
-- [ ] Replace `void* node` in `DividerHit` with `DividerId divider_id`.
-- [ ] Remove the `// NOSONAR` comment (the suppression is now unnecessary).
-- [ ] Update any remaining cast sites.
-- [ ] Ensure `SplitTree` assigns a stable `DividerId` to each internal (non-leaf) node at creation and that the ID space is disjoint from `LeafId` (or uses a different type to avoid confusion at call sites).
-- [ ] Build: `cmake --build build --target draxul draxul-tests && py do.py smoke`
-- [ ] Run `clang-format`.
+- [x] Read `split_tree.h`, `split_tree.cpp`, and the relevant section of `app.cpp`.
+- [x] Verify that `04 dividerhit-dangling-void-ptr -bug` has already introduced `DividerId` as an integer type and wired it into `set_divider_ratio()`.
+- [x] Replace `void* node` in `DividerHit` with `DividerId divider_id`.
+- [x] Remove the `// NOSONAR` comment (the suppression is now unnecessary).
+- [x] Update any remaining cast sites.
+- [x] Ensure `SplitTree` assigns a stable `DividerId` to each internal (non-leaf) node at creation and that the ID space is disjoint from `LeafId` (or uses a different type to avoid confusion at call sites).
+- [x] Build: `cmake --build build --target draxul draxul-tests && py do.py smoke`
+- [x] Run `clang-format`.
 
 ---
 

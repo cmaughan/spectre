@@ -45,11 +45,11 @@ public:
 
     // Creates and initialises the primary host, resetting the tree to a single leaf.
     // Returns false on failure; error() contains the reason.
-    bool create(HostCallbacks callbacks, int pixel_w, int pixel_h);
+    bool create(IHostCallbacks& callbacks, int pixel_w, int pixel_h);
 
     // Splits the focused leaf in the given direction and launches a new host.
     // Returns the new leaf's ID, or kInvalidLeaf on failure.
-    LeafId split_focused(SplitDirection dir, HostCallbacks callbacks);
+    LeafId split_focused(SplitDirection dir, IHostCallbacks& callbacks);
 
     // Closes a leaf by ID — shuts down its host and collapses the tree.
     // Returns false if this is the last leaf.
@@ -109,7 +109,7 @@ public:
     }
 
 private:
-    bool create_host_for_leaf(LeafId id, HostCallbacks callbacks,
+    bool create_host_for_leaf(LeafId id, IHostCallbacks& callbacks,
         HostLaunchOptions launch, bool is_primary);
     void update_all_viewports();
 

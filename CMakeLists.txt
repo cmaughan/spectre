@@ -123,31 +123,58 @@ endif()
 #   cmake/CompileShaders_Metal.cmake (Apple)
 #   cmake/CompileShaders.cmake (Windows)
 if(APPLE)
-    set(DRAXUL_PLATFORM_SOURCES "app/macos_menu.mm")
+    set(DRAXUL_APP_PLATFORM_SOURCES "app/macos_menu.mm")
+    set(DRAXUL_EXEC_PLATFORM_SOURCES "")
     set(DRAXUL_ICON_FILE "${CMAKE_SOURCE_DIR}/assets/draxul.icns")
     if(EXISTS "${DRAXUL_ICON_FILE}")
-        list(APPEND DRAXUL_PLATFORM_SOURCES "${DRAXUL_ICON_FILE}")
+        list(APPEND DRAXUL_EXEC_PLATFORM_SOURCES "${DRAXUL_ICON_FILE}")
         set_source_files_properties("${DRAXUL_ICON_FILE}" PROPERTIES
             MACOSX_PACKAGE_LOCATION "Resources"
         )
     endif()
 elseif(WIN32)
-    set(DRAXUL_PLATFORM_SOURCES "app/draxul.rc")
+    set(DRAXUL_APP_PLATFORM_SOURCES "")
+    set(DRAXUL_EXEC_PLATFORM_SOURCES "app/draxul.rc")
 else()
-    set(DRAXUL_PLATFORM_SOURCES "")
+    set(DRAXUL_APP_PLATFORM_SOURCES "")
+    set(DRAXUL_EXEC_PLATFORM_SOURCES "")
 endif()
 
-add_executable(draxul
-    app/main.cpp
+add_library(draxul-app
     app/app.cpp
     app/gui_action_handler.cpp
     app/input_dispatcher.cpp
     app/host_manager.cpp
     app/split_tree.cpp
-    ${DRAXUL_PLATFORM_SOURCES}
+    ${DRAXUL_APP_PLATFORM_SOURCES}
 )
 
-target_include_directories(draxul PRIVATE app)
+target_include_directories(draxul-app PUBLIC app)
+
+draxul_apply_sanitizers(draxul-app)
+draxul_apply_coverage(draxul-app)
+
+target_link_libraries(draxul-app PUBLIC
+    draxul-app-support
+    draxul-renderer
+    draxul-ui
+    draxul-font
+    draxul-grid
+    draxul-nvim
+    draxul-host
+)
+if(DRAXUL_ENABLE_MEGACITY)
+    target_link_libraries(draxul-app PUBLIC draxul-megacity)
+    target_compile_definitions(draxul-app PRIVATE DRAXUL_ENABLE_MEGACITY)
+endif()
+if(DRAXUL_ENABLE_RENDER_TESTS)
+    target_compile_definitions(draxul-app PUBLIC DRAXUL_ENABLE_RENDER_TESTS)
+endif()
+
+add_executable(draxul
+    app/main.cpp
+    ${DRAXUL_EXEC_PLATFORM_SOURCES}
+)
 
 if(APPLE AND EXISTS "${CMAKE_SOURCE_DIR}/assets/draxul.icns")
     set_target_properties(draxul PROPERTIES
@@ -162,19 +189,7 @@ endif()
 draxul_apply_sanitizers(draxul)
 draxul_apply_coverage(draxul)
 
-target_link_libraries(draxul PRIVATE
-    draxul-app-support
-    draxul-renderer
-    draxul-ui
-    draxul-font
-    draxul-grid
-    draxul-nvim
-    draxul-host
-)
-if(DRAXUL_ENABLE_MEGACITY)
-    target_link_libraries(draxul PRIVATE draxul-megacity)
-    target_compile_definitions(draxul PRIVATE DRAXUL_ENABLE_MEGACITY)
-endif()
+target_link_libraries(draxul PRIVATE draxul-app)
 if(DRAXUL_ENABLE_RENDER_TESTS)
     target_compile_definitions(draxul PRIVATE DRAXUL_ENABLE_RENDER_TESTS)
 endif()

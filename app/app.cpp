@@ -298,8 +298,7 @@ bool App::initialize_host()
 
     auto [pixel_w, pixel_h] = window_->size_pixels();
     (void)pixel_h;
-    auto callbacks = make_host_callbacks();
-    if (!host_manager_.create(std::move(callbacks), pixel_w, ui_panel_.layout().terminal_height))
+    if (!host_manager_.create(*this, pixel_w, ui_panel_.layout().terminal_height))
     {
         last_init_error_ = host_manager_.error();
         return false;
@@ -318,17 +317,6 @@ bool App::initialize_host()
     return true;
 }
 
-HostCallbacks App::make_host_callbacks()
-{
-    HostCallbacks callbacks;
-    callbacks.request_frame = [this]() { request_frame(); };
-    callbacks.request_quit = [this]() { request_quit(); };
-    callbacks.wake_window = [this]() { window_->wake(); };
-    callbacks.set_window_title = [this](const std::string& title) { window_->set_title(title); };
-    callbacks.set_text_input_area = [this](int x, int y, int w, int h) { window_->set_text_input_area(x, y, w, h); };
-    return callbacks;
-}
-
 void App::wire_gui_actions()
 {
     GuiActionHandler::Deps gui_deps;
@@ -340,8 +328,7 @@ void App::wire_gui_actions()
     gui_deps.on_font_changed = [this]() { apply_font_metrics(); };
     gui_deps.on_open_file_dialog = [this]() { window_->show_open_file_dialog(); };
     gui_deps.on_split_vertical = [this]() {
-        auto cbs = make_host_callbacks();
-        LeafId new_leaf = host_manager_.split_focused(SplitDirection::Vertical, std::move(cbs));
+        LeafId new_leaf = host_manager_.split_focused(SplitDirection::Vertical, *this);
         if (new_leaf != kInvalidLeaf)
         {
             input_dispatcher_.set_host(host_manager_.focused_host());
@@ -349,8 +336,7 @@ void App::wire_gui_actions()
         }
     };
     gui_deps.on_split_horizontal = [this]() {
-        auto cbs = make_host_callbacks();
-        LeafId new_leaf = host_manager_.split_focused(SplitDirection::Horizontal, std::move(cbs));
+        LeafId new_leaf = host_manager_.split_focused(SplitDirection::Horizontal, *this);
         if (new_leaf != kInvalidLeaf)
         {
             input_dispatcher_.set_host(host_manager_.focused_host());
@@ -620,7 +606,7 @@ void App::on_display_scale_changed(float new_ppi)
 void App::request_frame()
 {
     frame_requested_ = true;
-    window_->wake();
+    wake_window();
 }
 
 void App::request_quit()
@@ -629,6 +615,24 @@ void App::request_quit()
         h.request_close();
     });
     running_ = false;
+}
+
+void App::wake_window()
+{
+    if (window_)
+        window_->wake();
+}
+
+void App::set_window_title(const std::string& title)
+{
+    if (window_)
+        window_->set_title(title);
+}
+
+void App::set_text_input_area(int x, int y, int w, int h)
+{
+    if (window_)
+        window_->set_text_input_area(x, y, w, h);
 }
 
 void App::update_diagnostics_panel()

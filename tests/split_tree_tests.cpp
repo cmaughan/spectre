@@ -384,3 +384,54 @@ TEST_CASE("SplitTree: deep recursive split 4 levels", "[split_tree]")
         CHECK(desc.pixel_size.y > 0);
     });
 }
+
+TEST_CASE("SplitTree: 100-deep split keeps recursion safe", "[split_tree]")
+{
+    SplitTree tree;
+    const LeafId root = tree.reset(2000, 1000);
+
+    for (int i = 0; i < 100; ++i)
+    {
+        REQUIRE(tree.split_leaf(root, SplitDirection::Vertical) != kInvalidLeaf);
+    }
+
+    tree.recompute(2000, 1000);
+
+    REQUIRE(tree.leaf_count() == 101);
+
+    auto result = tree.hit_test(123, 456);
+    CHECK_FALSE(std::holds_alternative<std::monostate>(result));
+
+    std::vector<LeafId> visited;
+    tree.for_each_leaf([&](LeafId id, const PaneDescriptor& desc) {
+        visited.push_back(id);
+        CHECK(desc.pixel_size.x > 0);
+        CHECK(desc.pixel_size.y > 0);
+    });
+
+    REQUIRE(visited.size() == 101);
+}
+
+TEST_CASE("SplitTree: tiny panes keep renderable descriptors", "[split_tree]")
+{
+    SplitTree tree;
+    const LeafId root = tree.reset(8, 8);
+
+    for (int i = 0; i < 5; ++i)
+    {
+        REQUIRE(tree.split_leaf(root, SplitDirection::Vertical) != kInvalidLeaf);
+    }
+
+    tree.recompute(8, 8);
+
+    std::vector<PaneDescriptor> descriptors;
+    tree.for_each_leaf([&](LeafId, const PaneDescriptor& desc) {
+        descriptors.push_back(desc);
+        CHECK(desc.pixel_size.x > 0);
+        CHECK(desc.pixel_size.y > 0);
+    });
+
+    REQUIRE(descriptors.size() == 6);
+    auto result = tree.hit_test(0, 0);
+    CHECK_FALSE(std::holds_alternative<std::monostate>(result));
+}

@@ -1,5 +1,6 @@
 #include "support/fake_renderer.h"
 #include "support/fake_window.h"
+#include "support/test_host_callbacks.h"
 
 #include <draxul/terminal_host_base.h>
 
@@ -100,8 +101,8 @@ struct TermSetup
     FakeTermRenderer renderer;
     TextService text_service;
     TestTerminalHost host;
+    TestHostCallbacks callbacks;
     bool ok = false;
-    std::string last_title; // captures the most recent set_window_title call
 
     explicit TermSetup(int cols = 20, int rows = 5)
     {
@@ -119,15 +120,7 @@ struct TermSetup
         vp.grid_size.y = rows;
 
         HostContext ctx{ window, renderer, text_service, {}, vp, 96.0f };
-
-        HostCallbacks cbs;
-        cbs.request_frame = [] {};
-        cbs.request_quit = [] {};
-        cbs.wake_window = [] {};
-        cbs.set_window_title = [this](const std::string& title) { last_title = title; };
-        cbs.set_text_input_area = [](int, int, int, int) {};
-
-        ok = host.initialize(ctx, std::move(cbs));
+        ok = host.initialize(ctx, callbacks);
     }
 };
 
@@ -1107,7 +1100,7 @@ TEST_CASE("terminal: OSC 7 sets window title to directory basename", "[terminal]
     REQUIRE(ts.ok);
     // Standard OSC 7 with localhost hostname, BEL terminator
     ts.host.feed("\x1B]7;file://localhost/Users/chris/projects\x07");
-    REQUIRE(ts.last_title == "projects");
+    REQUIRE(ts.callbacks.last_window_title == "projects");
 }
 
 TEST_CASE("terminal: OSC 7 with empty hostname", "[terminal]")
@@ -1116,7 +1109,7 @@ TEST_CASE("terminal: OSC 7 with empty hostname", "[terminal]")
     REQUIRE(ts.ok);
     // Empty hostname (common on macOS zsh)
     ts.host.feed("\x1B]7;file:///tmp\x07");
-    REQUIRE(ts.last_title == "tmp");
+    REQUIRE(ts.callbacks.last_window_title == "tmp");
 }
 
 TEST_CASE("terminal: OSC 7 with trailing slash", "[terminal]")
@@ -1124,7 +1117,7 @@ TEST_CASE("terminal: OSC 7 with trailing slash", "[terminal]")
     TermSetup ts;
     REQUIRE(ts.ok);
     ts.host.feed("\x1B]7;file://host/home/user/\x07");
-    REQUIRE(ts.last_title == "user");
+    REQUIRE(ts.callbacks.last_window_title == "user");
 }
 
 TEST_CASE("terminal: OSC 7 root directory", "[terminal]")
@@ -1132,7 +1125,7 @@ TEST_CASE("terminal: OSC 7 root directory", "[terminal]")
     TermSetup ts;
     REQUIRE(ts.ok);
     ts.host.feed("\x1B]7;file://localhost/\x07");
-    REQUIRE(ts.last_title == "/");
+    REQUIRE(ts.callbacks.last_window_title == "/");
 }
 
 TEST_CASE("terminal: OSC 7 percent-decodes path", "[terminal]")
@@ -1141,7 +1134,7 @@ TEST_CASE("terminal: OSC 7 percent-decodes path", "[terminal]")
     REQUIRE(ts.ok);
     // %20 = space, %2F should not appear in practice but test mixed encoding
     ts.host.feed("\x1B]7;file://localhost/home/my%20folder\x07");
-    REQUIRE(ts.last_title == "my folder");
+    REQUIRE(ts.callbacks.last_window_title == "my folder");
 }
 
 TEST_CASE("terminal: OSC 7 with ST terminator", "[terminal]")
@@ -1150,7 +1143,7 @@ TEST_CASE("terminal: OSC 7 with ST terminator", "[terminal]")
     REQUIRE(ts.ok);
     // ST = ESC backslash
     ts.host.feed("\x1B]7;file:///var/log\x1B\\");
-    REQUIRE(ts.last_title == "log");
+    REQUIRE(ts.callbacks.last_window_title == "log");
 }
 
 TEST_CASE("terminal: OSC 7 malformed URI is ignored", "[terminal]")
@@ -1159,7 +1152,7 @@ TEST_CASE("terminal: OSC 7 malformed URI is ignored", "[terminal]")
     REQUIRE(ts.ok);
     // Not a file:// URI — should be silently ignored
     ts.host.feed("\x1B]7;http://example.com/path\x07");
-    REQUIRE(ts.last_title.empty());
+    REQUIRE(ts.callbacks.last_window_title.empty());
 }
 
 TEST_CASE("terminal: OSC 0 title still works alongside OSC 7", "[terminal]")
@@ -1168,8 +1161,8 @@ TEST_CASE("terminal: OSC 0 title still works alongside OSC 7", "[terminal]")
     REQUIRE(ts.ok);
     // OSC 0 sets title
     ts.host.feed("\x1B]0;My Terminal\x07");
-    REQUIRE(ts.last_title == "My Terminal");
+    REQUIRE(ts.callbacks.last_window_title == "My Terminal");
     // OSC 7 overrides it
     ts.host.feed("\x1B]7;file:///home/user/code\x07");
-    REQUIRE(ts.last_title == "code");
+    REQUIRE(ts.callbacks.last_window_title == "code");
 }

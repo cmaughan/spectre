@@ -1,5 +1,5 @@
 #include "nvim_host.h"
-#include "clipboard_util.h"
+#include <draxul/clipboard_util.h>
 
 #include <draxul/log.h>
 #include <draxul/text_service.h>
@@ -35,9 +35,8 @@ bool NvimHost::initialize_host()
         return false;
     }
 
-    rpc_.on_notification_available = [wake = callbacks().wake_window]() {
-        if (wake)
-            wake();
+    rpc_.on_notification_available = [this]() {
+        callbacks().wake_window();
     };
     rpc_.on_request = [this](const std::string& method, const std::vector<MpackValue>& params) {
         return handle_rpc_request(method, params);
@@ -376,9 +375,8 @@ void NvimHost::wire_ui_callbacks()
         apply_ui_option(ui_options_, name, value);
     };
     ui_events_.on_busy = [this](bool busy) { on_busy(busy); };
-    ui_events_.on_title = [set_title = callbacks().set_window_title](const std::string& title) {
-        if (set_title)
-            set_title(title.empty() ? "Draxul" : title);
+    ui_events_.on_title = [this](const std::string& title) {
+        callbacks().set_window_title(title.empty() ? "Draxul" : title);
     };
 }
 

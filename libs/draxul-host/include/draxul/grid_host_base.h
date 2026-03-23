@@ -16,7 +16,7 @@ namespace draxul
 class GridHostBase : public IGridHost
 {
 public:
-    bool initialize(const HostContext& context, HostCallbacks callbacks) override;
+    bool initialize(const HostContext& context, IHostCallbacks& callbacks) override;
     void set_viewport(const HostViewport& viewport) override;
     void on_font_metrics_changed() override;
     void set_scroll_offset(float px) override;
@@ -84,9 +84,9 @@ protected:
     {
         return *grid_pipeline_;
     }
-    const HostCallbacks& callbacks() const
+    IHostCallbacks& callbacks() const
     {
-        return callbacks_;
+        return *callbacks_;
     }
     int grid_cols() const
     {
@@ -131,7 +131,7 @@ private:
     std::unique_ptr<IGridHandle> grid_handle_;
     HostLaunchOptions launch_options_;
     HostViewport viewport_ = {};
-    HostCallbacks callbacks_;
+    IHostCallbacks* callbacks_ = nullptr;
 
     Grid grid_;
     HighlightTable highlights_;

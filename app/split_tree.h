@@ -57,7 +57,7 @@ public:
     // Hit-test a point in physical pixels.
     HitResult hit_test(int px, int py) const;
 
-    // Set the split ratio for a divider (from DividerHit::node).
+    // Set the split ratio for a divider identified by DividerId.
     // Ratio is clamped to [0.1, 0.9].
     void set_divider_ratio(DividerId id, float ratio);
 

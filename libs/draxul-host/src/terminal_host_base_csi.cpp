@@ -541,7 +541,7 @@ void TerminalHostBase::handle_osc(std::string_view body)
     const std::string_view code = body.substr(0, semi);
     const std::string_view payload = body.substr(semi + 1);
 
-    if ((code == "0" || code == "2") && callbacks().set_window_title)
+    if (code == "0" || code == "2")
     {
         callbacks().set_window_title(std::string(payload));
     }

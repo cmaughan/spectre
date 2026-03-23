@@ -22,7 +22,7 @@
 namespace draxul
 {
 
-class App
+class App : private IHostCallbacks
 {
 public:
     explicit App(AppOptions options = {});
@@ -57,8 +57,11 @@ private:
     bool pump_once(std::optional<std::chrono::steady_clock::time_point> wait_deadline = std::nullopt);
     void on_resize(int pixel_w, int pixel_h);
     void on_display_scale_changed(float new_ppi);
-    void request_frame();
-    void request_quit();
+    void request_frame() override;
+    void request_quit() override;
+    void wake_window() override;
+    void set_window_title(const std::string& title) override;
+    void set_text_input_area(int x, int y, int w, int h) override;
     void update_diagnostics_panel();
     void refresh_window_layout();
     // Converts a PaneDescriptor (pixel region from SplitTree) to a full HostViewport.
@@ -67,7 +70,6 @@ private:
     bool close_dead_panes();
     void render_imgui_overlay(float delta_seconds);
     bool render_frame();
-    HostCallbacks make_host_callbacks();
     int wait_timeout_ms(std::optional<std::chrono::steady_clock::time_point> wait_deadline) const;
 
     AppOptions options_;

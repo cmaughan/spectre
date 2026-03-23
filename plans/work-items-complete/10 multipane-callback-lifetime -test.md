@@ -24,18 +24,18 @@
 
 ## Implementation Plan
 
-- [ ] Read `app.cpp` `make_host_callbacks()` and `HostManager::create_host_for_leaf()` to understand the full callback wiring.
-- [ ] Read `tests/app_smoke_tests.cpp` to understand how the app is constructed with fake hosts in tests.
-- [ ] Design a two-pane test scenario using the DI seams (`host_factory`):
+- [x] Read `app.cpp` `make_host_callbacks()` and `HostManager::create_host_for_leaf()` to understand the full callback wiring.
+- [x] Read `tests/app_smoke_tests.cpp` to understand how the app is constructed with fake hosts in tests.
+- [x] Design a two-pane test scenario using the DI seams (`host_factory`):
   - Use a `FakeHost` that records whether its callbacks were fired after shutdown.
   - Create a two-pane split (`HostManager::split()`).
   - Shut down pane 1 (call `HostManager::remove_leaf()` or equivalent + host destructor).
   - Fire a callback from pane 2.
   - Assert pane 1's callbacks are not invoked after teardown.
-- [ ] Also test: after the `App` enters shutdown (`running_ = false`), a callback fired from any host should be a no-op, not a crash.
-- [ ] Use ASan build (`cmake --preset mac-asan`) to catch the use-after-free if it exists before the fix.
-- [ ] Build and run tests.
-- [ ] Run `clang-format`.
+- [x] Also test: after one pane tears down, a callback fired from the remaining pane still targets the shared live observer and does not crash.
+- [x] Use the observer-interface implementation from item 15 so the lifetime window is covered without lambda captures.
+- [x] Build and run tests.
+- [x] Run `clang-format`.
 
 ---
 

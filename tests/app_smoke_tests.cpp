@@ -9,6 +9,7 @@
 
 #include "support/fake_renderer.h"
 #include "support/fake_window.h"
+#include "support/test_host_callbacks.h"
 
 #include <catch2/catch_all.hpp>
 #include <draxul/app_config.h>
@@ -31,9 +32,9 @@ namespace
 class SmokeTestHost : public IGridHost
 {
 public:
-    bool initialize(const HostContext&, HostCallbacks callbacks) override
+    bool initialize(const HostContext&, IHostCallbacks& callbacks) override
     {
-        callbacks_ = std::move(callbacks);
+        callbacks_ = &callbacks;
         initialized_ = true;
         return true;
     }
@@ -61,8 +62,8 @@ public:
         ++pump_count_;
         // Simulate what a real host does: request a frame after producing output.
         // Without this, the pump loop would block in wait_events forever.
-        if (running_ && callbacks_.request_frame)
-            callbacks_.request_frame();
+        if (running_ && callbacks_)
+            callbacks_->request_frame();
     }
 
     std::optional<std::chrono::steady_clock::time_point> next_deadline() const override
@@ -121,7 +122,7 @@ public:
     }
 
 private:
-    HostCallbacks callbacks_;
+    IHostCallbacks* callbacks_ = nullptr;
     bool initialized_ = false;
     bool running_ = true;
     int pump_count_ = 0;
@@ -131,7 +132,7 @@ private:
 class FailingInitHost final : public SmokeTestHost
 {
 public:
-    bool initialize(const HostContext&, HostCallbacks) override
+    bool initialize(const HostContext&, IHostCallbacks&) override
     {
         return false;
     }

@@ -24,16 +24,16 @@
 
 ## Implementation Plan
 
-- [ ] Read `base_renderer.h` and the renderer implementation (Metal or Vulkan) to see how `register_render_pass()` and `unregister_render_pass()` are implemented.
-- [ ] Identify the fake/stub renderer used in existing tests (likely a `FakeRenderer` or similar in `tests/`).
-- [ ] If a fake renderer exists, use it. Otherwise create a minimal stub that implements `I3DRenderer` with a `shared_ptr<IRenderPass>` slot.
-- [ ] Write a test:
+- [x] Read `base_renderer.h` and the renderer implementation (Metal or Vulkan) to see how `register_render_pass()` and `unregister_render_pass()` are implemented.
+- [x] Identify the fake/stub renderer used in existing tests (likely a `FakeRenderer` or similar in `tests/`).
+- [x] If a fake renderer exists, use it. Otherwise create a minimal stub that implements `I3DRenderer` with a `shared_ptr<IRenderPass>` slot.
+- [x] Write a test:
   - Register a pass. Verify it is stored.
   - Call `unregister_render_pass()`. Verify the slot is cleared.
   - Call `unregister_render_pass()` again. Assert no crash, no exception, no double-free.
-- [ ] Write a second test: call `unregister_render_pass()` without ever registering a pass. Assert no crash.
-- [ ] Build and run tests.
-- [ ] Run `clang-format`.
+- [x] Write a second test: call `unregister_render_pass()` without ever registering a pass. Assert no crash.
+- [x] Build and run tests.
+- [x] Run `clang-format`.
 
 ---
 
