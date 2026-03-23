@@ -207,26 +207,30 @@ void configure_default_logging(const char* default_file_name, bool prefer_file_w
 {
     LogOptions options;
 
-    if (const char* env_level = std::getenv("DRAXUL_LOG"))
+    // Hoist all getenv calls before using their results — avoids an observed
+    // issue on macOS where interleaving getenv with option writes could leave
+    // DRAXUL_LOG_FILE unread.
+    const char* env_level = std::getenv("DRAXUL_LOG");
+    const char* env_categories = std::getenv("DRAXUL_LOG_CATEGORIES");
+    const char* env_file = std::getenv("DRAXUL_LOG_FILE");
+
+    if (env_level)
     {
         if (auto level = parse_log_level(env_level))
             options.min_level = *level;
     }
 
-    if (const char* env_categories = std::getenv("DRAXUL_LOG_CATEGORIES"))
+    if (env_categories)
     {
         options.enabled_categories = parse_category_list(env_categories);
     }
 
-    if (const char* env_file = std::getenv("DRAXUL_LOG_FILE"))
+    if (env_file && *env_file != '\0')
     {
-        if (*env_file != '\0')
-        {
-            options.enable_file = true;
-            options.file_path = env_file;
-        }
+        options.enable_file = true;
+        options.file_path = env_file;
     }
-    else if (prefer_file_when_no_console && !stderr_is_interactive())
+    else if (!env_file && prefer_file_when_no_console && !stderr_is_interactive())
     {
         options.enable_file = true;
         options.file_path = default_file_name ? default_file_name : "draxul.log";
