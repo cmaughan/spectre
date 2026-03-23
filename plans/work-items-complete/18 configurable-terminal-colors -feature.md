@@ -15,20 +15,20 @@
 
 ## Implementation Plan
 
-- [ ] Read `libs/draxul-host/src/shell_host_unix.cpp` (and/or Windows equivalent) to find where the hardcoded colors are used.
-- [ ] Read `app/app_config.h` to understand the current config schema and TOML parsing approach.
-- [ ] Add a new `[terminal]` section to `config.toml` with `fg` and `bg` color fields:
+- [x] Read `libs/draxul-host/src/shell_host_unix.cpp` (and/or Windows equivalent) to find where the hardcoded colors are used.
+- [x] Read `app/app_config.h` to understand the current config schema and TOML parsing approach.
+- [x] Add a new `[terminal]` section to `config.toml` with `fg` and `bg` color fields:
   ```toml
   [terminal]
   fg = "#eaeaea"
   bg = "#141516"
   ```
-- [ ] Add the corresponding `TerminalConfig` struct to `AppConfig`.
-- [ ] Wire the TOML parse for the new section.
-- [ ] Plumb the resolved colors from `AppConfig` into the `ShellHost` constructor or `initialize()` call — do not pass them as a global; use the existing `Deps` pattern if `ShellHost` already has one.
-- [ ] Update `config.toml` in the repo root with the new section and the current defaults.
-- [ ] Build and run: `cmake --build build --target draxul draxul-tests && py do.py smoke`.
-- [ ] Run `clang-format`.
+- [x] Add the corresponding `TerminalConfig` struct to `AppConfig`.
+- [x] Wire the TOML parse for the new section.
+- [x] Plumb the resolved colors from `AppConfig` into the `ShellHost` constructor or `initialize()` call — do not pass them as a global; use the existing `Deps` pattern if `ShellHost` already has one.
+- [x] Update `config.toml` in the repo root with the new section and the current defaults. (N/A -- no repo-root config.toml; config lives in user's platform config directory at runtime. The section is optional; when absent, hardcoded defaults are used.)
+- [x] Build and run: `cmake --build build --target draxul draxul-tests && py do.py smoke`.
+- [x] Run `clang-format`.
 
 ---
 

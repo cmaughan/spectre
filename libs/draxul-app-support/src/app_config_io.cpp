@@ -36,7 +36,7 @@ constexpr std::array<std::string_view, 9> kKnownGuiActions = {
     "split_vertical",
     "split_horizontal",
 };
-constexpr std::array<std::string_view, 13> kKnownTopLevelKeys = {
+constexpr std::array<std::string_view, 14> kKnownTopLevelKeys = {
     "window_width",
     "window_height",
     "font_size",
@@ -50,6 +50,7 @@ constexpr std::array<std::string_view, 13> kKnownTopLevelKeys = {
     "bold_italic_font_path",
     "fallback_paths",
     "keybindings",
+    "terminal",
 };
 
 std::filesystem::path config_path()
@@ -262,6 +263,25 @@ AppConfig config_from_toml(const toml::table& document)
         }
     }
 
+    // [terminal] section -- optional fg/bg hex color overrides for shell panes.
+    if (const auto* terminal = document["terminal"].as_table())
+    {
+        if (auto fg = toml_support::get_string(*terminal, "fg"))
+        {
+            if (auto parsed = parse_hex_color(*fg); parsed.has_value())
+                config.terminal.fg = *fg;
+            else
+                DRAXUL_LOG_WARN(LogCategory::App, "[config] terminal.fg '%s' is not a valid hex color (#RRGGBB or #RGB) -- ignoring", fg->c_str());
+        }
+        if (auto bg = toml_support::get_string(*terminal, "bg"))
+        {
+            if (auto parsed = parse_hex_color(*bg); parsed.has_value())
+                config.terminal.bg = *bg;
+            else
+                DRAXUL_LOG_WARN(LogCategory::App, "[config] terminal.bg '%s' is not a valid hex color (#RRGGBB or #RGB) -- ignoring", bg->c_str());
+        }
+    }
+
     // Warn about unknown top-level keys
     for (const auto& [key, value] : document)
     {
@@ -275,6 +295,58 @@ AppConfig config_from_toml(const toml::table& document)
 }
 
 } // namespace
+
+// Parse a hex color string (#RRGGBB or #RGB) into a Color with alpha 1.0.
+// Returns std::nullopt on malformed input.
+std::optional<Color> parse_hex_color(std::string_view hex)
+{
+    if (hex.empty() || hex[0] != '#')
+        return std::nullopt;
+
+    hex.remove_prefix(1); // drop '#'
+
+    auto hex_digit = [](char ch) -> int {
+        if (ch >= '0' && ch <= '9')
+            return ch - '0';
+        if (ch >= 'a' && ch <= 'f')
+            return 10 + (ch - 'a');
+        if (ch >= 'A' && ch <= 'F')
+            return 10 + (ch - 'A');
+        return -1;
+    };
+
+    if (hex.size() == 6)
+    {
+        int digits[6];
+        for (int i = 0; i < 6; ++i)
+        {
+            digits[i] = hex_digit(hex[static_cast<size_t>(i)]);
+            if (digits[i] < 0)
+                return std::nullopt;
+        }
+        uint32_t rgb = static_cast<uint32_t>((digits[0] << 20) | (digits[1] << 16)
+            | (digits[2] << 12) | (digits[3] << 8)
+            | (digits[4] << 4) | digits[5]);
+        return Color::from_rgb(rgb);
+    }
+
+    if (hex.size() == 3)
+    {
+        int digits[3];
+        for (int i = 0; i < 3; ++i)
+        {
+            digits[i] = hex_digit(hex[static_cast<size_t>(i)]);
+            if (digits[i] < 0)
+                return std::nullopt;
+        }
+        // Expand #RGB to #RRGGBB: each digit is doubled (e.g. #abc -> #aabbcc)
+        uint32_t rgb = static_cast<uint32_t>(
+            ((digits[0] * 17) << 16) | ((digits[1] * 17) << 8) | (digits[2] * 17));
+        return Color::from_rgb(rgb);
+    }
+
+    return std::nullopt;
+}
 
 AppConfig::AppConfig()
 {
@@ -345,6 +417,16 @@ std::string AppConfig::serialize() const
         }
     }
     document.insert_or_assign("keybindings", std::move(keybinding_table));
+
+    if (!terminal.fg.empty() || !terminal.bg.empty())
+    {
+        toml::table terminal_table;
+        if (!terminal.fg.empty())
+            terminal_table.insert_or_assign("fg", terminal.fg);
+        if (!terminal.bg.empty())
+            terminal_table.insert_or_assign("bg", terminal.bg);
+        document.insert_or_assign("terminal", std::move(terminal_table));
+    }
 
     std::ostringstream out;
     out << document << '\n';

@@ -677,3 +677,156 @@ TEST_CASE("host kind parser accepts nvim and powershell spellings", "[config]")
     INFO("host kind stringifies");
     REQUIRE(std::string(to_string(*powershell)) == std::string("powershell"));
 }
+
+// ---------------------------------------------------------------------------
+// parse_hex_color tests
+// ---------------------------------------------------------------------------
+
+TEST_CASE("parse_hex_color handles #RRGGBB format", "[config]")
+{
+    auto white = parse_hex_color("#ffffff");
+    INFO("#ffffff should parse");
+    REQUIRE(white.has_value());
+    INFO("red channel");
+    REQUIRE(white->r == Catch::Approx(1.0f).margin(0.01f));
+    INFO("green channel");
+    REQUIRE(white->g == Catch::Approx(1.0f).margin(0.01f));
+    INFO("blue channel");
+    REQUIRE(white->b == Catch::Approx(1.0f).margin(0.01f));
+    INFO("alpha channel");
+    REQUIRE(white->a == Catch::Approx(1.0f));
+
+    auto black = parse_hex_color("#000000");
+    INFO("#000000 should parse");
+    REQUIRE(black.has_value());
+    INFO("black red channel");
+    REQUIRE(black->r == Catch::Approx(0.0f));
+    INFO("black green channel");
+    REQUIRE(black->g == Catch::Approx(0.0f));
+    INFO("black blue channel");
+    REQUIRE(black->b == Catch::Approx(0.0f));
+
+    auto red = parse_hex_color("#ff0000");
+    INFO("#ff0000 should parse");
+    REQUIRE(red.has_value());
+    INFO("red channel is 1.0");
+    REQUIRE(red->r == Catch::Approx(1.0f).margin(0.01f));
+    INFO("green is 0");
+    REQUIRE(red->g == Catch::Approx(0.0f));
+    INFO("blue is 0");
+    REQUIRE(red->b == Catch::Approx(0.0f));
+}
+
+TEST_CASE("parse_hex_color handles #RGB shorthand", "[config]")
+{
+    auto white = parse_hex_color("#fff");
+    INFO("#fff should parse");
+    REQUIRE(white.has_value());
+    INFO("#fff expands to white");
+    REQUIRE(white->r == Catch::Approx(1.0f).margin(0.01f));
+    REQUIRE(white->g == Catch::Approx(1.0f).margin(0.01f));
+    REQUIRE(white->b == Catch::Approx(1.0f).margin(0.01f));
+
+    auto color = parse_hex_color("#abc");
+    INFO("#abc should parse");
+    REQUIRE(color.has_value());
+    // #abc -> #aabbcc -> r=170/255, g=187/255, b=204/255
+    INFO("#abc red channel");
+    REQUIRE(color->r == Catch::Approx(170.0f / 255.0f).margin(0.01f));
+    INFO("#abc green channel");
+    REQUIRE(color->g == Catch::Approx(187.0f / 255.0f).margin(0.01f));
+    INFO("#abc blue channel");
+    REQUIRE(color->b == Catch::Approx(204.0f / 255.0f).margin(0.01f));
+}
+
+TEST_CASE("parse_hex_color handles uppercase hex digits", "[config]")
+{
+    auto upper = parse_hex_color("#AABBCC");
+    auto lower = parse_hex_color("#aabbcc");
+    INFO("uppercase #AABBCC should parse");
+    REQUIRE(upper.has_value());
+    INFO("lowercase #aabbcc should parse");
+    REQUIRE(lower.has_value());
+    INFO("uppercase and lowercase produce same color");
+    REQUIRE(upper->r == Catch::Approx(lower->r));
+    REQUIRE(upper->g == Catch::Approx(lower->g));
+    REQUIRE(upper->b == Catch::Approx(lower->b));
+}
+
+TEST_CASE("parse_hex_color rejects malformed input", "[config]")
+{
+    INFO("empty string");
+    REQUIRE(!parse_hex_color("").has_value());
+    INFO("missing hash prefix");
+    REQUIRE(!parse_hex_color("ff0000").has_value());
+    INFO("wrong length (5 digits)");
+    REQUIRE(!parse_hex_color("#12345").has_value());
+    INFO("wrong length (1 digit)");
+    REQUIRE(!parse_hex_color("#1").has_value());
+    INFO("non-hex character");
+    REQUIRE(!parse_hex_color("#gggggg").has_value());
+    INFO("non-hex in shorthand");
+    REQUIRE(!parse_hex_color("#xyz").has_value());
+}
+
+// ---------------------------------------------------------------------------
+// [terminal] config section tests
+// ---------------------------------------------------------------------------
+
+TEST_CASE("terminal config section parses fg and bg hex colors", "[config]")
+{
+    const char* content = "[terminal]\n"
+                          "fg = \"#eaeaea\"\n"
+                          "bg = \"#141617\"\n";
+    AppConfig config = AppConfig::parse(content);
+    INFO("terminal.fg is stored");
+    REQUIRE(config.terminal.fg == std::string("#eaeaea"));
+    INFO("terminal.bg is stored");
+    REQUIRE(config.terminal.bg == std::string("#141617"));
+}
+
+TEST_CASE("terminal config section defaults to empty when absent", "[config]")
+{
+    AppConfig config = AppConfig::parse("window_width = 1280\n");
+    INFO("terminal.fg is empty by default");
+    REQUIRE(config.terminal.fg.empty());
+    INFO("terminal.bg is empty by default");
+    REQUIRE(config.terminal.bg.empty());
+}
+
+TEST_CASE("terminal config section warns on invalid hex and ignores the value", "[config]")
+{
+    ScopedLogCapture capture;
+    const char* content = "[terminal]\n"
+                          "fg = \"not-a-color\"\n"
+                          "bg = \"#141617\"\n";
+    AppConfig config = AppConfig::parse(content);
+    INFO("invalid fg is not stored");
+    REQUIRE(config.terminal.fg.empty());
+    INFO("valid bg is stored");
+    REQUIRE(config.terminal.bg == std::string("#141617"));
+    INFO("warning logged for invalid fg");
+    REQUIRE(contains_message(capture.records, "terminal.fg"));
+}
+
+TEST_CASE("terminal config section round-trips through serialize/parse", "[config]")
+{
+    AppConfig original;
+    original.terminal.fg = "#eaeaea";
+    original.terminal.bg = "#141617";
+
+    AppConfig round_tripped = AppConfig::parse(original.serialize());
+    INFO("terminal.fg survives round-trip");
+    REQUIRE(round_tripped.terminal.fg == original.terminal.fg);
+    INFO("terminal.bg survives round-trip");
+    REQUIRE(round_tripped.terminal.bg == original.terminal.bg);
+}
+
+TEST_CASE("terminal config section omitted from serialization when both fields empty", "[config]")
+{
+    AppConfig config;
+    // Both terminal.fg and terminal.bg are empty by default
+    std::string serialized = config.serialize();
+    INFO("terminal section not emitted when both fields are empty");
+    REQUIRE(serialized.find("terminal") == std::string::npos);
+}

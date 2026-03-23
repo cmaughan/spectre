@@ -30,6 +30,11 @@ struct HostLaunchOptions
     std::string working_dir;
     std::vector<std::string> startup_commands;
     bool enable_ligatures = true;
+
+    // Optional terminal foreground/background colors from config.
+    // When set, terminal hosts use these instead of their hardcoded defaults.
+    std::optional<Color> terminal_fg;
+    std::optional<Color> terminal_bg;
 };
 
 struct HostViewport

@@ -75,6 +75,10 @@ bool HostManager::create(HostCallbacks callbacks, int pixel_w, int pixel_h)
     launch.working_dir = deps_.options->host_working_dir;
     launch.startup_commands = deps_.options->startup_commands;
     launch.enable_ligatures = deps_.config->enable_ligatures;
+    if (!deps_.config->terminal.fg.empty())
+        launch.terminal_fg = parse_hex_color(deps_.config->terminal.fg);
+    if (!deps_.config->terminal.bg.empty())
+        launch.terminal_bg = parse_hex_color(deps_.config->terminal.bg);
 
     return create_host_for_leaf(root_id, std::move(callbacks), std::move(launch), true);
 }
@@ -95,6 +99,10 @@ LeafId HostManager::split_focused(SplitDirection dir, HostCallbacks callbacks)
     const HostKind primary_kind = deps_.options ? deps_.options->host_kind : platform_default_split_host_kind_impl();
     launch.kind = split_host_kind_for(primary_kind);
     launch.enable_ligatures = deps_.config->enable_ligatures;
+    if (!deps_.config->terminal.fg.empty())
+        launch.terminal_fg = parse_hex_color(deps_.config->terminal.fg);
+    if (!deps_.config->terminal.bg.empty())
+        launch.terminal_bg = parse_hex_color(deps_.config->terminal.bg);
     if (deps_.options)
     {
         launch.working_dir = deps_.options->host_working_dir;

@@ -32,6 +32,15 @@ struct GuiKeybinding
     ModifierFlags modifiers = kModNone;
 };
 
+// Terminal foreground/background colors. When both are empty, terminal hosts use their
+// hardcoded defaults ({0.92,0.92,0.92} / {0.08,0.09,0.10}). Values are stored as
+// #RRGGBB hex strings (e.g. "#eaeaea"). #RGB shorthand is accepted on parse.
+struct TerminalConfig
+{
+    std::string fg; // e.g. "#eaeaea"
+    std::string bg; // e.g. "#141617"
+};
+
 struct AppConfig
 {
     AppConfig(); // defined in app_config_io.cpp; populates default keybindings
@@ -49,6 +58,7 @@ struct AppConfig
     std::string bold_italic_font_path;
     std::vector<std::string> fallback_paths;
     std::vector<GuiKeybinding> keybindings = {}; // populated by AppConfig()
+    TerminalConfig terminal; // [terminal] section -- fg/bg hex colors
 
     // Parse config from a TOML string. Returns defaults for any missing or invalid keys.
     static AppConfig parse(std::string_view content);
@@ -81,6 +91,10 @@ struct AppConfigOverrides
 // Apply any present overrides from `overrides` onto `config`. Only fields that hold a
 // value are written; absent optionals leave the corresponding config field untouched.
 void apply_overrides(AppConfig& config, const AppConfigOverrides& overrides);
+
+// Parse a hex color string (#RRGGBB or #RGB) into a Color with alpha 1.0.
+// Returns std::nullopt on malformed input.
+std::optional<Color> parse_hex_color(std::string_view hex);
 
 struct AppOptions
 {
