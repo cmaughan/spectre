@@ -1,0 +1,240 @@
+# Draxul Features
+
+Quick reference of all user-facing features, configuration, CLI flags, build options, and CI infrastructure.
+
+---
+
+## Host Types
+
+| Host | Flag | Description |
+|------|------|-------------|
+| Neovim | `--host nvim` (default) | Embeds `nvim --embed` via msgpack-RPC over stdin/stdout pipes |
+| Bash | `--host bash` | PTY-based terminal (Unix) |
+| Zsh | `--host zsh` | PTY-based terminal (Unix) |
+| PowerShell | `--host powershell` | ConPTY on Windows, PTY on macOS/Linux |
+| WSL | `--host wsl` | Windows Subsystem for Linux shell |
+| MegaCity | `--host megacity` | 3D demo host (spinning cube + code visualization) |
+
+Pane splits use the platform default shell (Zsh on macOS, PowerShell on Windows) regardless of primary host type.
+
+---
+
+## Rendering
+
+- **Backends**: Vulkan (Windows), Metal (macOS)
+- **Architecture**: Two-pass instanced draw -- background quads then alpha-blended foreground glyphs
+- **Glyph atlas**: Configurable size (default 2048x2048 RGBA8), shelf-packed, incremental upload
+- **Buffer**: Host-visible/shared memory, direct writes, no staging. 112 bytes per cell
+- **Frames in flight**: 2 with synchronization primitives
+- **Pixel format**: BGRA8 Unorm (Neovim sends pre-sRGB colors)
+
+---
+
+## Font Pipeline
+
+- **FreeType** loads faces, **HarfBuzz** shapes text, glyph cache rasterizes on demand
+- **Ligatures**: Programming ligatures via HarfBuzz (configurable, default on)
+- **Multi-weight**: Bold, italic, bold+italic via separate font files
+- **Fallback chain**: Primary font + configurable fallback paths for missing glyphs
+- **Emoji**: Color glyph rendering, variation selectors (VS-16), ZWJ sequences
+- **Wide characters**: CJK double-width, combining characters
+- **Bundled fonts**: JetBrains Mono Nerd Font (regular/bold/italic/bold-italic), Cascadia Code
+
+---
+
+## Terminal Emulation (shell hosts)
+
+- **VT100+** escape sequence support (SGR colors, cursor control, DECSTBM scroll regions)
+- **Scrollback**: 2000-row ring buffer with viewport offset
+- **Alt screen**: Main/alt switching with snapshot restore
+- **Mouse modes**: None, button-click, drag, all-motion (SGR encoding)
+- **Bracketed paste**: VT-wrapped clipboard paste
+- **OSC 7**: Current working directory tracking from shell
+- **Selection**: Click-and-drag with system clipboard integration (8192-cell limit)
+- **Terminal colors**: Configurable foreground/background via `[terminal]` config section
+
+---
+
+## Input
+
+- **Keyboard**: Full SDL3 key events with modifier tracking (shift, ctrl, alt, super)
+- **IME**: Text input + text editing event forwarding
+- **Mouse**: Button, motion, wheel with per-host protocol routing
+- **Smooth scroll**: Trackpad momentum accumulation (configurable speed multiplier)
+- **File drop**: Native drag-and-drop dispatched to host as `open_file:` action
+- **GUI keybindings**: Chord-style prefix bindings (e.g. `ctrl+s, |`)
+
+---
+
+## Split Panes
+
+- Binary split tree with vertical and horizontal splits
+- Draggable dividers with ratio-based sizing
+- Per-pane host instance with independent lifecycle
+- Focus tracking and pane-aware input routing
+
+---
+
+## Diagnostics Panel (ImGui)
+
+Toggle with F12. Shows:
+- Display DPI, cell size, grid dimensions, dirty cell count
+- Frame timing (current + average)
+- Atlas usage ratio and glyph count
+- Startup profiling step timings
+
+---
+
+## Default Keybindings
+
+| Action | Default Binding |
+|--------|----------------|
+| `toggle_diagnostics` | `F12` |
+| `copy` | `Ctrl+Shift+C` |
+| `paste` | `Ctrl+Shift+V` |
+| `font_increase` | `Ctrl+=` |
+| `font_decrease` | `Ctrl+-` |
+| `font_reset` | `Ctrl+0` |
+| `split_vertical` | `Ctrl+S, Shift+\` |
+| `split_horizontal` | `Ctrl+S, -` |
+| `open_file_dialog` | (unbound) |
+
+Customizable in `config.toml` under `[keybindings]`. Chord syntax: `"prefix, key"`. Set to empty string to unbind.
+
+---
+
+## Configuration (config.toml)
+
+### Display
+| Key | Default | Range | Notes |
+|-----|---------|-------|-------|
+| `window_width` | 1280 | 800--8000 | |
+| `window_height` | 800 | 600--8000 | |
+
+### Font
+| Key | Default | Range | Notes |
+|-----|---------|-------|-------|
+| `font_size` | 11.0 | 6.0--72.0 | Points; 0.5pt step on increase/decrease |
+| `font_path` | (bundled) | | Primary font file path |
+| `bold_font_path` | (none) | | Bold variant |
+| `italic_font_path` | (none) | | Italic variant |
+| `bold_italic_font_path` | (none) | | Bold+italic variant |
+| `fallback_paths` | [] | | Array of fallback font paths |
+| `enable_ligatures` | true | | Programming ligature combining |
+
+### Rendering
+| Key | Default | Range | Notes |
+|-----|---------|-------|-------|
+| `atlas_size` | 2048 | 512--4096 | Must be power of 2 |
+
+### Scrolling
+| Key | Default | Range | Notes |
+|-----|---------|-------|-------|
+| `smooth_scroll` | true | | Trackpad momentum accumulation |
+| `scroll_speed` | 1.0 | 0.1--10.0 | Multiplier; out-of-range logs WARN and resets to 1.0 |
+
+### Terminal Colors (`[terminal]` section)
+| Key | Default | Notes |
+|-----|---------|-------|
+| `fg` | `#eaeaea` | Hex color (3 or 6 digit) |
+| `bg` | `#141617` | Hex color (3 or 6 digit) |
+
+---
+
+## CLI Flags
+
+| Flag | Description |
+|------|-------------|
+| `--host <type>` | Host type: nvim, powershell, bash, zsh, wsl, megacity |
+| `--command <cmd>` | Override host command path |
+| `--log-file <path>` | Write logs to file |
+| `--log-level <level>` | Minimum level: error, warn, info, debug, trace |
+| `--console` | (Windows) Allocate debug console window |
+| `--smoke-test` | Non-interactive startup test, exits after 3s |
+| `--render-test <file>` | Run render test scenario (requires DRAXUL_ENABLE_RENDER_TESTS) |
+| `--bless-render-test` | Update reference image from test output |
+| `--show-render-test-window` | Show window during render test |
+| `--export-render-test <file>` | Export captured frame to BMP |
+
+---
+
+## Build
+
+### Prerequisites
+- CMake 3.25+
+- Windows: Visual Studio 2022, Vulkan SDK (with glslc)
+- macOS: Xcode Command Line Tools (Metal compiler)
+
+### CMake Presets
+
+| Preset | Platform | Description |
+|--------|----------|-------------|
+| `default` | Windows | Debug, VS 2022 x64 |
+| `release` | Windows | Release |
+| `mac-debug` | macOS | Debug |
+| `mac-release` | macOS | Release |
+| `mac-asan` | macOS | Debug + AddressSanitizer + UBSan |
+| `mac-coverage` | macOS | Debug + LLVM coverage |
+| `clang-tools` | macOS | Ninja, compile_commands.json only |
+
+### CMake Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `DRAXUL_ENABLE_RENDER_TESTS` | ON | Render test/snapshot infrastructure |
+| `DRAXUL_ENABLE_SANITIZERS` | OFF | ASan + UBSan |
+| `DRAXUL_ENABLE_COVERAGE` | OFF | LLVM source-based coverage |
+| `DRAXUL_ENABLE_MEGACITY` | ON | MegaCity 3D demo host |
+| `BUILD_TESTING` | ON | Test targets |
+
+### Build Targets
+- `draxul` -- Main executable (.app bundle on macOS)
+- `draxul-tests` -- Unit test suite (Catch2)
+- `draxul-rpc-fake` -- Fake RPC server for integration tests
+
+### Dependencies (FetchContent, automatic)
+SDL3, FreeType, HarfBuzz, MPack, ImGui, GLM, Catch2, vk-bootstrap (Windows), VMA (Windows)
+
+### Shaders
+- Windows: GLSL 4.50 -> SPIR-V via glslc
+- macOS: Metal Shading Language -> metallib via xcrun
+
+---
+
+## CI (GitHub Actions)
+
+| Workflow | Description |
+|----------|-------------|
+| `build.yml` | Windows + macOS build, test, render-test artifacts |
+| `asan.yml` | AddressSanitizer builds (macOS) |
+| `coverage.yml` | LLVM coverage collection (macOS) |
+| `format.yml` | clang-format lint |
+| `sonar.yml` | SonarCloud code quality |
+| `docs.yml` | Documentation generation |
+
+Both CI platforms install Neovim and run with `DRAXUL_RUN_SLOW_TESTS=1`.
+
+---
+
+## Render Test Infrastructure
+
+- **Scenario files**: TOML in `tests/render/` with per-scenario font, size, DPI, commands
+- **Reference images**: BMP files in `tests/render/reference/` (platform-suffixed)
+- **Built-in scenarios**: basic-view, cmdline-view, unicode-view, ligatures-view, panel-view, wide-char-scroll
+- **Comparison**: Pixel-diff with configurable tolerance and changed-pixel threshold
+- **Blessing**: `py do.py blessbasic`, `blesscmdline`, `blessunicode`, `blessligatures`, `blessall`
+
+---
+
+## Logging
+
+| Level | Macro | Notes |
+|-------|-------|-------|
+| Error | `DRAXUL_LOG_ERROR` | Always compiled |
+| Warn | `DRAXUL_LOG_WARN` | Always compiled |
+| Info | `DRAXUL_LOG_INFO` | Always compiled |
+| Debug | `DRAXUL_LOG_DEBUG` | Stripped in release |
+| Trace | `DRAXUL_LOG_TRACE` | Stripped in release |
+
+Categories: App, Rpc, Nvim, Window, Font, Renderer, Input, Test.
+Output: stderr (always) + optional file via `--log-file`.
