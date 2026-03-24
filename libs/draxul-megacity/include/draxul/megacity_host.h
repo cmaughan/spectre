@@ -68,6 +68,7 @@ public:
 private:
     void mark_scene_dirty();
     bool movement_active() const;
+    bool drag_smoothing_active() const;
     SceneSnapshot build_scene_snapshot() const;
 
     IHostCallbacks* callbacks_ = nullptr;
@@ -89,6 +90,8 @@ private:
     bool orbit_left_ = false;
     bool orbit_right_ = false;
     bool dragging_scene_ = false;
+    glm::vec2 pending_drag_pan_{ 0.0f };
+    float pending_drag_orbit_ = 0.0f;
     glm::ivec2 last_drag_pos_{ 0 };
     std::chrono::steady_clock::time_point last_activity_time_ = std::chrono::steady_clock::now();
     std::chrono::steady_clock::time_point last_pump_time_ = std::chrono::steady_clock::now();

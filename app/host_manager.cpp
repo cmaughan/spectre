@@ -4,6 +4,9 @@
 #include <draxul/base_renderer.h>
 #include <draxul/grid_host_base.h>
 #include <draxul/host_kind.h>
+#ifdef DRAXUL_ENABLE_MEGACITY
+#include <draxul/megacity_host.h>
+#endif
 #include <draxul/renderer.h>
 #include <draxul/text_service.h>
 
@@ -231,6 +234,14 @@ bool HostManager::create_host_for_leaf(LeafId id, IHostCallbacks& callbacks,
         error_ = std::string("The selected host is not supported on this platform: ") + to_string(launch.kind);
         return false;
     }
+
+#ifdef DRAXUL_ENABLE_MEGACITY
+    if (launch.kind == HostKind::MegaCity)
+    {
+        if (auto* megacity = dynamic_cast<MegaCityHost*>(new_host.get()))
+            megacity->set_continuous_refresh_enabled(deps_.options && deps_.options->megacity_continuous_refresh);
+    }
+#endif
 
     IGridRenderer& grid_renderer = *deps_.grid_renderer;
     const float display_ppi = deps_.display_ppi ? *deps_.display_ppi : 96.0f;

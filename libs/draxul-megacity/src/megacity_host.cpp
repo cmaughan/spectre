@@ -24,7 +24,11 @@ constexpr float kMovementSpeedTilesPerSecond = 3.5f;
 constexpr float kOrbitSpeedRadiansPerSecond = 1.8f;
 constexpr float kOrbitDragReferencePixelsPerSecond = 240.0f;
 constexpr float kOrbitDragRadiansPerPixel = kOrbitSpeedRadiansPerSecond / kOrbitDragReferencePixelsPerSecond;
+constexpr float kDragCatchUpRatePerSecond = 30.0f;
+constexpr float kDragPanSettleEpsilon = 1e-4f;
+constexpr float kDragOrbitSettleEpsilon = 1e-4f;
 constexpr auto kMovementTick = std::chrono::milliseconds(16);
+constexpr auto kDragSmoothingTick = std::chrono::milliseconds(8);
 
 bool is_left_arrow(const KeyEvent& event)
 {
@@ -58,6 +62,25 @@ bool is_orbit_left_key(const KeyEvent& event)
 bool is_orbit_right_key(const KeyEvent& event)
 {
     return event.scancode == SDL_SCANCODE_E || event.keycode == SDLK_E;
+}
+
+float drag_catch_up_alpha(float dt)
+{
+    if (dt <= 0.0f)
+        return 0.0f;
+    return 1.0f - std::exp(-kDragCatchUpRatePerSecond * dt);
+}
+
+void clamp_small_pan(glm::vec2& pan)
+{
+    if (glm::dot(pan, pan) <= kDragPanSettleEpsilon * kDragPanSettleEpsilon)
+        pan = glm::vec2(0.0f);
+}
+
+void clamp_small_orbit(float& orbit)
+{
+    if (std::abs(orbit) <= kDragOrbitSettleEpsilon)
+        orbit = 0.0f;
 }
 
 } // namespace
@@ -169,8 +192,10 @@ void MegaCityHost::on_mouse_move(const MouseMoveEvent& event)
     {
         if (pixel_delta.x != 0.0f)
         {
-            camera_->orbit_target(-pixel_delta.x * kOrbitDragRadiansPerPixel);
-            mark_scene_dirty();
+            pending_drag_orbit_ += -pixel_delta.x * kOrbitDragRadiansPerPixel;
+            last_activity_time_ = std::chrono::steady_clock::now();
+            if (callbacks_)
+                callbacks_->request_frame();
         }
         return;
     }
@@ -179,8 +204,10 @@ void MegaCityHost::on_mouse_move(const MouseMoveEvent& event)
     if (glm::dot(pan, pan) <= 0.0f)
         return;
 
-    camera_->translate_target(pan.x, pan.y);
-    mark_scene_dirty();
+    pending_drag_pan_ += pan;
+    last_activity_time_ = std::chrono::steady_clock::now();
+    if (callbacks_)
+        callbacks_->request_frame();
 }
 
 void MegaCityHost::on_mouse_button(const MouseButtonEvent& event)
@@ -327,47 +354,88 @@ bool MegaCityHost::movement_active() const
     return move_left_ || move_right_ || move_up_ || move_down_ || orbit_left_ || orbit_right_;
 }
 
+bool MegaCityHost::drag_smoothing_active() const
+{
+    return glm::dot(pending_drag_pan_, pending_drag_pan_) > kDragPanSettleEpsilon * kDragPanSettleEpsilon
+        || std::abs(pending_drag_orbit_) > kDragOrbitSettleEpsilon;
+}
+
 void MegaCityHost::pump()
 {
     const auto now = std::chrono::steady_clock::now();
-    if (movement_active() && camera_)
-    {
-        glm::vec2 pan_input{ 0.0f, 0.0f };
-        if (move_left_)
-            pan_input.x -= 1.0f;
-        if (move_right_)
-            pan_input.x += 1.0f;
-        if (move_up_)
-            pan_input.y += 1.0f;
-        if (move_down_)
-            pan_input.y -= 1.0f;
+    const float dt = std::chrono::duration<float>(now - last_pump_time_).count();
+    bool camera_changed = false;
 
-        const float dt = std::chrono::duration<float>(now - last_pump_time_).count();
-        const float pan_distance = dt * kMovementSpeedTilesPerSecond;
-        if (pan_distance > 0.0f && glm::dot(pan_input, pan_input) > 0.0f)
+    if (camera_)
+    {
+        if (movement_active())
         {
-            const glm::vec2 right = camera_->planar_right_vector();
-            const glm::vec2 up = camera_->planar_up_vector();
-            const glm::vec2 pan = glm::normalize(pan_input.x * right + pan_input.y * up);
-            camera_->translate_target(pan.x * pan_distance, pan.y * pan_distance);
+            glm::vec2 pan_input{ 0.0f, 0.0f };
+            if (move_left_)
+                pan_input.x -= 1.0f;
+            if (move_right_)
+                pan_input.x += 1.0f;
+            if (move_up_)
+                pan_input.y += 1.0f;
+            if (move_down_)
+                pan_input.y -= 1.0f;
+
+            const float pan_distance = dt * kMovementSpeedTilesPerSecond;
+            if (pan_distance > 0.0f && glm::dot(pan_input, pan_input) > 0.0f)
+            {
+                const glm::vec2 right = camera_->planar_right_vector();
+                const glm::vec2 up = camera_->planar_up_vector();
+                const glm::vec2 pan = glm::normalize(pan_input.x * right + pan_input.y * up);
+                camera_->translate_target(pan.x * pan_distance, pan.y * pan_distance);
+                camera_changed = true;
+            }
+
+            float orbit = 0.0f;
+            if (orbit_left_)
+                orbit += 1.0f;
+            if (orbit_right_)
+                orbit -= 1.0f;
+            if (orbit != 0.0f && dt > 0.0f)
+            {
+                camera_->orbit_target(orbit * dt * kOrbitSpeedRadiansPerSecond);
+                camera_changed = true;
+            }
         }
 
-        float orbit = 0.0f;
-        if (orbit_left_)
-            orbit += 1.0f;
-        if (orbit_right_)
-            orbit -= 1.0f;
-        if (orbit != 0.0f && dt > 0.0f)
-            camera_->orbit_target(orbit * dt * kOrbitSpeedRadiansPerSecond);
-
-        if (pan_distance > 0.0f || orbit != 0.0f)
+        if (drag_smoothing_active())
         {
-            scene_dirty_ = true;
-            last_activity_time_ = now;
-            if (callbacks_)
-                callbacks_->request_frame();
+            const float alpha = drag_catch_up_alpha(dt);
+            if (alpha > 0.0f)
+            {
+                if (glm::dot(pending_drag_pan_, pending_drag_pan_) > 0.0f)
+                {
+                    glm::vec2 applied_pan = pending_drag_pan_ * alpha;
+                    camera_->translate_target(applied_pan.x, applied_pan.y);
+                    pending_drag_pan_ -= applied_pan;
+                    clamp_small_pan(pending_drag_pan_);
+                    camera_changed = true;
+                }
+
+                if (pending_drag_orbit_ != 0.0f)
+                {
+                    const float applied_orbit = pending_drag_orbit_ * alpha;
+                    camera_->orbit_target(applied_orbit);
+                    pending_drag_orbit_ -= applied_orbit;
+                    clamp_small_orbit(pending_drag_orbit_);
+                    camera_changed = true;
+                }
+            }
         }
     }
+
+    if (camera_changed)
+    {
+        scene_dirty_ = true;
+        last_activity_time_ = now;
+        if (callbacks_)
+            callbacks_->request_frame();
+    }
+
     last_pump_time_ = now;
 
     if (scene_dirty_ && scene_pass_)
@@ -383,8 +451,10 @@ std::optional<std::chrono::steady_clock::time_point> MegaCityHost::next_deadline
 {
     if (!running_)
         return std::nullopt;
-    if (!continuous_refresh_enabled_ && !movement_active())
+    if (!continuous_refresh_enabled_ && !movement_active() && !drag_smoothing_active())
         return std::nullopt;
+    if (drag_smoothing_active())
+        return std::chrono::steady_clock::now() + kDragSmoothingTick;
     return std::chrono::steady_clock::now() + kMovementTick;
 }
 

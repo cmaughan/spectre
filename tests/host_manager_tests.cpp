@@ -10,6 +10,9 @@
 #include "host_manager.h"
 #include "split_tree.h"
 #include <draxul/grid_host_base.h>
+#ifdef DRAXUL_ENABLE_MEGACITY
+#include <draxul/megacity_host.h>
+#endif
 
 using namespace draxul;
 using namespace draxul::tests;
@@ -686,3 +689,49 @@ TEST_CASE("host manager: I3DHost added after plain host still receives attachmen
     REQUIRE(host_3d != nullptr);
     REQUIRE(host_3d->attach_calls == 1);
 }
+
+#ifdef DRAXUL_ENABLE_MEGACITY
+TEST_CASE("host manager: MegaCity continuous refresh option enables idle deadlines", "[host_manager][megacity]")
+{
+    FakeWindow window;
+    FakeTermRenderer renderer;
+    TextService text_service;
+    TestHostCallbacks callbacks;
+    AppOptions options;
+    AppConfig config;
+    float display_ppi = 96.0f;
+
+    TextServiceConfig ts_cfg;
+    ts_cfg.font_path = bundled_font_path();
+    REQUIRE(text_service.initialize(ts_cfg, TextService::DEFAULT_POINT_SIZE, display_ppi));
+
+    options.load_user_config = false;
+    options.save_user_config = false;
+    options.host_kind = HostKind::MegaCity;
+    options.megacity_continuous_refresh = true;
+
+    HostManager::Deps deps;
+    deps.options = &options;
+    deps.config = &config;
+    deps.window = &window;
+    deps.grid_renderer = &renderer;
+    deps.text_service = &text_service;
+    deps.display_ppi = &display_ppi;
+    deps.compute_viewport = [](const PaneDescriptor& desc) {
+        HostViewport viewport;
+        viewport.pixel_pos = desc.pixel_pos;
+        viewport.pixel_size = desc.pixel_size;
+        viewport.grid_size = { 1, 1 };
+        return viewport;
+    };
+
+    HostManager manager(std::move(deps));
+    REQUIRE(manager.create(callbacks, 800, 600));
+
+    auto* megacity = dynamic_cast<MegaCityHost*>(manager.focused_host());
+    REQUIRE(megacity != nullptr);
+    CHECK(megacity->next_deadline().has_value());
+
+    manager.shutdown();
+}
+#endif

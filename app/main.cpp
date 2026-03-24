@@ -67,6 +67,7 @@ struct ParsedArgs
 {
     bool want_console = false;
     bool smoke_test = false;
+    bool continuous_refresh = false;
 #ifdef DRAXUL_ENABLE_RENDER_TESTS
     bool bless_render_test = false;
     bool show_render_test_window = false;
@@ -88,6 +89,8 @@ ParsedArgs parse_args(const std::vector<std::string>& args)
             parsed.want_console = true;
         else if (args[i] == "--smoke-test")
             parsed.smoke_test = true;
+        else if (args[i] == "--continuous-refresh")
+            parsed.continuous_refresh = true;
 #ifdef DRAXUL_ENABLE_RENDER_TESTS
         else if (args[i] == "--bless-render-test")
             parsed.bless_render_test = true;
@@ -238,6 +241,8 @@ static int draxul_main(std::vector<std::string> args)
         options.host_kind = *parsed.host_kind;
     if (!parsed.host_command.empty())
         options.host_command = parsed.host_command;
+    if (parsed.continuous_refresh)
+        options.megacity_continuous_refresh = true;
 
     const auto exe_dir = executable_dir(args);
     if (!options.config_overrides.font_path.has_value() && !exe_dir.empty())

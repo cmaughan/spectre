@@ -148,6 +148,7 @@ Customizable in `config.toml` under `[keybindings]`. Chord syntax: `"prefix, key
 |------|-------------|
 | `--host <type>` | Host type: nvim, powershell, bash, zsh, wsl, megacity |
 | `--command <cmd>` | Override host command path |
+| `--continuous-refresh` | Keep the MegaCity host rendering continuously instead of only on-demand updates |
 | `--log-file <path>` | Write logs to file |
 | `--log-level <level>` | Minimum level: error, warn, info, debug, trace |
 | `--console` | (Windows) Allocate debug console window |

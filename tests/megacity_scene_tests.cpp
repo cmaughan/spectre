@@ -13,6 +13,7 @@
 #include <draxul/megacity_host.h>
 #include <draxul/text_service.h>
 #include <numbers>
+#include <thread>
 
 using namespace draxul;
 
@@ -40,6 +41,18 @@ SceneSnapshot snapshot_from_camera(const IsometricCamera& camera)
     scene.camera.view = camera.view_matrix();
     scene.camera.proj = camera.proj_matrix();
     return scene;
+}
+
+void pump_until_idle(MegaCityHost& host, int max_steps = 64)
+{
+    for (int i = 0; i < max_steps; ++i)
+    {
+        const auto next_tick = host.next_deadline();
+        if (!next_tick.has_value())
+            return;
+        std::this_thread::sleep_until(*next_tick);
+        host.pump();
+    }
 }
 
 } // namespace
@@ -212,6 +225,7 @@ TEST_CASE("megacity host mouse drag pans and alt-drag rotates", "[megacity]")
     const glm::mat4 before_rotate = pass->scene().camera.view;
     host.on_mouse_move({ kModAlt, { 520, 252 } });
     host.pump();
+    pump_until_idle(host);
 
     const glm::mat4 after_rotate = pass->scene().camera.view;
     CHECK(after_rotate[0][0] != Catch::Approx(before_rotate[0][0]));
@@ -267,12 +281,57 @@ TEST_CASE("megacity host honors fractional mouse delta for drag input", "[megaci
     const glm::mat4 before_rotate = pass->scene().camera.view;
     host.on_mouse_move({ kModAlt, { 400, 300 }, { 12.5f, 0.0f } });
     host.pump();
+    pump_until_idle(host);
 
     const glm::mat4 after_rotate = pass->scene().camera.view;
     CHECK(after_rotate[0][0] != Catch::Approx(before_rotate[0][0]));
     CHECK(after_rotate[2][0] != Catch::Approx(before_rotate[2][0]));
 
     host.on_mouse_button({ SDL_BUTTON_LEFT, false, kModAlt, { 400, 300 } });
+    host.shutdown();
+}
+
+TEST_CASE("megacity host keeps catching up between mouse samples", "[megacity]")
+{
+    tests::FakeWindow window;
+    tests::TestHostCallbacks callbacks;
+    TextService text_service;
+    tests::FakeTermRenderer renderer;
+    MegaCityHost host;
+
+    HostLaunchOptions launch;
+    launch.kind = HostKind::MegaCity;
+
+    HostViewport viewport;
+    viewport.pixel_size = { 800, 600 };
+    viewport.grid_size = { 1, 1 };
+
+    HostContext context(&window, &renderer, &text_service, std::move(launch), viewport, window.display_ppi_);
+
+    REQUIRE(host.initialize(context, callbacks));
+    host.attach_3d_renderer(renderer);
+
+    auto* pass = dynamic_cast<IsometricScenePass*>(renderer.last_render_pass.get());
+    REQUIRE(pass != nullptr);
+
+    const glm::vec3 probe{ 0.5f, 0.0f, 0.5f };
+
+    host.on_mouse_button({ SDL_BUTTON_LEFT, true, kModNone, { 400, 300 } });
+    host.on_mouse_move({ kModNone, { 400, 300 }, { 40.0f, -24.0f } });
+    host.pump();
+
+    const glm::vec2 after_first_pump = ndc_of_point(pass->scene(), probe);
+    const auto next_tick = host.next_deadline();
+    REQUIRE(next_tick.has_value());
+
+    std::this_thread::sleep_until(*next_tick);
+    host.pump();
+
+    const glm::vec2 after_second_pump = ndc_of_point(pass->scene(), probe);
+    CHECK(after_second_pump.x > after_first_pump.x);
+    CHECK(after_second_pump.y > after_first_pump.y);
+
+    host.on_mouse_button({ SDL_BUTTON_LEFT, false, kModNone, { 400, 300 } });
     host.shutdown();
 }
 
