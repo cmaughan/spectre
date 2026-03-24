@@ -84,8 +84,8 @@ bool UnixPtyProcess::spawn(const std::string& command, const std::vector<std::st
         if (slave_fd > STDERR_FILENO)
             close(slave_fd);
 
-        if (!working_dir.empty())
-            chdir(working_dir.c_str());
+        if (!working_dir.empty() && chdir(working_dir.c_str()) != 0)
+            _exit(127);
 
         // POSIX convention: argv[0] starting with '-' signals a login shell so
         // the shell sources its full profile (e.g. ~/.zprofile, /etc/zprofile).

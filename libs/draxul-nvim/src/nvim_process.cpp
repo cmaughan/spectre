@@ -276,8 +276,13 @@ bool NvimProcess::spawn(const std::string& nvim_path, const std::vector<std::str
         close(stdin_pipe[0]);
         close(stdout_pipe[1]);
 
-        if (!working_dir.empty())
-            chdir(working_dir.c_str());
+        if (!working_dir.empty() && chdir(working_dir.c_str()) != 0)
+        {
+            int chdir_errno = errno;
+            (void)!::write(exec_status_pipe[1], &chdir_errno, sizeof(chdir_errno));
+            close(exec_status_pipe[1]);
+            _exit(127);
+        }
 
         std::vector<std::string> argv_storage;
         argv_storage.reserve(extra_args.size() + 2);
