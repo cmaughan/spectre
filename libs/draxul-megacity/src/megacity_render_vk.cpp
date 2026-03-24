@@ -2,6 +2,7 @@
 
 #include "mesh_library.h"
 #include "vk_render_context.h"
+#include <algorithm>
 #include <cstring>
 #include <draxul/log.h>
 #include <draxul/runtime_path.h>
@@ -40,6 +41,18 @@ struct MeshBuffers
     Buffer vertices;
     Buffer indices;
     uint32_t index_count = 0;
+};
+
+struct FrameResources
+{
+    Buffer frame_uniforms;
+    VkDescriptorSet descriptor_set = VK_NULL_HANDLE;
+};
+
+struct RetiredMesh
+{
+    MeshBuffers mesh;
+    uint32_t reclaim_frame_index = 0;
 };
 
 bool same_grid_spec(const FloorGridSpec& a, const FloorGridSpec& b)
@@ -152,16 +165,53 @@ struct IsometricScenePass::State
     VkRenderPass render_pass = VK_NULL_HANDLE;
     VkDescriptorSetLayout descriptor_set_layout = VK_NULL_HANDLE;
     VkDescriptorPool descriptor_pool = VK_NULL_HANDLE;
-    VkDescriptorSet descriptor_set = VK_NULL_HANDLE;
     VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
     VkPipeline pipeline = VK_NULL_HANDLE;
-    Buffer frame_uniforms;
     MeshBuffers cube_mesh;
     MeshBuffers grid_mesh;
     FloorGridSpec grid_spec;
     bool has_grid_mesh = false;
+    std::vector<FrameResources> frame_resources;
+    std::vector<RetiredMesh> retired_grid_meshes;
+    uint32_t buffered_frame_count = 1;
 
-    bool create_device_resources(int grid_width, int grid_height, float tile_size)
+    void retire_grid_mesh(uint32_t frame_index)
+    {
+        if (!has_grid_mesh)
+            return;
+
+        if (buffered_frame_count <= 1)
+        {
+            destroy_mesh(allocator, grid_mesh);
+            grid_spec = {};
+            has_grid_mesh = false;
+            return;
+        }
+
+        const uint32_t reclaim_frame = (frame_index + buffered_frame_count - 1) % buffered_frame_count;
+        retired_grid_meshes.push_back({ std::move(grid_mesh), reclaim_frame });
+        grid_mesh = {};
+        grid_spec = {};
+        has_grid_mesh = false;
+    }
+
+    void reclaim_retired_meshes(uint32_t frame_index)
+    {
+        auto it = retired_grid_meshes.begin();
+        while (it != retired_grid_meshes.end())
+        {
+            if (it->reclaim_frame_index != frame_index)
+            {
+                ++it;
+                continue;
+            }
+
+            destroy_mesh(allocator, it->mesh);
+            it = retired_grid_meshes.erase(it);
+        }
+    }
+
+    bool create_device_resources(uint32_t frame_count)
     {
         VkDescriptorSetLayoutBinding binding = {};
         binding.binding = 0;
@@ -180,10 +230,10 @@ struct IsometricScenePass::State
 
         VkDescriptorPoolSize pool_size = {};
         pool_size.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        pool_size.descriptorCount = 1;
+        pool_size.descriptorCount = frame_count;
 
         VkDescriptorPoolCreateInfo pool_ci = { VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO };
-        pool_ci.maxSets = 1;
+        pool_ci.maxSets = frame_count;
         pool_ci.poolSizeCount = 1;
         pool_ci.pPoolSizes = &pool_size;
         if (vkCreateDescriptorPool(device, &pool_ci, nullptr, &descriptor_pool) != VK_SUCCESS)
@@ -192,33 +242,45 @@ struct IsometricScenePass::State
             return false;
         }
 
+        frame_resources.assign(frame_count, {});
+        std::vector<VkDescriptorSetLayout> layouts(frame_count, descriptor_set_layout);
+        std::vector<VkDescriptorSet> descriptor_sets(frame_count, VK_NULL_HANDLE);
         VkDescriptorSetAllocateInfo alloc_info = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO };
         alloc_info.descriptorPool = descriptor_pool;
-        alloc_info.descriptorSetCount = 1;
-        alloc_info.pSetLayouts = &descriptor_set_layout;
-        if (vkAllocateDescriptorSets(device, &alloc_info, &descriptor_set) != VK_SUCCESS)
+        alloc_info.descriptorSetCount = frame_count;
+        alloc_info.pSetLayouts = layouts.data();
+        if (vkAllocateDescriptorSets(device, &alloc_info, descriptor_sets.data()) != VK_SUCCESS)
         {
             DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity scene: failed to allocate descriptor set");
             return false;
         }
 
-        if (!create_mapped_buffer(allocator, sizeof(FrameUniforms), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, frame_uniforms))
+        for (uint32_t i = 0; i < frame_count; ++i)
         {
-            DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity scene: failed to create frame uniform buffer");
-            return false;
+            auto& frame = frame_resources[i];
+            frame.descriptor_set = descriptor_sets[i];
+
+            if (!create_mapped_buffer(allocator, sizeof(FrameUniforms),
+                    VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, frame.frame_uniforms))
+            {
+                DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity scene: failed to create frame uniform buffer");
+                return false;
+            }
+
+            VkDescriptorBufferInfo buffer_info = {};
+            buffer_info.buffer = frame.frame_uniforms.buffer;
+            buffer_info.range = sizeof(FrameUniforms);
+
+            VkWriteDescriptorSet write = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
+            write.dstSet = frame.descriptor_set;
+            write.dstBinding = 0;
+            write.descriptorCount = 1;
+            write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            write.pBufferInfo = &buffer_info;
+            vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
         }
 
-        VkDescriptorBufferInfo buffer_info = {};
-        buffer_info.buffer = frame_uniforms.buffer;
-        buffer_info.range = sizeof(FrameUniforms);
-
-        VkWriteDescriptorSet write = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
-        write.dstSet = descriptor_set;
-        write.dstBinding = 0;
-        write.descriptorCount = 1;
-        write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        write.pBufferInfo = &buffer_info;
-        vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+        buffered_frame_count = frame_count;
 
         if (!upload_mesh(allocator, build_unit_cube_mesh(), cube_mesh))
         {
@@ -228,25 +290,25 @@ struct IsometricScenePass::State
         return true;
     }
 
-    bool ensure_floor_grid(const FloorGridSpec& spec)
+    bool ensure_floor_grid(uint32_t frame_index, const FloorGridSpec& spec)
     {
         if (!spec.enabled)
         {
-            destroy_mesh(allocator, grid_mesh);
-            grid_spec = {};
-            has_grid_mesh = false;
+            retire_grid_mesh(frame_index);
             return true;
         }
         if (has_grid_mesh && same_grid_spec(grid_spec, spec))
             return true;
 
-        destroy_mesh(allocator, grid_mesh);
-        if (!upload_mesh(allocator, build_outline_grid_mesh(spec), grid_mesh))
+        MeshBuffers new_mesh;
+        if (!upload_mesh(allocator, build_outline_grid_mesh(spec), new_mesh))
         {
             DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity scene: failed to upload floor grid mesh");
             return false;
         }
 
+        retire_grid_mesh(frame_index);
+        grid_mesh = std::move(new_mesh);
         grid_spec = spec;
         has_grid_mesh = true;
         return true;
@@ -380,17 +442,21 @@ struct IsometricScenePass::State
         return true;
     }
 
-    bool ensure(const VkRenderContext& ctx, int grid_width, int grid_height, float tile_size)
+    bool ensure(const VkRenderContext& ctx)
     {
-        if (pipeline != VK_NULL_HANDLE && render_pass == ctx.render_pass())
+        const uint32_t frame_count = std::max(1u, ctx.buffered_frame_count());
+        if (pipeline != VK_NULL_HANDLE
+            && render_pass == ctx.render_pass()
+            && buffered_frame_count == frame_count)
             return true;
 
         destroy();
         device = ctx.device();
         allocator = ctx.allocator();
         render_pass = ctx.render_pass();
+        buffered_frame_count = frame_count;
 
-        return create_device_resources(grid_width, grid_height, tile_size) && create_pipeline();
+        return create_device_resources(frame_count) && create_pipeline();
     }
 
     void destroy()
@@ -399,7 +465,10 @@ struct IsometricScenePass::State
         {
             destroy_mesh(allocator, cube_mesh);
             destroy_mesh(allocator, grid_mesh);
-            destroy_buffer(allocator, frame_uniforms);
+            for (auto& retired : retired_grid_meshes)
+                destroy_mesh(allocator, retired.mesh);
+            for (auto& frame : frame_resources)
+                destroy_buffer(allocator, frame.frame_uniforms);
         }
         if (pipeline != VK_NULL_HANDLE)
             vkDestroyPipeline(device, pipeline, nullptr);
@@ -415,9 +484,13 @@ struct IsometricScenePass::State
         render_pass = VK_NULL_HANDLE;
         descriptor_set_layout = VK_NULL_HANDLE;
         descriptor_pool = VK_NULL_HANDLE;
-        descriptor_set = VK_NULL_HANDLE;
         pipeline_layout = VK_NULL_HANDLE;
         pipeline = VK_NULL_HANDLE;
+        frame_resources.clear();
+        retired_grid_meshes.clear();
+        buffered_frame_count = 1;
+        grid_spec = {};
+        has_grid_mesh = false;
     }
 };
 
@@ -441,21 +514,27 @@ void IsometricScenePass::record(IRenderContext& ctx)
     if (!cmd)
         return;
 
-    if (!state_->ensure(*vk_ctx, grid_width_, grid_height_, tile_size_))
+    const uint32_t frame_index = vk_ctx->frame_index();
+    if (!state_->ensure(*vk_ctx))
         return;
-    if (!state_->ensure_floor_grid(scene_.floor_grid))
+    if (frame_index >= state_->frame_resources.size())
         return;
+    state_->reclaim_retired_meshes(frame_index);
+    if (!state_->ensure_floor_grid(frame_index, scene_.floor_grid))
+        return;
+
+    auto& frame_resources = state_->frame_resources[frame_index];
 
     FrameUniforms frame;
     frame.view = scene_.camera.view;
     frame.proj = make_vulkan_projection(scene_.camera.proj);
     frame.light_dir = scene_.camera.light_dir;
-    std::memcpy(state_->frame_uniforms.mapped, &frame, sizeof(frame));
-    vmaFlushAllocation(vk_ctx->allocator(), state_->frame_uniforms.allocation, 0, sizeof(frame));
+    std::memcpy(frame_resources.frame_uniforms.mapped, &frame, sizeof(frame));
+    vmaFlushAllocation(vk_ctx->allocator(), frame_resources.frame_uniforms.allocation, 0, sizeof(frame));
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, state_->pipeline);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, state_->pipeline_layout,
-        0, 1, &state_->descriptor_set, 0, nullptr);
+        0, 1, &frame_resources.descriptor_set, 0, nullptr);
 
     for (const SceneObject& obj : scene_.objects)
     {

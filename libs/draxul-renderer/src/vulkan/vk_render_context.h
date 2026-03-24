@@ -20,11 +20,14 @@ class VkRenderContext : public IRenderContext
 {
 public:
     VkRenderContext(VkCommandBuffer cmd, VkDevice device, VmaAllocator allocator, VkRenderPass render_pass,
+        uint32_t frame_index, uint32_t buffered_frame_count,
         int w, int h, int viewport_x = 0, int viewport_y = 0, int viewport_w = 0, int viewport_h = 0)
         : cmd_(cmd)
         , device_(device)
         , allocator_(allocator)
         , render_pass_(render_pass)
+        , frame_index_(frame_index)
+        , buffered_frame_count_(buffered_frame_count > 0 ? buffered_frame_count : 1)
         , w_(w)
         , h_(h)
         , viewport_x_(viewport_x)
@@ -80,12 +83,22 @@ public:
     {
         return render_pass_;
     }
+    uint32_t frame_index() const
+    {
+        return frame_index_;
+    }
+    uint32_t buffered_frame_count() const
+    {
+        return buffered_frame_count_;
+    }
 
 private:
     VkCommandBuffer cmd_;
     VkDevice device_;
     VmaAllocator allocator_;
     VkRenderPass render_pass_;
+    uint32_t frame_index_;
+    uint32_t buffered_frame_count_;
     int w_;
     int h_;
     int viewport_x_;

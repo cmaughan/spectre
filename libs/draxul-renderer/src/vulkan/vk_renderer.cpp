@@ -822,6 +822,7 @@ void VkRenderer::record_command_buffer(VkCommandBuffer cmd, uint32_t image_index
         vkCmdSetScissor(cmd, 0, 1, &pass_scissor);
 
         VkRenderContext ctx(cmd, ctx_.device(), ctx_.allocator(), ctx_.render_pass(),
+            current_frame_, MAX_FRAMES_IN_FLIGHT,
             (int)ctx_.swapchain().extent.width, (int)ctx_.swapchain().extent.height,
             vx, vy, vw, vh);
         render_pass_->record(ctx);
