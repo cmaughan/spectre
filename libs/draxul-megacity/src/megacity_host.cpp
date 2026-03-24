@@ -21,7 +21,42 @@ namespace
 {
 
 constexpr float kMovementSpeedTilesPerSecond = 3.5f;
+constexpr float kOrbitSpeedRadiansPerSecond = 1.8f;
 constexpr auto kMovementTick = std::chrono::milliseconds(16);
+
+bool is_left_arrow(const KeyEvent& event)
+{
+    return event.scancode == SDL_SCANCODE_LEFT || event.keycode == SDLK_LEFT
+        || event.scancode == SDL_SCANCODE_A || event.keycode == SDLK_A;
+}
+
+bool is_right_arrow(const KeyEvent& event)
+{
+    return event.scancode == SDL_SCANCODE_RIGHT || event.keycode == SDLK_RIGHT
+        || event.scancode == SDL_SCANCODE_D || event.keycode == SDLK_D;
+}
+
+bool is_up_arrow(const KeyEvent& event)
+{
+    return event.scancode == SDL_SCANCODE_UP || event.keycode == SDLK_UP
+        || event.scancode == SDL_SCANCODE_W || event.keycode == SDLK_W;
+}
+
+bool is_down_arrow(const KeyEvent& event)
+{
+    return event.scancode == SDL_SCANCODE_DOWN || event.keycode == SDLK_DOWN
+        || event.scancode == SDL_SCANCODE_S || event.keycode == SDLK_S;
+}
+
+bool is_orbit_left_key(const KeyEvent& event)
+{
+    return event.scancode == SDL_SCANCODE_Q || event.keycode == SDLK_Q;
+}
+
+bool is_orbit_right_key(const KeyEvent& event)
+{
+    return event.scancode == SDL_SCANCODE_E || event.keycode == SDLK_E;
+}
 
 } // namespace
 
@@ -40,7 +75,6 @@ bool MegaCityHost::initialize(const HostContext& context, IHostCallbacks& callba
     camera_ = std::make_unique<IsometricCamera>();
     camera_->set_viewport(pixel_w_, pixel_h_);
     camera_->look_at_world_center(world_->width() * world_->tile_size(), world_->height() * world_->tile_size());
-    update_camera_target();
     scene_pass_ = std::make_shared<IsometricScenePass>(world_->width(), world_->height(), world_->tile_size());
 
     running_ = true;
@@ -64,29 +98,45 @@ void MegaCityHost::mark_scene_dirty()
 
 void MegaCityHost::on_key(const KeyEvent& event)
 {
-    bool* movement_flag = nullptr;
-    switch (event.keycode)
+    bool changed = false;
+    if (is_left_arrow(event))
     {
-    case SDLK_LEFT:
-        movement_flag = &move_left_;
-        break;
-    case SDLK_RIGHT:
-        movement_flag = &move_right_;
-        break;
-    case SDLK_UP:
-        movement_flag = &move_up_;
-        break;
-    case SDLK_DOWN:
-        movement_flag = &move_down_;
-        break;
-    default:
+        changed = move_left_ != event.pressed;
+        move_left_ = event.pressed;
+    }
+    else if (is_right_arrow(event))
+    {
+        changed = move_right_ != event.pressed;
+        move_right_ = event.pressed;
+    }
+    else if (is_up_arrow(event))
+    {
+        changed = move_up_ != event.pressed;
+        move_up_ = event.pressed;
+    }
+    else if (is_down_arrow(event))
+    {
+        changed = move_down_ != event.pressed;
+        move_down_ = event.pressed;
+    }
+    else if (is_orbit_left_key(event))
+    {
+        changed = orbit_left_ != event.pressed;
+        orbit_left_ = event.pressed;
+    }
+    else if (is_orbit_right_key(event))
+    {
+        changed = orbit_right_ != event.pressed;
+        orbit_right_ = event.pressed;
+    }
+    else
+    {
         return;
     }
 
-    if (!movement_flag || *movement_flag == event.pressed)
+    if (!changed)
         return;
 
-    *movement_flag = event.pressed;
     last_pump_time_ = std::chrono::steady_clock::now();
     mark_scene_dirty();
 }
@@ -233,42 +283,44 @@ SceneSnapshot MegaCityHost::build_scene_snapshot() const
 
 bool MegaCityHost::movement_active() const
 {
-    return move_left_ || move_right_ || move_up_ || move_down_;
-}
-
-void MegaCityHost::update_camera_target()
-{
-    if (!camera_ || !world_ || world_->objects().empty())
-        return;
-
-    const auto& obj = world_->objects().front();
-    camera_->set_target(world_->grid_to_world(obj.x, obj.y));
+    return move_left_ || move_right_ || move_up_ || move_down_ || orbit_left_ || orbit_right_;
 }
 
 void MegaCityHost::pump()
 {
     const auto now = std::chrono::steady_clock::now();
-    if (movement_active() && world_ && !world_->objects().empty())
+    if (movement_active() && camera_)
     {
-        glm::vec2 direction{ 0.0f, 0.0f };
+        glm::vec2 pan_input{ 0.0f, 0.0f };
         if (move_left_)
-            direction.x -= 1.0f;
+            pan_input.x -= 1.0f;
         if (move_right_)
-            direction.x += 1.0f;
+            pan_input.x += 1.0f;
         if (move_up_)
-            direction.y -= 1.0f;
+            pan_input.y += 1.0f;
         if (move_down_)
-            direction.y += 1.0f;
+            pan_input.y -= 1.0f;
 
-        const float distance = std::chrono::duration<float>(now - last_pump_time_).count()
-            * kMovementSpeedTilesPerSecond;
-        if (distance > 0.0f && glm::dot(direction, direction) > 0.0f)
+        const float dt = std::chrono::duration<float>(now - last_pump_time_).count();
+        const float pan_distance = dt * kMovementSpeedTilesPerSecond;
+        if (pan_distance > 0.0f && glm::dot(pan_input, pan_input) > 0.0f)
         {
-            direction = glm::normalize(direction);
-            auto& obj = world_->objects().front();
-            obj.x += direction.x * distance;
-            obj.y += direction.y * distance;
-            update_camera_target();
+            const glm::vec2 right = camera_->planar_right_vector();
+            const glm::vec2 up = camera_->planar_up_vector();
+            const glm::vec2 pan = glm::normalize(pan_input.x * right + pan_input.y * up);
+            camera_->translate_target(pan.x * pan_distance, pan.y * pan_distance);
+        }
+
+        float orbit = 0.0f;
+        if (orbit_left_)
+            orbit += 1.0f;
+        if (orbit_right_)
+            orbit -= 1.0f;
+        if (orbit != 0.0f && dt > 0.0f)
+            camera_->orbit_target(orbit * dt * kOrbitSpeedRadiansPerSecond);
+
+        if (pan_distance > 0.0f || orbit != 0.0f)
+        {
             scene_dirty_ = true;
             last_activity_time_ = now;
             if (callbacks_)

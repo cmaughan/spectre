@@ -5,6 +5,7 @@
 #include "isometric_camera.h"
 #include "isometric_world.h"
 #include "mesh_library.h"
+#include <numbers>
 
 using namespace draxul;
 
@@ -89,6 +90,50 @@ TEST_CASE("megacity camera footprint follows a retargeted focus point", "[megaci
     CHECK(shifted.max_x > centered.max_x + 8.0f);
     CHECK(shifted.min_z > centered.min_z + 4.0f);
     CHECK(shifted.max_z > centered.max_z + 4.0f);
+}
+
+TEST_CASE("megacity camera orbit keeps looking at the same world focus", "[megacity]")
+{
+    IsometricCamera camera;
+    camera.look_at_world_center(5.0f, 5.0f);
+    camera.set_viewport(160, 100);
+    camera.set_target({ 8.5f, 0.0f, 6.5f });
+
+    const glm::mat4 before_view = camera.view_matrix();
+    const GroundFootprint before = camera.visible_ground_footprint();
+    camera.orbit_target(std::numbers::pi_v<float> * 0.5f);
+    const glm::mat4 after_view = camera.view_matrix();
+    const GroundFootprint after = camera.visible_ground_footprint();
+
+    CHECK(after.min_x < 8.5f);
+    CHECK(after.max_x > 8.5f);
+    CHECK(after.min_z < 6.5f);
+    CHECK(after.max_z > 6.5f);
+    CHECK(after_view[2][0] != Catch::Approx(before_view[2][0]));
+    CHECK(after_view[0][2] != Catch::Approx(before_view[0][2]));
+    CHECK(before.min_x < 8.5f);
+    CHECK(before.max_x > 8.5f);
+}
+
+TEST_CASE("megacity camera planar axes follow the current view", "[megacity]")
+{
+    IsometricCamera camera;
+    camera.look_at_world_center(5.0f, 5.0f);
+
+    const glm::vec2 initial_right = camera.planar_right_vector();
+    const glm::vec2 initial_up = camera.planar_up_vector();
+    camera.orbit_target(std::numbers::pi_v<float> * 0.5f);
+    const glm::vec2 rotated_right = camera.planar_right_vector();
+    const glm::vec2 rotated_up = camera.planar_up_vector();
+
+    CHECK(glm::length(initial_right) == Catch::Approx(1.0f));
+    CHECK(glm::length(initial_up) == Catch::Approx(1.0f));
+    CHECK(std::abs(glm::dot(initial_right, initial_up)) < 0.01f);
+    CHECK(glm::length(rotated_right) == Catch::Approx(1.0f));
+    CHECK(glm::length(rotated_up) == Catch::Approx(1.0f));
+    CHECK(std::abs(glm::dot(rotated_right, rotated_up)) < 0.01f);
+    CHECK(std::abs(glm::dot(initial_right, rotated_right)) < 0.01f);
+    CHECK(std::abs(glm::dot(initial_up, rotated_up)) < 0.01f);
 }
 
 TEST_CASE("megacity mesh library builds expected primitive counts", "[megacity]")

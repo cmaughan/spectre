@@ -68,7 +68,6 @@ public:
 private:
     void mark_scene_dirty();
     bool movement_active() const;
-    void update_camera_target();
     SceneSnapshot build_scene_snapshot() const;
 
     IHostCallbacks* callbacks_ = nullptr;
@@ -87,6 +86,8 @@ private:
     bool move_right_ = false;
     bool move_up_ = false;
     bool move_down_ = false;
+    bool orbit_left_ = false;
+    bool orbit_right_ = false;
     std::chrono::steady_clock::time_point last_activity_time_ = std::chrono::steady_clock::now();
     std::chrono::steady_clock::time_point last_pump_time_ = std::chrono::steady_clock::now();
 };

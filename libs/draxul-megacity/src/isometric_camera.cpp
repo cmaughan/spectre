@@ -3,12 +3,27 @@
 #include <algorithm>
 #include <cmath>
 #include <glm/ext/matrix_clip_space.hpp>
+#include <glm/geometric.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <limits>
 
 namespace draxul
 {
+
+namespace
+{
+
+glm::vec2 normalized_planar(const glm::vec3& v, const glm::vec2& fallback)
+{
+    const glm::vec2 planar{ v.x, v.z };
+    const float len = glm::length(planar);
+    if (len <= 1e-5f)
+        return fallback;
+    return planar / len;
+}
+
+} // namespace
 
 void IsometricCamera::set_viewport(int pixel_w, int pixel_h)
 {
@@ -27,6 +42,38 @@ void IsometricCamera::set_target(const glm::vec3& target)
 {
     target_ = target;
     position_ = target_ + follow_offset_;
+}
+
+void IsometricCamera::translate_target(float dx, float dz)
+{
+    set_target(target_ + glm::vec3(dx, 0.0f, dz));
+}
+
+void IsometricCamera::orbit_target(float radians)
+{
+    const float radius = glm::length(glm::vec2(follow_offset_.x, follow_offset_.z));
+    if (radius <= 0.0f)
+        return;
+
+    const float angle = std::atan2(follow_offset_.z, follow_offset_.x) + radians;
+    follow_offset_.x = std::cos(angle) * radius;
+    follow_offset_.z = std::sin(angle) * radius;
+    position_ = target_ + follow_offset_;
+}
+
+glm::vec2 IsometricCamera::planar_right_vector() const
+{
+    const glm::vec3 forward = glm::normalize(target_ - position_);
+    const glm::vec3 right = glm::normalize(glm::cross(forward, glm::vec3(0.0f, 1.0f, 0.0f)));
+    return normalized_planar(right, glm::vec2(1.0f, 0.0f));
+}
+
+glm::vec2 IsometricCamera::planar_up_vector() const
+{
+    const glm::vec3 forward = glm::normalize(target_ - position_);
+    const glm::vec3 right = glm::normalize(glm::cross(forward, glm::vec3(0.0f, 1.0f, 0.0f)));
+    const glm::vec3 up = glm::normalize(glm::cross(right, forward));
+    return normalized_planar(up, glm::vec2(0.0f, 1.0f));
 }
 
 glm::mat4 IsometricCamera::view_matrix() const

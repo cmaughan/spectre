@@ -245,7 +245,6 @@ public:
     {
         return {};
     }
-
     std::vector<KeyEvent> key_events;
     std::vector<TextInputEvent> text_input_events;
     std::vector<TextEditingEvent> text_editing_events;

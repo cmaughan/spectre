@@ -19,6 +19,10 @@ public:
     void set_viewport(int pixel_w, int pixel_h);
     void look_at_world_center(float world_w, float world_h);
     void set_target(const glm::vec3& target);
+    void translate_target(float dx, float dz);
+    void orbit_target(float radians);
+    glm::vec2 planar_right_vector() const;
+    glm::vec2 planar_up_vector() const;
 
     glm::mat4 view_matrix() const;
     glm::mat4 proj_matrix() const;
