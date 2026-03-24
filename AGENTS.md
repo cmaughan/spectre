@@ -2,90 +2,136 @@
 
 ## Scope
 
-This repository is a cross-platform Neovim GUI frontend with:
+Draxul is a cross-platform Neovim GUI frontend (also supports shell hosts: Bash, Zsh, PowerShell, WSL). It renders the terminal grid using the platform's GPU API (Vulkan on Windows, Metal on macOS), with SDL3 for windowing/input, and communicates with `nvim --embed` via msgpack-RPC over stdin/stdout pipes.
 
-- Vulkan rendering on Windows
-- Metal rendering on macOS
-- SDL3 windowing/input
-- msgpack-RPC communication with `nvim --embed`
-
-The codebase is intentionally split into small libraries. Keep app code thin and push platform or subsystem logic downward into `libs/`.
+The codebase is intentionally split into small libraries. Keep app code thin and push platform or subsystem logic downward into `libs/`. See `docs/features.md` for a complete list of implemented features.
 
 ## Build And Test
 
 ### Windows
 
-Requirements:
-
-- CMake 3.25+
-- Visual Studio 2022
-- Vulkan SDK with `glslc`
-- `nvim` on `PATH` for runtime checks
-
-Commands:
+Requirements: CMake 3.25+, Visual Studio 2022, Vulkan SDK with `glslc`, `nvim` on `PATH`.
 
 ```powershell
-cmake --preset default
-cmake --build build --config Release --parallel
+cmake --preset default                              # Configure (Debug, VS 2022 x64)
+cmake --preset release                               # Configure (Release)
+cmake --build build --config Release --target draxul # Build
 ctest --test-dir build --build-config Release --output-on-failure
 ```
 
-Run:
-
-```powershell
-.\build\Release\draxul.exe
-.\build\Release\draxul.exe --console
-```
+Run: `.\build\Release\draxul.exe` (pass `--console` for a debug console window).
 
 ### macOS
 
-Requirements:
-
-- CMake 3.25+
-- Xcode Command Line Tools
-- `nvim` on `PATH` for runtime checks
-
-Commands:
+Requirements: CMake 3.25+, Xcode Command Line Tools, `nvim` on `PATH`.
 
 ```bash
-cmake --preset mac-debug
-cmake --build build --parallel
-ctest --test-dir build --output-on-failure
+cmake --preset mac-debug                             # Configure (Debug)
+cmake --preset mac-release                           # Configure (Release)
+cmake --preset mac-asan                              # Configure (Debug + AddressSanitizer/UBSan)
+cmake --build build --target draxul                 # Build
+cmake --build build --target draxul-tests           # Build unit tests
 ```
 
-Run:
+Run: `./build/draxul.app/Contents/MacOS/draxul` or `open ./build/draxul.app`.
+
+ASan test run: `cmake --preset mac-asan && cmake --build build --target draxul-tests && ctest --test-dir build -R draxul-tests`.
+
+### Convenience Scripts
+
+- `r.bat` / `r.sh`: Build and run the application.
+- `t.bat` / `t.sh`: Build and run the test suite.
+
+### Debugging / Logging
+
+Use the `--log-file` and `--log-level` CLI flags for debug logging.
 
 ```bash
-./build/draxul
+./build/draxul.app/Contents/MacOS/draxul --host zsh --log-file /tmp/debug.log --log-level debug
 ```
+
+- `--log-level <level>` — `error`, `warn`, `info`, `debug`, `trace`. Defaults to `debug` when `--log-file` is given.
+- `--log-file <path>` — additionally write logs to a file.
+- Use `DRAXUL_LOG_DEBUG(LogCategory::App, "fmt", ...)` for temporary instrumentation.
+- Env vars (`DRAXUL_LOG`, `DRAXUL_LOG_FILE`, `DRAXUL_LOG_CATEGORIES`) work when launching the binary directly but not via macOS `open`.
 
 ## Architecture
 
-- `libs/draxul-types`: shared POD types and event structs
-- `libs/draxul-window`: `IWindow` abstraction and SDL implementation
-- `libs/draxul-renderer`: `IRenderer` abstraction, backend factory, Vulkan and Metal backends
-- `libs/draxul-font`: FreeType/HarfBuzz font loading, shaping, glyph atlas management
-- `libs/draxul-grid`: terminal grid model, dirty tracking, highlights
-- `libs/draxul-nvim`: embedded Neovim process, RPC transport, redraw parsing, input translation
-- `app/`: orchestration only
+### Library Structure
 
-Preferred dependency direction:
+- `libs/draxul-types`: Shared POD types, events, logging (header-only)
+- `libs/draxul-window`: `IWindow` abstraction and SDL3 implementation
+- `libs/draxul-renderer`: `IBaseRenderer` / `I3DRenderer` / `IGridRenderer` hierarchy, Vulkan and Metal backends
+- `libs/draxul-font`: FreeType/HarfBuzz font loading, shaping, glyph atlas management
+- `libs/draxul-grid`: Cell-based grid model, dirty tracking, highlights
+- `libs/draxul-nvim`: Neovim process, msgpack-RPC transport, redraw parsing, input translation
+- `libs/draxul-host`: Host abstraction (`IHost` / `I3DHost` / `IGridHost` / `GridHostBase`), HostManager, terminal emulation
+- `libs/draxul-app-support`: Reusable app-layer helpers (config, grid rendering pipeline, render tests)
+- `libs/draxul-ui`: ImGui-based diagnostics panel
+- `libs/draxul-megacity`: Optional 3D demo host (spinning cube + code visualization)
+- `libs/draxul-treesitter`: Optional TreeSitter integration for code analysis
+- `app/`: Orchestration only — owns subsystems and runs main loop
+
+### Dependency Direction
 
 - `app` depends on public headers only
-- renderer backends stay private to `draxul-renderer`
-- pure logic stays testable without launching Neovim or opening a window
+- Renderer backends stay private to `draxul-renderer`
+- Pure logic stays testable without launching Neovim or opening a window
+
+### Key Abstractions
+
+- **Renderer hierarchy**: `IBaseRenderer` -> `I3DRenderer` -> `IGridRenderer`. Metal and Vulkan implement `IGridRenderer`.
+- **Host hierarchy**: `IHost` -> `I3DHost` -> `IGridHost` -> `GridHostBase`. Terminal/Neovim hosts inherit `GridHostBase`. `MegaCityHost` inherits `I3DHost` directly.
+- **IRenderPass / IRenderContext**: Typed render pass abstraction. Subsystems register passes with `I3DRenderer::register_render_pass()`.
+- **HostManager**: Manages host lifecycle, split tree, and `dynamic_cast<I3DHost*>` for 3D renderer attachment.
+
+### Threading
+
+- **Main thread**: SDL events, nvim message processing, grid mutation, GPU rendering
+- **Reader thread**: blocking reads from nvim stdout, MPack decode, push to thread-safe queue
+
+All grid and GPU state is only touched by the main thread.
+
+## Dependencies
+
+All fetched automatically via CMake FetchContent: SDL3, FreeType, HarfBuzz, MPack, ImGui, GLM, Catch2. Windows-only: vk-bootstrap, VMA. Shaders compiled from GLSL to SPIR-V via glslc (Windows) or Metal to metallib via xcrun (macOS).
+
+- **GLM** is the preferred library for vector and matrix types (`glm::vec2`, `glm::vec3`, `glm::vec4`, `glm::mat4`, etc.). Use GLM rather than custom structs or other math libraries.
+
+## Config Notes
+
+- User settings live in `config.toml`.
+- `enable_ligatures = true/false` controls programming ligature combining; defaults to `true`.
+- `smooth_scroll = true/false` enables trackpad momentum-style scroll accumulation; defaults to `true`.
+- `scroll_speed = 1.0` — multiplier applied to raw scroll delta. Range: (0.1, 10.0]; out-of-range values log a WARN and fall back to `1.0`.
+- GUI shortcuts configured under `[keybindings]` table with actions: `toggle_diagnostics`, `copy`, `paste`, `font_increase`, `font_decrease`, `font_reset`, `split_vertical`, `split_horizontal`, `open_file_dialog`.
+- Keep GUI keybinding changes in the Draxul layer only; Neovim key remapping belongs in Neovim config.
 
 ## Validation Expectations
 
-- **Always build and run the smoke test before committing.** Use `cmake --build build --target draxul draxul-tests` followed by `py do.py smoke` (or `python do.py smoke` on Windows). This catches broken includes, link errors, and basic startup failures that only surface after merging changes from multiple sources.
+- **Always build and run the smoke test before committing.** Use `cmake --build build --target draxul draxul-tests` followed by `py do.py smoke` (or `python do.py smoke` on Windows).
 - If you touch RPC, redraw handling, or input translation, run `ctest`.
 - If you touch renderer code, build the platform-specific app target and verify startup at least once.
 - After implementing a user-facing feature or rendering-affecting change, run the render smoke/snapshot suite with `t.bat` or `ctest` and confirm the relevant `draxul-render-*` scenario still passes.
-- When blessing render references, use `py do.py blessbasic`, `py do.py blesscmdline`, `py do.py blessunicode`, `py do.py blessligatures`, or `py do.py blessall` from the repo root instead of calling `draxul.exe --render-test` manually. The helper passes repo-rooted scenario paths and avoids working-directory mistakes.
+- When blessing render references, use `py do.py blessbasic`, `py do.py blesscmdline`, `py do.py blessunicode`, `py do.py blessligatures`, or `py do.py blessall` from the repo root.
 - If you change build wiring, keep both Windows and macOS paths valid in CI.
-- After every completed work item, run one final `clang-format` pass across all touched source files in a single shot instead of formatting piecemeal during the work. Note: the pre-commit hook runs `clang-format` automatically on staged files, so a commit that needs reformatting will be rejected on the first attempt — simply re-stage and retry the commit.
-- When you complete a work item or a concrete subtask from `plans/work-items/*.md`, update that markdown file in the same turn and mark the completed entries with Markdown task ticks (`- [x]`). Leave incomplete follow-ups as unchecked items so progress stays visible in the file itself.
-- When a work item from `plans/work-items/*.md` is fully complete, move it to `plans/work-items-complete/` in the same turn and update any index/reference links that still point at the old location.
+- After every completed work item, run one final `clang-format` pass across all touched source files. The pre-commit hook runs `clang-format` automatically on staged files.
+- When you complete a work item from `plans/work-items/*.md`, tick the completed entries and move it to `plans/work-items-complete/`.
+- After implementing a new user-facing feature, configuration option, CLI flag, or build/CI change, update `docs/features.md`.
+- Before creating new work items, check `docs/features.md` to verify the proposed feature or capability is not already implemented.
+
+## Platform
+
+- **Windows**: MSVC/Visual Studio 2022. Process spawning via `CreateProcess` with piped stdin/stdout. Built as a Windows GUI app (`WIN32_EXECUTABLE`).
+- **macOS**: Clang/Xcode. Process spawning via `fork()`/`exec()` with `pipe()`. Rendering via Metal.
+
+## Known Pitfalls
+
+- Do not include backend-private renderer headers from `app/`.
+- Keep shutdown paths non-blocking; a stuck Neovim child must not hang the UI on exit.
+- Font-size changes must relayout existing grid geometry even before Neovim acknowledges a resize.
+- Unicode rendering is still cell-oriented. Be careful when changing shaping or grid-line parsing because combining clusters and wide glyphs are easy to regress.
+- Never duplicate a header between `src/` and `include/draxul/`. Each header lives in exactly one place: public API headers under `include/draxul/` (included with angle brackets), internal headers under `src/` (included with quotes).
 
 ## Replay Fixtures
 
@@ -111,13 +157,6 @@ Treat it as a synthesis task:
 
 The result should read like a conversation and planning review for fixes, with a current recommended path forward.
 
-## Known Pitfalls
-
-- Do not include backend-private renderer headers from `app/`.
-- Keep shutdown paths non-blocking; a stuck Neovim child must not hang the UI on exit.
-- Font-size changes must relayout existing grid geometry even before Neovim acknowledges a resize.
-- Unicode rendering is still cell-oriented. Be careful when changing shaping or grid-line parsing because combining clusters and wide glyphs are easy to regress.
-- Never duplicate a header between `src/` and `include/draxul/`. Each header lives in exactly one place: public API headers under `include/draxul/` (included with angle brackets), internal headers under `src/` (included with quotes). Maintaining two copies causes them to diverge silently and is flagged by static analysis (SonarCloud).
 ## Consensus Shortcut
 
 When the user says `come to consensus`, treat that as a direct instruction to execute the saved consensus prompt in `plans/prompts/consensus_review.md`.
