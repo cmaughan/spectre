@@ -15,9 +15,12 @@ class MetalRenderContext : public IRenderContext
 {
 public:
     MetalRenderContext(id<MTLCommandBuffer> cmd, id<MTLRenderCommandEncoder> encoder,
+        uint32_t frame_index, uint32_t buffered_frame_count,
         int w, int h, int vx, int vy, int vw, int vh)
         : cmd_(cmd)
         , encoder_(encoder)
+        , frame_index_(frame_index)
+        , buffered_frame_count_(buffered_frame_count > 0 ? buffered_frame_count : 1)
         , w_(w)
         , h_(h)
         , vx_(vx)
@@ -59,10 +62,20 @@ public:
     {
         return vh_;
     }
+    uint32_t frame_index() const override
+    {
+        return frame_index_;
+    }
+    uint32_t buffered_frame_count() const override
+    {
+        return buffered_frame_count_;
+    }
 
 private:
     id<MTLCommandBuffer> cmd_;
     id<MTLRenderCommandEncoder> encoder_;
+    uint32_t frame_index_;
+    uint32_t buffered_frame_count_;
     int w_;
     int h_;
     int vx_;

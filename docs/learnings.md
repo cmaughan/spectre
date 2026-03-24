@@ -21,6 +21,23 @@ Lesson:
 
 ---
 
+### Start the debugger immediately when a renderer change causes a startup crash
+
+A useful reminder from the Metal multi-frame-in-flight work: once the app started trapping during startup, the right move was to proactively switch to the debugger straight away instead of continuing to guess from logs or code inspection.
+
+What helped:
+- the agent chose on its own to stop speculating and launch the failing startup path under `lldb`
+- run the app under `lldb` with the same startup path that was failing
+- get the exact trap site before making more renderer changes
+- use that to distinguish a teardown/synchronization bug from an actual draw-path crash
+
+In this case, the debugger immediately showed the crash was in `libdispatch` semaphore disposal, which pointed straight at the new Metal frame-semaphore shutdown logic.
+
+Lesson:
+- if a rendering or startup change begins crashing, proactively start the debugger early and get the first real stack/trap location before iterating further
+
+---
+
 ### Claude can generate and manipulate code dependency graphs
 
 Claude successfully:

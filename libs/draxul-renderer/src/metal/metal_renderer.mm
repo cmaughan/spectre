@@ -3,6 +3,7 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_metal.h>
 #include <algorithm>
+#include <array>
 #include <backends/imgui_impl_metal.h>
 #include <cstring>
 #include <draxul/log.h>
@@ -29,7 +30,7 @@ NSUInteger align_capture_row_bytes(NSUInteger width)
 } // namespace
 
 // ---------------------------------------------------------------------------
-// MetalGridHandle — per-host grid handle owning GPU buffer + cell state.
+// MetalGridHandle — per-host grid handle owning per-frame GPU buffers + cell state.
 // ---------------------------------------------------------------------------
 class MetalGridHandle final : public IGridHandle
 {
@@ -40,7 +41,8 @@ public:
     {
         // Allocate an initial buffer (80x24 cells)
         const size_t initial_size = 80 * 24 * sizeof(GpuCell);
-        buffer_.reset([device newBufferWithLength:initial_size options:MTLResourceStorageModeShared]);
+        for (auto& buffer : buffers_)
+            buffer.reset([device newBufferWithLength:initial_size options:MTLResourceStorageModeShared]);
         renderer_.grid_handles_.push_back(this);
     }
 
@@ -48,34 +50,22 @@ public:
     {
         auto& handles = renderer_.grid_handles_;
         handles.erase(std::remove(handles.begin(), handles.end(), this), handles.end());
-        // buffer_ released by ObjCRef destructor
     }
 
     void set_grid_size(int cols, int rows) override
     {
         state_.set_grid_size(cols, rows, padding_);
-
-        // Resize GPU buffer to fit the new cell count
-        const size_t required = state_.buffer_size_bytes();
-        id<MTLBuffer> existing = buffer_.get();
-        if (!existing || [existing length] < required)
-        {
-            buffer_.reset([renderer_.device_.get() newBufferWithLength:required
-                                                               options:MTLResourceStorageModeShared]);
-        }
-        upload_dirty();
+        ensure_buffer_capacity_for_all_frames(state_.buffer_size_bytes());
     }
 
     void update_cells(std::span<const CellUpdate> updates) override
     {
         state_.update_cells(updates);
-        upload_dirty();
     }
 
     void set_overlay_cells(std::span<const CellUpdate> updates) override
     {
         state_.set_overlay_cells(updates);
-        upload_dirty();
     }
 
     void set_cursor(int col, int row, const CursorStyle& style) override
@@ -115,28 +105,43 @@ public:
     {
         state_.apply_cursor();
     }
-    void upload_dirty()
+    void upload_current_frame()
     {
-        id<MTLBuffer> buf = buffer_.get();
+        id<MTLBuffer> buf = buffer_for_frame(renderer_.current_frame_);
         if (!buf)
             return;
 
         auto* bytes = static_cast<std::byte*>([buf contents]);
-        if (state_.has_dirty_cells())
-            state_.copy_dirty_cells_to(bytes + state_.dirty_cell_offset_bytes());
-        if (state_.overlay_region_dirty())
-            state_.copy_overlay_region_to(bytes + state_.overlay_offset_bytes());
+        state_.copy_to(bytes);
         state_.clear_dirty();
     }
 
     RendererState state_;
-    ObjCRef<id<MTLBuffer>> buffer_;
     PaneDescriptor descriptor_;
     float scroll_offset_px_ = 0.f;
 
+    id<MTLBuffer> buffer_for_frame(uint32_t frame_index) const
+    {
+        return buffers_[frame_index % buffers_.size()].get();
+    }
+
 private:
+    void ensure_buffer_capacity_for_all_frames(size_t required)
+    {
+        for (auto& buffer : buffers_)
+        {
+            id<MTLBuffer> existing = buffer.get();
+            if (existing && [existing length] >= required)
+                continue;
+
+            buffer.reset([renderer_.device_.get() newBufferWithLength:required
+                                                              options:MTLResourceStorageModeShared]);
+        }
+    }
+
     MetalRenderer& renderer_;
     int padding_ = 4;
+    std::array<ObjCRef<id<MTLBuffer>>, MetalRenderer::MAX_FRAMES_IN_FLIGHT> buffers_;
 };
 
 // ---------------------------------------------------------------------------
@@ -153,7 +158,7 @@ MetalRenderer::~MetalRenderer() = default;
 void MetalRenderer::upload_dirty_state()
 {
     for (auto* handle : grid_handles_)
-        handle->upload_dirty();
+        handle->upload_current_frame();
 }
 
 bool MetalRenderer::ensure_capture_buffer(size_t width, size_t height)
@@ -207,6 +212,8 @@ bool MetalRenderer::ensure_depth_texture()
 
 bool MetalRenderer::initialize(IWindow& window)
 {
+    current_frame_ = 0;
+
     // Get Metal device
     id<MTLDevice> device = MTLCreateSystemDefaultDevice();
     if (!device)
@@ -349,8 +356,8 @@ bool MetalRenderer::initialize(IWindow& window)
         atlas_sampler_.reset([device newSamplerStateWithDescriptor:sampDesc]);
     }
 
-    // Create frame semaphore (count=1 — wait for previous frame's GPU work before writing buffers)
-    frame_semaphore_.reset(dispatch_semaphore_create(1));
+    // Allow a small number of frames in flight and only block when reusing a frame slot.
+    frame_semaphore_.reset(dispatch_semaphore_create(MAX_FRAMES_IN_FLIGHT));
 
     DRAXUL_LOG_INFO(LogCategory::Renderer, "Metal renderer initialized (%s)", [[device name] UTF8String]);
     return true;
@@ -358,12 +365,14 @@ bool MetalRenderer::initialize(IWindow& window)
 
 void MetalRenderer::shutdown()
 {
-    // Wait for the in-flight frame to complete
+    // Wait for every frame slot to be returned before releasing shared resources.
     dispatch_semaphore_t sema = frame_semaphore_.get();
     if (sema)
     {
-        dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
-        dispatch_semaphore_signal(sema);
+        for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+            dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+        for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+            dispatch_semaphore_signal(sema);
     }
 
     // Release Metal objects explicitly in reverse-dependency order.
@@ -565,7 +574,7 @@ void MetalRenderer::end_frame()
     // Draw each active grid handle
     for (auto* handle : grid_handles_)
     {
-        id<MTLBuffer> gridBuf = handle->buffer_.get();
+        id<MTLBuffer> gridBuf = handle->buffer_for_frame(current_frame_);
         if (!gridBuf)
             continue;
 
@@ -638,7 +647,8 @@ void MetalRenderer::end_frame()
         int vy = viewport3d_y_;
         int vw = viewport3d_w_ > 0 ? viewport3d_w_ : pixel_w_;
         int vh = viewport3d_h_ > 0 ? viewport3d_h_ : pixel_h_;
-        MetalRenderContext ctx(cmdBuf, encoder, pixel_w_, pixel_h_, vx, vy, vw, vh);
+        MetalRenderContext ctx(cmdBuf, encoder, current_frame_, MAX_FRAMES_IN_FLIGHT,
+            pixel_w_, pixel_h_, vx, vy, vw, vh);
         render_pass_->record(ctx);
     }
 
@@ -713,6 +723,7 @@ void MetalRenderer::end_frame()
     }
 
     imgui_draw_data_ = nullptr;
+    current_frame_ = (current_frame_ + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
 void MetalRenderer::register_render_pass(std::shared_ptr<IRenderPass> pass)

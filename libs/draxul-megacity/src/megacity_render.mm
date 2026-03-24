@@ -7,6 +7,7 @@
 #include <cstring>
 #include <draxul/log.h>
 #import <simd/simd.h>
+#include <vector>
 
 namespace draxul
 {
@@ -71,6 +72,12 @@ struct TransientGeometryArena
         vertices.reset();
         indices.reset();
     }
+};
+
+struct FrameResources
+{
+    ObjCRef<id<MTLBuffer>> frame_uniforms;
+    TransientGeometryArena geometry_arena;
 };
 
 bool same_grid_spec(const FloorGridSpec& a, const FloorGridSpec& b)
@@ -217,10 +224,11 @@ struct IsometricScenePass::State
     ObjCRef<id<MTLRenderPipelineState>> pipeline;
     ObjCRef<id<MTLDepthStencilState>> depth_state;
     MeshBuffers cube_mesh;
-    TransientGeometryArena geometry_arena;
     MeshData cached_grid_mesh;
     FloorGridSpec cached_grid_spec;
     bool has_cached_grid_mesh = false;
+    std::vector<FrameResources> frame_resources;
+    uint32_t buffered_frame_count = 1;
     bool initialized = false;
 
     bool init(id<MTLDevice> device, int grid_width, int grid_height, float tile_size)
@@ -304,6 +312,29 @@ struct IsometricScenePass::State
         return true;
     }
 
+    bool ensure_frame_resources(id<MTLDevice> device, uint32_t frame_count)
+    {
+        frame_count = std::max(1u, frame_count);
+        if (buffered_frame_count == frame_count && frame_resources.size() == frame_count)
+            return true;
+
+        frame_resources.clear();
+        frame_resources.resize(frame_count);
+        buffered_frame_count = frame_count;
+
+        for (auto& frame : frame_resources)
+        {
+            if (!ensure_buffer_capacity(device, sizeof(FrameUniforms), frame.frame_uniforms))
+            {
+                DRAXUL_LOG_ERROR(LogCategory::App, "MegaCity: failed to allocate frame uniform buffer");
+                frame_resources.clear();
+                buffered_frame_count = 1;
+                return false;
+            }
+        }
+        return true;
+    }
+
     bool ensure_floor_grid(id<MTLDevice> device, const FloorGridSpec& spec)
     {
         (void)device;
@@ -341,15 +372,21 @@ void IsometricScenePass::record(IRenderContext& ctx)
     if (!cmd_buf || !encoder)
         return;
 
+    const uint32_t frame_count = std::max(1u, ctx.buffered_frame_count());
     if (!state_->init(cmd_buf.device, grid_width_, grid_height_, tile_size_))
+        return;
+    if (!state_->ensure_frame_resources(cmd_buf.device, frame_count))
         return;
     if (!state_->ensure_floor_grid(cmd_buf.device, scene_.floor_grid))
         return;
-    state_->geometry_arena.reset();
+
+    const uint32_t frame_index = ctx.frame_index() % static_cast<uint32_t>(state_->frame_resources.size());
+    auto& frame_resources = state_->frame_resources[frame_index];
+    frame_resources.geometry_arena.reset();
 
     MeshSlice grid_slice;
     if (state_->has_cached_grid_mesh
-        && !stream_transient_mesh(cmd_buf.device, state_->cached_grid_mesh, state_->geometry_arena, grid_slice))
+        && !stream_transient_mesh(cmd_buf.device, state_->cached_grid_mesh, frame_resources.geometry_arena, grid_slice))
     {
         return;
     }
@@ -378,12 +415,13 @@ void IsometricScenePass::record(IRenderContext& ctx)
         scene_.camera.light_dir.y,
         scene_.camera.light_dir.z,
         scene_.camera.light_dir.w);
+    std::memcpy([frame_resources.frame_uniforms.get() contents], &frame, sizeof(frame));
 
     [encoder setRenderPipelineState:state_->pipeline.get()];
     [encoder setDepthStencilState:state_->depth_state.get()];
     [encoder setCullMode:MTLCullModeBack];
     [encoder setFrontFacingWinding:MTLWindingCounterClockwise];
-    [encoder setVertexBytes:&frame length:sizeof(frame) atIndex:1];
+    [encoder setVertexBuffer:frame_resources.frame_uniforms.get() offset:0 atIndex:1];
 
     for (const SceneObject& obj : scene_.objects)
     {

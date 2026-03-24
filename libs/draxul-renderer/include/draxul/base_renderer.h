@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <draxul/types.h>
 #include <memory>
 
@@ -58,6 +59,18 @@ public:
     virtual int viewport_h() const
     {
         return height();
+    }
+
+    // Buffered frame slot information for passes that need per-frame transient
+    // resources. Backends that do not expose multiple frame slots can keep the
+    // defaults of frame 0 / one buffered frame.
+    virtual uint32_t frame_index() const
+    {
+        return 0;
+    }
+    virtual uint32_t buffered_frame_count() const
+    {
+        return 1;
     }
 };
 

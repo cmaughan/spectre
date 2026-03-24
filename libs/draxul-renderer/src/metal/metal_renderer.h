@@ -114,6 +114,7 @@ private:
     int viewport3d_y_ = 0;
     int viewport3d_w_ = 0;
     int viewport3d_h_ = 0;
+    uint32_t current_frame_ = 0;
 
     float clear_r_ = 0.1f;
     float clear_g_ = 0.1f;

@@ -83,11 +83,11 @@ public:
     {
         return render_pass_;
     }
-    uint32_t frame_index() const
+    uint32_t frame_index() const override
     {
         return frame_index_;
     }
-    uint32_t buffered_frame_count() const
+    uint32_t buffered_frame_count() const override
     {
         return buffered_frame_count_;
     }
