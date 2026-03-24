@@ -23,13 +23,12 @@ size_t RendererState::dirty_cell_size_bytes() const
     return (dirty_cell_end_ - dirty_cell_begin_) * sizeof(GpuCell);
 }
 
-void RendererState::copy_dirty_cells_to(void* dst) const
+void RendererState::copy_dirty_cells_to(std::byte* dst) const
 {
     if (!has_dirty_cells())
         return;
 
-    auto* bytes = static_cast<std::byte*>(dst);
-    std::memcpy(bytes, gpu_cells_.data() + dirty_cell_begin_, dirty_cell_size_bytes());
+    std::memcpy(dst, gpu_cells_.data() + dirty_cell_begin_, dirty_cell_size_bytes());
 }
 
 bool RendererState::overlay_region_dirty() const
@@ -47,21 +46,20 @@ size_t RendererState::overlay_region_size_bytes() const
     return (OVERLAY_CELL_CAPACITY + 1) * sizeof(GpuCell);
 }
 
-void RendererState::copy_overlay_region_to(void* dst) const
+void RendererState::copy_overlay_region_to(std::byte* dst) const
 {
-    auto* bytes = static_cast<std::byte*>(dst);
     if (!overlay_cells_.empty())
     {
-        std::memcpy(bytes, overlay_cells_.data(), overlay_cell_count_ * sizeof(GpuCell));
+        std::memcpy(dst, overlay_cells_.data(), overlay_cell_count_ * sizeof(GpuCell));
     }
 
     GpuCell overlay = cursor_overlay_active_ ? overlay_cell_ : GpuCell{};
-    std::memcpy(bytes + overlay_cell_count_ * sizeof(GpuCell), &overlay, sizeof(GpuCell));
+    std::memcpy(dst + overlay_cell_count_ * sizeof(GpuCell), &overlay, sizeof(GpuCell));
 
     const size_t clear_begin = overlay_cell_count_ + 1;
     if (clear_begin < OVERLAY_CELL_CAPACITY + 1)
     {
-        std::memset(bytes + clear_begin * sizeof(GpuCell), 0,
+        std::memset(dst + clear_begin * sizeof(GpuCell), 0,
             (OVERLAY_CELL_CAPACITY + 1 - clear_begin) * sizeof(GpuCell));
     }
 }
@@ -287,15 +285,14 @@ void RendererState::apply_cursor()
     overlay_dirty_ = true;
 }
 
-void RendererState::copy_to(void* dst) const
+void RendererState::copy_to(std::byte* dst) const
 {
-    auto* bytes = static_cast<std::byte*>(dst);
     if (!gpu_cells_.empty())
     {
-        std::memcpy(bytes, gpu_cells_.data(), gpu_cells_.size() * sizeof(GpuCell));
+        std::memcpy(dst, gpu_cells_.data(), gpu_cells_.size() * sizeof(GpuCell));
     }
 
-    copy_overlay_region_to(bytes + gpu_cells_.size() * sizeof(GpuCell));
+    copy_overlay_region_to(dst + gpu_cells_.size() * sizeof(GpuCell));
 }
 
 void RendererState::force_dirty()

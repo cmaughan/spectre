@@ -154,13 +154,13 @@ CodebaseScanner::~CodebaseScanner()
 
 void CodebaseScanner::start(std::filesystem::path root)
 {
-    stop_flag_.store(false, std::memory_order_relaxed);
+    stop_flag_.store(false);
     thread_ = std::thread(&CodebaseScanner::scan_thread, this, std::move(root));
 }
 
 void CodebaseScanner::stop()
 {
-    stop_flag_.store(true, std::memory_order_relaxed);
+    stop_flag_.store(true);
     if (thread_.joinable())
         thread_.join();
 }
@@ -225,7 +225,7 @@ void CodebaseScanner::scan_thread(std::filesystem::path root)
               end = std::filesystem::end(dir_iter);
         it != end; it.increment(ec))
     {
-        if (ec || stop_flag_.load(std::memory_order_relaxed))
+        if (ec || stop_flag_.load())
             break;
 
         const auto& entry = *it;

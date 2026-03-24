@@ -90,15 +90,15 @@ public:
         return (gpu_cells_.size() + OVERLAY_CELL_CAPACITY + 1) * sizeof(GpuCell);
     }
 
-    void copy_to(void* dst) const;
+    void copy_to(std::byte* dst) const;
     bool has_dirty_cells() const;
     size_t dirty_cell_offset_bytes() const;
     size_t dirty_cell_size_bytes() const;
-    void copy_dirty_cells_to(void* dst) const;
+    void copy_dirty_cells_to(std::byte* dst) const;
     bool overlay_region_dirty() const;
     size_t overlay_offset_bytes() const;
     size_t overlay_region_size_bytes() const;
-    void copy_overlay_region_to(void* dst) const;
+    void copy_overlay_region_to(std::byte* dst) const;
     void clear_dirty();
     // Mark all cells and overlay dirty so they are re-uploaded on the next
     // upload_dirty_state() call. Called when a sibling pane is resized and the

@@ -34,7 +34,7 @@ CursorStyle make_block_cursor()
 std::vector<GpuCell> snapshot(const RendererState& state)
 {
     std::vector<GpuCell> gpu(state.total_cells() + RendererState::OVERLAY_CELL_CAPACITY + 1);
-    state.copy_to(gpu.data());
+    state.copy_to(reinterpret_cast<std::byte*>(gpu.data()));
     return gpu;
 }
 
@@ -86,7 +86,7 @@ TEST_CASE("renderer state projects cell updates into gpu cells", "[renderer]")
     state.update_cells({ &update, 1 });
 
     std::vector<GpuCell> gpu(state.total_cells() + RendererState::OVERLAY_CELL_CAPACITY + 1);
-    state.copy_to(gpu.data());
+    state.copy_to(reinterpret_cast<std::byte*>(gpu.data()));
 
     INFO("buffer includes overlay region and cursor slot");
     REQUIRE(static_cast<int>(state.buffer_size_bytes()) == static_cast<int>((state.total_cells() + RendererState::OVERLAY_CELL_CAPACITY + 1) * sizeof(GpuCell)));
@@ -229,7 +229,7 @@ TEST_CASE("renderer state appends overlay geometry for line cursors", "[renderer
     state.apply_cursor();
 
     std::vector<GpuCell> gpu(state.total_cells() + RendererState::OVERLAY_CELL_CAPACITY + 1);
-    state.copy_to(gpu.data());
+    state.copy_to(reinterpret_cast<std::byte*>(gpu.data()));
 
     INFO("line cursor adds one overlay background instance");
     REQUIRE(state.bg_instances() == 2);
@@ -259,7 +259,7 @@ TEST_CASE("renderer state keeps debug overlay cells separate from the grid", "[r
     state.set_overlay_cells({ &overlay, 1 });
 
     std::vector<GpuCell> gpu(state.total_cells() + RendererState::OVERLAY_CELL_CAPACITY + 1);
-    state.copy_to(gpu.data());
+    state.copy_to(reinterpret_cast<std::byte*>(gpu.data()));
 
     INFO("debug overlay contributes a background instance");
     REQUIRE(state.bg_instances() == 3);
