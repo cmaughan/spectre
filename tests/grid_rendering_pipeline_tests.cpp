@@ -340,3 +340,26 @@ TEST_CASE("grid rendering pipeline redraws the leader when a continuation change
     INFO("changed cell restores its standalone glyph");
     REQUIRE(handle.update_batches[0][1].glyph.size.x > 0);
 }
+
+TEST_CASE("grid rendering pipeline reuses scratch capacity for ligature expansion", "[grid]")
+{
+    Grid grid = make_ligature_grid();
+    HighlightTable highlights;
+    FakeGlyphAtlas atlas;
+    FakeRenderer renderer;
+    FakeGridHandle handle;
+    GridRenderingPipeline pipeline(grid, highlights, atlas);
+    pipeline.set_renderer(&renderer);
+    pipeline.set_grid_handle(&handle);
+    pipeline.set_enable_ligatures(true);
+
+    pipeline.flush();
+    const size_t first_capacity = pipeline.expanded_scratch_capacity_for_testing();
+    REQUIRE(first_capacity >= 6);
+
+    grid.mark_all_dirty();
+    pipeline.flush();
+
+    CHECK(pipeline.expanded_scratch_capacity_for_testing() == first_capacity);
+    REQUIRE(static_cast<int>(handle.update_batches.size()) == 2);
+}

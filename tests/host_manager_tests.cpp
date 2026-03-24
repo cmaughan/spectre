@@ -9,6 +9,7 @@
 
 #include "host_manager.h"
 #include "split_tree.h"
+#include <draxul/grid_host_base.h>
 
 using namespace draxul;
 using namespace draxul::tests;
@@ -112,6 +113,50 @@ private:
     std::shared_ptr<int> shutdown_calls_;
     bool running_ = true;
     bool fire_callback_on_shutdown_ = false;
+};
+
+class GuardedGridHost final : public GridHostBase
+{
+public:
+    bool initialize_host() override
+    {
+        return true;
+    }
+
+    void on_viewport_changed() override {}
+
+    void on_font_metrics_changed_impl() override {}
+
+    std::string_view host_name() const override
+    {
+        return "guarded-grid-host";
+    }
+
+    void pump() override {}
+
+    void shutdown() override {}
+
+    bool is_running() const override
+    {
+        return true;
+    }
+
+    std::string init_error() const override
+    {
+        return {};
+    }
+
+    bool dispatch_action(std::string_view) override
+    {
+        return false;
+    }
+
+    void request_close() override {}
+
+    void exercise_apply_grid_size(int cols, int rows)
+    {
+        apply_grid_size(cols, rows);
+    }
 };
 
 struct HostManagerHarness
@@ -537,6 +582,45 @@ TEST_CASE("host manager: callbacks remain valid across pane teardown", "[host_ma
 
     primary->trigger_frame_request();
     REQUIRE(harness.callbacks.request_frame_calls == 2);
+}
+
+TEST_CASE("grid host base: invalidated owner lifetime blocks renderer and callback use", "[host_manager]")
+{
+    FakeWindow window;
+    FakeTermRenderer renderer;
+    TestHostCallbacks callbacks;
+    TextService text_service;
+    TextServiceConfig ts_cfg;
+    ts_cfg.font_path = bundled_font_path();
+    REQUIRE(text_service.initialize(ts_cfg, TextService::DEFAULT_POINT_SIZE, 96.0f));
+
+    auto owner_lifetime = std::make_shared<int>(0);
+    HostViewport viewport;
+    viewport.pixel_size = { 640, 480 };
+    viewport.grid_size = { 80, 24 };
+
+    GuardedGridHost host;
+    HostContext context(&window, &renderer, &text_service, HostLaunchOptions{}, viewport, owner_lifetime, 96.0f);
+    REQUIRE(host.initialize(context, callbacks));
+
+    const int baseline_set_cell_size_calls = renderer.set_cell_size_calls;
+    owner_lifetime.reset();
+
+    REQUIRE_NOTHROW(host.on_font_metrics_changed());
+    REQUIRE(renderer.set_cell_size_calls == baseline_set_cell_size_calls);
+
+    callbacks.request_frame_calls = 0;
+    REQUIRE_NOTHROW(host.exercise_apply_grid_size(100, 40));
+    REQUIRE(callbacks.request_frame_calls == 0);
+
+    callbacks.last_text_input_area = { 7, 8, 9, 10 };
+    REQUIRE_NOTHROW(host.set_viewport(viewport));
+    REQUIRE(callbacks.last_text_input_area.x == 7);
+    REQUIRE(callbacks.last_text_input_area.y == 8);
+    REQUIRE(callbacks.last_text_input_area.w == 9);
+    REQUIRE(callbacks.last_text_input_area.h == 10);
+
+    text_service.shutdown();
 }
 
 // ---------------------------------------------------------------------------

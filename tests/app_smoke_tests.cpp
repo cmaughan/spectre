@@ -140,6 +140,13 @@ std::string bundled_font_path()
     return std::string(DRAXUL_PROJECT_ROOT) + "/fonts/JetBrainsMonoNerdFont-Regular.ttf";
 }
 
+std::filesystem::path canonical_path(const std::filesystem::path& path)
+{
+    std::error_code ec;
+    auto canonical = std::filesystem::weakly_canonical(path, ec);
+    return ec ? path : canonical;
+}
+
 RendererBundle make_fake_renderer(int /*atlas_size*/)
 {
     return RendererBundle{ std::make_unique<FakeTermRenderer>() };
@@ -173,6 +180,22 @@ AppOptions make_smoke_options()
     return opts;
 }
 
+struct CurrentDirGuard
+{
+    std::filesystem::path original;
+
+    explicit CurrentDirGuard(std::filesystem::path cwd)
+        : original(std::move(cwd))
+    {
+    }
+
+    ~CurrentDirGuard()
+    {
+        std::error_code ec;
+        std::filesystem::current_path(original, ec);
+    }
+};
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -194,6 +217,30 @@ TEST_CASE("app smoke: initialize succeeds with all fakes", "[app_smoke]")
     REQUIRE(g_last_smoke_host->was_initialized());
 
     app.shutdown();
+}
+
+TEST_CASE("app smoke: initialize does not mutate cwd when using bundled font fallback",
+    "[app_smoke]")
+{
+    const std::string font = bundled_font_path();
+    if (!std::filesystem::exists(font))
+        SKIP("bundled font not found");
+
+    const auto original_cwd = std::filesystem::current_path();
+    auto temp_cwd = std::filesystem::temp_directory_path() / "draxul-cwd-stability";
+    std::error_code ec;
+    std::filesystem::remove_all(temp_cwd, ec);
+    std::filesystem::create_directories(temp_cwd);
+    std::filesystem::current_path(temp_cwd);
+    CurrentDirGuard guard(original_cwd);
+
+    g_last_smoke_host = nullptr;
+    App app(make_smoke_options());
+    REQUIRE(app.initialize());
+    REQUIRE(canonical_path(std::filesystem::current_path()) == canonical_path(temp_cwd));
+
+    app.shutdown();
+    REQUIRE(canonical_path(std::filesystem::current_path()) == canonical_path(temp_cwd));
 }
 
 TEST_CASE("app smoke: pump_once runs without crash after successful init", "[app_smoke]")

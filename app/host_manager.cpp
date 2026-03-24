@@ -243,6 +243,7 @@ bool HostManager::create_host_for_leaf(LeafId id, IHostCallbacks& callbacks,
         deps_.text_service,
         launch,
         viewport,
+        deps_.owner_lifetime,
         display_ppi,
     };
 

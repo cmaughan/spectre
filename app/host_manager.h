@@ -35,6 +35,7 @@ public:
         IImGuiHost* imgui_host = nullptr;
         TextService* text_service = nullptr;
         const float* display_ppi = nullptr;
+        std::weak_ptr<void> owner_lifetime;
 
         // Converts a PaneDescriptor (pixel region) to a full HostViewport (with cols/rows/padding).
         // Provided by App since it owns the font metrics and UI panel layout.

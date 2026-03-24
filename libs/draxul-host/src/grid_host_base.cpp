@@ -12,6 +12,8 @@ namespace draxul
 
 bool GridHostBase::initialize(const HostContext& context, IHostCallbacks& callbacks)
 {
+    track_owner_lifetime_ = context.track_owner_lifetime;
+    owner_lifetime_ = context.owner_lifetime;
     window_ = context.window;
     renderer_ = context.grid_renderer;
     text_service_ = context.text_service;
@@ -38,6 +40,8 @@ bool GridHostBase::initialize(const HostContext& context, IHostCallbacks& callba
 void GridHostBase::set_viewport(const HostViewport& viewport)
 {
     viewport_ = viewport;
+    if (!dependencies_available("set_viewport"))
+        return;
     if (grid_handle_)
         grid_handle_->set_viewport(PaneDescriptor{ viewport.pixel_pos, viewport.pixel_size });
     on_viewport_changed();
@@ -52,6 +56,8 @@ void GridHostBase::set_scroll_offset(float px)
 
 void GridHostBase::on_font_metrics_changed()
 {
+    if (!dependencies_available("on_font_metrics_changed"))
+        return;
     refresh_renderer_metrics();
     force_full_redraw();
     on_font_metrics_changed_impl();
@@ -88,21 +94,26 @@ HostDebugState GridHostBase::debug_state() const
 
 IWindow& GridHostBase::window() const
 {
+    assert(dependencies_available("window"));
     return *window_;
 }
 
 IGridRenderer& GridHostBase::renderer() const
 {
+    assert(dependencies_available("renderer"));
     return *renderer_;
 }
 
 TextService& GridHostBase::text_service() const
 {
+    assert(dependencies_available("text_service"));
     return *text_service_;
 }
 
 void GridHostBase::apply_grid_size(int cols, int rows)
 {
+    if (!dependencies_available("apply_grid_size"))
+        return;
     cols = std::max(1, cols);
     rows = std::max(1, rows);
     grid_cols_ = cols;
@@ -117,12 +128,16 @@ void GridHostBase::apply_grid_size(int cols, int rows)
 
 void GridHostBase::force_full_redraw()
 {
+    if (!dependencies_available("force_full_redraw"))
+        return;
     grid_.mark_all_dirty();
     grid_pipeline_->force_full_atlas_upload();
 }
 
 void GridHostBase::flush_grid()
 {
+    if (!dependencies_available("flush_grid"))
+        return;
     content_ready_ = true;
     last_flush_dirty_cells_ = grid_.dirty_cell_count();
     last_activity_time_ = std::chrono::steady_clock::now();
@@ -160,6 +175,8 @@ bool GridHostBase::advance_cursor_blink(std::chrono::steady_clock::time_point no
 
 void GridHostBase::set_cursor_position(int col, int row)
 {
+    if (!dependencies_available("set_cursor_position"))
+        return;
     cursor_col_ = std::max(0, col);
     cursor_row_ = std::max(0, row);
     restart_cursor_blink(std::chrono::steady_clock::now());
@@ -168,6 +185,8 @@ void GridHostBase::set_cursor_position(int col, int row)
 
 void GridHostBase::set_cursor_style(const CursorStyle& style, const BlinkTiming& timing, bool busy)
 {
+    if (!dependencies_available("set_cursor_style"))
+        return;
     cursor_style_ = style;
     blink_timing_ = timing;
     cursor_busy_ = busy;
@@ -176,12 +195,29 @@ void GridHostBase::set_cursor_style(const CursorStyle& style, const BlinkTiming&
 
 void GridHostBase::set_cursor_busy(bool busy)
 {
+    if (!dependencies_available("set_cursor_busy"))
+        return;
     cursor_busy_ = busy;
     restart_cursor_blink(std::chrono::steady_clock::now());
 }
 
+bool GridHostBase::dependencies_available(std::string_view operation) const
+{
+    if (!window_ || !renderer_ || !text_service_ || !callbacks_)
+        return false;
+    if (!track_owner_lifetime_ || !owner_lifetime_.expired())
+        return true;
+
+    DRAXUL_LOG_WARN(LogCategory::App,
+        "GridHostBase ignored '%.*s' after host owner teardown.",
+        static_cast<int>(operation.size()), operation.data());
+    return false;
+}
+
 void GridHostBase::apply_cursor_visibility()
 {
+    if (!dependencies_available("apply_cursor_visibility"))
+        return;
     const int visible_col = cursor_blinker_.visible() ? cursor_col_ : -1;
     const int visible_row = cursor_blinker_.visible() ? cursor_row_ : -1;
     if (grid_handle_)
@@ -197,6 +233,8 @@ void GridHostBase::restart_cursor_blink(std::chrono::steady_clock::time_point no
 
 void GridHostBase::update_text_input_area() const
 {
+    if (!dependencies_available("update_text_input_area"))
+        return;
     auto [cell_w, cell_h] = renderer_->cell_size_pixels();
     const int x = viewport_.pixel_pos.x + renderer_->padding() + cursor_col_ * cell_w;
     const int y = viewport_.pixel_pos.y + renderer_->padding() + cursor_row_ * cell_h;
@@ -205,6 +243,8 @@ void GridHostBase::update_text_input_area() const
 
 void GridHostBase::refresh_renderer_metrics()
 {
+    if (!dependencies_available("refresh_renderer_metrics"))
+        return;
     const auto& metrics = text_service_->metrics();
     renderer_->set_cell_size(metrics.cell_width, metrics.cell_height);
     renderer_->set_ascender(metrics.ascender);

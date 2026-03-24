@@ -17,24 +17,24 @@ The existing shutdown race tests cover some of these paths, but the raw-pointer 
 
 ## Steps
 
-- [ ] Read `libs/draxul-host/include/draxul/` — find `GridHostBase` (likely in `grid_host_base.h` or `terminal_host_base.h`).
-- [ ] Identify all raw pointer members set at `initialize()` time: `window_`, `renderer_`, `text_service_`, `callbacks_` (and any others).
-- [ ] Evaluate the correct lifetime model:
+- [x] Read `libs/draxul-host/include/draxul/` — find `GridHostBase` (likely in `grid_host_base.h` or `terminal_host_base.h`).
+- [x] Identify all raw pointer members set at `initialize()` time: `window_`, `renderer_`, `text_service_`, `callbacks_` (and any others).
+- [x] Evaluate the correct lifetime model:
   - **Option A (preferred):** Change raw pointers to `std::weak_ptr<T>` where the owning `App` holds a `shared_ptr<T>`. `GridHostBase` locks the weak pointer before use and asserts/logs if it has expired.
   - **Option B:** Add `assert(window_ != nullptr)` style guards at every use site and a `nullptr`-check in `shutdown()` that logs WARN if called after owner destruction. Simpler but less safe.
   - **Option C:** Pass a `HostContext` struct by value (or as a `shared_ptr<HostContext>`) so the lifetime is co-owned. This integrates cleanly if the app-support split (item `16`) is done concurrently.
-- [ ] Implement the chosen option across all affected raw pointer members.
-- [ ] Ensure the existing shutdown-race tests still pass.
-- [ ] Run `cmake --build build --target draxul draxul-tests && py do.py smoke`.
-- [ ] Run `clang-format` on touched files.
+- [x] Implement the chosen option across all affected raw pointer members.
+- [x] Ensure the existing shutdown-race tests still pass.
+- [x] Run `cmake --build build --target draxul draxul-tests && py do.py smoke`.
+- [x] Run `clang-format` on touched files.
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] No raw pointer members in `GridHostBase` that can outlive their owners without detection.
-- [ ] A use-after-owner-destroy scenario either fails cleanly (assertion/log) or is structurally impossible (shared_ptr).
-- [ ] Existing shutdown race tests pass.
+- [x] No raw pointer members in `GridHostBase` that can outlive their owners without detection.
+- [x] A use-after-owner-destroy scenario either fails cleanly (assertion/log) or is structurally impossible (shared_ptr).
+- [x] Existing shutdown race tests pass.
 
 ---
 

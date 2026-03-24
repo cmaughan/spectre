@@ -17,13 +17,13 @@ This is a performance bug — not a correctness issue — but it contributes to 
 
 ## Steps
 
-- [ ] Read `libs/draxul-app-support/src/grid_rendering_pipeline.cpp`. Locate `expand_dirty_cells_for_ligatures` and confirm the allocation pattern.
-- [ ] Read `GridRenderingPipeline` class definition (likely in a header in `libs/draxul-app-support/include/` or `src/`). Check if there is already a reusable scratch buffer member.
-- [ ] Add a `std::vector<Grid::DirtyCell> expanded_scratch_` member to `GridRenderingPipeline` (or whichever class owns the pipeline).
-- [ ] In `expand_dirty_cells_for_ligatures`, replace the local `expanded` variable with `expanded_scratch_`. Call `expanded_scratch_.clear()` at the start (does not free memory) and `expanded_scratch_.reserve(dirty.size() * 3)` only if capacity is insufficient.
-- [ ] Verify that the member is not accessed from multiple threads (it is main-thread-only per architecture).
-- [ ] Run `cmake --build build --target draxul draxul-tests && py do.py smoke`.
-- [ ] Run `clang-format` on touched files.
+- [x] Read `libs/draxul-app-support/src/grid_rendering_pipeline.cpp`. Locate `expand_dirty_cells_for_ligatures` and confirm the allocation pattern.
+- [x] Read `GridRenderingPipeline` class definition (likely in a header in `libs/draxul-app-support/include/` or `src/`). Check if there is already a reusable scratch buffer member.
+- [x] Add a `std::vector<Grid::DirtyCell> expanded_scratch_` member to `GridRenderingPipeline` (or whichever class owns the pipeline).
+- [x] In `expand_dirty_cells_for_ligatures`, replace the local `expanded` variable with `expanded_scratch_`. Call `expanded_scratch_.clear()` at the start (does not free memory) and `expanded_scratch_.reserve(dirty.size() * 3)` only if capacity is insufficient.
+- [x] Verify that the member is not accessed from multiple threads (it is main-thread-only per architecture).
+- [x] Run `cmake --build build --target draxul draxul-tests && py do.py smoke`.
+- [x] Run `clang-format` on touched files.
 
 ---
 

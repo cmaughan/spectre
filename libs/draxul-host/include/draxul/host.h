@@ -75,12 +75,22 @@ public:
 struct HostContext
 {
     HostContext(IWindow* window_in, IGridRenderer* grid_renderer_in, TextService* text_service_in,
-        HostLaunchOptions launch_options_in, HostViewport initial_viewport_in, float display_ppi_in = 96.0f)
+        HostLaunchOptions launch_options_in, HostViewport initial_viewport_in, float display_ppi_in)
+        : HostContext(window_in, grid_renderer_in, text_service_in, std::move(launch_options_in),
+              std::move(initial_viewport_in), std::weak_ptr<void>{}, display_ppi_in)
+    {
+    }
+
+    HostContext(IWindow* window_in, IGridRenderer* grid_renderer_in, TextService* text_service_in,
+        HostLaunchOptions launch_options_in, HostViewport initial_viewport_in,
+        std::weak_ptr<void> owner_lifetime_in = {}, float display_ppi_in = 96.0f)
         : window(window_in)
         , grid_renderer(grid_renderer_in)
         , text_service(text_service_in)
         , launch_options(std::move(launch_options_in))
         , initial_viewport(std::move(initial_viewport_in))
+        , track_owner_lifetime(!owner_lifetime_in.expired())
+        , owner_lifetime(std::move(owner_lifetime_in))
         , display_ppi(display_ppi_in)
     {
         assert(window != nullptr);
@@ -93,6 +103,8 @@ struct HostContext
     TextService* text_service = nullptr;
     HostLaunchOptions launch_options;
     HostViewport initial_viewport;
+    bool track_owner_lifetime = false;
+    std::weak_ptr<void> owner_lifetime;
     float display_ppi = 96.0f;
 };
 

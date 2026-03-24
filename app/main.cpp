@@ -19,6 +19,10 @@
 
 // This must come after shellapi!
 #include <shellapi.h>
+#elif defined(__APPLE__)
+#include <mach-o/dyld.h>
+#elif defined(__linux__)
+#include <unistd.h>
 #endif
 
 namespace
@@ -124,14 +128,53 @@ ParsedArgs parse_args(const std::vector<std::string>& args)
     return parsed;
 }
 
-void update_current_directory(const std::vector<std::string>& args)
+std::filesystem::path executable_dir(const std::vector<std::string>& args)
 {
-    if (args.empty())
-        return;
+#ifdef _WIN32
+    std::wstring exe_path(MAX_PATH, L'\0');
+    for (;;)
+    {
+        DWORD size = GetModuleFileNameW(nullptr, exe_path.data(), static_cast<DWORD>(exe_path.size()));
+        if (size == 0)
+            return {};
+        if (size < exe_path.size())
+        {
+            exe_path.resize(size);
+            break;
+        }
+        exe_path.resize(exe_path.size() * 2);
+    }
+    return std::filesystem::path(exe_path).parent_path();
+#elif defined(__APPLE__)
+    uint32_t size = 0;
+    _NSGetExecutablePath(nullptr, &size);
+    if (size == 0)
+        return {};
 
-    auto exe_path = std::filesystem::path(args.front()).parent_path();
-    if (!exe_path.empty())
-        std::filesystem::current_path(exe_path);
+    std::string exe_path(size, '\0');
+    if (_NSGetExecutablePath(exe_path.data(), &size) != 0)
+        return {};
+    exe_path.resize(std::char_traits<char>::length(exe_path.c_str()));
+    return std::filesystem::path(exe_path).parent_path();
+#elif defined(__linux__)
+    std::vector<char> exe_path(256, '\0');
+    for (;;)
+    {
+        const ssize_t size = readlink("/proc/self/exe", exe_path.data(), exe_path.size());
+        if (size < 0)
+            break;
+        if (static_cast<size_t>(size) < exe_path.size())
+            return std::filesystem::path(std::string(exe_path.data(), static_cast<size_t>(size))).parent_path();
+        exe_path.resize(exe_path.size() * 2);
+    }
+    if (args.empty())
+        return {};
+    return std::filesystem::absolute(std::filesystem::path(args.front())).parent_path();
+#else
+    if (args.empty())
+        return {};
+    return std::filesystem::absolute(std::filesystem::path(args.front())).parent_path();
+#endif
 }
 
 } // namespace
@@ -148,8 +191,6 @@ static int draxul_main(std::vector<std::string> args)
         freopen("CONOUT$", "w", stderr);
     }
 #endif
-
-    update_current_directory(args);
 
     draxul::configure_default_logging();
 
@@ -197,6 +238,14 @@ static int draxul_main(std::vector<std::string> args)
         options.host_kind = *parsed.host_kind;
     if (!parsed.host_command.empty())
         options.host_command = parsed.host_command;
+
+    const auto exe_dir = executable_dir(args);
+    if (!options.config_overrides.font_path.has_value() && !exe_dir.empty())
+    {
+        const auto bundled_font = exe_dir / "fonts" / "JetBrainsMonoNerdFont-Regular.ttf";
+        if (std::filesystem::exists(bundled_font))
+            options.config_overrides.font_path = bundled_font.string();
+    }
 
     draxul::App app(std::move(options));
 

@@ -44,11 +44,14 @@ CellUpdate make_cell_update(int col, int row, const Cell& cell, HighlightTable& 
     return update;
 }
 
-std::vector<Grid::DirtyCell> expand_dirty_cells_for_ligatures(
-    const Grid& grid, const std::vector<Grid::DirtyCell>& dirty)
+void expand_dirty_cells_for_ligatures_impl(
+    const Grid& grid, const std::vector<Grid::DirtyCell>& dirty, std::vector<Grid::DirtyCell>& expanded)
 {
-    std::vector<Grid::DirtyCell> expanded = dirty;
-    expanded.reserve(dirty.size() * 3);
+    expanded.clear();
+    const size_t needed = dirty.size() * 3;
+    if (expanded.capacity() < needed)
+        expanded.reserve(needed);
+    expanded.insert(expanded.end(), dirty.begin(), dirty.end());
 
     for (const auto& cell : dirty)
     {
@@ -63,11 +66,11 @@ std::vector<Grid::DirtyCell> expand_dirty_cells_for_ligatures(
             return lhs.row < rhs.row;
         return lhs.col < rhs.col;
     });
-    expanded.erase(std::unique(expanded.begin(), expanded.end(), [](const Grid::DirtyCell& lhs, const Grid::DirtyCell& rhs) {
-        return lhs.col == rhs.col && lhs.row == rhs.row;
-    }),
+    expanded.erase(std::unique(expanded.begin(), expanded.end(),
+                       [](const Grid::DirtyCell& lhs, const Grid::DirtyCell& rhs) {
+                           return lhs.col == rhs.col && lhs.row == rhs.row;
+                       }),
         expanded.end());
-    return expanded;
 }
 
 } // namespace
@@ -92,6 +95,11 @@ void GridRenderingPipeline::set_grid_handle(IGridHandle* handle)
 void GridRenderingPipeline::set_enable_ligatures(bool enable)
 {
     enable_ligatures_ = enable;
+}
+
+void GridRenderingPipeline::expand_dirty_cells_for_ligatures(const std::vector<Grid::DirtyCell>& dirty)
+{
+    expand_dirty_cells_for_ligatures_impl(grid_, dirty, expanded_scratch_);
 }
 
 bool GridRenderingPipeline::try_shape_ligature(int col, int row, const Cell& cell, bool is_bold,
@@ -177,14 +185,18 @@ void GridRenderingPipeline::flush()
                 upload_atlas();
             return;
         }
+        const std::vector<Grid::DirtyCell>* dirty_cells = &dirty;
         if (enable_ligatures_)
-            dirty = expand_dirty_cells_for_ligatures(grid_, dirty);
+        {
+            expand_dirty_cells_for_ligatures(dirty);
+            dirty_cells = &expanded_scratch_;
+        }
 
         std::vector<CellUpdate> updates;
-        updates.reserve(dirty.size() + dirty.size() / 2);
+        updates.reserve(dirty_cells->size() + dirty_cells->size() / 2);
 
         bool atlas_updated = false;
-        build_cell_updates(dirty, updates, atlas_updated);
+        build_cell_updates(*dirty_cells, updates, atlas_updated);
 
         bool atlas_reset = glyph_atlas_.consume_atlas_reset();
         if (atlas_reset)

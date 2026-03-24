@@ -20,25 +20,25 @@
 
 ## Steps
 
-- [ ] Read `app/main.cpp` in full. Find the CWD mutation call and understand why it was added.
-- [ ] Read the config loading code in `libs/draxul-app-support/` to see where `config.toml` is located. Determine if the CWD mutation was compensating for a relative path assumption there.
-- [ ] Replace the CWD mutation with explicit absolute path derivation:
+- [x] Read `app/main.cpp` in full. Find the CWD mutation call and understand why it was added.
+- [x] Read the config loading code in `libs/draxul-app-support/` to see where `config.toml` is located. Determine if the CWD mutation was compensating for a relative path assumption there.
+- [x] Replace the CWD mutation with explicit absolute path derivation:
   - On macOS: use `_NSGetExecutablePath` or `realpath(argv[0])` to get the executable dir, then pass it explicitly to `AppConfig::load()` / `AppConfig::config_path()`.
   - On Windows: use `GetModuleFileName(NULL, ...)` to get the exe path, derive the dir, pass explicitly.
-- [ ] Remove the `chdir`/`SetCurrentDirectory` call entirely.
-- [ ] Verify that `nvim --embed` subprocess launch still resolves the `nvim` binary correctly (it uses `PATH`, not CWD — should be fine).
-- [ ] Build and run `cmake --build build --target draxul draxul-tests`.
-- [ ] Run smoke test: `py do.py smoke`.
-- [ ] Run `clang-format` on all touched files.
+- [x] Remove the `chdir`/`SetCurrentDirectory` call entirely.
+- [x] Verify that `nvim --embed` subprocess launch still resolves the `nvim` binary correctly (it uses `PATH`, not CWD — should be fine).
+- [x] Build and run `cmake --build build --target draxul draxul-tests`.
+- [x] Run smoke test: `py do.py smoke`.
+- [x] Run `clang-format` on all touched files.
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] No `chdir` / `SetCurrentDirectory` call in `main.cpp` or any startup path.
-- [ ] `config.toml` is still found correctly when the app is launched via double-click, CLI from a different directory, and from the build directory.
-- [ ] `nvim` subprocess launches successfully.
-- [ ] All tests pass.
+- [x] No `chdir` / `SetCurrentDirectory` call in `main.cpp` or any startup path.
+- [x] `config.toml` is still found correctly when the app is launched via double-click, CLI from a different directory, and from the build directory.
+- [x] `nvim` subprocess launches successfully.
+- [x] All tests pass.
 
 ---
 

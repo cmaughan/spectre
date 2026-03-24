@@ -70,6 +70,7 @@ protected:
     }
     IHostCallbacks& callbacks() const
     {
+        assert(callbacks_ != nullptr);
         return *callbacks_;
     }
     int grid_cols() const
@@ -104,11 +105,14 @@ protected:
     }
 
 private:
+    bool dependencies_available(std::string_view operation) const;
     void apply_cursor_visibility();
     void restart_cursor_blink(std::chrono::steady_clock::time_point now);
     void update_text_input_area() const;
     void refresh_renderer_metrics();
 
+    bool track_owner_lifetime_ = false;
+    std::weak_ptr<void> owner_lifetime_;
     IWindow* window_ = nullptr;
     IGridRenderer* renderer_ = nullptr;
     TextService* text_service_ = nullptr;

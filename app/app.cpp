@@ -269,6 +269,7 @@ void App::apply_font_metrics()
 
 bool App::initialize_host()
 {
+    host_owner_lifetime_ = std::make_shared<int>(0);
     HostManager::Deps host_deps;
     host_deps.options = &options_;
     host_deps.config = &config_;
@@ -277,6 +278,7 @@ bool App::initialize_host()
     host_deps.imgui_host = renderer_.imgui();
     host_deps.text_service = &text_service_;
     host_deps.display_ppi = &display_ppi_;
+    host_deps.owner_lifetime = host_owner_lifetime_;
     host_deps.compute_viewport = [this](const PaneDescriptor& desc) {
         return viewport_from_descriptor(desc);
     };
@@ -723,6 +725,7 @@ void App::shutdown()
     }
 
     host_manager_.shutdown();
+    host_owner_lifetime_.reset();
 
     text_service_.shutdown();
     if (renderer_.imgui())
