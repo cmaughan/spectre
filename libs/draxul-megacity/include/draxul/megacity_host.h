@@ -88,6 +88,8 @@ private:
     bool move_down_ = false;
     bool orbit_left_ = false;
     bool orbit_right_ = false;
+    bool dragging_scene_ = false;
+    glm::ivec2 last_drag_pos_{ 0 };
     std::chrono::steady_clock::time_point last_activity_time_ = std::chrono::steady_clock::now();
     std::chrono::steady_clock::time_point last_pump_time_ = std::chrono::steady_clock::now();
 };

@@ -27,6 +27,7 @@ glm::vec2 normalized_planar(const glm::vec3& v, const glm::vec2& fallback)
 
 void IsometricCamera::set_viewport(int pixel_w, int pixel_h)
 {
+    viewport_pixel_h_ = std::max(pixel_h, 1);
     aspect_ = (pixel_h > 0) ? static_cast<float>(pixel_w) / static_cast<float>(pixel_h) : 1.0f;
 }
 
@@ -59,6 +60,21 @@ void IsometricCamera::orbit_target(float radians)
     follow_offset_.x = std::cos(angle) * radius;
     follow_offset_.z = std::sin(angle) * radius;
     position_ = target_ + follow_offset_;
+}
+
+glm::vec2 IsometricCamera::pan_delta_for_screen_drag(const glm::vec2& pixel_delta) const
+{
+    const glm::vec3 forward = glm::normalize(target_ - position_);
+    const glm::vec3 right_3d = glm::normalize(glm::cross(forward, glm::vec3(0.0f, 1.0f, 0.0f)));
+    const glm::vec3 up_3d = glm::normalize(glm::cross(right_3d, forward));
+    const glm::vec2 right = normalized_planar(right_3d, glm::vec2(1.0f, 0.0f));
+    const glm::vec2 up = normalized_planar(up_3d, glm::vec2(0.0f, 1.0f));
+
+    const float world_units_per_pixel = (2.0f * ortho_half_height_) / static_cast<float>(viewport_pixel_h_);
+    const float up_planar_length = std::max(glm::length(glm::vec2(up_3d.x, up_3d.z)), 1e-5f);
+
+    return (-pixel_delta.x * world_units_per_pixel) * right
+        + ((pixel_delta.y * world_units_per_pixel) / up_planar_length) * up;
 }
 
 glm::vec2 IsometricCamera::planar_right_vector() const

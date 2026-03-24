@@ -33,6 +33,10 @@ public:
     {
         return tile_size_;
     }
+    const SceneSnapshot& scene() const
+    {
+        return scene_;
+    }
 
     struct State;
 

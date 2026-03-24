@@ -13,7 +13,7 @@ Quick reference of all user-facing features, configuration, CLI flags, build opt
 | Zsh | `--host zsh` | PTY-based terminal (Unix) |
 | PowerShell | `--host powershell` | ConPTY on Windows, PTY on macOS/Linux |
 | WSL | `--host wsl` | Windows Subsystem for Linux shell |
-| MegaCity | `--host megacity` | 3D demo host (spinning cube + code visualization) |
+| MegaCity | `--host megacity` | 3D demo host (spinning cube + code visualization, mouse-drag pan, Alt+drag orbit) |
 
 Pane splits use the platform default shell (Zsh on macOS, PowerShell on Windows) regardless of primary host type.
 
@@ -60,6 +60,7 @@ Pane splits use the platform default shell (Zsh on macOS, PowerShell on Windows)
 - **Keyboard**: Full SDL3 key events with modifier tracking (shift, ctrl, alt, super)
 - **IME**: Text input + text editing event forwarding
 - **Mouse**: Button, motion, wheel with per-host protocol routing
+- **MegaCity camera**: Left-drag in the render view pans the scene, `Alt` + left-drag scrubs orbit
 - **Smooth scroll**: Trackpad momentum accumulation (configurable speed multiplier)
 - **File drop**: Native drag-and-drop dispatched to host as `open_file:` action
 - **GUI keybindings**: Chord-style prefix bindings (e.g. `ctrl+s, |`)

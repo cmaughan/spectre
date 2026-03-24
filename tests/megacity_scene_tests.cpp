@@ -3,8 +3,15 @@
 #ifdef DRAXUL_ENABLE_MEGACITY
 
 #include "isometric_camera.h"
+#include "isometric_scene_pass.h"
 #include "isometric_world.h"
 #include "mesh_library.h"
+#include "support/fake_renderer.h"
+#include "support/fake_window.h"
+#include "support/test_host_callbacks.h"
+#include <SDL3/SDL.h>
+#include <draxul/megacity_host.h>
+#include <draxul/text_service.h>
 #include <numbers>
 
 using namespace draxul;
@@ -19,6 +26,20 @@ float triangle_up_normal_y(const MeshData& mesh, size_t triangle_index)
     const glm::vec3 p1 = mesh.vertices[mesh.indices[base + 1]].position;
     const glm::vec3 p2 = mesh.vertices[mesh.indices[base + 2]].position;
     return glm::cross(p1 - p0, p2 - p0).y;
+}
+
+glm::vec2 ndc_of_point(const SceneSnapshot& scene, const glm::vec3& point)
+{
+    const glm::vec4 clip = scene.camera.proj * scene.camera.view * glm::vec4(point, 1.0f);
+    return glm::vec2(clip) / clip.w;
+}
+
+SceneSnapshot snapshot_from_camera(const IsometricCamera& camera)
+{
+    SceneSnapshot scene;
+    scene.camera.view = camera.view_matrix();
+    scene.camera.proj = camera.proj_matrix();
+    return scene;
 }
 
 } // namespace
@@ -134,6 +155,125 @@ TEST_CASE("megacity camera planar axes follow the current view", "[megacity]")
     CHECK(std::abs(glm::dot(rotated_right, rotated_up)) < 0.01f);
     CHECK(std::abs(glm::dot(initial_right, rotated_right)) < 0.01f);
     CHECK(std::abs(glm::dot(initial_up, rotated_up)) < 0.01f);
+}
+
+TEST_CASE("megacity camera screen drag moves content in the same direction", "[megacity]")
+{
+    IsometricCamera camera;
+    camera.look_at_world_center(5.0f, 5.0f);
+    camera.set_viewport(240, 120);
+
+    const glm::vec3 probe{ 0.5f, 0.0f, 0.5f };
+    const glm::vec2 before = ndc_of_point(snapshot_from_camera(camera), probe);
+
+    const glm::vec2 pan = camera.pan_delta_for_screen_drag(glm::vec2(32.0f, -18.0f));
+    camera.translate_target(pan.x, pan.y);
+
+    const glm::vec2 after = ndc_of_point(snapshot_from_camera(camera), probe);
+
+    CHECK(after.x > before.x);
+    CHECK(after.y > before.y);
+}
+
+TEST_CASE("megacity host mouse drag pans and alt-drag rotates", "[megacity]")
+{
+    tests::FakeWindow window;
+    tests::TestHostCallbacks callbacks;
+    TextService text_service;
+    tests::FakeTermRenderer renderer;
+    MegaCityHost host;
+
+    HostLaunchOptions launch;
+    launch.kind = HostKind::MegaCity;
+
+    HostViewport viewport;
+    viewport.pixel_size = { 800, 600 };
+    viewport.grid_size = { 1, 1 };
+
+    HostContext context(&window, &renderer, &text_service, std::move(launch), viewport, window.display_ppi_);
+
+    REQUIRE(host.initialize(context, callbacks));
+    host.attach_3d_renderer(renderer);
+
+    auto* pass = dynamic_cast<IsometricScenePass*>(renderer.last_render_pass.get());
+    REQUIRE(pass != nullptr);
+
+    const glm::vec3 probe{ 0.5f, 0.0f, 0.5f };
+    const glm::vec2 before_pan = ndc_of_point(pass->scene(), probe);
+
+    host.on_mouse_button({ SDL_BUTTON_LEFT, true, kModNone, { 400, 300 } });
+    host.on_mouse_move({ kModNone, { 452, 252 } });
+    host.pump();
+
+    const glm::vec2 after_pan = ndc_of_point(pass->scene(), probe);
+    CHECK(after_pan.x > before_pan.x);
+    CHECK(after_pan.y > before_pan.y);
+
+    const glm::mat4 before_rotate = pass->scene().camera.view;
+    host.on_mouse_move({ kModAlt, { 520, 252 } });
+    host.pump();
+
+    const glm::mat4 after_rotate = pass->scene().camera.view;
+    CHECK(after_rotate[0][0] != Catch::Approx(before_rotate[0][0]));
+    CHECK(after_rotate[2][0] != Catch::Approx(before_rotate[2][0]));
+
+    const glm::mat4 stable_after_horizontal_scrub = pass->scene().camera.view;
+    host.on_mouse_move({ kModAlt, { 520, 180 } });
+    host.pump();
+
+    const glm::mat4 after_vertical_alt_scrub = pass->scene().camera.view;
+    CHECK(after_vertical_alt_scrub[0][0] == Catch::Approx(stable_after_horizontal_scrub[0][0]));
+    CHECK(after_vertical_alt_scrub[2][0] == Catch::Approx(stable_after_horizontal_scrub[2][0]));
+
+    host.on_mouse_button({ SDL_BUTTON_LEFT, false, kModAlt, { 520, 180 } });
+    host.shutdown();
+}
+
+TEST_CASE("megacity host honors fractional mouse delta for drag input", "[megacity]")
+{
+    tests::FakeWindow window;
+    tests::TestHostCallbacks callbacks;
+    TextService text_service;
+    tests::FakeTermRenderer renderer;
+    MegaCityHost host;
+
+    HostLaunchOptions launch;
+    launch.kind = HostKind::MegaCity;
+
+    HostViewport viewport;
+    viewport.pixel_size = { 800, 600 };
+    viewport.grid_size = { 1, 1 };
+
+    HostContext context(&window, &renderer, &text_service, std::move(launch), viewport, window.display_ppi_);
+
+    REQUIRE(host.initialize(context, callbacks));
+    host.attach_3d_renderer(renderer);
+
+    auto* pass = dynamic_cast<IsometricScenePass*>(renderer.last_render_pass.get());
+    REQUIRE(pass != nullptr);
+
+    const glm::vec3 probe{ 0.5f, 0.0f, 0.5f };
+
+    host.on_mouse_button({ SDL_BUTTON_LEFT, true, kModNone, { 400, 300 } });
+
+    const glm::vec2 before_pan = ndc_of_point(pass->scene(), probe);
+    host.on_mouse_move({ kModNone, { 400, 300 }, { 18.5f, -10.25f } });
+    host.pump();
+
+    const glm::vec2 after_pan = ndc_of_point(pass->scene(), probe);
+    CHECK(after_pan.x > before_pan.x);
+    CHECK(after_pan.y > before_pan.y);
+
+    const glm::mat4 before_rotate = pass->scene().camera.view;
+    host.on_mouse_move({ kModAlt, { 400, 300 }, { 12.5f, 0.0f } });
+    host.pump();
+
+    const glm::mat4 after_rotate = pass->scene().camera.view;
+    CHECK(after_rotate[0][0] != Catch::Approx(before_rotate[0][0]));
+    CHECK(after_rotate[2][0] != Catch::Approx(before_rotate[2][0]));
+
+    host.on_mouse_button({ SDL_BUTTON_LEFT, false, kModAlt, { 400, 300 } });
+    host.shutdown();
 }
 
 TEST_CASE("megacity mesh library builds expected primitive counts", "[megacity]")

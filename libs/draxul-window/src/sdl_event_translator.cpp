@@ -56,6 +56,7 @@ std::optional<MouseMoveEvent> translate_mouse_move(const SDL_Event& event)
     return MouseMoveEvent{
         static_cast<ModifierFlags>(SDL_GetModState()),
         { (int)event.motion.x, (int)event.motion.y },
+        { event.motion.xrel, event.motion.yrel },
     };
 }
 

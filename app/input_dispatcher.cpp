@@ -167,6 +167,7 @@ void InputDispatcher::on_mouse_move_event(const MouseMoveEvent& event)
         MouseMoveEvent phys = event;
         phys.pos.x = to_physical(event.pos.x);
         phys.pos.y = to_physical(event.pos.y);
+        phys.delta *= deps_.pixel_scale;
         target->on_mouse_move(phys);
     }
 }

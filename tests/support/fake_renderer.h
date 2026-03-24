@@ -84,8 +84,14 @@ public:
         return 0;
     }
     void set_default_background(Color) override {}
-    void register_render_pass(std::shared_ptr<IRenderPass>) override {}
-    void unregister_render_pass() override {}
+    void register_render_pass(std::shared_ptr<IRenderPass> pass) override
+    {
+        last_render_pass = std::move(pass);
+    }
+    void unregister_render_pass() override
+    {
+        last_render_pass.reset();
+    }
     void set_3d_viewport(int, int, int, int) override {}
     bool initialize_imgui_backend() override
     {
@@ -121,6 +127,7 @@ public:
 
     // The most recently created grid handle (non-owning pointer for test inspection).
     FakeGridHandle* last_handle = nullptr;
+    std::shared_ptr<IRenderPass> last_render_pass;
 
     // Recorded state — read by tests (overlay forwarded from the default handle).
     std::vector<CellUpdate> last_overlay;
@@ -135,6 +142,7 @@ public:
     {
         last_overlay.clear();
         last_handle = nullptr;
+        last_render_pass.reset();
         last_imgui_draw_data = nullptr;
         set_imgui_draw_data_calls = 0;
         last_cell_w = 8;

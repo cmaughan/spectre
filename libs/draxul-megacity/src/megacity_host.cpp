@@ -22,6 +22,8 @@ namespace
 
 constexpr float kMovementSpeedTilesPerSecond = 3.5f;
 constexpr float kOrbitSpeedRadiansPerSecond = 1.8f;
+constexpr float kOrbitDragReferencePixelsPerSecond = 240.0f;
+constexpr float kOrbitDragRadiansPerPixel = kOrbitSpeedRadiansPerSecond / kOrbitDragReferencePixelsPerSecond;
 constexpr auto kMovementTick = std::chrono::milliseconds(16);
 
 bool is_left_arrow(const KeyEvent& event)
@@ -141,14 +143,53 @@ void MegaCityHost::on_key(const KeyEvent& event)
     mark_scene_dirty();
 }
 
-void MegaCityHost::on_mouse_move(const MouseMoveEvent& /*event*/)
+void MegaCityHost::on_mouse_move(const MouseMoveEvent& event)
 {
-    // The Megacity camera is fixed in the first isometric prototype.
+    if (!dragging_scene_ || !camera_)
+        return;
+
+    if (SDL_WasInit(SDL_INIT_VIDEO) != 0
+        && (SDL_GetMouseState(nullptr, nullptr) & SDL_BUTTON_LMASK) == 0)
+    {
+        dragging_scene_ = false;
+        return;
+    }
+
+    glm::vec2 pixel_delta = event.delta;
+    if (glm::dot(pixel_delta, pixel_delta) <= 0.0f)
+    {
+        const glm::ivec2 fallback_delta = event.pos - last_drag_pos_;
+        pixel_delta = glm::vec2(static_cast<float>(fallback_delta.x), static_cast<float>(fallback_delta.y));
+    }
+    last_drag_pos_ = event.pos;
+    if (glm::dot(pixel_delta, pixel_delta) <= 0.0f)
+        return;
+
+    if ((event.mod & kModAlt) != 0)
+    {
+        if (pixel_delta.x != 0.0f)
+        {
+            camera_->orbit_target(-pixel_delta.x * kOrbitDragRadiansPerPixel);
+            mark_scene_dirty();
+        }
+        return;
+    }
+
+    const glm::vec2 pan = camera_->pan_delta_for_screen_drag(pixel_delta);
+    if (glm::dot(pan, pan) <= 0.0f)
+        return;
+
+    camera_->translate_target(pan.x, pan.y);
+    mark_scene_dirty();
 }
 
-void MegaCityHost::on_mouse_button(const MouseButtonEvent& /*event*/)
+void MegaCityHost::on_mouse_button(const MouseButtonEvent& event)
 {
-    // The Megacity view currently has no mouse-click interactions.
+    if (event.button != SDL_BUTTON_LEFT)
+        return;
+
+    dragging_scene_ = event.pressed;
+    last_drag_pos_ = event.pos;
 }
 
 void MegaCityHost::on_mouse_wheel(const MouseWheelEvent& /*event*/)

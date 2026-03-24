@@ -21,6 +21,7 @@ public:
     void set_target(const glm::vec3& target);
     void translate_target(float dx, float dz);
     void orbit_target(float radians);
+    glm::vec2 pan_delta_for_screen_drag(const glm::vec2& pixel_delta) const;
     glm::vec2 planar_right_vector() const;
     glm::vec2 planar_up_vector() const;
 
@@ -34,6 +35,7 @@ private:
     glm::vec3 follow_offset_{ -5.0f, 6.25f, -5.0f };
     float ortho_half_height_ = 4.0f;
     float aspect_ = 1.0f;
+    int viewport_pixel_h_ = 1;
 };
 
 } // namespace draxul
