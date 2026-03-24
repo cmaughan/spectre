@@ -43,16 +43,51 @@ struct MeshBuffers
     uint32_t index_count = 0;
 };
 
+struct BufferSlice
+{
+    VkBuffer buffer = VK_NULL_HANDLE;
+    VmaAllocation allocation = VK_NULL_HANDLE;
+    void* mapped = nullptr;
+    size_t offset = 0;
+};
+
+struct MeshSlice
+{
+    VkBuffer vertex_buffer = VK_NULL_HANDLE;
+    VkDeviceSize vertex_offset = 0;
+    VkBuffer index_buffer = VK_NULL_HANDLE;
+    VkDeviceSize index_offset = 0;
+    uint32_t index_count = 0;
+};
+
+struct TransientBufferArena
+{
+    Buffer buffer;
+    size_t head = 0;
+
+    void reset()
+    {
+        head = 0;
+    }
+};
+
+struct TransientGeometryArena
+{
+    TransientBufferArena vertices;
+    TransientBufferArena indices;
+
+    void reset()
+    {
+        vertices.reset();
+        indices.reset();
+    }
+};
+
 struct FrameResources
 {
     Buffer frame_uniforms;
+    TransientGeometryArena geometry_arena;
     VkDescriptorSet descriptor_set = VK_NULL_HANDLE;
-};
-
-struct RetiredMesh
-{
-    MeshBuffers mesh;
-    uint32_t reclaim_frame_index = 0;
 };
 
 bool same_grid_spec(const FloorGridSpec& a, const FloorGridSpec& b)
@@ -116,6 +151,99 @@ bool upload_mesh(VmaAllocator allocator, const MeshData& mesh, MeshBuffers& gpu_
     return true;
 }
 
+size_t align_up(size_t value, size_t alignment)
+{
+    if (alignment <= 1)
+        return value;
+    const size_t remainder = value % alignment;
+    return remainder == 0 ? value : value + (alignment - remainder);
+}
+
+size_t grow_capacity(size_t current_size, size_t required_size, size_t minimum_size)
+{
+    if (current_size == 0)
+        return std::max(required_size, minimum_size);
+    return std::max(required_size, std::max(current_size * 2, minimum_size));
+}
+
+bool ensure_mapped_buffer_capacity(VmaAllocator allocator, size_t required_size,
+    VkBufferUsageFlags usage, Buffer& buffer, size_t minimum_size)
+{
+    if (required_size == 0 || required_size <= buffer.size)
+        return true;
+
+    Buffer replacement;
+    if (!create_mapped_buffer(allocator, grow_capacity(buffer.size, required_size, minimum_size), usage, replacement))
+        return false;
+
+    destroy_buffer(allocator, buffer);
+    buffer = std::move(replacement);
+    return true;
+}
+
+bool reserve_transient_buffer(VmaAllocator allocator, TransientBufferArena& arena, size_t size,
+    size_t alignment, VkBufferUsageFlags usage, size_t minimum_size, BufferSlice& slice)
+{
+    if (size == 0)
+    {
+        slice = {};
+        return true;
+    }
+
+    const size_t offset = align_up(arena.head, alignment);
+    const size_t required_size = offset + size;
+    if (!ensure_mapped_buffer_capacity(allocator, required_size, usage, arena.buffer, minimum_size))
+        return false;
+
+    slice.buffer = arena.buffer.buffer;
+    slice.allocation = arena.buffer.allocation;
+    slice.offset = offset;
+    slice.mapped = static_cast<char*>(arena.buffer.mapped) + offset;
+    arena.head = required_size;
+    return true;
+}
+
+bool stream_transient_mesh(VmaAllocator allocator, const MeshData& mesh,
+    TransientGeometryArena& arena, MeshSlice& slice)
+{
+    constexpr size_t kMinimumVertexArenaBytes = 16 * 1024;
+    constexpr size_t kMinimumIndexArenaBytes = 4 * 1024;
+
+    const size_t vertex_bytes = mesh.vertices.size() * sizeof(SceneVertex);
+    const size_t index_bytes = mesh.indices.size() * sizeof(uint16_t);
+    if (vertex_bytes == 0 || index_bytes == 0)
+    {
+        slice = {};
+        return true;
+    }
+
+    BufferSlice vertex_slice;
+    if (!reserve_transient_buffer(allocator, arena.vertices, vertex_bytes, alignof(SceneVertex),
+            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, kMinimumVertexArenaBytes, vertex_slice))
+    {
+        return false;
+    }
+
+    BufferSlice index_slice;
+    if (!reserve_transient_buffer(allocator, arena.indices, index_bytes, alignof(uint16_t),
+            VK_BUFFER_USAGE_INDEX_BUFFER_BIT, kMinimumIndexArenaBytes, index_slice))
+    {
+        return false;
+    }
+
+    std::memcpy(vertex_slice.mapped, mesh.vertices.data(), vertex_bytes);
+    std::memcpy(index_slice.mapped, mesh.indices.data(), index_bytes);
+    vmaFlushAllocation(allocator, vertex_slice.allocation, vertex_slice.offset, vertex_bytes);
+    vmaFlushAllocation(allocator, index_slice.allocation, index_slice.offset, index_bytes);
+
+    slice.vertex_buffer = vertex_slice.buffer;
+    slice.vertex_offset = static_cast<VkDeviceSize>(vertex_slice.offset);
+    slice.index_buffer = index_slice.buffer;
+    slice.index_offset = static_cast<VkDeviceSize>(index_slice.offset);
+    slice.index_count = static_cast<uint32_t>(mesh.indices.size());
+    return true;
+}
+
 void destroy_mesh(VmaAllocator allocator, MeshBuffers& mesh)
 {
     destroy_buffer(allocator, mesh.vertices);
@@ -168,48 +296,11 @@ struct IsometricScenePass::State
     VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
     VkPipeline pipeline = VK_NULL_HANDLE;
     MeshBuffers cube_mesh;
-    MeshBuffers grid_mesh;
-    FloorGridSpec grid_spec;
-    bool has_grid_mesh = false;
+    MeshData cached_grid_mesh;
+    FloorGridSpec cached_grid_spec;
+    bool has_cached_grid_mesh = false;
     std::vector<FrameResources> frame_resources;
-    std::vector<RetiredMesh> retired_grid_meshes;
     uint32_t buffered_frame_count = 1;
-
-    void retire_grid_mesh(uint32_t frame_index)
-    {
-        if (!has_grid_mesh)
-            return;
-
-        if (buffered_frame_count <= 1)
-        {
-            destroy_mesh(allocator, grid_mesh);
-            grid_spec = {};
-            has_grid_mesh = false;
-            return;
-        }
-
-        const uint32_t reclaim_frame = (frame_index + buffered_frame_count - 1) % buffered_frame_count;
-        retired_grid_meshes.push_back({ std::move(grid_mesh), reclaim_frame });
-        grid_mesh = {};
-        grid_spec = {};
-        has_grid_mesh = false;
-    }
-
-    void reclaim_retired_meshes(uint32_t frame_index)
-    {
-        auto it = retired_grid_meshes.begin();
-        while (it != retired_grid_meshes.end())
-        {
-            if (it->reclaim_frame_index != frame_index)
-            {
-                ++it;
-                continue;
-            }
-
-            destroy_mesh(allocator, it->mesh);
-            it = retired_grid_meshes.erase(it);
-        }
-    }
 
     bool create_device_resources(uint32_t frame_count)
     {
@@ -290,27 +381,21 @@ struct IsometricScenePass::State
         return true;
     }
 
-    bool ensure_floor_grid(uint32_t frame_index, const FloorGridSpec& spec)
+    bool ensure_floor_grid(const FloorGridSpec& spec)
     {
         if (!spec.enabled)
         {
-            retire_grid_mesh(frame_index);
+            cached_grid_mesh = {};
+            cached_grid_spec = {};
+            has_cached_grid_mesh = false;
             return true;
         }
-        if (has_grid_mesh && same_grid_spec(grid_spec, spec))
+        if (has_cached_grid_mesh && same_grid_spec(cached_grid_spec, spec))
             return true;
 
-        MeshBuffers new_mesh;
-        if (!upload_mesh(allocator, build_outline_grid_mesh(spec), new_mesh))
-        {
-            DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity scene: failed to upload floor grid mesh");
-            return false;
-        }
-
-        retire_grid_mesh(frame_index);
-        grid_mesh = std::move(new_mesh);
-        grid_spec = spec;
-        has_grid_mesh = true;
+        cached_grid_mesh = build_outline_grid_mesh(spec);
+        cached_grid_spec = spec;
+        has_cached_grid_mesh = true;
         return true;
     }
 
@@ -464,11 +549,12 @@ struct IsometricScenePass::State
         if (allocator != VK_NULL_HANDLE)
         {
             destroy_mesh(allocator, cube_mesh);
-            destroy_mesh(allocator, grid_mesh);
-            for (auto& retired : retired_grid_meshes)
-                destroy_mesh(allocator, retired.mesh);
             for (auto& frame : frame_resources)
+            {
+                destroy_buffer(allocator, frame.geometry_arena.vertices.buffer);
+                destroy_buffer(allocator, frame.geometry_arena.indices.buffer);
                 destroy_buffer(allocator, frame.frame_uniforms);
+            }
         }
         if (pipeline != VK_NULL_HANDLE)
             vkDestroyPipeline(device, pipeline, nullptr);
@@ -487,10 +573,10 @@ struct IsometricScenePass::State
         pipeline_layout = VK_NULL_HANDLE;
         pipeline = VK_NULL_HANDLE;
         frame_resources.clear();
-        retired_grid_meshes.clear();
         buffered_frame_count = 1;
-        grid_spec = {};
-        has_grid_mesh = false;
+        cached_grid_mesh = {};
+        cached_grid_spec = {};
+        has_cached_grid_mesh = false;
     }
 };
 
@@ -519,11 +605,19 @@ void IsometricScenePass::record(IRenderContext& ctx)
         return;
     if (frame_index >= state_->frame_resources.size())
         return;
-    state_->reclaim_retired_meshes(frame_index);
-    if (!state_->ensure_floor_grid(frame_index, scene_.floor_grid))
-        return;
 
     auto& frame_resources = state_->frame_resources[frame_index];
+    frame_resources.geometry_arena.reset();
+
+    MeshSlice grid_slice;
+    if (!state_->ensure_floor_grid(scene_.floor_grid))
+        return;
+    if (state_->has_cached_grid_mesh
+        && !stream_transient_mesh(vk_ctx->allocator(), state_->cached_grid_mesh,
+            frame_resources.geometry_arena, grid_slice))
+    {
+        return;
+    }
 
     FrameUniforms frame;
     frame.view = scene_.camera.view;
@@ -562,18 +656,18 @@ void IsometricScenePass::record(IRenderContext& ctx)
         vkCmdDrawIndexed(cmd, mesh->index_count, 1, 0, 0, 0);
     }
 
-    if (state_->grid_mesh.index_count > 0)
+    if (grid_slice.index_count > 0)
     {
         ObjectPushConstants push;
         push.world = glm::mat4(1.0f);
         push.color = scene_.floor_grid.color;
 
-        VkBuffer vertex_buffer = state_->grid_mesh.vertices.buffer;
-        VkDeviceSize vertex_offset = 0;
+        VkBuffer vertex_buffer = grid_slice.vertex_buffer;
+        VkDeviceSize vertex_offset = grid_slice.vertex_offset;
         vkCmdBindVertexBuffers(cmd, 0, 1, &vertex_buffer, &vertex_offset);
-        vkCmdBindIndexBuffer(cmd, state_->grid_mesh.indices.buffer, 0, VK_INDEX_TYPE_UINT16);
+        vkCmdBindIndexBuffer(cmd, grid_slice.index_buffer, grid_slice.index_offset, VK_INDEX_TYPE_UINT16);
         vkCmdPushConstants(cmd, state_->pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push), &push);
-        vkCmdDrawIndexed(cmd, state_->grid_mesh.index_count, 1, 0, 0, 0);
+        vkCmdDrawIndexed(cmd, grid_slice.index_count, 1, 0, 0, 0);
     }
 }
 

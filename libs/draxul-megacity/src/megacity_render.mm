@@ -3,6 +3,8 @@
 #include "mesh_library.h"
 #include "objc_ref.h"
 #import <Metal/Metal.h>
+#include <algorithm>
+#include <cstring>
 #include <draxul/log.h>
 #import <simd/simd.h>
 
@@ -30,6 +32,45 @@ struct MeshBuffers
     ObjCRef<id<MTLBuffer>> vertex_buffer;
     ObjCRef<id<MTLBuffer>> index_buffer;
     NSUInteger index_count = 0;
+};
+
+struct BufferSlice
+{
+    id<MTLBuffer> buffer = nil;
+    NSUInteger offset = 0;
+    void* mapped = nullptr;
+};
+
+struct MeshSlice
+{
+    id<MTLBuffer> vertex_buffer = nil;
+    NSUInteger vertex_offset = 0;
+    id<MTLBuffer> index_buffer = nil;
+    NSUInteger index_offset = 0;
+    NSUInteger index_count = 0;
+};
+
+struct TransientBufferArena
+{
+    ObjCRef<id<MTLBuffer>> buffer;
+    NSUInteger head = 0;
+
+    void reset()
+    {
+        head = 0;
+    }
+};
+
+struct TransientGeometryArena
+{
+    TransientBufferArena vertices;
+    TransientBufferArena indices;
+
+    void reset()
+    {
+        vertices.reset();
+        indices.reset();
+    }
 };
 
 bool same_grid_spec(const FloorGridSpec& a, const FloorGridSpec& b)
@@ -79,6 +120,96 @@ bool upload_mesh(id<MTLDevice> device, const MeshData& mesh, MeshBuffers& buffer
     return true;
 }
 
+NSUInteger align_up(NSUInteger value, NSUInteger alignment)
+{
+    if (alignment <= 1)
+        return value;
+    const NSUInteger remainder = value % alignment;
+    return remainder == 0 ? value : value + (alignment - remainder);
+}
+
+NSUInteger grow_capacity(NSUInteger current_size, NSUInteger required_size)
+{
+    if (current_size == 0)
+        return required_size;
+    return std::max(required_size, current_size * 2);
+}
+
+bool ensure_buffer_capacity(id<MTLDevice> device, NSUInteger required_size, ObjCRef<id<MTLBuffer>>& buffer)
+{
+    if (required_size == 0)
+        return true;
+    if (buffer && [buffer.get() length] >= required_size)
+        return true;
+
+    id<MTLBuffer> replacement = [device newBufferWithLength:grow_capacity(buffer ? [buffer.get() length] : 0, required_size)
+                                                    options:MTLResourceStorageModeShared];
+    if (!replacement)
+        return false;
+
+    buffer.reset(replacement);
+    return true;
+}
+
+bool reserve_transient_buffer(id<MTLDevice> device, TransientBufferArena& arena,
+    NSUInteger size, NSUInteger alignment, NSUInteger minimum_size, BufferSlice& slice)
+{
+    if (size == 0)
+    {
+        slice = {};
+        return true;
+    }
+
+    const NSUInteger offset = align_up(arena.head, alignment);
+    const NSUInteger required_size = offset + size;
+    if (!ensure_buffer_capacity(device, std::max(required_size, minimum_size), arena.buffer))
+        return false;
+
+    slice.buffer = arena.buffer.get();
+    slice.offset = offset;
+    slice.mapped = static_cast<char*>([arena.buffer.get() contents]) + offset;
+    arena.head = required_size;
+    return true;
+}
+
+bool stream_transient_mesh(id<MTLDevice> device, const MeshData& mesh,
+    TransientGeometryArena& arena, MeshSlice& slice)
+{
+    constexpr NSUInteger kMinimumVertexArenaBytes = 16 * 1024;
+    constexpr NSUInteger kMinimumIndexArenaBytes = 4 * 1024;
+
+    const NSUInteger vertex_bytes = static_cast<NSUInteger>(mesh.vertices.size() * sizeof(SceneVertex));
+    const NSUInteger index_bytes = static_cast<NSUInteger>(mesh.indices.size() * sizeof(uint16_t));
+    if (vertex_bytes == 0 || index_bytes == 0)
+    {
+        slice = {};
+        return true;
+    }
+
+    BufferSlice vertex_slice;
+    if (!reserve_transient_buffer(device, arena.vertices, vertex_bytes, alignof(SceneVertex),
+            kMinimumVertexArenaBytes, vertex_slice))
+    {
+        return false;
+    }
+
+    BufferSlice index_slice;
+    if (!reserve_transient_buffer(device, arena.indices, index_bytes, alignof(uint16_t),
+            kMinimumIndexArenaBytes, index_slice))
+    {
+        return false;
+    }
+
+    std::memcpy(vertex_slice.mapped, mesh.vertices.data(), vertex_bytes);
+    std::memcpy(index_slice.mapped, mesh.indices.data(), index_bytes);
+    slice.vertex_buffer = vertex_slice.buffer;
+    slice.vertex_offset = vertex_slice.offset;
+    slice.index_buffer = index_slice.buffer;
+    slice.index_offset = index_slice.offset;
+    slice.index_count = static_cast<NSUInteger>(mesh.indices.size());
+    return true;
+}
+
 } // namespace
 
 struct IsometricScenePass::State
@@ -86,9 +217,10 @@ struct IsometricScenePass::State
     ObjCRef<id<MTLRenderPipelineState>> pipeline;
     ObjCRef<id<MTLDepthStencilState>> depth_state;
     MeshBuffers cube_mesh;
-    MeshBuffers grid_mesh;
-    FloorGridSpec grid_spec;
-    bool has_grid_mesh = false;
+    TransientGeometryArena geometry_arena;
+    MeshData cached_grid_mesh;
+    FloorGridSpec cached_grid_spec;
+    bool has_cached_grid_mesh = false;
     bool initialized = false;
 
     bool init(id<MTLDevice> device, int grid_width, int grid_height, float tile_size)
@@ -174,29 +306,20 @@ struct IsometricScenePass::State
 
     bool ensure_floor_grid(id<MTLDevice> device, const FloorGridSpec& spec)
     {
+        (void)device;
         if (!spec.enabled)
         {
-            grid_mesh.vertex_buffer.reset();
-            grid_mesh.index_buffer.reset();
-            grid_mesh.index_count = 0;
-            grid_spec = {};
-            has_grid_mesh = false;
+            cached_grid_mesh = {};
+            cached_grid_spec = {};
+            has_cached_grid_mesh = false;
             return true;
         }
-        if (has_grid_mesh && same_grid_spec(grid_spec, spec))
+        if (has_cached_grid_mesh && same_grid_spec(cached_grid_spec, spec))
             return true;
 
-        grid_mesh.vertex_buffer.reset();
-        grid_mesh.index_buffer.reset();
-        grid_mesh.index_count = 0;
-        if (!upload_mesh(device, build_outline_grid_mesh(spec), grid_mesh))
-        {
-            DRAXUL_LOG_ERROR(LogCategory::App, "MegaCity: failed to upload floor grid mesh");
-            return false;
-        }
-
-        grid_spec = spec;
-        has_grid_mesh = true;
+        cached_grid_mesh = build_outline_grid_mesh(spec);
+        cached_grid_spec = spec;
+        has_cached_grid_mesh = true;
         return true;
     }
 };
@@ -222,6 +345,14 @@ void IsometricScenePass::record(IRenderContext& ctx)
         return;
     if (!state_->ensure_floor_grid(cmd_buf.device, scene_.floor_grid))
         return;
+    state_->geometry_arena.reset();
+
+    MeshSlice grid_slice;
+    if (state_->has_cached_grid_mesh
+        && !stream_transient_mesh(cmd_buf.device, state_->cached_grid_mesh, state_->geometry_arena, grid_slice))
+    {
+        return;
+    }
 
     MTLViewport viewport;
     viewport.originX = ctx.viewport_x();
@@ -281,7 +412,7 @@ void IsometricScenePass::record(IRenderContext& ctx)
                      indexBufferOffset:0];
     }
 
-    if (state_->grid_mesh.index_count > 0)
+    if (grid_slice.index_count > 0)
     {
         ObjectUniforms object;
         object.world = matrix_identity_float4x4;
@@ -291,13 +422,13 @@ void IsometricScenePass::record(IRenderContext& ctx)
             scene_.floor_grid.color.z,
             scene_.floor_grid.color.w);
 
-        [encoder setVertexBuffer:state_->grid_mesh.vertex_buffer.get() offset:0 atIndex:0];
+        [encoder setVertexBuffer:grid_slice.vertex_buffer offset:grid_slice.vertex_offset atIndex:0];
         [encoder setVertexBytes:&object length:sizeof(object) atIndex:2];
         [encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle
-                            indexCount:state_->grid_mesh.index_count
+                            indexCount:grid_slice.index_count
                              indexType:MTLIndexTypeUInt16
-                           indexBuffer:state_->grid_mesh.index_buffer.get()
-                     indexBufferOffset:0];
+                           indexBuffer:grid_slice.index_buffer
+                     indexBufferOffset:grid_slice.index_offset];
     }
 }
 
