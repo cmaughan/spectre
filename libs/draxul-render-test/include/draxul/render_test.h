@@ -1,6 +1,5 @@
 #pragma once
 
-#include <draxul/app_config.h>
 #include <draxul/app_options.h>
 #include <draxul/renderer.h>
 #include <filesystem>

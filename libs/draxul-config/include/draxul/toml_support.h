@@ -44,45 +44,44 @@ inline std::optional<toml::table> parse_file(const std::filesystem::path& path, 
     return parse_document(content, error_message);
 }
 
-inline std::optional<std::string> get_string(const toml::table& table, const char* key)
+inline std::optional<std::string> get_string(const toml::table& table, std::string_view key)
 {
     if (auto value = table[key].value<std::string_view>())
         return std::string(*value);
     return std::nullopt;
 }
 
-inline std::optional<int64_t> get_int(const toml::table& table, const char* key)
+inline std::optional<std::vector<std::string>> get_string_array(const toml::table& table, std::string_view key)
+{
+    const auto* arr = table[key].as_array();
+    if (!arr)
+        return std::nullopt;
+
+    std::vector<std::string> out;
+    out.reserve(arr->size());
+    for (const auto& value : *arr)
+    {
+        auto str = value.value<std::string_view>();
+        if (!str)
+            return std::nullopt;
+        out.emplace_back(*str);
+    }
+    return out;
+}
+
+inline std::optional<int64_t> get_int(const toml::table& table, std::string_view key)
 {
     return table[key].value<int64_t>();
 }
 
-inline std::optional<double> get_double(const toml::table& table, const char* key)
+inline std::optional<double> get_double(const toml::table& table, std::string_view key)
 {
     return table[key].value<double>();
 }
 
-inline std::optional<bool> get_bool(const toml::table& table, const char* key)
+inline std::optional<bool> get_bool(const toml::table& table, std::string_view key)
 {
     return table[key].value<bool>();
-}
-
-inline std::optional<std::vector<std::string>> get_string_array(const toml::table& table, const char* key)
-{
-    if (const auto* array = table[key].as_array())
-    {
-        std::vector<std::string> values;
-        values.reserve(array->size());
-        for (const auto& item : *array)
-        {
-            auto value = item.value<std::string_view>();
-            if (!value)
-                return std::nullopt;
-            values.emplace_back(*value);
-        }
-        return values;
-    }
-
-    return std::nullopt;
 }
 
 } // namespace draxul::toml_support

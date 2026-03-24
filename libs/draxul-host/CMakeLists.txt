@@ -30,10 +30,10 @@ endif()
 target_include_directories(draxul-host PUBLIC include)
 
 target_link_libraries(draxul-host PUBLIC
-    draxul-app-support
     draxul-font
     draxul-grid
     draxul-renderer
+    draxul-runtime-support
     draxul-types
     draxul-window
 )

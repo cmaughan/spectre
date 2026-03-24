@@ -26,26 +26,26 @@ The library name no longer reflects a coherent responsibility. Any agent modifyi
 
 This is a large refactor. Use a planning sub-agent first.
 
-- [ ] Run a planning sub-agent with the prompt: "Read `libs/draxul-app-support/` completely — all headers and source files — and produce a proposed split into 2–3 focused sub-libraries, with a proposed new CMake target name, responsibility statement, and file list for each. Identify which downstream targets (`draxul-host`, `app/`) will need their CMake link lists updated."
-- [ ] Review the plan. Agree on the split boundaries before writing any code.
-- [ ] Implement the split:
+- [x] Run a planning sub-agent with the prompt: "Read `libs/draxul-app-support/` completely — all headers and source files — and produce a proposed split into 2–3 focused sub-libraries, with a proposed new CMake target name, responsibility statement, and file list for each. Identify which downstream targets (`draxul-host`, `app/`) will need their CMake link lists updated."
+- [x] Review the plan. Agree on the split boundaries before writing any code.
+- [x] Implement the split:
   1. Create new subdirectories under `libs/` (e.g., `draxul-config/`, `draxul-grid-pipeline/`).
   2. Move files into the new libs.
   3. Update `CMakeLists.txt` files — new libs, updated link targets.
   4. Update all `#include` paths in consumers.
-- [ ] Keep `draxul-app-support` as a thin transitional target that depends on the new libs (for backward compat during transition), or remove it entirely if all consumers are updated.
-- [ ] Run `cmake --build build --target draxul draxul-tests`.
-- [ ] Run smoke test: `py do.py smoke`.
-- [ ] Run `clang-format` on all touched files.
+- [x] Keep `draxul-app-support` as a thin transitional target that depends on the new libs (for backward compat during transition), or remove it entirely if all consumers are updated.
+- [x] Run `cmake --build build --target draxul draxul-tests`.
+- [x] Run smoke test: `py do.py smoke`.
+- [x] Run `clang-format` on all touched files.
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] `draxul-app-support` either no longer exists or is a thin alias.
-- [ ] Each new library has a single clear responsibility statement.
-- [ ] All builds and tests pass.
-- [ ] No header is duplicated between the new libs and their consumers.
+- [x] `draxul-app-support` either no longer exists or is a thin alias.
+- [x] Each new library has a single clear responsibility statement.
+- [x] All builds and tests pass.
+- [x] No header is duplicated between the new libs and their consumers.
 
 ---
 

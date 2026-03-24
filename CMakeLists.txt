@@ -90,6 +90,9 @@ add_subdirectory(libs/draxul-ui)
 add_subdirectory(libs/draxul-font)
 add_subdirectory(libs/draxul-grid)
 add_subdirectory(libs/draxul-nvim)
+add_subdirectory(libs/draxul-config)
+add_subdirectory(libs/draxul-runtime-support)
+add_subdirectory(libs/draxul-render-test)
 add_subdirectory(libs/draxul-app-support)
 add_subdirectory(libs/draxul-host)
 if(DRAXUL_ENABLE_MEGACITY)
@@ -100,7 +103,9 @@ endif()
 # Apply sanitizers/coverage to all draxul library targets (not FetchContent deps)
 foreach(_draxul_lib
     draxul-types draxul-window draxul-renderer draxul-ui
-    draxul-font draxul-grid draxul-nvim draxul-app-support draxul-host)
+    draxul-font draxul-grid draxul-nvim
+    draxul-config draxul-runtime-support draxul-render-test
+    draxul-host)
     draxul_apply_sanitizers(${_draxul_lib})
     draxul_apply_coverage(${_draxul_lib})
 endforeach()
@@ -155,7 +160,9 @@ draxul_apply_sanitizers(draxul-app)
 draxul_apply_coverage(draxul-app)
 
 target_link_libraries(draxul-app PUBLIC
-    draxul-app-support
+    draxul-config
+    draxul-runtime-support
+    draxul-render-test
     draxul-renderer
     draxul-ui
     draxul-font

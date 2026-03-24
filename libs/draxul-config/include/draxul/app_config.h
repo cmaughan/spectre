@@ -7,3 +7,4 @@
 //   - <draxul/app_config_io.h>     -- I/O (load/save) and TOML parse/serialize
 
 #include <draxul/app_config_io.h>
+#include <draxul/app_options.h>
