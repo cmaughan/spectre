@@ -199,6 +199,8 @@ All fetched automatically via CMake FetchContent (in `cmake/FetchDependencies.cm
 - After every completed work item, run one final `clang-format` pass across all touched source files in a single shot instead of formatting piecemeal during the work. Note: the pre-commit hook runs `clang-format` automatically on staged files, so a commit that needs reformatting will be rejected on the first attempt — simply re-stage and retry the commit.
 - When you complete a work item or a concrete subtask from `plans/work-items/*.md`, update that markdown file in the same turn and mark the completed entries with Markdown task ticks (`- [x]`). Leave incomplete follow-ups as unchecked items so progress stays visible in the file itself.
 - When a work item from `plans/work-items/*.md` is fully complete, move it to `plans/work-items-complete/` in the same turn and update any index/reference links that still point at the old location.
+- After implementing a new user-facing feature, configuration option, CLI flag, or build/CI change, update `docs/features.md` to include it. This file is the canonical reference for what the app already supports — keeping it current prevents future agents from proposing work items for features that already exist.
+- Before creating new work items, check `docs/features.md` to verify the proposed feature or capability is not already implemented.
 
 ## Platform
 
