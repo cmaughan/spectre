@@ -4,6 +4,7 @@
 #include "vk_render_context.h"
 #include <cstring>
 #include <draxul/log.h>
+#include <draxul/runtime_path.h>
 #include <fstream>
 #include <vector>
 
@@ -253,8 +254,9 @@ struct IsometricScenePass::State
 
     bool create_pipeline()
     {
-        auto vert = load_shader(device, "shaders/megacity_scene.vert.spv");
-        auto frag = load_shader(device, "shaders/megacity_scene.frag.spv");
+        const auto shader_dir = bundled_asset_path("shaders");
+        auto vert = load_shader(device, (shader_dir / "megacity_scene.vert.spv").string());
+        auto frag = load_shader(device, (shader_dir / "megacity_scene.frag.spv").string());
         if (!vert || !frag)
         {
             if (vert)

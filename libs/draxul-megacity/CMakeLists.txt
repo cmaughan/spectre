@@ -54,5 +54,8 @@ else()
     target_include_directories(draxul-megacity PRIVATE
         ${CMAKE_SOURCE_DIR}/libs/draxul-renderer/src/vulkan
     )
-    target_link_libraries(draxul-megacity PRIVATE Vulkan::Vulkan)
+    target_link_libraries(draxul-megacity PRIVATE
+        Vulkan::Vulkan
+        GPUOpen::VulkanMemoryAllocator
+    )
 endif()

@@ -1,6 +1,7 @@
 #include "vk_pipeline.h"
 
 #include <draxul/log.h>
+#include <draxul/runtime_path.h>
 #include <fstream>
 #include <utility>
 #include <vector>
@@ -37,10 +38,11 @@ VkShaderModule VkPipelineManager::load_shader(VkDevice device, const std::string
 
 bool VkPipelineManager::initialize(VkDevice device, VkRenderPass render_pass, const std::string& shader_dir)
 {
-    auto bg_vert = load_shader(device, shader_dir + "/grid_bg.vert.spv");
-    auto bg_frag = load_shader(device, shader_dir + "/grid_bg.frag.spv");
-    auto fg_vert = load_shader(device, shader_dir + "/grid_fg.vert.spv");
-    auto fg_frag = load_shader(device, shader_dir + "/grid_fg.frag.spv");
+    const auto resolved_shader_dir = bundled_asset_path(shader_dir);
+    auto bg_vert = load_shader(device, (resolved_shader_dir / "grid_bg.vert.spv").string());
+    auto bg_frag = load_shader(device, (resolved_shader_dir / "grid_bg.frag.spv").string());
+    auto fg_vert = load_shader(device, (resolved_shader_dir / "grid_fg.vert.spv").string());
+    auto fg_frag = load_shader(device, (resolved_shader_dir / "grid_fg.frag.spv").string());
 
     if (!bg_vert || !bg_frag || !fg_vert || !fg_frag)
     {

@@ -2,11 +2,15 @@
 #include "sdl_event_translator.h"
 #include "sdl_file_dialog.h"
 #include <SDL3/SDL.h>
+#include <algorithm>
+#include <cmath>
 #include <draxul/sdl_window.h>
 #ifdef __APPLE__
 #include <CoreGraphics/CoreGraphics.h>
 #include <SDL3/SDL_metal.h>
 #elif defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
 #include <SDL3/SDL_vulkan.h>
 #include <dwmapi.h>
 #include <shellscalingapi.h>
@@ -451,11 +455,11 @@ void SdlWindow::set_title_bar_color(Color color)
     // Implemented in sdl_window_macos.mm (requires Cocoa/ObjC).
     apply_title_bar_color_macos(window_, color);
 #elif defined(_WIN32)
+    // DWMWA_CAPTION_COLOR (35) is Windows 11+ and silently ignored on older versions.
     HWND hwnd = (HWND)SDL_GetPointerProperty(
         SDL_GetWindowProperties(window_), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);
     if (!hwnd)
         return;
-    // DWMWA_CAPTION_COLOR (35) is Windows 11+ — silently ignored on older versions.
 #ifndef DWMWA_CAPTION_COLOR
 #define DWMWA_CAPTION_COLOR 35
 #endif
