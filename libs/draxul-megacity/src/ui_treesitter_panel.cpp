@@ -701,6 +701,8 @@ bool render_renderer_controls(MegacityRendererControls& controls)
     changed |= ImGui::SliderFloat("Sign Text Hidden <= px", &hidden_px, 0.0f, 64.0f, "%.1f");
     changed |= ImGui::SliderFloat("Sign Text Full >= px", &full_px, 0.0f, 64.0f, "%.1f");
     changed |= ImGui::SliderFloat("Output Gamma", &output_gamma, 1.0f, 3.0f, "%.2f");
+    float height_multiplier = controls.height_multiplier;
+    changed |= ImGui::SliderFloat("Height Multiplier", &height_multiplier, 0.5f, 5.0f, "%.2f");
     changed |= ImGui::Checkbox("Clamp Semantic Metrics", &clamp_semantic_metrics);
     changed |= ImGui::Checkbox("Hide Test Entities", &hide_test_entities);
 
@@ -712,6 +714,7 @@ bool render_renderer_controls(MegacityRendererControls& controls)
     controls.sign_text_hidden_px = std::max(hidden_px, 0.0f);
     controls.sign_text_full_px = std::max(full_px, 0.0f);
     controls.output_gamma = std::max(output_gamma, 1.0f);
+    controls.height_multiplier = std::clamp(height_multiplier, 0.5f, 5.0f);
     controls.clamp_semantic_metrics = clamp_semantic_metrics;
     controls.hide_test_entities = hide_test_entities;
 

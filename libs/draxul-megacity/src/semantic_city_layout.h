@@ -97,13 +97,13 @@ struct SemanticMegacityLayout
     }
 };
 
-[[nodiscard]] BuildingMetrics derive_building_metrics(const CityClassRecord& row, bool clamp_metrics = true);
+[[nodiscard]] BuildingMetrics derive_building_metrics(const CityClassRecord& row, bool clamp_metrics = true, float height_multiplier = 1.5f);
 [[nodiscard]] bool is_test_semantic_source(std::string_view source_file_path);
 [[nodiscard]] std::array<RoadSegmentPlacement, 4> build_road_segments(
     const SemanticCityBuilding& building);
 [[nodiscard]] SemanticCityLayout build_semantic_city_layout(
-    const std::vector<CityClassRecord>& rows, bool clamp_metrics = true, bool hide_test_entities = false);
+    const std::vector<CityClassRecord>& rows, bool clamp_metrics = true, bool hide_test_entities = false, float height_multiplier = 1.5f);
 [[nodiscard]] SemanticMegacityLayout build_semantic_megacity_layout(
-    const std::vector<SemanticCityModuleInput>& modules, bool clamp_metrics = true, bool hide_test_entities = false);
+    const std::vector<SemanticCityModuleInput>& modules, bool clamp_metrics = true, bool hide_test_entities = false, float height_multiplier = 1.5f);
 
 } // namespace draxul

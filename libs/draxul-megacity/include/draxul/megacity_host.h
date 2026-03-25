@@ -90,6 +90,7 @@ private:
     float sign_text_hidden_px_ = 1.5f;
     float sign_text_full_px_ = 8.0f;
     float output_gamma_ = 1.0f;
+    float height_multiplier_ = 1.5f;
     bool clamp_semantic_metrics_ = false;
     bool hide_test_entities_ = true;
     int pixel_w_ = 800;

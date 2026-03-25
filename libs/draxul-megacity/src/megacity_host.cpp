@@ -760,6 +760,7 @@ void MegaCityHost::render_imgui(float dt)
         .sign_text_hidden_px = sign_text_hidden_px_,
         .sign_text_full_px = sign_text_full_px_,
         .output_gamma = output_gamma_,
+        .height_multiplier = height_multiplier_,
         .clamp_semantic_metrics = clamp_semantic_metrics_,
         .hide_test_entities = hide_test_entities_,
     };
@@ -767,12 +768,14 @@ void MegaCityHost::render_imgui(float dt)
     {
         const bool clamp_changed = clamp_semantic_metrics_ != renderer_controls.clamp_semantic_metrics;
         const bool test_filter_changed = hide_test_entities_ != renderer_controls.hide_test_entities;
+        const bool height_changed = height_multiplier_ != renderer_controls.height_multiplier;
         sign_text_hidden_px_ = renderer_controls.sign_text_hidden_px;
         sign_text_full_px_ = renderer_controls.sign_text_full_px;
         output_gamma_ = renderer_controls.output_gamma;
+        height_multiplier_ = renderer_controls.height_multiplier;
         clamp_semantic_metrics_ = renderer_controls.clamp_semantic_metrics;
         hide_test_entities_ = renderer_controls.hide_test_entities;
-        if ((clamp_changed || test_filter_changed) && city_db_reconciled_)
+        if ((clamp_changed || test_filter_changed || height_changed) && city_db_reconciled_)
             rebuild_semantic_city();
         else
             mark_scene_dirty();
@@ -991,7 +994,7 @@ void MegaCityHost::rebuild_semantic_city()
     for (const std::string& module_path : city_db_.list_modules())
         modules.push_back({ module_path, city_db_.list_classes_in_module(module_path) });
 
-    const SemanticMegacityLayout layout = build_semantic_megacity_layout(modules, clamp_semantic_metrics_, hide_test_entities_);
+    const SemanticMegacityLayout layout = build_semantic_megacity_layout(modules, clamp_semantic_metrics_, hide_test_entities_, height_multiplier_);
     std::vector<SignLabelRequest> sign_requests;
     sign_requests.reserve(layout.building_count() + layout.modules.size());
     for (const auto& module : layout.modules)

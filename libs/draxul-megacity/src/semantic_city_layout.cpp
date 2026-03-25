@@ -274,17 +274,18 @@ bool try_place_candidate(
 
 } // namespace
 
-BuildingMetrics derive_building_metrics(const CityClassRecord& row, bool clamp_metrics)
+BuildingMetrics derive_building_metrics(const CityClassRecord& row, bool clamp_metrics, float height_multiplier)
 {
-    const float footprint = maybe_clamp_metric(
-        1.0f + std::sqrt(static_cast<float>(std::max(row.base_size, 0))), 1.0f, 9.0f, clamp_metrics);
-    const float height = maybe_clamp_metric(
-        2.0f
-            + 1.35f * std::log1p(static_cast<float>(std::max(function_mass(row), 0)))
-            + 0.45f * std::sqrt(static_cast<float>(std::max(row.building_functions, 0))),
-        2.0f,
-        12.0f,
-        clamp_metrics);
+    const float footprint = clamp_metrics
+        ? std::clamp(1.0f + std::sqrt(static_cast<float>(std::max(row.base_size, 0))), 1.0f, 9.0f)
+        : 1.0f + static_cast<float>(std::max(row.base_size, 0)) * 0.15f;
+    const float height = clamp_metrics
+        ? std::clamp(
+              2.0f + 1.35f * std::log1p(static_cast<float>(std::max(function_mass(row), 0)))
+                  + 0.45f * std::sqrt(static_cast<float>(std::max(row.building_functions, 0))),
+              2.0f, 12.0f)
+        : 2.0f + height_multiplier * std::log1p(static_cast<float>(std::max(function_mass(row), 0)))
+              + height_multiplier * 0.27f * std::log1p(static_cast<float>(std::max(row.building_functions, 0)));
     const float raw_road = 0.6f + static_cast<float>(std::max(row.road_size, 0));
     const float road_width = clamp_metrics
         ? std::clamp(0.6f + 0.85f * std::log1p(static_cast<float>(std::max(row.road_size, 0))), 0.6f, 3.0f)
@@ -325,7 +326,7 @@ std::array<RoadSegmentPlacement, 4> build_road_segments(const SemanticCityBuildi
 }
 
 SemanticCityLayout build_semantic_city_layout(
-    const std::vector<CityClassRecord>& rows, bool clamp_metrics, bool hide_test_entities)
+    const std::vector<CityClassRecord>& rows, bool clamp_metrics, bool hide_test_entities, float height_multiplier)
 {
     struct Candidate
     {
@@ -346,7 +347,7 @@ SemanticCityLayout build_semantic_city_layout(
         if (hide_test_entities && is_test_semantic_source(row.source_file_path))
             continue;
 
-        const BuildingMetrics metrics = derive_building_metrics(row, clamp_metrics);
+        const BuildingMetrics metrics = derive_building_metrics(row, clamp_metrics, height_multiplier);
         candidates.push_back(
             { row.module_path, row.name, row.qualified_name, row.source_file_path, metrics,
                 build_function_layers(row, metrics) });
@@ -426,13 +427,14 @@ SemanticCityLayout build_semantic_city_layout(
 }
 
 SemanticMegacityLayout build_semantic_megacity_layout(
-    const std::vector<SemanticCityModuleInput>& modules, bool clamp_metrics, bool hide_test_entities)
+    const std::vector<SemanticCityModuleInput>& modules, bool clamp_metrics, bool hide_test_entities, float height_multiplier)
 {
     struct ModuleCandidate
     {
         std::string module_path;
         SemanticCityLayout layout;
         LotRect local_lot;
+        int connectivity = 0;
         float area = 0.0f;
     };
 
@@ -440,9 +442,13 @@ SemanticMegacityLayout build_semantic_megacity_layout(
     candidates.reserve(modules.size());
     for (const auto& module : modules)
     {
-        SemanticCityLayout layout = build_semantic_city_layout(module.rows, clamp_metrics, hide_test_entities);
+        SemanticCityLayout layout = build_semantic_city_layout(module.rows, clamp_metrics, hide_test_entities, height_multiplier);
         if (layout.empty())
             continue;
+
+        int connectivity = 0;
+        for (const auto& row : module.rows)
+            connectivity += std::max(row.road_size, 0);
 
         const float width = layout.max_x - layout.min_x;
         const float depth = layout.max_z - layout.min_z;
@@ -450,6 +456,7 @@ SemanticMegacityLayout build_semantic_megacity_layout(
             module.module_path,
             std::move(layout),
             { 0.0f, 0.0f, 0.0f, 0.0f },
+            connectivity,
             width * depth,
         });
         candidates.back().local_lot = {
@@ -460,11 +467,13 @@ SemanticMegacityLayout build_semantic_megacity_layout(
         };
     }
 
+    // Most connected module first (hub of the codebase at the center),
+    // then by area, then by name.
     std::sort(candidates.begin(), candidates.end(), [](const ModuleCandidate& a, const ModuleCandidate& b) {
+        if (a.connectivity != b.connectivity)
+            return a.connectivity > b.connectivity;
         if (a.area != b.area)
             return a.area > b.area;
-        if (a.layout.buildings.size() != b.layout.buildings.size())
-            return a.layout.buildings.size() > b.layout.buildings.size();
         return a.module_path < b.module_path;
     });
 
