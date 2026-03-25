@@ -1,0 +1,126 @@
+#include <draxul/mpack_codec.h>
+
+#include <cstdio>
+#include <cstdlib>
+#include <string>
+#include <vector>
+
+#ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
+#endif
+
+using namespace draxul;
+
+namespace
+{
+
+std::string mode()
+{
+    if (const char* value = std::getenv("DRAXUL_RPC_FAKE_MODE"))
+        return value;
+    return "success";
+}
+
+bool write_all(const std::vector<char>& bytes)
+{
+    size_t written = 0;
+    while (written < bytes.size())
+    {
+        size_t chunk = std::fwrite(bytes.data() + written, 1, bytes.size() - written, stdout);
+        if (chunk == 0)
+            return false;
+        written += chunk;
+    }
+    return std::fflush(stdout) == 0;
+}
+
+bool wait_for_request_byte()
+{
+    return std::fgetc(stdin) != EOF;
+}
+
+bool send_notification(const std::string& method, const std::vector<MpackValue>& params)
+{
+    std::vector<char> encoded;
+    if (!encode_rpc_notification(method, params, encoded))
+        return false;
+    return write_all(encoded);
+}
+
+bool send_response(uint32_t msgid, const MpackValue& error, const MpackValue& result)
+{
+    std::vector<char> encoded;
+    if (!encode_mpack_value(NvimRpc::make_array({
+                                NvimRpc::make_uint(1),
+                                NvimRpc::make_uint(msgid),
+                                error,
+                                result,
+                            }),
+            encoded))
+    {
+        return false;
+    }
+    return write_all(encoded);
+}
+
+} // namespace
+
+int main()
+{
+#ifdef _WIN32
+    _setmode(_fileno(stdin), _O_BINARY);
+    _setmode(_fileno(stdout), _O_BINARY);
+#endif
+
+    if (!wait_for_request_byte())
+        return 2;
+    const std::string current_mode = mode();
+    constexpr uint32_t msgid = 1;
+
+    if (current_mode == "abort_after_read")
+        return 0;
+
+    if (current_mode == "hang")
+    {
+        // Read and discard stdin until the client closes the pipe.
+        // Simulates a server that received the request but never responds.
+        while (std::fgetc(stdin) != EOF)
+        {
+        }
+        return 0;
+    }
+
+    if (current_mode == "malformed_response")
+    {
+        static const char malformed[] = { char(0x91), char(0xC1) };
+        std::fwrite(malformed, 1, sizeof(malformed), stdout);
+        std::fflush(stdout);
+        return 0;
+    }
+
+    if (current_mode == "notify_then_success")
+    {
+        if (!send_notification("redraw", { NvimRpc::make_array({}) }))
+            return 4;
+    }
+
+    if (current_mode == "notify_many")
+    {
+        // Send 100 notifications then a success response.
+        // Used by the backpressure stress tests to verify NvimRpc drains all
+        // queued items without losing any under concurrent push+drain.
+        for (int i = 0; i < 100; ++i)
+        {
+            if (!send_notification("redraw", { NvimRpc::make_int(static_cast<int64_t>(i)) }))
+                return 4;
+        }
+    }
+
+    if (current_mode == "error")
+    {
+        return send_response(msgid, NvimRpc::make_str("boom"), NvimRpc::make_nil()) ? 0 : 5;
+    }
+
+    return send_response(msgid, NvimRpc::make_nil(), NvimRpc::make_str("ok")) ? 0 : 6;
+}

@@ -1,0 +1,24 @@
+
+=== Debug ===
+
+> using existing CMake cache: build\CMakeCache.txt
+
+> cmake --build build --config Debug --parallel
+MSBuild version 17.13.0-preview-24568-05+37fc8280d for .NET Framework
+
+  draxul-grid.vcxproj -> D:\dev\draxul\build\libs\draxul-grid\Debug\draxul-grid.lib
+  vk-bootstrap.vcxproj -> D:\dev\draxul\build\_deps\vk-bootstrap-build\Debug\vk-bootstrap.lib
+  mpack_lib.vcxproj -> D:\dev\draxul\build\Debug\mpack_lib.lib
+  SDL3_test.vcxproj -> D:\dev\draxul\build\_deps\sdl3-build\Debug\SDL3_test.lib
+  SDL_uclibc.vcxproj -> D:\dev\draxul\build\_deps\sdl3-build\Debug\SDL_uclibc.lib
+  freetype.vcxproj -> D:\dev\draxul\build\_deps\freetype-build\Debug\freetyped.lib
+  harfbuzz.vcxproj -> D:\dev\draxul\build\_deps\harfbuzz-build\Debug\harfbuzz.lib
+  draxul-font.vcxproj -> D:\dev\draxul\build\libs\draxul-font\Debug\draxul-font.lib
+  SDL3-static.vcxproj -> D:\dev\draxul\build\_deps\sdl3-build\Debug\SDL3-static.lib
+  draxul-window.vcxproj -> D:\dev\draxul\build\libs\draxul-window\Debug\draxul-window.lib
+  draxul-nvim.vcxproj -> D:\dev\draxul\build\libs\draxul-nvim\Debug\draxul-nvim.lib
+  draxul-renderer.vcxproj -> D:\dev\draxul\build\libs\draxul-renderer\Debug\draxul-renderer.lib
+  draxul-tests.vcxproj -> D:\dev\draxul\build\tests\Debug\draxul-tests.exe
+  draxul.vcxproj -> D:\dev\draxul\build\Debug\draxul.exe
+
+> build\Debug\draxul.exe "--console"

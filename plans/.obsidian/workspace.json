@@ -1,0 +1,201 @@
+{
+  "main": {
+    "id": "425848a28b92a90c",
+    "type": "split",
+    "children": [
+      {
+        "id": "0f05481cf401fe30",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "d445dc176b0557ff",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "work-items/01 app loop and ui request decomposition -feature.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "01 app loop and ui request decomposition -feature"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "65f87385ed01c5ea",
+    "type": "split",
+    "children": [
+      {
+        "id": "09d7b506f4908ee0",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "5cc2798e5c87debd",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Files"
+            }
+          },
+          {
+            "id": "2b856ebb2e4b5140",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Search"
+            }
+          },
+          {
+            "id": "f03b1acd9e4ad8fe",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "Bookmarks"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 455.5
+  },
+  "right": {
+    "id": "68ed475471191a76",
+    "type": "split",
+    "children": [
+      {
+        "id": "8344c77487c82cbc",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "2d6e841cd67daf3e",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "work-items/01 app loop and ui request decomposition -feature.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Backlinks for 01 app loop and ui request decomposition -feature"
+            }
+          },
+          {
+            "id": "d87e79077484dc0b",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "work-items/01 app loop and ui request decomposition -feature.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Outgoing links from 01 app loop and ui request decomposition -feature"
+            }
+          },
+          {
+            "id": "3ac62f5ac9a6bcce",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Tags"
+            }
+          },
+          {
+            "id": "3343e76099dc91ee",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "All properties"
+            }
+          },
+          {
+            "id": "055b73473edf5662",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "work-items/01 app loop and ui request decomposition -feature.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Outline of 01 app loop and ui request decomposition -feature"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Open quick switcher": false,
+      "graph:Open graph view": false,
+      "canvas:Create new canvas": false,
+      "daily-notes:Open today's daily note": false,
+      "templates:Insert template": false,
+      "command-palette:Open command palette": false,
+      "bases:Create new base": false
+    }
+  },
+  "active": "d445dc176b0557ff",
+  "lastOpenFiles": [
+    "work-items-complete/04 grid wide-cell repair and redraw robustness -bug.md",
+    "reviews/review-concensus.md",
+    "work-items/01 app loop and ui request decomposition -feature.md",
+    "work-items/08 gui ergonomics and observability -feature.md",
+    "work-items-complete/00 rpc transport serialization and shutdown hardening -bug.md",
+    "reviews/review-latest.claude.md",
+    "reviews/review-latest.gpt.md",
+    "work-items/03 public api boundary cleanup -feature.md",
+    "work-items/02 render test extraction and parser unification -feature.md",
+    "work-items/04 grid wide-cell repair and redraw robustness -bug.md",
+    "work-items-complete",
+    "work-items/00 rpc transport serialization and shutdown hardening -bug.md"
+  ]
+}

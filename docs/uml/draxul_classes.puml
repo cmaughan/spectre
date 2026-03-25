@@ -1,0 +1,1305 @@
+@startuml
+title Draxul — Class Diagram
+enum "LogLevel" as C_0008850243814207404840
+enum C_0008850243814207404840 {
+Error
+Warn
+Info
+Debug
+Trace
+}
+enum "LogCategory" as C_0001755011471046237637
+enum C_0001755011471046237637 {
+App
+Rpc
+Nvim
+Window
+Font
+Renderer
+Input
+Test
+}
+class "LogRecord" as C_0008883142978388318680
+class C_0008883142978388318680 {
+__
++category : LogCategory
++level : LogLevel
++message : std::string
+}
+class "LogOptions" as C_0000477619316652426514
+class C_0000477619316652426514 {
+__
++enable_file : bool
++enable_stderr : bool
++enabled_categories : std::vector<LogCategory>
++file_path : std::string
++min_level : LogLevel
+}
+class "LoggerState" as C_0010528801699873211081
+class C_0010528801699873211081 {
+__
++enable_stderr : bool
++enabled_categories : std::unordered_set<LogCategory>
++file : FILE *
++min_level : LogLevel
++mutex : std::mutex
++sink : LogSink
+}
+class "Color" as C_0003050016618736941186
+class C_0003050016618736941186 {
++operator==() constexpr const = default : bool
+..
+{static} +from_rgb() : Color
+{static} +from_rgba() : Color
+__
++a : float
++b : float
++g : float
++r : float
+}
+class "AtlasRegion" as C_0001601078392939988737
+class C_0001601078392939988737 {
+__
++bearing_x : int
++bearing_y : int
++height : int
++is_color : bool
++u0 : float
++u1 : float
++v0 : float
++v1 : float
++width : int
+}
+enum "AmbiWidth" as C_0010895279360614319154
+enum C_0010895279360614319154 {
+Single
+Double
+}
+class "UiOptions" as C_0005211499706792277500
+class C_0005211499706792277500 {
+__
++ambiwidth : AmbiWidth
+}
+enum "CursorShape" as C_0017202156351621465061
+enum C_0017202156351621465061 {
+Block
+Horizontal
+Vertical
+}
+class "CursorStyle" as C_0001063800618844957218
+class C_0001063800618844957218 {
+__
++bg : Color
++cell_percentage : int
++fg : Color
++shape : CursorShape
++use_explicit_colors : bool
+}
+class "CellUpdate" as C_0002204542886704690444
+class C_0002204542886704690444 {
+__
++bg : Color
++col : int
++fg : Color
++glyph : AtlasRegion
++row : int
++sp : Color
++style_flags : uint32_t
+}
+class "CapturedFrame" as C_0014355790039425046038
+class C_0014355790039425046038 {
++valid() const : bool
+__
++height : int
++rgba : std::vector<uint8_t>
++width : int
+}
+class "WindowResizeEvent" as C_0002340459692765138514
+class C_0002340459692765138514 {
+__
++height : int
++width : int
+}
+class "KeyEvent" as C_0010565110385499149884
+class C_0010565110385499149884 {
+__
++keycode : int
++mod : ModifierFlags
++pressed : bool
++scancode : int
+}
+class "TextInputEvent" as C_0011070493512026716506
+class C_0011070493512026716506 {
+__
++text : const char *
+}
+class "TextEditingEvent" as C_0011519682376657739126
+class C_0011519682376657739126 {
+__
++length : int
++start : int
++text : const char *
+}
+class "MouseButtonEvent" as C_0013373323923961518899
+class C_0013373323923961518899 {
+__
++button : int
++mod : ModifierFlags
++pressed : bool
++x : int
++y : int
+}
+class "MouseMoveEvent" as C_0005177588658906065630
+class C_0005177588658906065630 {
+__
++mod : ModifierFlags
++x : int
++y : int
+}
+class "MouseWheelEvent" as C_0009958399031821783594
+class C_0009958399031821783594 {
+__
++dx : float
++dy : float
++mod : ModifierFlags
++x : int
++y : int
+}
+class "DisplayScaleEvent" as C_0002620409691651640904
+class C_0002620409691651640904 {
+__
++display_ppi : float
+}
+abstract "IWindow" as C_0008754152141087198468
+abstract C_0008754152141087198468 {
++~IWindow() = default : void
+..
+{abstract} +clipboard_text() const = 0 : std::string
+{abstract} +display_ppi() const = 0 : float
+{abstract} +initialize() = 0 : bool
+{abstract} +native_handle() = 0 : void *
+{abstract} +poll_events() = 0 : bool
+{abstract} +set_clipboard_text() = 0 : bool
+{abstract} +set_text_input_area() = 0 : void
+{abstract} +set_title() = 0 : void
++set_title_bar_color() : void
++show_open_file_dialog() : void
+{abstract} +shutdown() = 0 : void
+{abstract} +size_logical() const = 0 : std::pair<int,int>
+{abstract} +size_pixels() const = 0 : std::pair<int,int>
+__
++on_display_scale_changed : std::function<void (const DisplayScaleEvent &)>
++on_drop_file : std::function<void (std::string_view)>
++on_key : std::function<void (const KeyEvent &)>
++on_mouse_button : std::function<void (const MouseButtonEvent &)>
++on_mouse_move : std::function<void (const MouseMoveEvent &)>
++on_mouse_wheel : std::function<void (const MouseWheelEvent &)>
++on_resize : std::function<void (const WindowResizeEvent &)>
++on_text_editing : std::function<void (const TextEditingEvent &)>
++on_text_input : std::function<void (const TextInputEvent &)>
+}
+class "SdlWindow" as C_0017708234387737448190
+class C_0017708234387737448190 {
++activate() : void
++clipboard_text() const : std::string
++display_ppi() const : float
+-handle_event() : bool
++initialize() : bool
++native_handle() : void *
++poll_events() : bool
++set_clamp_to_display() : void
++set_clipboard_text() : bool
++set_hidden() : void
++set_size_logical() : void
++set_text_input_area() : void
++set_title() : void
++set_title_bar_color() : void
++show_open_file_dialog() : void
++shutdown() : void
++size_logical() const : std::pair<int,int>
++size_pixels() const : std::pair<int,int>
++wait_events() : bool
++wake() const : void
+__
+-clamp_to_display_ : bool
+-file_dialog_event_type_ : unsigned int
+-hidden_ : bool
+-wake_event_type_ : unsigned int
+-window_ : SDL_Window *
+}
+abstract "IBaseRenderer" as C_0005851409022089412705
+abstract C_0005851409022089412705 {
++~IBaseRenderer() constexpr = default : void
+..
+{abstract} +begin_frame() = 0 : bool
+{abstract} +end_frame() = 0 : void
+{abstract} +initialize() = 0 : bool
+{abstract} +resize() = 0 : void
+{abstract} +set_default_background() = 0 : void
+{abstract} +shutdown() = 0 : void
+__
+}
+abstract "IRenderContext" as C_0002769108603782251559
+abstract C_0002769108603782251559 {
++~IRenderContext() constexpr = default : void
+..
+{abstract} +height() const = 0 : int
+{abstract} +native_command_buffer() const = 0 : void *
+{abstract} +native_render_encoder() const = 0 : void *
+{abstract} +width() const = 0 : int
+__
+}
+abstract "IRenderPass" as C_0013689547638217019403
+abstract C_0013689547638217019403 {
++~IRenderPass() constexpr = default : void
+..
+{abstract} +record() = 0 : void
+__
+}
+abstract "I3DRenderer" as C_0005125093399792312103
+abstract C_0005125093399792312103 {
+{abstract} +register_render_pass() = 0 : void
+{abstract} +unregister_render_pass() = 0 : void
+__
+}
+abstract "IGridRenderer" as C_0010068086230632788976
+abstract C_0010068086230632788976 {
++~IGridRenderer() constexpr = default : void
+..
+{abstract} +cell_size_pixels() const = 0 : std::pair<int,int>
+{abstract} +padding() const = 0 : int
+{abstract} +set_ascender() = 0 : void
+{abstract} +set_atlas_texture() = 0 : void
+{abstract} +set_cell_size() = 0 : void
+{abstract} +set_cursor() = 0 : void
+{abstract} +set_grid_size() = 0 : void
+{abstract} +set_overlay_cells() = 0 : void
+{abstract} +set_scroll_offset() = 0 : void
+{abstract} +update_atlas_region() = 0 : void
+{abstract} +update_cells() = 0 : void
+__
+}
+abstract "IImGuiHost" as C_0014662174383410826506
+abstract C_0014662174383410826506 {
++~IImGuiHost() constexpr = default : void
+..
+{abstract} +begin_imgui_frame() = 0 : void
+{abstract} +initialize_imgui_backend() = 0 : bool
+{abstract} +rebuild_imgui_font_texture() = 0 : void
+{abstract} +set_imgui_draw_data() = 0 : void
+{abstract} +shutdown_imgui_backend() = 0 : void
+__
+}
+abstract "ICaptureRenderer" as C_0009066721086004078893
+abstract C_0009066721086004078893 {
++~ICaptureRenderer() constexpr = default : void
+..
+{abstract} +request_frame_capture() = 0 : void
+{abstract} +take_captured_frame() = 0 : std::optional<CapturedFrame>
+__
+}
+class "IRenderer" as C_0010528545404535368578
+class C_0010528545404535368578 {
++~IRenderer() constexpr = default : void
+__
+}
+class "RendererBundle" as C_0002198398896520044869
+class C_0002198398896520044869 {
++capture() const : ICaptureRenderer *
++grid() const : IGridRenderer *
++imgui() const : IImGuiHost *
++operator bool() const : bool
++threed() const : I3DRenderer *
+__
++impl : std::unique_ptr<IRenderer>
+}
+class "GpuCell" as C_0011925734863400406368
+class C_0011925734863400406368 {
++operator==() constexpr const = default : bool
+__
++_pad : std::array<uint32_t,3>
++bg_a : float
++bg_b : float
++bg_g : float
++bg_r : float
++fg_a : float
++fg_b : float
++fg_g : float
++fg_r : float
++glyph_offset_x : float
++glyph_offset_y : float
++glyph_size_x : float
++glyph_size_y : float
++pos_x : float
++pos_y : float
++size_x : float
++size_y : float
++sp_a : float
++sp_b : float
++sp_g : float
++sp_r : float
++style_flags : uint32_t
++uv_x0 : float
++uv_x1 : float
++uv_y0 : float
++uv_y1 : float
+}
+class "RendererState" as C_0004074277629754559155
+class C_0004074277629754559155 {
++apply_cursor() : void
+-apply_update_to_cell() const : void
++bg_instances() const : int
++buffer_size_bytes() const : size_t
++clear_dirty() : void
++copy_dirty_cells_to() const : void
++copy_overlay_region_to() const : void
++copy_to() const : void
++default_bg() const : Color
++dirty_cell_offset_bytes() const : size_t
++dirty_cell_size_bytes() const : size_t
++fg_instances() const : int
++grid_cols() const : int
++grid_rows() const : int
++has_dirty_cells() const : bool
+-mark_all_cells_dirty() : void
+-mark_cell_dirty() : void
++overlay_offset_bytes() const : size_t
++overlay_region_dirty() const : bool
++overlay_region_size_bytes() const : size_t
+-relayout() : void
++restore_cursor() : void
++set_ascender() : void
++set_cell_size() : void
++set_cursor() : void
++set_default_background() : void
++set_grid_size() : void
++set_overlay_cells() : void
++total_cells() const : int
++update_cells() : void
+__
+{static} +OVERLAY_CELL_CAPACITY : const size_t
+-ascender_ : int
+-cell_h_ : int
+-cell_w_ : int
+-cursor_applied_ : bool
+-cursor_col_ : int
+-cursor_overlay_active_ : bool
+-cursor_row_ : int
+-cursor_saved_cell_ : GpuCell
+-cursor_style_ : CursorStyle
+-default_bg_ : Color
+-dirty_cell_begin_ : size_t
+-dirty_cell_end_ : size_t
+-gpu_cells_ : std::vector<GpuCell>
+-grid_cols_ : int
+-grid_rows_ : int
+-overlay_cell_ : GpuCell
+-overlay_cell_count_ : size_t
+-overlay_cells_ : std::vector<GpuCell>
+-overlay_dirty_ : bool
+-padding_ : int
+}
+class "MetalRenderer" as C_0013902377354588180664
+class C_0013902377354588180664 {
++MetalRenderer() : void
++~MetalRenderer() : void
+..
++begin_frame() : bool
++begin_imgui_frame() : void
++cell_size_pixels() const : std::pair<int,int>
++end_frame() : void
+-ensure_capture_buffer() : bool
++initialize() : bool
++initialize_imgui_backend() : bool
++padding() const : int
++rebuild_imgui_font_texture() : void
++register_render_pass() : void
++request_frame_capture() : void
++resize() : void
++set_ascender() : void
++set_atlas_texture() : void
++set_cell_size() : void
++set_cursor() : void
++set_default_background() : void
++set_grid_size() : void
++set_imgui_draw_data() : void
++set_overlay_cells() : void
++set_scroll_offset() : void
++shutdown() : void
++shutdown_imgui_backend() : void
++take_captured_frame() : std::optional<CapturedFrame>
++unregister_render_pass() : void
++update_atlas_region() : void
++update_cells() : void
+-upload_dirty_state() : void
+__
+{static} +MAX_FRAMES_IN_FLIGHT : const int
+-ascender_ : int
+-atlas_sampler_ : void *
+-atlas_size_ : int
+-atlas_texture_ : void *
+-bg_pipeline_ : void *
+-capture_buffer_ : void *
+-capture_buffer_size_ : size_t
+-capture_bytes_per_row_ : size_t
+-capture_requested_ : bool
+-captured_frame_ : std::optional<CapturedFrame>
+-cell_h_ : int
+-cell_w_ : int
+-clear_b_ : float
+-clear_g_ : float
+-clear_r_ : float
+-command_queue_ : void *
+-current_drawable_ : void *
+-device_ : void *
+-fg_pipeline_ : void *
+-frame_semaphore_ : void *
+-grid_buffer_ : void *
+-imgui_draw_data_ : const ImDrawData *
+-imgui_initialized_ : bool
+-layer_ : void *
+-padding_ : int
+-pixel_h_ : int
+-pixel_w_ : int
+-render_pass_ : std::shared_ptr<IRenderPass>
+-scroll_offset_px_ : float
+-state_ : RendererState
+}
+class "FontMetrics" as C_0013707134870063899134
+class C_0013707134870063899134 {
+__
++ascender : int
++cell_height : int
++cell_width : int
++descender : int
+}
+class "FontManager" as C_0013960298743490800107
+class C_0013960298743490800107 {
++FontManager() = default : void
++FontManager() = deleted : void
++FontManager() noexcept : void
+..
++operator=() = deleted : FontManager &
++operator=() noexcept : FontManager &
+..
++face() const : FT_Face
++hb_font() const : hb_font_t *
++initialize() : bool
++metrics() const : const FontMetrics &
++point_size() const : float
+-select_best_fixed_size() : void
++set_point_size() : bool
++shutdown() : void
+-update_metrics() : void
+__
+-display_ppi_ : float
+-face_ : FT_Face
+-ft_lib_ : FT_Library
+-hb_font_ : hb_font_t *
+-metrics_ : FontMetrics
+-point_size_ : float
+}
+class "ShapedGlyph" as C_0003903428271444624477
+class C_0003903428271444624477 {
+__
++cluster : int
++glyph_id : uint32_t
++x_advance : int
++x_offset : int
++y_offset : int
+}
+class "TextShaper" as C_0001012062279727924561
+class C_0001012062279727924561 {
++TextShaper() = default : void
++TextShaper() = deleted : void
++TextShaper() noexcept : void
++~TextShaper() : void
+..
++operator=() = deleted : TextShaper &
++operator=() noexcept : TextShaper &
+..
++initialize() : void
++shape() : std::vector<ShapedGlyph>
++shutdown() : void
+__
+-buffer_ : hb_buffer_t *
+-enable_ligatures_ : bool
+-font_ : hb_font_t *
+}
+class "GlyphCache" as C_0014199559189985453081
+class C_0014199559189985453081 {
++atlas_data() const : const uint8_t *
++atlas_dirty() const : bool
++atlas_height() const : int
++atlas_width() const : int
++clear_dirty() : void
++consume_overflowed() : bool
++dirty_rect() const : const DirtyRect &
++get_cluster() : const AtlasRegion &
++glyph_count() const : size_t
++initialize() : bool
+-rasterize_cluster() : bool
+-reserve_region() : bool
++reset() : void
++usage_ratio() const : float
++used_pixels() const : size_t
+__
+-atlas_ : std::vector<uint8_t>
+-atlas_size_ : int
+-cluster_cache_ : std::unordered_map<ClusterKey,AtlasRegion,ClusterKeyHash>
+-dirty_ : bool
+-dirty_rect_ : DirtyRect
+-empty_region_ : AtlasRegion
+-face_ : FT_Face
+-overflowed_ : bool
+-pixel_size_ : int
+-shelf_height_ : int
+-shelf_x_ : int
+-shelf_y_ : int
+-used_pixels_ : size_t
+}
+class "GlyphCache::DirtyRect" as C_0012516551186305172251
+class C_0012516551186305172251 {
+__
++h : int
++w : int
++x : int
++y : int
+}
+class "GlyphCache::ClusterKey" as C_0003903673933831035415
+class C_0003903673933831035415 {
++operator==() constexpr const = default : bool
+__
++face : FT_Face
++text : std::string
+}
+class "GlyphCache::ClusterKeyHash" as C_0002289317367470524016
+class C_0002289317367470524016 {
++operator()() const : size_t
+__
+}
+class "RasterizedGlyph" as C_0002842494247886454943
+class C_0002842494247886454943 {
+__
++height : int
++is_color : bool
++left : int
++pixels : std::vector<uint8_t>
++top : int
++width : int
+}
+class "NvimProcess" as C_0015913343513510731058
+class C_0015913343513510731058 {
++NvimProcess() : void
++~NvimProcess() : void
+..
++is_running() const : bool
++read() const : int
++shutdown() : void
++spawn() : bool
++write() const : bool
+__
+-impl_ : std::unique_ptr<Impl>
+}
+class "MpackValue" as C_0016018736370340727756
+class C_0016018736370340727756 {
++as_array() const : const ArrayStorage &
++as_bool() const : bool
++as_ext() const : const ExtValue &
++as_int() const : int64_t
++as_map() const : const MapStorage &
++as_str() const : const std::string &
++is_nil() const : bool
++type() const : Type
+__
++storage : Storage
+}
+enum "MpackValue::Type" as C_0000350597025820103219
+enum C_0000350597025820103219 {
+Nil
+Bool
+Int
+UInt
+Float
+String
+Array
+Map
+Ext
+}
+class "MpackValue::ExtValue" as C_0011252515339556629560
+class C_0011252515339556629560 {
+__
++data : int64_t
++type : int8_t
+}
+class "RpcNotification" as C_0000883610631005797400
+class C_0000883610631005797400 {
+__
++method : std::string
++params : std::vector<MpackValue>
+}
+class "RpcResponse" as C_0011076614151414470895
+class C_0011076614151414470895 {
+__
++error : MpackValue
++msgid : uint32_t
++result : MpackValue
+}
+class "RpcResult" as C_0009056198548702880599
+class C_0009056198548702880599 {
++is_error() const : bool
++ok() const : bool
+__
++error : MpackValue
++result : MpackValue
++transport_ok : bool
+}
+abstract "IRpcChannel" as C_0003241142074092069901
+abstract C_0003241142074092069901 {
++~IRpcChannel() constexpr = default : void
+..
+{abstract} +notify() = 0 : void
+{abstract} +request() = 0 : RpcResult
+__
+}
+class "NvimRpc" as C_0011344315874693246311
+class C_0011344315874693246311 {
++NvimRpc() : void
++~NvimRpc() : void
+..
++close() : void
++connection_failed() const : bool
++drain_notifications() : std::vector<RpcNotification>
++initialize() : bool
+{static} +make_array() : MpackValue
+{static} +make_bool() : MpackValue
+{static} +make_int() : MpackValue
+{static} +make_map() : MpackValue
+{static} +make_nil() : MpackValue
+{static} +make_str() : MpackValue
+{static} +make_uint() : MpackValue
++notify() : void
+-reader_thread_func() : void
+-reply_to_request() : void
++request() : RpcResult
++shutdown() : void
+__
+-impl_ : std::unique_ptr<Impl>
++on_notification_available : std::function<void ()>
++on_request : std::function<MpackValue (const std::string &,const std::vector<MpackValue> &)>
+}
+class "NvimProcess::Impl" as C_0012226307655649286802
+class C_0012226307655649286802 {
+__
++child_pid_ : pid_t
++child_stdin_write_ : int
++child_stdout_read_ : int
++started_ : bool
+}
+class "NvimRpc::Impl" as C_0012750730958052982030
+class C_0012750730958052982030 {
+__
+}
+class "GuiActionHandler" as C_0015344056630990463416
+class C_0015344056630990463416 {
++GuiActionHandler() : void
+..
+-change_font_size() : void
+-copy() : void
++execute() : bool
+-font_decrease() : void
+-font_increase() : void
+-font_reset() : void
+-open_file_dialog() const : void
+-paste() : void
+-toggle_diagnostics() : void
+__
+-deps_ : Deps
+}
+class "GuiActionHandler::Deps" as C_0004320916333352057094
+class C_0004320916333352057094 {
+__
++config : AppConfig *
++host : IHost *
++imgui_host : IImGuiHost *
++on_config_changed : std::function<void ()>
++on_font_changed : std::function<void ()>
++on_open_file_dialog : std::function<void ()>
++on_panel_toggled : std::function<void ()>
++text_service : TextService *
++ui_panel : UiPanel *
+}
+enum "HostKind" as C_0005670466736100490416
+enum C_0005670466736100490416 {
+Nvim
+PowerShell
+Bash
+Zsh
+Wsl
+MegaCity
+}
+class "HostLaunchOptions" as C_0016411363752645256527
+class C_0016411363752645256527 {
+__
++args : std::vector<std::string>
++command : std::string
++enable_ligatures : bool
++kind : HostKind
++startup_commands : std::vector<std::string>
++working_dir : std::string
+}
+class "HostViewport" as C_0002498117424196147261
+class C_0002498117424196147261 {
+__
++cols : int
++padding : int
++pixel_height : int
++pixel_scale : float
++pixel_width : int
++pixel_x : int
++pixel_y : int
++rows : int
+}
+class "HostDebugState" as C_0006380951599488864125
+class C_0006380951599488864125 {
+__
++dirty_cells : size_t
++grid_cols : int
++grid_rows : int
++name : std::string
+}
+class "HostRuntimeState" as C_0011793774128741621277
+class C_0011793774128741621277 {
+__
++content_ready : bool
++last_activity_time : std::chrono::steady_clock::time_point
+}
+class "HostCallbacks" as C_0013151736059362932950
+class C_0013151736059362932950 {
+__
++request_frame : std::function<void ()>
++request_quit : std::function<void ()>
++set_text_input_area : std::function<void (int,int,int,int)>
++set_window_title : std::function<void (const std::string &)>
++wake_window : std::function<void ()>
+}
+class "HostContext" as C_0016717144239347233716
+class C_0016717144239347233716 {
+__
++display_ppi : float
++grid_renderer : IGridRenderer &
++initial_viewport : HostViewport
++launch_options : HostLaunchOptions
++text_service : TextService &
++window : IWindow &
+}
+abstract "IHost" as C_0009529973734970143048
+abstract C_0009529973734970143048 {
++~IHost() constexpr = default : void
+..
+{abstract} +debug_state() const = 0 : HostDebugState
+{abstract} +default_background() const = 0 : Color
+{abstract} +dispatch_action() = 0 : bool
+{abstract} +init_error() const = 0 : std::string
+{abstract} +initialize() = 0 : bool
+{abstract} +is_running() const = 0 : bool
+{abstract} +next_deadline() const = 0 : std::optional<std::chrono::steady_clock::time_point>
+{abstract} +on_font_metrics_changed() = 0 : void
+{abstract} +on_key() = 0 : void
+{abstract} +on_mouse_button() = 0 : void
+{abstract} +on_mouse_move() = 0 : void
+{abstract} +on_mouse_wheel() = 0 : void
+{abstract} +on_text_editing() = 0 : void
+{abstract} +on_text_input() = 0 : void
+{abstract} +pump() = 0 : void
+{abstract} +request_close() = 0 : void
+{abstract} +runtime_state() const = 0 : HostRuntimeState
+{abstract} +set_viewport() = 0 : void
+{abstract} +shutdown() = 0 : void
+__
+}
+abstract "I3DHost" as C_0009174255010398071322
+abstract C_0009174255010398071322 {
+{abstract} +attach_3d_renderer() = 0 : void
+{abstract} +detach_3d_renderer() = 0 : void
+__
+}
+class "IGridHost" as C_0010202254357218365197
+class C_0010202254357218365197 {
+__
+}
+class "HostManager" as C_0006767731107981727121
+class C_0006767731107981727121 {
++HostManager() : void
+..
++create() : bool
++error() const : const std::string &
++host() const : IHost *
++set_host() : void
++shutdown() : void
+__
+-deps_ : Deps
+-error_ : std::string
+-host_ : std::unique_ptr<IHost>
+}
+class "HostManager::Deps" as C_0017675893223522493133
+class C_0017675893223522493133 {
+__
++config : const AppConfig *
++display_ppi : const float *
++get_viewport : std::function<HostViewport ()>
++grid_renderer : IGridRenderer *
++options : const AppOptions *
++text_service : TextService *
++window : IWindow *
+}
+class "InputDispatcher" as C_0017662050381851980314
+class C_0017662050381851980314 {
++InputDispatcher() : void
+..
++connect() : void
++gui_action_for_key_event() const : std::optional<std::string_view>
++scroll_fraction() const : float
+__
+-deps_ : Deps
+-pending_scroll_y_ : float
+}
+class "InputDispatcher::Deps" as C_0012361970431903790474
+class C_0012361970431903790474 {
+__
++gui_action_handler : GuiActionHandler *
++host : IHost *
++keybindings : const std::vector<GuiKeybinding> *
++on_display_scale_changed : std::function<void (float)>
++on_resize : std::function<void (int,int)>
++request_frame : std::function<void ()>
++smooth_scroll : bool
++ui_panel : UiPanel *
+}
+class "AtlasDirtyRect" as C_0006142460100207035646
+class C_0006142460100207035646 {
+__
++h : int
++w : int
++x : int
++y : int
+}
+abstract "IGlyphAtlas" as C_0011906851200581065566
+abstract C_0011906851200581065566 {
++~IGlyphAtlas() constexpr = default : void
+..
+{abstract} +atlas_data() const = 0 : const uint8_t *
+{abstract} +atlas_dirty() const = 0 : bool
+{abstract} +atlas_dirty_rect() const = 0 : AtlasDirtyRect
+{abstract} +atlas_height() const = 0 : int
+{abstract} +atlas_width() const = 0 : int
+{abstract} +clear_atlas_dirty() = 0 : void
+{abstract} +consume_atlas_reset() = 0 : bool
+{abstract} +ligature_cell_span() = 0 : int
+{abstract} +resolve_cluster() = 0 : AtlasRegion
+__
+}
+class "TextServiceConfig" as C_0005145284113847430245
+class C_0005145284113847430245 {
+__
+{static} +DEFAULT_FONT_CHOICE_CACHE_LIMIT : const size_t
++bold_font_path : std::string
++bold_italic_font_path : std::string
++enable_ligatures : bool
++fallback_paths : std::vector<std::string>
++font_choice_cache_limit : size_t
++font_path : std::string
++italic_font_path : std::string
+}
+class "TextService" as C_0007094459942163548211
+class C_0007094459942163548211 {
++TextService() : void
++TextService() = deleted : void
++TextService() noexcept : void
++~TextService() : void
+..
++operator=() = deleted : TextService &
++operator=() noexcept : TextService &
+..
++atlas_data() const : const uint8_t *
++atlas_dirty() const : bool
++atlas_dirty_rect() const : AtlasDirtyRect
++atlas_glyph_count() const : size_t
++atlas_height() const : int
++atlas_reset_count() const : int
++atlas_usage_ratio() const : float
++atlas_width() const : int
++clear_atlas_dirty() : void
++consume_atlas_reset() : bool
++font_choice_cache_size() const : size_t
++initialize() : bool
++initialize() : bool
++ligature_cell_span() : int
++ligature_cell_span() : int
++metrics() const : const FontMetrics &
++point_size() const : float
++primary_font_path() const : const std::string &
++resolve_cluster() : AtlasRegion
++resolve_cluster() : AtlasRegion
++set_point_size() : bool
++shutdown() : void
+__
+{static} +DEFAULT_POINT_SIZE : const float
+{static} +MAX_POINT_SIZE : const float
+{static} +MIN_POINT_SIZE : const float
+-impl_ : std::unique_ptr<Impl>
+}
+class "GuiKeybinding" as C_0012943441053662818710
+class C_0012943441053662818710 {
+__
++action : std::string
++key : int32_t
++modifiers : ModifierFlags
+}
+class "AppConfig" as C_0010304326697326195617
+class C_0010304326697326195617 {
++AppConfig() : void
+..
+{static} +load() : AppConfig
+{static} +load_from_path() : AppConfig
+{static} +parse() : AppConfig
++save() const : void
++save_to_path() const : void
++serialize() const : std::string
+__
++atlas_size : int
++bold_font_path : std::string
++bold_italic_font_path : std::string
++enable_ligatures : bool
++fallback_paths : std::vector<std::string>
++font_path : std::string
++font_size : float
++italic_font_path : std::string
++keybindings : std::vector<GuiKeybinding>
++smooth_scroll : bool
++window_height : int
++window_width : int
+}
+class "AppConfigOverrides" as C_0008822150083529173387
+class C_0008822150083529173387 {
+__
++atlas_size : std::optional<int>
++bold_font_path : std::optional<std::string>
++bold_italic_font_path : std::optional<std::string>
++enable_ligatures : std::optional<bool>
++fallback_paths : std::optional<std::vector<std::string>>
++font_path : std::optional<std::string>
++font_size : std::optional<float>
++italic_font_path : std::optional<std::string>
++window_height : std::optional<int>
++window_width : std::optional<int>
+}
+class "AppOptions" as C_0004573737265847298989
+class C_0004573737265847298989 {
+__
++activate_window_on_startup : bool
++clamp_window_to_display : bool
++config_overrides : AppConfigOverrides
++host_args : std::vector<std::string>
++host_command : std::string
++host_kind : HostKind
++host_working_dir : std::string
++load_user_config : bool
++override_display_ppi : std::optional<float>
++render_target_pixel_height : int
++render_target_pixel_width : int
++renderer_create_fn : std::function<RendererBundle (int)>
++save_user_config : bool
++show_diagnostics_on_startup : bool
++show_render_test_window : bool
++startup_commands : std::vector<std::string>
++window_init_fn : std::function<bool ()>
+}
+class "StartupStep" as C_0006199028389812970130
+class C_0006199028389812970130 {
+__
++label : std::string
++ms : double
+}
+class "DiagnosticPanelState" as C_0006759011979937922770
+class C_0006759011979937922770 {
+__
++atlas_glyph_count : size_t
++atlas_reset_count : int
++atlas_usage_ratio : float
++average_frame_ms : double
++cell_height : int
++cell_width : int
++dirty_cells : size_t
++display_ppi : float
++frame_ms : double
++grid_cols : int
++grid_rows : int
++startup_steps : std::vector<StartupStep>
++startup_total_ms : double
++visible : bool
+}
+class "PanelLayout" as C_0010939797581728659442
+class C_0010939797581728659442 {
++contains_panel_point() const : bool
+__
++grid_cols : int
++grid_rows : int
++panel_height : int
++panel_y : int
++pixel_scale : float
++terminal_height : int
++visible : bool
++window_height : int
++window_width : int
+}
+class "UiPanel" as C_0010065214798730932279
+class C_0010065214798730932279 {
++UiPanel() : void
++~UiPanel() : void
+..
++begin_frame() : void
++initialize() : bool
++layout() const : const PanelLayout &
++on_key() : void
++on_mouse_button() : void
++on_mouse_move() : void
++on_mouse_wheel() : void
++on_text_input() : void
++render() : const ImDrawData *
++set_font() : void
++set_visible() : void
++set_window_metrics() : void
++shutdown() : void
++toggle_visible() : void
++update_diagnostic_state() : void
++visible() const : bool
++wants_keyboard() const : bool
+__
+-impl_ : std::unique_ptr<Impl>
+}
+class "App" as C_0004474198408368591089
+class C_0004474198408368591089 {
++App() : void
+..
+-apply_font_metrics() : void
+-average_frame_ms() const : double
+-current_host_viewport() const : HostViewport
++init_error() const : const std::string &
++initialize() : bool
+-initialize_host() : bool
+-initialize_text_service() : bool
+-on_display_scale_changed() : void
+-on_resize() : void
+-pump_once() : bool
+-refresh_window_layout() : void
+-request_frame() : void
+-request_quit() : void
++run() : void
++run_smoke_test() : bool
++shutdown() : void
+-update_diagnostics_panel() : void
+-wait_timeout_ms() const : int
+-wire_window_callbacks() : void
+__
+-config_ : AppConfig
+-display_ppi_ : float
+-frame_requested_ : bool
+-gui_action_handler_ : GuiActionHandler
+-host_manager_ : HostManager
+-input_dispatcher_ : InputDispatcher
+-last_activity_time_ : std::chrono::steady_clock::time_point
+-last_frame_ms_ : double
+-last_init_error_ : std::string
+-last_panel_frame_time_ : std::chrono::steady_clock::time_point
+-options_ : AppOptions
+-pending_window_activation_ : bool
+-recent_frame_ms_ : std::array<double,32>
+-recent_frame_ms_count_ : size_t
+-recent_frame_ms_index_ : size_t
+-renderer_ : RendererBundle
+-running_ : bool
+-saw_frame_ : bool
+-startup_steps_ : std::vector<StartupStep>
+-startup_total_ms_ : double
+-text_service_ : TextService
+-ui_panel_ : UiPanel
+-window_ : SdlWindow
+}
+class "UiPanel::Impl" as C_0002608485120571348914
+class C_0002608485120571348914 {
+__
+}
+class "TextService::Impl" as C_0003400465826989566136
+class C_0003400465826989566136 {
+__
+}
+C_0008883142978388318680 o-- C_0008850243814207404840 : +level
+C_0008883142978388318680 o-- C_0001755011471046237637 : +category
+C_0000477619316652426514 o-- C_0008850243814207404840 : +min_level
+C_0000477619316652426514 o-- C_0001755011471046237637 : +enabled_categories
+C_0010528801699873211081 o-- C_0008850243814207404840 : +min_level
+C_0010528801699873211081 o-- C_0001755011471046237637 : +enabled_categories
+C_0010528801699873211081 --> C_0008883142978388318680 : +sink
+C_0005211499706792277500 o-- C_0010895279360614319154 : +ambiwidth
+C_0001063800618844957218 o-- C_0017202156351621465061 : +shape
+C_0001063800618844957218 o-- C_0003050016618736941186 : +fg
+C_0001063800618844957218 o-- C_0003050016618736941186 : +bg
+C_0002204542886704690444 o-- C_0003050016618736941186 : +bg
+C_0002204542886704690444 o-- C_0003050016618736941186 : +fg
+C_0002204542886704690444 o-- C_0003050016618736941186 : +sp
+C_0002204542886704690444 o-- C_0001601078392939988737 : +glyph
+C_0008754152141087198468 ..> C_0003050016618736941186
+C_0008754152141087198468 --> C_0002340459692765138514 : +on_resize
+C_0008754152141087198468 --> C_0002620409691651640904 : +on_display_scale_changed
+C_0008754152141087198468 --> C_0010565110385499149884 : +on_key
+C_0008754152141087198468 --> C_0011070493512026716506 : +on_text_input
+C_0008754152141087198468 --> C_0011519682376657739126 : +on_text_editing
+C_0008754152141087198468 --> C_0013373323923961518899 : +on_mouse_button
+C_0008754152141087198468 --> C_0005177588658906065630 : +on_mouse_move
+C_0008754152141087198468 --> C_0009958399031821783594 : +on_mouse_wheel
+C_0017708234387737448190 ..> C_0003050016618736941186
+C_0008754152141087198468 <|-- C_0017708234387737448190
+C_0005851409022089412705 ..> C_0008754152141087198468
+C_0005851409022089412705 ..> C_0003050016618736941186
+C_0013689547638217019403 ..> C_0002769108603782251559
+C_0005125093399792312103 ..> C_0013689547638217019403
+C_0005851409022089412705 <|-- C_0005125093399792312103
+C_0010068086230632788976 ..> C_0002204542886704690444
+C_0010068086230632788976 ..> C_0001063800618844957218
+C_0005125093399792312103 <|-- C_0010068086230632788976
+C_0009066721086004078893 ..> C_0014355790039425046038
+C_0010068086230632788976 <|-- C_0010528545404535368578
+C_0014662174383410826506 <|-- C_0010528545404535368578
+C_0009066721086004078893 <|-- C_0010528545404535368578
+C_0002198398896520044869 ..> C_0010068086230632788976
+C_0002198398896520044869 ..> C_0014662174383410826506
+C_0002198398896520044869 ..> C_0009066721086004078893
+C_0002198398896520044869 ..> C_0005125093399792312103
+C_0002198398896520044869 o-- C_0010528545404535368578 : +impl
+C_0004074277629754559155 ..> C_0002204542886704690444
+C_0004074277629754559155 o-- C_0003050016618736941186 : -default_bg_
+C_0004074277629754559155 o-- C_0001063800618844957218 : -cursor_style_
+C_0004074277629754559155 o-- C_0011925734863400406368 : -gpu_cells_
+C_0004074277629754559155 o-- C_0011925734863400406368 : -overlay_cells_
+C_0004074277629754559155 o-- C_0011925734863400406368 : -overlay_cell_
+C_0004074277629754559155 o-- C_0011925734863400406368 : -cursor_saved_cell_
+C_0013902377354588180664 ..> C_0008754152141087198468
+C_0013902377354588180664 ..> C_0002204542886704690444
+C_0013902377354588180664 ..> C_0001063800618844957218
+C_0013902377354588180664 ..> C_0003050016618736941186
+C_0013902377354588180664 o-- C_0004074277629754559155 : -state_
+C_0013902377354588180664 o-- C_0014355790039425046038 : -captured_frame_
+C_0013902377354588180664 --> C_0013689547638217019403 : -render_pass_
+C_0010528545404535368578 <|-- C_0013902377354588180664
+C_0013960298743490800107 o-- C_0013707134870063899134 : -metrics_
+C_0001012062279727924561 ..> C_0003903428271444624477
+C_0014199559189985453081 ..> C_0001012062279727924561
+C_0014199559189985453081 o-- C_0001601078392939988737 : -cluster_cache_
+C_0014199559189985453081 o-- C_0012516551186305172251 : -dirty_rect_
+C_0014199559189985453081 o-- C_0001601078392939988737 : -empty_region_
+C_0012516551186305172251 --+ C_0014199559189985453081
+C_0003903673933831035415 --+ C_0014199559189985453081
+C_0002289317367470524016 --+ C_0014199559189985453081
+C_0002289317367470524016 ..> C_0003903673933831035415
+C_0016018736370340727756 ..> C_0000350597025820103219
+C_0016018736370340727756 ..> C_0011252515339556629560
+C_0016018736370340727756 o-- C_0016018736370340727756 : +storage
+C_0000350597025820103219 --+ C_0016018736370340727756
+C_0011252515339556629560 --+ C_0016018736370340727756
+C_0000883610631005797400 o-- C_0016018736370340727756 : +params
+C_0011076614151414470895 o-- C_0016018736370340727756 : +error
+C_0011076614151414470895 o-- C_0016018736370340727756 : +result
+C_0009056198548702880599 o-- C_0016018736370340727756 : +result
+C_0009056198548702880599 o-- C_0016018736370340727756 : +error
+C_0003241142074092069901 ..> C_0016018736370340727756
+C_0003241142074092069901 ..> C_0009056198548702880599
+C_0011344315874693246311 ..> C_0015913343513510731058
+C_0011344315874693246311 ..> C_0009056198548702880599
+C_0011344315874693246311 ..> C_0000883610631005797400
+C_0011344315874693246311 --> C_0016018736370340727756 : +on_request
+C_0003241142074092069901 <|-- C_0011344315874693246311
+C_0012226307655649286802 --+ C_0015913343513510731058
+C_0012750730958052982030 --+ C_0011344315874693246311
+C_0015344056630990463416 o-- C_0004320916333352057094 : -deps_
+C_0004320916333352057094 --+ C_0015344056630990463416
+C_0004320916333352057094 --> C_0007094459942163548211 : +text_service
+C_0004320916333352057094 --> C_0010065214798730932279 : +ui_panel
+C_0004320916333352057094 --> C_0009529973734970143048 : +host
+C_0004320916333352057094 --> C_0014662174383410826506 : +imgui_host
+C_0004320916333352057094 --> C_0010304326697326195617 : +config
+C_0016411363752645256527 o-- C_0005670466736100490416 : +kind
+C_0016717144239347233716 --> C_0008754152141087198468 : +window
+C_0016717144239347233716 --> C_0010068086230632788976 : +grid_renderer
+C_0016717144239347233716 --> C_0007094459942163548211 : +text_service
+C_0016717144239347233716 o-- C_0016411363752645256527 : +launch_options
+C_0016717144239347233716 o-- C_0002498117424196147261 : +initial_viewport
+C_0009529973734970143048 ..> C_0016717144239347233716
+C_0009529973734970143048 ..> C_0013151736059362932950
+C_0009529973734970143048 ..> C_0002498117424196147261
+C_0009529973734970143048 ..> C_0010565110385499149884
+C_0009529973734970143048 ..> C_0011070493512026716506
+C_0009529973734970143048 ..> C_0011519682376657739126
+C_0009529973734970143048 ..> C_0013373323923961518899
+C_0009529973734970143048 ..> C_0005177588658906065630
+C_0009529973734970143048 ..> C_0009958399031821783594
+C_0009529973734970143048 ..> C_0003050016618736941186
+C_0009529973734970143048 ..> C_0011793774128741621277
+C_0009529973734970143048 ..> C_0006380951599488864125
+C_0009174255010398071322 ..> C_0005125093399792312103
+C_0009529973734970143048 <|-- C_0009174255010398071322
+C_0009174255010398071322 <|-- C_0010202254357218365197
+C_0006767731107981727121 ..> C_0013151736059362932950
+C_0006767731107981727121 o-- C_0017675893223522493133 : -deps_
+C_0006767731107981727121 o-- C_0009529973734970143048 : -host_
+C_0017675893223522493133 --+ C_0006767731107981727121
+C_0017675893223522493133 --> C_0004573737265847298989 : +options
+C_0017675893223522493133 --> C_0010304326697326195617 : +config
+C_0017675893223522493133 --> C_0008754152141087198468 : +window
+C_0017675893223522493133 --> C_0010068086230632788976 : +grid_renderer
+C_0017675893223522493133 --> C_0007094459942163548211 : +text_service
+C_0017675893223522493133 ..> C_0002498117424196147261 : +get_viewport
+C_0017662050381851980314 ..> C_0017708234387737448190
+C_0017662050381851980314 ..> C_0010565110385499149884
+C_0017662050381851980314 o-- C_0012361970431903790474 : -deps_
+C_0012361970431903790474 --+ C_0017662050381851980314
+C_0012361970431903790474 --> C_0012943441053662818710 : +keybindings
+C_0012361970431903790474 --> C_0015344056630990463416 : +gui_action_handler
+C_0012361970431903790474 --> C_0010065214798730932279 : +ui_panel
+C_0012361970431903790474 --> C_0009529973734970143048 : +host
+C_0011906851200581065566 ..> C_0001601078392939988737
+C_0011906851200581065566 ..> C_0006142460100207035646
+C_0007094459942163548211 ..> C_0005145284113847430245
+C_0007094459942163548211 ..> C_0013707134870063899134
+C_0007094459942163548211 ..> C_0001601078392939988737
+C_0007094459942163548211 ..> C_0006142460100207035646
+C_0011906851200581065566 <|-- C_0007094459942163548211
+C_0010304326697326195617 o-- C_0012943441053662818710 : +keybindings
+C_0004573737265847298989 o-- C_0008822150083529173387 : +config_overrides
+C_0004573737265847298989 o-- C_0005670466736100490416 : +host_kind
+C_0004573737265847298989 ..> C_0002198398896520044869 : +renderer_create_fn
+C_0006759011979937922770 o-- C_0006199028389812970130 : +startup_steps
+C_0010065214798730932279 ..> C_0010939797581728659442
+C_0010065214798730932279 ..> C_0006759011979937922770
+C_0010065214798730932279 ..> C_0010565110385499149884
+C_0010065214798730932279 ..> C_0005177588658906065630
+C_0010065214798730932279 ..> C_0013373323923961518899
+C_0010065214798730932279 ..> C_0009958399031821783594
+C_0010065214798730932279 ..> C_0011070493512026716506
+C_0004474198408368591089 ..> C_0002498117424196147261
+C_0004474198408368591089 o-- C_0004573737265847298989 : -options_
+C_0004474198408368591089 o-- C_0010304326697326195617 : -config_
+C_0004474198408368591089 o-- C_0017708234387737448190 : -window_
+C_0004474198408368591089 o-- C_0002198398896520044869 : -renderer_
+C_0004474198408368591089 o-- C_0007094459942163548211 : -text_service_
+C_0004474198408368591089 o-- C_0010065214798730932279 : -ui_panel_
+C_0004474198408368591089 o-- C_0006767731107981727121 : -host_manager_
+C_0004474198408368591089 o-- C_0015344056630990463416 : -gui_action_handler_
+C_0004474198408368591089 o-- C_0017662050381851980314 : -input_dispatcher_
+C_0004474198408368591089 o-- C_0006199028389812970130 : -startup_steps_
+C_0002608485120571348914 --+ C_0010065214798730932279
+C_0003400465826989566136 --+ C_0007094459942163548211
+
+'Generated with clang-uml, version 0.6.2
+'LLVM version Homebrew clang version 21.1.8
+@enduml

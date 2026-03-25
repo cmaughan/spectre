@@ -1,0 +1,42 @@
+#version 450
+
+layout(set = 0, binding = 0) uniform FrameUniforms {
+    mat4 view;
+    mat4 proj;
+    vec4 light_dir;
+    vec4 point_light_pos;
+    vec4 label_fade_px;
+    vec4 render_tuning;
+} frame;
+
+layout(push_constant) uniform ObjectUniforms {
+    mat4 world;
+    vec4 color;
+    vec4 uv_rect;
+    vec4 label_metrics;
+} object_data;
+
+layout(location = 0) in vec3 in_position;
+layout(location = 1) in vec3 in_normal;
+layout(location = 2) in vec3 in_color;
+layout(location = 3) in vec2 in_uv;
+layout(location = 4) in float in_tex_blend;
+
+layout(location = 0) out vec3 out_normal_ws;
+layout(location = 1) out vec3 out_base_color;
+layout(location = 2) out vec3 out_world_position;
+layout(location = 3) out vec2 out_atlas_uv;
+layout(location = 4) out float out_tex_blend;
+layout(location = 5) out vec2 out_label_ink_pixel_size;
+
+void main()
+{
+    vec4 world_position = object_data.world * vec4(in_position, 1.0);
+    out_normal_ws = normalize(mat3(object_data.world) * in_normal);
+    out_base_color = in_color * object_data.color.rgb;
+    out_world_position = world_position.xyz;
+    out_atlas_uv = mix(object_data.uv_rect.xy, object_data.uv_rect.zw, in_uv);
+    out_tex_blend = in_tex_blend;
+    out_label_ink_pixel_size = object_data.label_metrics.xy;
+    gl_Position = frame.proj * frame.view * world_position;
+}

@@ -1,0 +1,747 @@
+#include <catch2/catch_all.hpp>
+
+#ifdef DRAXUL_ENABLE_MEGACITY
+
+#include "isometric_camera.h"
+#include "isometric_scene_pass.h"
+#include "mesh_library.h"
+#include "scene_world.h"
+#include "semantic_city_layout.h"
+#include "support/fake_renderer.h"
+#include "support/fake_window.h"
+#include "support/test_host_callbacks.h"
+#include <SDL3/SDL.h>
+#include <draxul/megacity_host.h>
+#include <draxul/text_service.h>
+#include <numbers>
+#include <thread>
+
+using namespace draxul;
+
+namespace
+{
+
+float triangle_up_normal_y(const MeshData& mesh, size_t triangle_index)
+{
+    const size_t base = triangle_index * 3;
+    const glm::vec3 p0 = mesh.vertices[mesh.indices[base + 0]].position;
+    const glm::vec3 p1 = mesh.vertices[mesh.indices[base + 1]].position;
+    const glm::vec3 p2 = mesh.vertices[mesh.indices[base + 2]].position;
+    return glm::cross(p1 - p0, p2 - p0).y;
+}
+
+glm::vec2 ndc_of_point(const SceneSnapshot& scene, const glm::vec3& point)
+{
+    const glm::vec4 clip = scene.camera.proj * scene.camera.view * glm::vec4(point, 1.0f);
+    return glm::vec2(clip) / clip.w;
+}
+
+SceneSnapshot snapshot_from_camera(const IsometricCamera& camera)
+{
+    SceneSnapshot scene;
+    scene.camera.view = camera.view_matrix();
+    scene.camera.proj = camera.proj_matrix();
+    return scene;
+}
+
+void pump_until_idle(MegaCityHost& host, int max_steps = 64)
+{
+    for (int i = 0; i < max_steps; ++i)
+    {
+        const auto next_tick = host.next_deadline();
+        if (!next_tick.has_value())
+            return;
+        std::this_thread::sleep_until(*next_tick);
+        host.pump();
+    }
+}
+
+struct TestLotRect
+{
+    float min_x;
+    float max_x;
+    float min_z;
+    float max_z;
+};
+
+TestLotRect test_building_lot(const SemanticCityBuilding& building)
+{
+    const float half_extent = building.metrics.footprint * 0.5f + building.metrics.road_width;
+    return {
+        building.center.x - half_extent,
+        building.center.x + half_extent,
+        building.center.y - half_extent,
+        building.center.y + half_extent,
+    };
+}
+
+bool test_lots_overlap(const TestLotRect& a, const TestLotRect& b)
+{
+    return a.min_x < b.max_x && a.max_x > b.min_x && a.min_z < b.max_z && a.max_z > b.min_z;
+}
+
+} // namespace
+
+TEST_CASE("megacity world maps grid coordinates to tile centers", "[megacity]")
+{
+    SceneWorld world;
+
+    const glm::vec3 origin = world.grid_to_world(0, 0);
+    const glm::vec3 corner = world.grid_to_world(4, 4);
+    const glm::vec3 elevated = world.grid_to_world(2, 3, 2.0f);
+    const glm::vec3 fractional = world.grid_to_world(2.25f, 3.5f);
+
+    CHECK(origin.x == Catch::Approx(0.5f));
+    CHECK(origin.y == Catch::Approx(0.0f));
+    CHECK(origin.z == Catch::Approx(0.5f));
+
+    CHECK(corner.x == Catch::Approx(4.5f));
+    CHECK(corner.z == Catch::Approx(4.5f));
+
+    CHECK(elevated.x == Catch::Approx(2.5f));
+    CHECK(elevated.y == Catch::Approx(2.0f));
+    CHECK(elevated.z == Catch::Approx(3.5f));
+
+    CHECK(fractional.x == Catch::Approx(2.75f));
+    CHECK(fractional.z == Catch::Approx(4.0f));
+}
+
+TEST_CASE("megacity world starts empty", "[megacity]")
+{
+    SceneWorld world;
+
+    const auto view = world.registry().view<const Appearance>();
+    CHECK(view.begin() == view.end());
+}
+
+TEST_CASE("megacity camera projection responds to viewport aspect", "[megacity]")
+{
+    IsometricCamera camera;
+    camera.look_at_world_center(5.0f, 5.0f);
+
+    camera.set_viewport(100, 100);
+    const glm::mat4 square = camera.proj_matrix();
+
+    camera.set_viewport(200, 100);
+    const glm::mat4 wide = camera.proj_matrix();
+
+    CHECK(wide[0][0] < square[0][0]);
+    CHECK(wide[1][1] == Catch::Approx(square[1][1]));
+}
+
+TEST_CASE("megacity camera footprint covers the centered world", "[megacity]")
+{
+    IsometricCamera camera;
+    camera.look_at_world_center(5.0f, 5.0f);
+    camera.set_viewport(160, 100);
+
+    const GroundFootprint footprint = camera.visible_ground_footprint();
+
+    CHECK(footprint.min_x < 0.5f);
+    CHECK(footprint.max_x > 4.5f);
+    CHECK(footprint.min_z < 0.5f);
+    CHECK(footprint.max_z > 4.5f);
+}
+
+TEST_CASE("megacity camera footprint follows a retargeted focus point", "[megacity]")
+{
+    IsometricCamera camera;
+    camera.look_at_world_center(5.0f, 5.0f);
+    camera.set_viewport(160, 100);
+
+    const GroundFootprint centered = camera.visible_ground_footprint();
+    camera.set_target({ 14.5f, 0.0f, 9.5f });
+    const GroundFootprint shifted = camera.visible_ground_footprint();
+
+    CHECK(shifted.min_x > centered.min_x + 8.0f);
+    CHECK(shifted.max_x > centered.max_x + 8.0f);
+    CHECK(shifted.min_z > centered.min_z + 4.0f);
+    CHECK(shifted.max_z > centered.max_z + 4.0f);
+}
+
+TEST_CASE("megacity camera grows the far clip for large framed worlds", "[megacity]")
+{
+    IsometricCamera camera;
+    camera.frame_world_bounds(-120.0f, 120.0f, -90.0f, 90.0f);
+
+    CHECK(camera.far_plane() > 300.0f);
+}
+
+TEST_CASE("megacity camera zoom is clamped between close and city-scale framing", "[megacity]")
+{
+    IsometricCamera camera;
+    camera.frame_world_bounds(-30.0f, 30.0f, -20.0f, 20.0f);
+
+    camera.zoom_by(-20.0f);
+    CHECK(camera.zoom_half_height() == Catch::Approx(2.5f));
+
+    camera.zoom_by(20.0f);
+    CHECK(camera.zoom_half_height() == Catch::Approx(60.0f));
+}
+
+TEST_CASE("megacity camera pitch is clamped to a sensible range", "[megacity]")
+{
+    IsometricCamera camera;
+    camera.frame_world_bounds(-10.0f, 10.0f, -10.0f, 10.0f);
+
+    camera.adjust_pitch(10.0f);
+    CHECK(camera.pitch_angle() == Catch::Approx(1.22173048f));
+
+    camera.adjust_pitch(-10.0f);
+    CHECK(camera.pitch_angle() == Catch::Approx(0.43633231f));
+}
+
+TEST_CASE("semantic city layout starts with the tallest building at the origin", "[megacity]")
+{
+    std::vector<CityClassRecord> rows;
+
+    CityClassRecord app;
+    app.qualified_name = "App";
+    app.source_file_path = "app/app.h";
+    app.entity_kind = "building";
+    app.base_size = 16;
+    app.building_functions = 9;
+    app.function_sizes = { 24, 18, 14 };
+    app.road_size = 4;
+    rows.push_back(app);
+
+    CityClassRecord dispatcher;
+    dispatcher.qualified_name = "InputDispatcher";
+    dispatcher.source_file_path = "app/input_dispatcher.h";
+    dispatcher.entity_kind = "building";
+    dispatcher.base_size = 6;
+    dispatcher.building_functions = 4;
+    dispatcher.function_sizes = { 12, 10 };
+    dispatcher.road_size = 2;
+    rows.push_back(dispatcher);
+
+    CityClassRecord gui;
+    gui.qualified_name = "GuiActionHandler";
+    gui.source_file_path = "app/gui_action_handler.h";
+    gui.entity_kind = "building";
+    gui.base_size = 4;
+    gui.building_functions = 3;
+    gui.function_sizes = { 9, 8 };
+    gui.road_size = 1;
+    rows.push_back(gui);
+
+    CityClassRecord abstract_type;
+    abstract_type.qualified_name = "IHost";
+    abstract_type.source_file_path = "libs/draxul-host/include/draxul/host.h";
+    abstract_type.entity_kind = "tower";
+    abstract_type.is_abstract = true;
+    abstract_type.base_size = 2;
+    abstract_type.building_functions = 5;
+    abstract_type.function_sizes = { 6, 6, 6 };
+    abstract_type.road_size = 3;
+    rows.push_back(abstract_type);
+
+    const SemanticCityLayout layout = build_semantic_city_layout(rows);
+
+    REQUIRE(layout.buildings.size() == 3);
+    CHECK(layout.buildings[0].qualified_name == "App");
+    CHECK(layout.buildings[0].center.x == Catch::Approx(0.0f));
+    CHECK(layout.buildings[0].center.y == Catch::Approx(0.0f));
+    CHECK(layout.min_x < 0.0f);
+    CHECK(layout.max_x > 0.0f);
+    CHECK(layout.min_z < 0.0f);
+    CHECK(layout.max_z > 0.0f);
+
+    REQUIRE(layout.buildings[0].layers.size() == 3);
+    const float total_layer_height = layout.buildings[0].layers[0].height
+        + layout.buildings[0].layers[1].height
+        + layout.buildings[0].layers[2].height;
+    CHECK(total_layer_height == Catch::Approx(layout.buildings[0].metrics.height));
+    CHECK(layout.buildings[0].layers[0].function_size == 24);
+    CHECK(layout.buildings[0].layers[1].function_size == 18);
+    CHECK(layout.buildings[0].layers[2].function_size == 14);
+    CHECK(layout.buildings[0].layers[0].height > layout.buildings[0].layers[1].height);
+    CHECK(layout.buildings[0].layers[1].height > layout.buildings[0].layers[2].height);
+
+    for (size_t i = 0; i < layout.buildings.size(); ++i)
+    {
+        for (size_t j = i + 1; j < layout.buildings.size(); ++j)
+        {
+            CHECK_FALSE(test_lots_overlap(
+                test_building_lot(layout.buildings[i]),
+                test_building_lot(layout.buildings[j])));
+        }
+    }
+}
+
+TEST_CASE("semantic building metrics can bypass clamping", "[megacity]")
+{
+    CityClassRecord row;
+    row.entity_kind = "building";
+    row.base_size = 144;
+    row.building_functions = 36;
+    row.function_sizes = { 200, 180, 160, 140, 120, 100, 80 };
+    row.road_size = 80;
+
+    const BuildingMetrics clamped = derive_building_metrics(row, true);
+    const BuildingMetrics unclamped = derive_building_metrics(row, false);
+
+    CHECK(clamped.footprint == Catch::Approx(9.0f));
+    CHECK(clamped.height == Catch::Approx(12.0f));
+    CHECK(clamped.road_width == Catch::Approx(3.0f));
+
+    CHECK(unclamped.footprint > clamped.footprint);
+    CHECK(unclamped.height > clamped.height);
+    CHECK(unclamped.road_width > clamped.road_width);
+}
+
+TEST_CASE("semantic city layout can hide test entities by source path", "[megacity]")
+{
+    CityClassRecord app_row;
+    app_row.name = "App";
+    app_row.qualified_name = "App";
+    app_row.module_path = "app";
+    app_row.source_file_path = "app/app.cpp";
+    app_row.entity_kind = "building";
+    app_row.base_size = 8;
+    app_row.building_functions = 4;
+    app_row.function_sizes = { 20, 16 };
+    app_row.road_size = 2;
+
+    CityClassRecord test_row;
+    test_row.name = "FakeRenderer";
+    test_row.qualified_name = "FakeRenderer";
+    test_row.module_path = "tests";
+    test_row.source_file_path = "tests/support/fake_renderer.h";
+    test_row.entity_kind = "building";
+    test_row.base_size = 4;
+    test_row.building_functions = 3;
+    test_row.function_sizes = { 10, 8 };
+    test_row.road_size = 1;
+
+    const std::vector<CityClassRecord> rows{ app_row, test_row };
+    const SemanticCityLayout visible = build_semantic_city_layout(rows, true, false);
+    const SemanticCityLayout hidden = build_semantic_city_layout(rows, true, true);
+
+    REQUIRE(visible.buildings.size() == 2);
+    REQUIRE(hidden.buildings.size() == 1);
+    CHECK(hidden.buildings[0].qualified_name == "App");
+    CHECK(is_test_semantic_source(test_row.source_file_path));
+    CHECK_FALSE(is_test_semantic_source(app_row.source_file_path));
+}
+
+TEST_CASE("semantic city road strips form a square ring around a building", "[megacity]")
+{
+    SemanticCityBuilding building;
+    building.center = { 0.0f, 0.0f };
+    building.metrics = {
+        .footprint = 4.0f,
+        .height = 8.0f,
+        .road_width = 1.0f,
+    };
+
+    const auto roads = build_road_segments(building);
+
+    CHECK(roads[0].center.x == Catch::Approx(0.0f));
+    CHECK(roads[0].center.y == Catch::Approx(2.5f));
+    CHECK(roads[0].extent.x == Catch::Approx(6.0f));
+    CHECK(roads[0].extent.y == Catch::Approx(1.0f));
+
+    CHECK(roads[1].center.x == Catch::Approx(0.0f));
+    CHECK(roads[1].center.y == Catch::Approx(-2.5f));
+    CHECK(roads[1].extent.x == Catch::Approx(6.0f));
+    CHECK(roads[1].extent.y == Catch::Approx(1.0f));
+
+    CHECK(roads[2].center.x == Catch::Approx(-2.5f));
+    CHECK(roads[2].center.y == Catch::Approx(0.0f));
+    CHECK(roads[2].extent.x == Catch::Approx(1.0f));
+    CHECK(roads[2].extent.y == Catch::Approx(4.0f));
+
+    CHECK(roads[3].center.x == Catch::Approx(2.5f));
+    CHECK(roads[3].center.y == Catch::Approx(0.0f));
+    CHECK(roads[3].extent.x == Catch::Approx(1.0f));
+    CHECK(roads[3].extent.y == Catch::Approx(4.0f));
+}
+
+TEST_CASE("roof sign mesh textures only the top face", "[megacity]")
+{
+    const MeshData mesh = build_roof_sign_mesh();
+
+    REQUIRE(mesh.vertices.size() == 24);
+    REQUIRE(mesh.indices.size() == 36);
+
+    size_t textured_vertices = 0;
+    size_t top_facing_textured_vertices = 0;
+    for (const auto& vertex : mesh.vertices)
+    {
+        if (vertex.tex_blend > 0.5f)
+        {
+            textured_vertices++;
+            if (vertex.normal.y > 0.5f)
+                top_facing_textured_vertices++;
+        }
+    }
+
+    CHECK(textured_vertices == 4);
+    CHECK(top_facing_textured_vertices == 4);
+}
+
+TEST_CASE("wall sign mesh textures only the front face", "[megacity]")
+{
+    const MeshData mesh = build_wall_sign_mesh();
+
+    REQUIRE(mesh.vertices.size() == 24);
+    REQUIRE(mesh.indices.size() == 36);
+
+    size_t textured_vertices = 0;
+    size_t front_facing_textured_vertices = 0;
+    for (const auto& vertex : mesh.vertices)
+    {
+        if (vertex.tex_blend > 0.5f)
+        {
+            textured_vertices++;
+            if (vertex.normal.z > 0.5f)
+                front_facing_textured_vertices++;
+        }
+    }
+
+    CHECK(textured_vertices == 4);
+    CHECK(front_facing_textured_vertices == 4);
+}
+
+TEST_CASE("semantic city layout places later lots in edge contact with existing roads", "[megacity]")
+{
+    std::vector<CityClassRecord> rows;
+
+    CityClassRecord app;
+    app.qualified_name = "App";
+    app.source_file_path = "app/app.h";
+    app.entity_kind = "building";
+    app.base_size = 16;
+    app.building_functions = 9;
+    app.function_sizes = { 24, 18, 14 };
+    app.road_size = 4;
+    rows.push_back(app);
+
+    CityClassRecord dispatcher = app;
+    dispatcher.qualified_name = "InputDispatcher";
+    dispatcher.source_file_path = "app/input_dispatcher.h";
+    rows.push_back(dispatcher);
+
+    const SemanticCityLayout layout = build_semantic_city_layout(rows);
+
+    REQUIRE(layout.buildings.size() == 2);
+    const TestLotRect a = test_building_lot(layout.buildings[0]);
+    const TestLotRect b = test_building_lot(layout.buildings[1]);
+
+    const bool touch_x = a.max_x == Catch::Approx(b.min_x) || b.max_x == Catch::Approx(a.min_x);
+    const bool touch_z = a.max_z == Catch::Approx(b.min_z) || b.max_z == Catch::Approx(a.min_z);
+    const float overlap_x = std::min(a.max_x, b.max_x) - std::max(a.min_x, b.min_x);
+    const float overlap_z = std::min(a.max_z, b.max_z) - std::max(a.min_z, b.min_z);
+    const bool shares_edge = (touch_x && overlap_z > 0.0f) || (touch_z && overlap_x > 0.0f);
+
+    CHECK_FALSE(test_lots_overlap(a, b));
+    CHECK(shares_edge);
+}
+
+TEST_CASE("semantic megacity layout spirals modules around the largest module", "[megacity]")
+{
+    SemanticCityModuleInput app;
+    app.module_path = "app";
+
+    CityClassRecord app_main;
+    app_main.module_path = app.module_path;
+    app_main.qualified_name = "App";
+    app_main.source_file_path = "app/app.h";
+    app_main.entity_kind = "building";
+    app_main.base_size = 16;
+    app_main.building_functions = 9;
+    app_main.function_sizes = { 24, 18, 14 };
+    app_main.road_size = 4;
+    app.rows.push_back(app_main);
+
+    CityClassRecord dispatcher = app_main;
+    dispatcher.qualified_name = "InputDispatcher";
+    dispatcher.source_file_path = "app/input_dispatcher.h";
+    dispatcher.base_size = 8;
+    dispatcher.building_functions = 5;
+    dispatcher.function_sizes = { 12, 10, 8 };
+    dispatcher.road_size = 2;
+    app.rows.push_back(dispatcher);
+
+    SemanticCityModuleInput host;
+    host.module_path = "libs/draxul-host";
+
+    CityClassRecord terminal;
+    terminal.module_path = host.module_path;
+    terminal.qualified_name = "TerminalHostBase";
+    terminal.source_file_path = "libs/draxul-host/include/draxul/terminal_host_base.h";
+    terminal.entity_kind = "building";
+    terminal.base_size = 6;
+    terminal.building_functions = 4;
+    terminal.function_sizes = { 10, 8 };
+    terminal.road_size = 2;
+    host.rows.push_back(terminal);
+
+    const SemanticMegacityLayout layout = build_semantic_megacity_layout({ host, app });
+
+    REQUIRE(layout.modules.size() == 2);
+    REQUIRE(layout.building_count() == 3);
+    CHECK(layout.modules[0].module_path == "app");
+    CHECK(layout.modules[0].offset.x == Catch::Approx(0.0f));
+    CHECK(layout.modules[0].offset.y == Catch::Approx(0.0f));
+
+    const auto& centered = layout.modules[0];
+    const auto& neighbor = layout.modules[1];
+    const bool touch_x = centered.max_x == Catch::Approx(neighbor.min_x)
+        || neighbor.max_x == Catch::Approx(centered.min_x);
+    const bool touch_z = centered.max_z == Catch::Approx(neighbor.min_z)
+        || neighbor.max_z == Catch::Approx(centered.min_z);
+    const float overlap_x = std::min(centered.max_x, neighbor.max_x)
+        - std::max(centered.min_x, neighbor.min_x);
+    const float overlap_z = std::min(centered.max_z, neighbor.max_z)
+        - std::max(centered.min_z, neighbor.min_z);
+    const bool shares_edge = (touch_x && overlap_z > 0.0f) || (touch_z && overlap_x > 0.0f);
+
+    CHECK(shares_edge);
+    CHECK(neighbor.buildings[0].module_path == neighbor.module_path);
+}
+
+TEST_CASE("megacity camera orbit keeps looking at the same world focus", "[megacity]")
+{
+    IsometricCamera camera;
+    camera.look_at_world_center(5.0f, 5.0f);
+    camera.set_viewport(160, 100);
+    camera.set_target({ 8.5f, 0.0f, 6.5f });
+
+    const glm::mat4 before_view = camera.view_matrix();
+    const GroundFootprint before = camera.visible_ground_footprint();
+    camera.orbit_target(std::numbers::pi_v<float> * 0.5f);
+    const glm::mat4 after_view = camera.view_matrix();
+    const GroundFootprint after = camera.visible_ground_footprint();
+
+    CHECK(after.min_x < 8.5f);
+    CHECK(after.max_x > 8.5f);
+    CHECK(after.min_z < 6.5f);
+    CHECK(after.max_z > 6.5f);
+    CHECK(after_view[2][0] != Catch::Approx(before_view[2][0]));
+    CHECK(after_view[0][2] != Catch::Approx(before_view[0][2]));
+    CHECK(before.min_x < 8.5f);
+    CHECK(before.max_x > 8.5f);
+}
+
+TEST_CASE("megacity camera planar axes follow the current view", "[megacity]")
+{
+    IsometricCamera camera;
+    camera.look_at_world_center(5.0f, 5.0f);
+
+    const glm::vec2 initial_right = camera.planar_right_vector();
+    const glm::vec2 initial_up = camera.planar_up_vector();
+    camera.orbit_target(std::numbers::pi_v<float> * 0.5f);
+    const glm::vec2 rotated_right = camera.planar_right_vector();
+    const glm::vec2 rotated_up = camera.planar_up_vector();
+
+    CHECK(glm::length(initial_right) == Catch::Approx(1.0f));
+    CHECK(glm::length(initial_up) == Catch::Approx(1.0f));
+    CHECK(std::abs(glm::dot(initial_right, initial_up)) < 0.01f);
+    CHECK(glm::length(rotated_right) == Catch::Approx(1.0f));
+    CHECK(glm::length(rotated_up) == Catch::Approx(1.0f));
+    CHECK(std::abs(glm::dot(rotated_right, rotated_up)) < 0.01f);
+    CHECK(std::abs(glm::dot(initial_right, rotated_right)) < 0.01f);
+    CHECK(std::abs(glm::dot(initial_up, rotated_up)) < 0.01f);
+}
+
+TEST_CASE("megacity camera screen drag moves content in the same direction", "[megacity]")
+{
+    IsometricCamera camera;
+    camera.look_at_world_center(5.0f, 5.0f);
+    camera.set_viewport(240, 120);
+
+    const glm::vec3 probe{ 0.5f, 0.0f, 0.5f };
+    const glm::vec2 before = ndc_of_point(snapshot_from_camera(camera), probe);
+
+    const glm::vec2 pan = camera.pan_delta_for_screen_drag(glm::vec2(32.0f, -18.0f));
+    camera.translate_target(pan.x, pan.y);
+
+    const glm::vec2 after = ndc_of_point(snapshot_from_camera(camera), probe);
+
+    CHECK(after.x > before.x);
+    CHECK(after.y > before.y);
+}
+
+TEST_CASE("megacity host mouse drag pans and alt-drag rotates", "[megacity]")
+{
+    tests::FakeWindow window;
+    tests::TestHostCallbacks callbacks;
+    TextService text_service;
+    tests::FakeTermRenderer renderer;
+    MegaCityHost host;
+
+    HostLaunchOptions launch;
+    launch.kind = HostKind::MegaCity;
+
+    HostViewport viewport;
+    viewport.pixel_size = { 800, 600 };
+    viewport.grid_size = { 1, 1 };
+
+    HostContext context(&window, &renderer, &text_service, std::move(launch), viewport, window.display_ppi_);
+
+    REQUIRE(host.initialize(context, callbacks));
+    host.attach_3d_renderer(renderer);
+
+    auto* pass = dynamic_cast<IsometricScenePass*>(renderer.last_render_pass.get());
+    REQUIRE(pass != nullptr);
+
+    const glm::vec3 probe{ 0.5f, 0.0f, 0.5f };
+    const glm::vec2 before_pan = ndc_of_point(pass->scene(), probe);
+
+    host.on_mouse_button({ SDL_BUTTON_LEFT, true, kModNone, { 400, 300 } });
+    host.on_mouse_move({ kModNone, { 452, 252 } });
+    host.pump();
+
+    const glm::vec2 after_pan = ndc_of_point(pass->scene(), probe);
+    CHECK(after_pan.x > before_pan.x);
+    CHECK(after_pan.y > before_pan.y);
+
+    const glm::mat4 before_rotate = pass->scene().camera.view;
+    host.on_mouse_move({ kModAlt, { 520, 252 } });
+    host.pump();
+    pump_until_idle(host);
+
+    const glm::mat4 after_rotate = pass->scene().camera.view;
+    CHECK(after_rotate[0][0] != Catch::Approx(before_rotate[0][0]));
+    CHECK(after_rotate[2][0] != Catch::Approx(before_rotate[2][0]));
+
+    const glm::mat4 stable_after_horizontal_scrub = pass->scene().camera.view;
+    host.on_mouse_move({ kModAlt, { 520, 180 } });
+    host.pump();
+
+    const glm::mat4 after_vertical_alt_scrub = pass->scene().camera.view;
+    CHECK(after_vertical_alt_scrub[0][0] == Catch::Approx(stable_after_horizontal_scrub[0][0]));
+    CHECK(after_vertical_alt_scrub[2][0] == Catch::Approx(stable_after_horizontal_scrub[2][0]));
+
+    host.on_mouse_button({ SDL_BUTTON_LEFT, false, kModAlt, { 520, 180 } });
+    host.shutdown();
+}
+
+TEST_CASE("megacity host honors fractional mouse delta for drag input", "[megacity]")
+{
+    tests::FakeWindow window;
+    tests::TestHostCallbacks callbacks;
+    TextService text_service;
+    tests::FakeTermRenderer renderer;
+    MegaCityHost host;
+
+    HostLaunchOptions launch;
+    launch.kind = HostKind::MegaCity;
+
+    HostViewport viewport;
+    viewport.pixel_size = { 800, 600 };
+    viewport.grid_size = { 1, 1 };
+
+    HostContext context(&window, &renderer, &text_service, std::move(launch), viewport, window.display_ppi_);
+
+    REQUIRE(host.initialize(context, callbacks));
+    host.attach_3d_renderer(renderer);
+
+    auto* pass = dynamic_cast<IsometricScenePass*>(renderer.last_render_pass.get());
+    REQUIRE(pass != nullptr);
+
+    const glm::vec3 probe{ 0.5f, 0.0f, 0.5f };
+
+    host.on_mouse_button({ SDL_BUTTON_LEFT, true, kModNone, { 400, 300 } });
+
+    const glm::vec2 before_pan = ndc_of_point(pass->scene(), probe);
+    host.on_mouse_move({ kModNone, { 400, 300 }, { 18.5f, -10.25f } });
+    host.pump();
+
+    const glm::vec2 after_pan = ndc_of_point(pass->scene(), probe);
+    CHECK(after_pan.x > before_pan.x);
+    CHECK(after_pan.y > before_pan.y);
+
+    const glm::mat4 before_rotate = pass->scene().camera.view;
+    host.on_mouse_move({ kModAlt, { 400, 300 }, { 12.5f, 0.0f } });
+    host.pump();
+    pump_until_idle(host);
+
+    const glm::mat4 after_rotate = pass->scene().camera.view;
+    CHECK(after_rotate[0][0] != Catch::Approx(before_rotate[0][0]));
+    CHECK(after_rotate[2][0] != Catch::Approx(before_rotate[2][0]));
+
+    host.on_mouse_button({ SDL_BUTTON_LEFT, false, kModAlt, { 400, 300 } });
+    host.shutdown();
+}
+
+TEST_CASE("megacity host keeps catching up between mouse samples", "[megacity]")
+{
+    tests::FakeWindow window;
+    tests::TestHostCallbacks callbacks;
+    TextService text_service;
+    tests::FakeTermRenderer renderer;
+    MegaCityHost host;
+
+    HostLaunchOptions launch;
+    launch.kind = HostKind::MegaCity;
+
+    HostViewport viewport;
+    viewport.pixel_size = { 800, 600 };
+    viewport.grid_size = { 1, 1 };
+
+    HostContext context(&window, &renderer, &text_service, std::move(launch), viewport, window.display_ppi_);
+
+    REQUIRE(host.initialize(context, callbacks));
+    host.attach_3d_renderer(renderer);
+
+    auto* pass = dynamic_cast<IsometricScenePass*>(renderer.last_render_pass.get());
+    REQUIRE(pass != nullptr);
+
+    const glm::vec3 probe{ 0.5f, 0.0f, 0.5f };
+
+    host.on_mouse_button({ SDL_BUTTON_LEFT, true, kModNone, { 400, 300 } });
+    host.on_mouse_move({ kModNone, { 400, 300 }, { 40.0f, -24.0f } });
+    host.pump();
+
+    const glm::vec2 after_first_pump = ndc_of_point(pass->scene(), probe);
+    const auto next_tick = host.next_deadline();
+    REQUIRE(next_tick.has_value());
+
+    std::this_thread::sleep_until(*next_tick);
+    host.pump();
+
+    const glm::vec2 after_second_pump = ndc_of_point(pass->scene(), probe);
+    CHECK(after_second_pump.x > after_first_pump.x);
+    CHECK(after_second_pump.y > after_first_pump.y);
+
+    host.on_mouse_button({ SDL_BUTTON_LEFT, false, kModNone, { 400, 300 } });
+    host.shutdown();
+}
+
+TEST_CASE("megacity mesh library builds expected primitive counts", "[megacity]")
+{
+    const MeshData cube = build_unit_cube_mesh();
+    const MeshData floor = build_floor_box_mesh();
+    const MeshData filled = build_grid_mesh(2, 2, 1.0f);
+
+    FloorGridSpec grid;
+    grid.enabled = true;
+    grid.min_x = 0;
+    grid.max_x = 2;
+    grid.min_z = 0;
+    grid.max_z = 2;
+    grid.tile_size = 1.0f;
+    grid.line_width = 0.04f;
+
+    const MeshData outline = build_outline_grid_mesh(grid);
+
+    CHECK(cube.vertices.size() == 24);
+    CHECK(cube.indices.size() == 36);
+
+    CHECK(floor.vertices.size() == 24);
+    CHECK(floor.indices.size() == 36);
+    CHECK(triangle_up_normal_y(floor, 8) > 0.0f);
+
+    CHECK(filled.vertices.size() == 16);
+    CHECK(filled.indices.size() == 24);
+    CHECK(triangle_up_normal_y(filled, 0) > 0.0f);
+
+    CHECK(outline.vertices.size() == 24);
+    CHECK(outline.indices.size() == 36);
+    CHECK(triangle_up_normal_y(outline, 0) > 0.0f);
+}
+
+#endif
