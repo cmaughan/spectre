@@ -33,6 +33,24 @@ run() {
   "$@"
 }
 
+check_metal_toolchain() {
+  if [ "$(uname -s)" != "Darwin" ]; then
+    return 0
+  fi
+
+  if ! xcrun --find metal >/dev/null 2>&1; then
+    echo "Missing Metal compiler. Install Xcode Command Line Tools and the Metal toolchain." >&2
+    echo "Suggested fix: xcodebuild -downloadComponent MetalToolchain" >&2
+    exit 1
+  fi
+
+  if ! xcrun -sdk macosx metal -v >/dev/null 2>&1; then
+    echo "The Metal compiler is present but not runnable because the Metal Toolchain is missing." >&2
+    echo "Suggested fix: xcodebuild -downloadComponent MetalToolchain" >&2
+    exit 1
+  fi
+}
+
 cache_build_type() {
   if [ ! -f build/CMakeCache.txt ]; then
     return 1
@@ -76,6 +94,7 @@ esac
 
 echo
 echo "=== $CONFIG ==="
+check_metal_toolchain
 if should_configure "$CONFIG"; then
   run cmake --preset "$PRESET"
 else
