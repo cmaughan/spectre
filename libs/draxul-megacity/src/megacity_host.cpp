@@ -1070,11 +1070,28 @@ void MegaCityHost::rebuild_semantic_city()
                     const std::string& btext = building.display_name.empty() ? building.qualified_name : building.display_name;
                     const TextService* ts = sign_text_service_ ? sign_text_service_.get() : nullptr;
                     const auto face_signs = place_building_signs(building, btext, ts);
+                    const SignMetrics first_sign = make_sign_metrics(face_signs[0], it->second);
+                    const float cap_height = first_sign.height;
+
+                    // Add a cap block so signs don't obscure the top function layer.
+                    if (cap_height > 0.0f)
+                    {
+                        BuildingMetrics cap_metrics = building.metrics;
+                        cap_metrics.height = cap_height;
+                        world_->create_building(
+                            building.center.x,
+                            building.center.y,
+                            building.metrics.height,
+                            cap_metrics,
+                            module_color,
+                            SourceSymbol{ building.source_file_path, building.qualified_name });
+                    }
+
+                    const float total_height = building.metrics.height + cap_height;
                     for (const SignPlacementSpec& placement : face_signs)
                     {
                         const SignMetrics sign = make_sign_metrics(placement, it->second);
-                        // Aligned with the top of the building, on the wall face.
-                        const float sign_y = building.metrics.height - sign.height * 0.5f;
+                        const float sign_y = total_height - sign.height * 0.5f;
                         world_->create_sign(
                             placement.center.x,
                             placement.center.y,

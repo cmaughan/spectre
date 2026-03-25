@@ -42,32 +42,30 @@ int function_mass(const CityClassRecord& row)
 
 std::vector<SemanticBuildingLayer> build_function_layers(const CityClassRecord& row, const BuildingMetrics& metrics)
 {
-    std::vector<int> sorted_sizes;
-    sorted_sizes.reserve(row.function_sizes.size());
+    std::vector<int> sizes;
+    sizes.reserve(row.function_sizes.size());
     for (const int size : row.function_sizes)
     {
         if (size > 0)
-            sorted_sizes.push_back(size);
+            sizes.push_back(size);
     }
 
-    if (sorted_sizes.empty())
+    if (sizes.empty())
         return { { 0, metrics.height } };
 
-    std::sort(sorted_sizes.begin(), sorted_sizes.end(), std::greater<int>());
-
-    const int total_size = std::accumulate(sorted_sizes.begin(), sorted_sizes.end(), 0);
+    const int total_size = std::accumulate(sizes.begin(), sizes.end(), 0);
     if (total_size <= 0)
         return { { 0, metrics.height } };
 
     std::vector<SemanticBuildingLayer> layers;
-    layers.reserve(sorted_sizes.size());
+    layers.reserve(sizes.size());
 
     float remaining_height = metrics.height;
-    for (size_t index = 0; index < sorted_sizes.size(); ++index)
+    for (size_t index = 0; index < sizes.size(); ++index)
     {
-        const int function_size = sorted_sizes[index];
+        const int function_size = sizes[index];
         float layer_height = metrics.height;
-        if (index + 1 < sorted_sizes.size())
+        if (index + 1 < sizes.size())
         {
             layer_height = metrics.height * static_cast<float>(function_size) / static_cast<float>(total_size);
             layer_height = std::min(layer_height, remaining_height);

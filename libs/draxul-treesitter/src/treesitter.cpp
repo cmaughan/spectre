@@ -82,11 +82,11 @@ bool should_skip_path(const std::filesystem::path& rel)
 bool is_cpp_source(const std::filesystem::path& path)
 {
     const auto ext = path.extension().string();
-    // .mm (Objective-C++) is excluded: its ObjC syntax (@autoreleasepool,
-    // message expressions, etc.) is not valid C++ and would produce spurious
-    // parse errors with the tree-sitter C++ grammar.
+    // .mm (Objective-C++) is parsed with the C++ grammar. ObjC syntax produces
+    // parse errors but tree-sitter is error-tolerant, so C++ symbols (classes,
+    // functions, structs) are still extracted correctly.
     return ext == ".cpp" || ext == ".h" || ext == ".cc" || ext == ".c"
-        || ext == ".inl" || ext == ".hpp";
+        || ext == ".inl" || ext == ".hpp" || ext == ".mm";
 }
 
 // Strip surrounding quotes or angle brackets from an include path node's text.
@@ -346,8 +346,6 @@ void CodebaseScanner::scan_thread(std::filesystem::path root)
 
         const std::string source = read_file(entry.path());
         if (source.empty())
-            continue;
-        if (is_objc_source(source))
             continue;
 
         TSTree* tree = ts_parser_parse_string(
