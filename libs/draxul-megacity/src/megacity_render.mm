@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstring>
 #include <draxul/log.h>
+#include <imgui.h>
 #import <simd/simd.h>
 #include <vector>
 
@@ -224,6 +225,16 @@ bool stream_transient_mesh(id<MTLDevice> device, const MeshData& mesh,
 
 } // namespace
 
+struct GBufferTargets
+{
+    ObjCRef<id<MTLTexture>> material; // RGBA8Unorm — RG octahedral normal, B roughness, A specular
+    ObjCRef<id<MTLTexture>> base_color; // RGBA8Unorm — RGB albedo, A metallic
+    ObjCRef<id<MTLTexture>> ao; // RGBA8Unorm — R ambient occlusion, GBA reserved
+    ObjCRef<id<MTLTexture>> depth; // Depth32Float — hardware depth
+    int width = 0;
+    int height = 0;
+};
+
 struct IsometricScenePass::State
 {
     ObjCRef<id<MTLRenderPipelineState>> pipeline;
@@ -241,6 +252,12 @@ struct IsometricScenePass::State
     std::vector<FrameResources> frame_resources;
     uint32_t buffered_frame_count = 1;
     bool initialized = false;
+
+    // GBuffer pre-pass resources
+    ObjCRef<id<MTLRenderPipelineState>> gbuffer_pipeline;
+    std::vector<GBufferTargets> gbuffer_targets; // per frame
+    bool gbuffer_initialized = false;
+    uint32_t last_prepass_frame = 0;
 
     bool init(id<MTLDevice> device, int grid_width, int grid_height, float tile_size)
     {
@@ -446,6 +463,127 @@ struct IsometricScenePass::State
         label_atlas_revision = atlas->revision;
         return true;
     }
+
+    bool init_gbuffer(id<MTLDevice> device)
+    {
+        if (gbuffer_initialized)
+            return gbuffer_pipeline.get() != nil;
+
+        gbuffer_initialized = true;
+
+        NSError* error = nil;
+        NSString* exePath = [[NSBundle mainBundle] executablePath];
+        NSString* exeDir = [exePath stringByDeletingLastPathComponent];
+        NSString* libPath = [exeDir stringByAppendingPathComponent:@"shaders/megacity_gbuffer.metallib"];
+        NSURL* libURL = [NSURL fileURLWithPath:libPath];
+
+        id<MTLLibrary> library = [device newLibraryWithURL:libURL error:&error];
+        if (!library)
+        {
+            DRAXUL_LOG_ERROR(LogCategory::App,
+                "MegaCity: failed to load megacity_gbuffer.metallib: %s",
+                error ? [[error localizedDescription] UTF8String] : "unknown");
+            return false;
+        }
+
+        id<MTLFunction> vert_fn = [library newFunctionWithName:@"gbuffer_vertex"];
+        id<MTLFunction> frag_fn = [library newFunctionWithName:@"gbuffer_fragment"];
+        if (!vert_fn || !frag_fn)
+        {
+            DRAXUL_LOG_ERROR(LogCategory::App, "MegaCity: gbuffer_vertex or gbuffer_fragment not found");
+            return false;
+        }
+
+        MTLVertexDescriptor* vertex_desc = [[MTLVertexDescriptor alloc] init];
+        vertex_desc.attributes[0].format = MTLVertexFormatFloat3;
+        vertex_desc.attributes[0].offset = offsetof(SceneVertex, position);
+        vertex_desc.attributes[0].bufferIndex = 0;
+        vertex_desc.attributes[1].format = MTLVertexFormatFloat3;
+        vertex_desc.attributes[1].offset = offsetof(SceneVertex, normal);
+        vertex_desc.attributes[1].bufferIndex = 0;
+        vertex_desc.attributes[2].format = MTLVertexFormatFloat3;
+        vertex_desc.attributes[2].offset = offsetof(SceneVertex, color);
+        vertex_desc.attributes[2].bufferIndex = 0;
+        vertex_desc.attributes[3].format = MTLVertexFormatFloat2;
+        vertex_desc.attributes[3].offset = offsetof(SceneVertex, uv);
+        vertex_desc.attributes[3].bufferIndex = 0;
+        vertex_desc.attributes[4].format = MTLVertexFormatFloat;
+        vertex_desc.attributes[4].offset = offsetof(SceneVertex, tex_blend);
+        vertex_desc.attributes[4].bufferIndex = 0;
+        vertex_desc.layouts[0].stride = sizeof(SceneVertex);
+        vertex_desc.layouts[0].stepFunction = MTLVertexStepFunctionPerVertex;
+
+        MTLRenderPipelineDescriptor* desc = [[MTLRenderPipelineDescriptor alloc] init];
+        desc.vertexFunction = vert_fn;
+        desc.fragmentFunction = frag_fn;
+        desc.vertexDescriptor = vertex_desc;
+        desc.colorAttachments[0].pixelFormat = MTLPixelFormatRGBA8Unorm;
+        desc.colorAttachments[1].pixelFormat = MTLPixelFormatRGBA8Unorm;
+        desc.colorAttachments[2].pixelFormat = MTLPixelFormatRGBA8Unorm;
+        desc.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
+
+        id<MTLRenderPipelineState> pso = [device newRenderPipelineStateWithDescriptor:desc error:&error];
+        if (!pso)
+        {
+            DRAXUL_LOG_ERROR(LogCategory::App,
+                "MegaCity: failed to create GBuffer pipeline: %s",
+                error ? [[error localizedDescription] UTF8String] : "unknown");
+            return false;
+        }
+        gbuffer_pipeline.reset(pso);
+        DRAXUL_LOG_INFO(LogCategory::App, "MegaCity: GBuffer pipeline initialized");
+        return true;
+    }
+
+    bool ensure_gbuffer_targets(id<MTLDevice> device, uint32_t frame_count, int width, int height)
+    {
+        if (width <= 0 || height <= 0)
+            return false;
+
+        frame_count = std::max(1u, frame_count);
+        if (gbuffer_targets.size() == frame_count
+            && !gbuffer_targets.empty()
+            && gbuffer_targets[0].width == width
+            && gbuffer_targets[0].height == height)
+            return true;
+
+        gbuffer_targets.clear();
+        gbuffer_targets.resize(frame_count);
+
+        for (auto& targets : gbuffer_targets)
+        {
+            MTLTextureDescriptor* rgba8_desc = [MTLTextureDescriptor
+                texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                                             width:static_cast<NSUInteger>(width)
+                                            height:static_cast<NSUInteger>(height)
+                                         mipmapped:NO];
+            rgba8_desc.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
+            rgba8_desc.storageMode = MTLStorageModePrivate;
+
+            MTLTextureDescriptor* depth_desc = [MTLTextureDescriptor
+                texture2DDescriptorWithPixelFormat:MTLPixelFormatDepth32Float
+                                             width:static_cast<NSUInteger>(width)
+                                            height:static_cast<NSUInteger>(height)
+                                         mipmapped:NO];
+            depth_desc.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
+            depth_desc.storageMode = MTLStorageModePrivate;
+
+            targets.material.reset([device newTextureWithDescriptor:rgba8_desc]);
+            targets.base_color.reset([device newTextureWithDescriptor:rgba8_desc]);
+            targets.ao.reset([device newTextureWithDescriptor:rgba8_desc]);
+            targets.depth.reset([device newTextureWithDescriptor:depth_desc]);
+            targets.width = width;
+            targets.height = height;
+
+            if (!targets.material || !targets.base_color || !targets.ao || !targets.depth)
+            {
+                DRAXUL_LOG_ERROR(LogCategory::App, "MegaCity: failed to create GBuffer textures");
+                gbuffer_targets.clear();
+                return false;
+            }
+        }
+        return true;
+    }
 };
 
 IsometricScenePass::IsometricScenePass(int grid_width, int grid_height, float tile_size)
@@ -457,6 +595,164 @@ IsometricScenePass::IsometricScenePass(int grid_width, int grid_height, float ti
 }
 
 IsometricScenePass::~IsometricScenePass() = default;
+
+void IsometricScenePass::record_prepass(IRenderContext& ctx)
+{
+    id<MTLCommandBuffer> cmd_buf = (__bridge id<MTLCommandBuffer>)ctx.native_command_buffer();
+    if (!cmd_buf)
+        return;
+
+    const int vw = ctx.viewport_w();
+    const int vh = ctx.viewport_h();
+    if (vw <= 0 || vh <= 0)
+        return;
+
+    const uint32_t frame_count = std::max(1u, ctx.buffered_frame_count());
+    if (!state_->init(cmd_buf.device, grid_width_, grid_height_, tile_size_))
+        return;
+    if (!state_->init_gbuffer(cmd_buf.device))
+        return;
+    if (!state_->ensure_frame_resources(cmd_buf.device, frame_count))
+        return;
+    if (!state_->ensure_gbuffer_targets(cmd_buf.device, frame_count, vw, vh))
+        return;
+    if (!state_->ensure_floor_grid(cmd_buf.device, scene_.floor_grid))
+        return;
+
+    const uint32_t frame_index = ctx.frame_index() % static_cast<uint32_t>(state_->frame_resources.size());
+    state_->last_prepass_frame = frame_index;
+    auto& frame_resources = state_->frame_resources[frame_index];
+    frame_resources.geometry_arena.reset();
+
+    MeshSlice grid_slice;
+    if (state_->has_cached_grid_mesh
+        && !stream_transient_mesh(cmd_buf.device, state_->cached_grid_mesh, frame_resources.geometry_arena, grid_slice))
+    {
+        return;
+    }
+
+    auto& gbuffer = state_->gbuffer_targets[frame_index];
+
+    // Build GBuffer render pass descriptor
+    MTLRenderPassDescriptor* rpDesc = [MTLRenderPassDescriptor renderPassDescriptor];
+    rpDesc.colorAttachments[0].texture = gbuffer.material.get();
+    rpDesc.colorAttachments[0].loadAction = MTLLoadActionClear;
+    rpDesc.colorAttachments[0].storeAction = MTLStoreActionStore;
+    rpDesc.colorAttachments[0].clearColor = MTLClearColorMake(0.5, 0.5, 0.0, 0.0);
+    rpDesc.colorAttachments[1].texture = gbuffer.base_color.get();
+    rpDesc.colorAttachments[1].loadAction = MTLLoadActionClear;
+    rpDesc.colorAttachments[1].storeAction = MTLStoreActionStore;
+    rpDesc.colorAttachments[1].clearColor = MTLClearColorMake(0.0, 0.0, 0.0, 1.0);
+    rpDesc.colorAttachments[2].texture = gbuffer.ao.get();
+    rpDesc.colorAttachments[2].loadAction = MTLLoadActionClear;
+    rpDesc.colorAttachments[2].storeAction = MTLStoreActionStore;
+    rpDesc.colorAttachments[2].clearColor = MTLClearColorMake(1.0, 0.0, 0.0, 1.0);
+    rpDesc.depthAttachment.texture = gbuffer.depth.get();
+    rpDesc.depthAttachment.loadAction = MTLLoadActionClear;
+    rpDesc.depthAttachment.storeAction = MTLStoreActionStore;
+    rpDesc.depthAttachment.clearDepth = 1.0;
+
+    id<MTLRenderCommandEncoder> encoder = [cmd_buf renderCommandEncoderWithDescriptor:rpDesc];
+    if (!encoder)
+        return;
+
+    MTLViewport viewport;
+    viewport.originX = 0;
+    viewport.originY = 0;
+    viewport.width = vw;
+    viewport.height = vh;
+    viewport.znear = 0.0;
+    viewport.zfar = 1.0;
+    [encoder setViewport:viewport];
+
+    MTLScissorRect scissor;
+    scissor.x = 0;
+    scissor.y = 0;
+    scissor.width = static_cast<NSUInteger>(vw);
+    scissor.height = static_cast<NSUInteger>(vh);
+    [encoder setScissorRect:scissor];
+
+    // Upload frame uniforms (same as main pass)
+    FrameUniforms frame;
+    frame.view = to_simd_matrix(scene_.camera.view);
+    frame.proj = to_simd_matrix(scene_.camera.proj);
+    frame.light_dir = simd_make_float4(
+        scene_.camera.light_dir.x, scene_.camera.light_dir.y,
+        scene_.camera.light_dir.z, scene_.camera.light_dir.w);
+    frame.point_light_pos = simd_make_float4(
+        scene_.camera.point_light_pos.x, scene_.camera.point_light_pos.y,
+        scene_.camera.point_light_pos.z, scene_.camera.point_light_pos.w);
+    frame.label_fade_px = simd_make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+    frame.render_tuning = simd_make_float4(1.0f, 0.0f, 0.0f, 0.0f);
+    std::memcpy([frame_resources.frame_uniforms.get() contents], &frame, sizeof(frame));
+
+    [encoder setRenderPipelineState:state_->gbuffer_pipeline.get()];
+    [encoder setDepthStencilState:state_->depth_state.get()];
+    [encoder setCullMode:MTLCullModeBack];
+    [encoder setFrontFacingWinding:MTLWindingCounterClockwise];
+    [encoder setVertexBuffer:frame_resources.frame_uniforms.get() offset:0 atIndex:1];
+
+    // Draw scene objects
+    for (const SceneObject& obj : scene_.objects)
+    {
+        const MeshBuffers* mesh = nullptr;
+        switch (obj.mesh)
+        {
+        case MeshId::Floor:
+            mesh = &state_->floor_mesh;
+            break;
+        case MeshId::Cube:
+            mesh = &state_->cube_mesh;
+            break;
+        case MeshId::RoofSign:
+            mesh = &state_->roof_sign_mesh;
+            break;
+        case MeshId::WallSign:
+            mesh = &state_->wall_sign_mesh;
+            break;
+        case MeshId::Grid:
+            continue;
+        }
+        if (!mesh || mesh->index_count == 0)
+            continue;
+
+        ObjectUniforms object;
+        object.world = to_simd_matrix(obj.world);
+        object.color = simd_make_float4(obj.color.x, obj.color.y, obj.color.z, obj.color.w);
+        object.uv_rect = simd_make_float4(0.0f, 0.0f, 1.0f, 1.0f);
+        object.label_metrics = simd_make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+
+        [encoder setVertexBuffer:mesh->vertex_buffer.get() offset:0 atIndex:0];
+        [encoder setVertexBytes:&object length:sizeof(object) atIndex:2];
+        [encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle
+                            indexCount:mesh->index_count
+                             indexType:MTLIndexTypeUInt16
+                           indexBuffer:mesh->index_buffer.get()
+                     indexBufferOffset:0];
+    }
+
+    // Draw floor grid
+    if (grid_slice.index_count > 0)
+    {
+        ObjectUniforms object;
+        object.world = matrix_identity_float4x4;
+        object.color = simd_make_float4(
+            scene_.floor_grid.color.x, scene_.floor_grid.color.y,
+            scene_.floor_grid.color.z, scene_.floor_grid.color.w);
+        object.uv_rect = simd_make_float4(0.0f, 0.0f, 1.0f, 1.0f);
+        object.label_metrics = simd_make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+
+        [encoder setVertexBuffer:grid_slice.vertex_buffer offset:grid_slice.vertex_offset atIndex:0];
+        [encoder setVertexBytes:&object length:sizeof(object) atIndex:2];
+        [encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle
+                            indexCount:grid_slice.index_count
+                             indexType:MTLIndexTypeUInt16
+                           indexBuffer:grid_slice.index_buffer
+                     indexBufferOffset:grid_slice.index_offset];
+    }
+
+    [encoder endEncoding];
+}
 
 void IsometricScenePass::record(IRenderContext& ctx)
 {
@@ -598,6 +894,57 @@ void IsometricScenePass::record(IRenderContext& ctx)
                            indexBuffer:grid_slice.index_buffer
                      indexBufferOffset:grid_slice.index_offset];
     }
+}
+
+void IsometricScenePass::render_gbuffer_debug_ui()
+{
+    if (state_->gbuffer_targets.empty())
+        return;
+
+    const uint32_t fi = state_->last_prepass_frame % static_cast<uint32_t>(state_->gbuffer_targets.size());
+    auto& t = state_->gbuffer_targets[fi];
+    if (!t.material || !t.base_color || !t.ao || !t.depth)
+        return;
+
+    if (!ImGui::Begin("GBuffer Debug"))
+    {
+        ImGui::End();
+        return;
+    }
+
+    const ImVec2 avail = ImGui::GetContentRegionAvail();
+    const float aspect = t.height > 0 ? static_cast<float>(t.width) / static_cast<float>(t.height) : 1.0f;
+    const float spacing = ImGui::GetStyle().ItemSpacing.x;
+    const float text_h = ImGui::GetTextLineHeightWithSpacing() + ImGui::GetStyle().ItemSpacing.y;
+    const float cell_w = std::max(64.0f, (avail.x - spacing) * 0.5f);
+    const float cell_h = std::max(32.0f, (avail.y - text_h * 3.0f) * 0.5f);
+    const float img_w = std::min(cell_w, cell_h * aspect);
+    const float img_h = img_w / aspect;
+    const ImVec2 size(img_w, img_h);
+
+    if (ImGui::BeginTable("##gbuffer_grid", 2))
+    {
+        ImGui::TableNextColumn();
+        ImGui::Text("Norm/Rough/Spec");
+        ImGui::Image((__bridge void*)t.material.get(), size);
+
+        ImGui::TableNextColumn();
+        ImGui::Text("RGB/Metallic");
+        ImGui::Image((__bridge void*)t.base_color.get(), size);
+
+        ImGui::TableNextColumn();
+        ImGui::Text("Depth");
+        ImGui::Image((__bridge void*)t.depth.get(), size);
+
+        ImGui::TableNextColumn();
+        ImGui::Text("Ambient Occlusion");
+        ImGui::Image((__bridge void*)t.ao.get(), size);
+
+        ImGui::EndTable();
+    }
+
+    ImGui::Text("Size: %dx%d", t.width, t.height);
+    ImGui::End();
 }
 
 } // namespace draxul

@@ -208,7 +208,7 @@ if(APPLE)
     find_library(COREGRAPHICS_FRAMEWORK CoreGraphics REQUIRED)
     target_link_libraries(draxul PRIVATE ${COREGRAPHICS_FRAMEWORK})
     if(DRAXUL_ENABLE_MEGACITY)
-        add_dependencies(draxul compile_metal_shaders compile_megacity_shaders)
+        add_dependencies(draxul compile_metal_shaders compile_megacity_shaders compile_megacity_gbuffer_shaders)
     else()
         add_dependencies(draxul compile_metal_shaders)
     endif()
@@ -224,6 +224,9 @@ if(APPLE)
         add_custom_command(TARGET draxul POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 ${CMAKE_BINARY_DIR}/shaders/megacity_scene.metallib
+                $<TARGET_FILE_DIR:draxul>/shaders/
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${CMAKE_BINARY_DIR}/shaders/megacity_gbuffer.metallib
                 $<TARGET_FILE_DIR:draxul>/shaders/
         )
     endif()

@@ -770,6 +770,9 @@ void MegaCityHost::render_imgui(float dt)
         .clamp_semantic_metrics = clamp_semantic_metrics_,
         .hide_test_entities = hide_test_entities_,
     };
+    if (scene_pass_)
+        scene_pass_->render_gbuffer_debug_ui();
+
     if (render_treesitter_panel(pixel_w_, pixel_h_, scanner_.snapshot(), &renderer_controls))
     {
         const bool clamp_changed = clamp_semantic_metrics_ != renderer_controls.clamp_semantic_metrics;
