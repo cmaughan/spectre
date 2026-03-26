@@ -1,11 +1,14 @@
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <draxul/citydb.h>
 #include <draxul/host.h>
 #include <draxul/megacity_code_config.h>
 #include <draxul/treesitter.h>
 #include <memory>
+#include <mutex>
+#include <thread>
 
 namespace draxul
 {
@@ -14,6 +17,8 @@ class IsometricCamera;
 class IsometricScenePass;
 struct SignLabelAtlas;
 struct SemanticMegacityModel;
+struct SemanticMegacityLayout;
+struct CityGrid;
 class SceneWorld;
 struct SceneSnapshot;
 
@@ -74,6 +79,7 @@ private:
     void mark_scene_dirty();
     void mark_world_rebuild_pending();
     void rebuild_semantic_city();
+    void launch_grid_build(const SemanticMegacityLayout& layout);
     void refresh_sign_text_service();
     void sync_camera_state_to_configs();
     void reset_camera_to_default_frame();
@@ -129,6 +135,12 @@ private:
     glm::ivec2 last_drag_pos_{ 0 };
     std::chrono::steady_clock::time_point last_activity_time_ = std::chrono::steady_clock::now();
     std::chrono::steady_clock::time_point last_pump_time_ = std::chrono::steady_clock::now();
+
+    // City grid (occupancy map for overview and pathfinding)
+    mutable std::mutex grid_mutex_;
+    std::shared_ptr<const CityGrid> city_grid_;
+    std::thread grid_thread_;
+    std::atomic<bool> grid_build_in_progress_{ false };
 };
 
 // Factory function — called from host_factory.cpp

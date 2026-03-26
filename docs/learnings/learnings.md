@@ -496,3 +496,35 @@ Lesson:
 - SVG architecture diagrams are cheap to regenerate — treat them as living documents, not one-off artifacts
 
 ---
+
+## City Grid Rasterization
+
+### Three bugs in the 2D occupancy grid, and how to debug rasterization visually
+
+After placing city blocks in the MegaCity semantic layout, a 2D occupancy grid is built on a background thread. Each cell is marked as building (1), sidewalk (2), road (3), or empty (0). An ImGui "City Map" panel draws this grid as a colored overview. Three bugs made the grid look wrong; all were found by comparing the 2D grid panel against the 3D city view side by side.
+
+**Screenshot**: See `docs/learnings/images/grid_plan_view.png` — the 2D grid (left) vs the 3D city (right) after bugs 1 and 2 were fixed but bug 3 was still present. The large central building (MegaCityHost) is missing from the grid, and sidewalks are fragmented.
+
+#### Bug 1: Doubled road/sidewalk extents
+
+`RoadSegmentPlacement::extent` stores **full** widths (not half-extents). The renderer confirms this — it passes `extent_x` directly to `glm::scale()` which scales a unit cube `[-0.5, +0.5]`. But `fill_rect` was using `center - extent` to `center + extent`, effectively doubling every road and sidewalk segment. Fix: use `center - extent * 0.5f`.
+
+**How I figured it out**: Traced how `RoadMetrics::extent_x` is used in `build_scene_snapshot()` — the scale applies to a unit cube, so `extent_x` is the full width, not half.
+
+#### Bug 2: Off-by-one at snapped cell boundaries
+
+All geometry is snapped to `placement_step` (0.5), so rect edges land exactly on cell boundaries. Using `floor()` for both min and max edges includes one extra cell at the max edge. Example: building covering `[−0.5, 1.5]` with origin `−1.0`, step `0.5` → `c1 = floor(5.0) = 5`, but cell 5 starts at world x=1.5 — the building only touches the boundary. Fix: apply a tiny epsilon inset (`step * 0.01`) on max edges so `floor` doesn't include the boundary cell.
+
+**How I figured it out**: Worked through concrete arithmetic with snapped values.
+
+#### Bug 3: Draw order — per-building vs per-layer passes
+
+Buildings were processed one at a time (roads → sidewalks → footprint per building). When building B is processed after building A, B's road pass overwrites A's already-drawn footprint. The large MegaCityHost building was drawn first (highest connectivity), then neighboring buildings' road passes overwrote it.
+
+Fix: three separate global passes — all roads, then all sidewalks, then all building footprints — so higher-priority layers always win regardless of building order.
+
+**How I figured it out**: The screenshot was the key clue. The pattern of "big building missing, small ones present" pointed directly to a draw-order dependency where later buildings' lower-priority layers (roads) clobbered earlier buildings' higher-priority layers (footprints).
+
+**Key lesson**: When rasterizing layered geometry with overlapping extents, always separate passes by layer priority rather than by entity. Per-entity layering only works if entities don't overlap, but city lots are deliberately placed in edge contact with shared road corridors.
+
+---

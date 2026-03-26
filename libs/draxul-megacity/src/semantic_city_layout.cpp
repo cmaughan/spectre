@@ -655,48 +655,59 @@ CityGrid build_city_grid(const SemanticMegacityLayout& layout, const MegaCityCod
     grid.cells.assign(static_cast<size_t>(grid.cols) * grid.rows, kCityGridEmpty);
 
     // Helper: rasterize an axis-aligned rect into the grid with a given cell value.
+    // All geometry is snapped to `step`, so edges land exactly on cell boundaries.
+    // Use a small inset on max edges to avoid filling cells the geometry only touches
+    // at the boundary (off-by-one), and a small inset on min edges for symmetry.
+    const float eps = step * 0.01f;
     auto fill_rect = [&](float world_min_x, float world_max_x, float world_min_z, float world_max_z, uint8_t value) {
-        const int c0 = std::max(0, static_cast<int>(std::floor((world_min_x - grid.origin_x) / step)));
-        const int c1 = std::min(grid.cols - 1, static_cast<int>(std::floor((world_max_x - grid.origin_x) / step)));
-        const int r0 = std::max(0, static_cast<int>(std::floor((world_min_z - grid.origin_z) / step)));
-        const int r1 = std::min(grid.rows - 1, static_cast<int>(std::floor((world_max_z - grid.origin_z) / step)));
+        const int c0 = std::max(0, static_cast<int>(std::floor((world_min_x - grid.origin_x + eps) / step)));
+        const int c1 = std::min(grid.cols - 1, static_cast<int>(std::floor((world_max_x - grid.origin_x - eps) / step)));
+        const int r0 = std::max(0, static_cast<int>(std::floor((world_min_z - grid.origin_z + eps) / step)));
+        const int r1 = std::min(grid.rows - 1, static_cast<int>(std::floor((world_max_z - grid.origin_z - eps) / step)));
         for (int r = r0; r <= r1; ++r)
             for (int c = c0; c <= c1; ++c)
                 grid.cells[static_cast<size_t>(r) * grid.cols + c] = value;
     };
 
-    for (const auto& module_layout : layout.modules)
-    {
-        for (const auto& building : module_layout.buildings)
-        {
-            const float half_fp = building.metrics.footprint * 0.5f;
-            const float cx = building.center.x;
-            const float cz = building.center.y; // center.y is world Z
+    // Three separate passes so later buildings don't overwrite earlier ones:
+    // 1) all roads, 2) all sidewalks (overwrites roads within), 3) all buildings (overwrites both).
+    auto for_each_building = [&](auto&& fn) {
+        for (const auto& module_layout : layout.modules)
+            for (const auto& building : module_layout.buildings)
+                fn(building);
+    };
 
-            // Road layer (outermost)
-            const auto roads = build_road_segments(building);
-            for (const auto& road : roads)
-                fill_rect(
-                    road.center.x - road.extent.x,
-                    road.center.x + road.extent.x,
-                    road.center.y - road.extent.y,
-                    road.center.y + road.extent.y,
-                    kCityGridRoad);
+    // Pass 1: roads (outermost layer)
+    for_each_building([&](const SemanticCityBuilding& building) {
+        const auto roads = build_road_segments(building);
+        for (const auto& road : roads)
+            fill_rect(
+                road.center.x - road.extent.x * 0.5f,
+                road.center.x + road.extent.x * 0.5f,
+                road.center.y - road.extent.y * 0.5f,
+                road.center.y + road.extent.y * 0.5f,
+                kCityGridRoad);
+    });
 
-            // Sidewalk layer (middle)
-            const auto sidewalks = build_sidewalk_segments(building);
-            for (const auto& sw : sidewalks)
-                fill_rect(
-                    sw.center.x - sw.extent.x,
-                    sw.center.x + sw.extent.x,
-                    sw.center.y - sw.extent.y,
-                    sw.center.y + sw.extent.y,
-                    kCityGridSidewalk);
+    // Pass 2: sidewalks (overwrites roads within sidewalk areas)
+    for_each_building([&](const SemanticCityBuilding& building) {
+        const auto sidewalks = build_sidewalk_segments(building);
+        for (const auto& sw : sidewalks)
+            fill_rect(
+                sw.center.x - sw.extent.x * 0.5f,
+                sw.center.x + sw.extent.x * 0.5f,
+                sw.center.y - sw.extent.y * 0.5f,
+                sw.center.y + sw.extent.y * 0.5f,
+                kCityGridSidewalk);
+    });
 
-            // Building footprint (innermost, overwrites road/sidewalk within footprint)
-            fill_rect(cx - half_fp, cx + half_fp, cz - half_fp, cz + half_fp, kCityGridBuilding);
-        }
-    }
+    // Pass 3: building footprints (overwrites everything within the footprint)
+    for_each_building([&](const SemanticCityBuilding& building) {
+        const float half_fp = building.metrics.footprint * 0.5f;
+        const float cx = building.center.x;
+        const float cz = building.center.y; // center.y is world Z
+        fill_rect(cx - half_fp, cx + half_fp, cz - half_fp, cz + half_fp, kCityGridBuilding);
+    });
 
     return grid;
 }

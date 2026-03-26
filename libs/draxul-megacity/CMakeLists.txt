@@ -10,6 +10,7 @@ if(APPLE)
         src/mesh_library.cpp
         src/megacity_host.cpp
         src/megacity_render.mm
+        src/ui_city_map_panel.cpp
         src/ui_treesitter_panel.cpp
     )
 else()
@@ -22,6 +23,7 @@ else()
         src/mesh_library.cpp
         src/megacity_host.cpp
         src/megacity_render_vk.cpp
+        src/ui_city_map_panel.cpp
         src/ui_treesitter_panel.cpp
     )
 endif()

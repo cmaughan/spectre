@@ -67,8 +67,10 @@ struct TestLotRect
 TestLotRect test_building_lot(const SemanticCityBuilding& building)
 {
     const MegaCityCodeConfig config;
-    const float half_extent = building.metrics.footprint * 0.5f + building.metrics.sidewalk_width
+    const float step = std::max(config.placement_step, 0.01f);
+    const float raw_half_extent = building.metrics.footprint * 0.5f + building.metrics.sidewalk_width
         + building.metrics.road_width * config.lot_road_reserve_fraction;
+    const float half_extent = std::max(step, std::round(raw_half_extent / step) * step);
     return {
         building.center.x - half_extent,
         building.center.x + half_extent,
