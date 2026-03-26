@@ -528,7 +528,7 @@ SignPlacementSpec place_module_park_sign(
     placement.width = std::max(0.35f, sign_width);
     placement.height = config.roof_sign_thickness;
     placement.depth = std::clamp(
-        sign_depth, config.minimum_road_sign_depth, park_footprint * 0.5f);
+        sign_depth, config.minimum_road_sign_depth, park_footprint * 0.33f);
     placement.mesh = MeshId::RoofSign;
 
     // Place along the south edge of the park (negative Z).

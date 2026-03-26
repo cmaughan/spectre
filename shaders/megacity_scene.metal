@@ -90,7 +90,7 @@ fragment float4 scene_fragment(
         const float fade_end_px = max(max(frame.label_fade_px.x, frame.label_fade_px.y), fade_start_px + 1e-3);
         const float visibility = smoothstep(fade_start_px, fade_end_px, projected_text_pixels);
         const float label_alpha = smoothstep(0.18, 0.55, label.a) * visibility;
-        shaded = mix(shaded, float3(0.0), label_alpha);
+        shaded = mix(shaded, label.rgb, label_alpha);
     }
     const float output_gamma = max(frame.render_tuning.x, 1.0);
     const float3 encoded = pow(max(shaded, float3(0.0)), float3(1.0 / output_gamma));
