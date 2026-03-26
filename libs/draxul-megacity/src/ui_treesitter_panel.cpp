@@ -734,6 +734,8 @@ bool render_renderer_controls(MegacityRendererControls& controls)
         edit_float("Road Width Min", config.road_width_min, 0.01f, 0.0f, 16.0f, "%.2f");
         edit_float("Road Width Max", config.road_width_max, 0.01f, 0.0f, 32.0f, "%.2f");
         edit_float("Sidewalk Width", config.sidewalk_width, 0.01f, 0.0f, 16.0f, "%.2f");
+        edit_float("Park Footprint", config.park_footprint, 0.5f, 0.0f, 32.0f, "%.1f");
+        edit_float("Park Height", config.park_height, 0.01f, 0.0f, 2.0f, "%.2f");
         ImGui::TreePop();
     }
 

@@ -108,6 +108,8 @@ void apply_megacity_code_table(MegaCityCodeConfig& config, const toml::table& ta
     assign_float("road_width_min", config.road_width_min);
     assign_float("road_width_max", config.road_width_max);
     assign_float("sidewalk_width", config.sidewalk_width);
+    assign_float("park_footprint", config.park_footprint);
+    assign_float("park_height", config.park_height);
 
     assign_float("sign_label_point_size", config.sign_label_point_size);
     if (auto placement = toml_support::get_string(table, "building_sign_placement"))
@@ -189,6 +191,8 @@ toml::table serialize_megacity_code_table(const MegaCityCodeConfig& config)
     table.insert_or_assign("road_width_min", static_cast<double>(config.road_width_min));
     table.insert_or_assign("road_width_max", static_cast<double>(config.road_width_max));
     table.insert_or_assign("sidewalk_width", static_cast<double>(config.sidewalk_width));
+    table.insert_or_assign("park_footprint", static_cast<double>(config.park_footprint));
+    table.insert_or_assign("park_height", static_cast<double>(config.park_height));
     table.insert_or_assign("sign_label_point_size", static_cast<double>(config.sign_label_point_size));
     table.insert_or_assign("building_sign_placement", std::string(format_megacity_sign_placement(config.building_sign_placement)));
     table.insert_or_assign("roof_sign_thickness", static_cast<double>(config.roof_sign_thickness));

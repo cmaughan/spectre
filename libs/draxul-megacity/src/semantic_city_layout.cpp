@@ -692,28 +692,13 @@ CityGrid build_city_grid(const SemanticMegacityLayout& layout, const MegaCityCod
                 grid.cells[static_cast<size_t>(r) * grid.cols + c] = value;
     };
 
-    // Four separate passes so higher-priority layers always overwrite lower ones:
-    // 0) parks, 1) roads, 2) sidewalks, 3) buildings.
+    // Three separate passes so higher-priority layers always overwrite lower ones:
+    // 1) roads, 2) sidewalks, 3) buildings + parks.
     auto for_each_building = [&](auto&& fn) {
         for (const auto& module_layout : layout.modules)
             for (const auto& building : module_layout.buildings)
                 fn(building);
     };
-
-    // Pass 0: parks (lowest priority — everything else overwrites)
-    for (const auto& module_layout : layout.modules)
-    {
-        if (module_layout.park_footprint > 0.0f)
-        {
-            const float half = module_layout.park_footprint * 0.5f;
-            fill_rect(
-                module_layout.park_center.x - half,
-                module_layout.park_center.x + half,
-                module_layout.park_center.y - half,
-                module_layout.park_center.y + half,
-                kCityGridPark);
-        }
-    }
 
     // Pass 1: roads (outermost layer)
     for_each_building([&](const SemanticCityBuilding& building) {
@@ -739,13 +724,26 @@ CityGrid build_city_grid(const SemanticMegacityLayout& layout, const MegaCityCod
                 kCityGridSidewalk);
     });
 
-    // Pass 3: building footprints (overwrites everything within the footprint)
+    // Pass 3: building footprints + parks (parks never overlap buildings)
     for_each_building([&](const SemanticCityBuilding& building) {
         const float half_fp = building.metrics.footprint * 0.5f;
         const float cx = building.center.x;
         const float cz = building.center.y; // center.y is world Z
         fill_rect(cx - half_fp, cx + half_fp, cz - half_fp, cz + half_fp, kCityGridBuilding);
     });
+    for (const auto& module_layout : layout.modules)
+    {
+        if (module_layout.park_footprint > 0.0f)
+        {
+            const float half = module_layout.park_footprint * 0.5f;
+            fill_rect(
+                module_layout.park_center.x - half,
+                module_layout.park_center.x + half,
+                module_layout.park_center.y - half,
+                module_layout.park_center.y + half,
+                kCityGridPark);
+        }
+    }
 
     return grid;
 }

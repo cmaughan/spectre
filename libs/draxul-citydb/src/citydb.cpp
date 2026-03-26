@@ -876,10 +876,10 @@ bool CityDatabase::reconcile_snapshot(const CodebaseSnapshot& snapshot)
                 : 0.0f;
 
             // Quality: 1.0 for tiny avg function size, tapering toward 0.0 for large.
-            // An average of ~10 lines is excellent (quality ~0.9), ~50 lines is poor (~0.3).
-            // Formula: quality = 1 / (1 + avg/20), gives a smooth 0-1 curve.
+            // An average of ~5 lines is excellent (quality ~0.67), ~30 lines is poor (~0.25).
+            // Formula: quality = 1 / (1 + avg/10), gives a smooth 0-1 curve.
             const float quality = agg.total_functions > 0
-                ? 1.0f / (1.0f + avg_fn_size / 20.0f)
+                ? 1.0f / (1.0f + avg_fn_size / 10.0f)
                 : 0.5f; // no functions = neutral
 
             insert_module.reuse();
