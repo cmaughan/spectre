@@ -3,23 +3,27 @@ cmake_minimum_required(VERSION 3.25)
 if(APPLE)
     set(MEGACITY_SOURCES
         src/isometric_camera.cpp
+        src/megacity_code_config.cpp
         src/scene_world.cpp
         src/semantic_city_layout.cpp
         src/sign_label_atlas.cpp
         src/mesh_library.cpp
         src/megacity_host.cpp
         src/megacity_render.mm
+        src/ui_city_map_panel.cpp
         src/ui_treesitter_panel.cpp
     )
 else()
     set(MEGACITY_SOURCES
         src/isometric_camera.cpp
+        src/megacity_code_config.cpp
         src/scene_world.cpp
         src/semantic_city_layout.cpp
         src/sign_label_atlas.cpp
         src/mesh_library.cpp
         src/megacity_host.cpp
         src/megacity_render_vk.cpp
+        src/ui_city_map_panel.cpp
         src/ui_treesitter_panel.cpp
     )
 endif()
@@ -36,6 +40,7 @@ target_link_libraries(draxul-megacity PUBLIC
     draxul-host
     draxul-renderer
     draxul-font
+    draxul-config
     draxul-treesitter
     draxul-citydb
     imgui

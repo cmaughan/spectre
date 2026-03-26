@@ -1,4 +1,4 @@
-digraph DraxulArchitecturePrompt {
+digraph DraxulArchitecture {
   graph [
     label="Draxul Architecture",
     labelloc=t,
@@ -32,9 +32,16 @@ digraph DraxulArchitecturePrompt {
     arrowsize=0.8
   ];
 
-  // Color system from prompt.
-  // interfaces: blue, abstract bases: yellow, concrete classes: green,
-  // app orchestrators: red, support/pipeline: purple.
+  // Color system:
+  // interfaces: blue (#dcecff / #4f83cc)
+  // abstract bases: yellow (#ffe9a8 / #c7981d)
+  // concrete classes: green (#d9f5dd / #3d8c50)
+  // app orchestrators: red (#ffd7d7 / #b53a3a)
+  // support/pipeline: purple (#eadbff / #7a4cc2)
+
+  // ─────────────────────────────────────────────────
+  // App layer
+  // ─────────────────────────────────────────────────
 
   subgraph cluster_app {
     label="App layer";
@@ -71,6 +78,11 @@ digraph DraxulArchitecturePrompt {
       diagnostics UI
     >, fillcolor="#ffd7d7", color="#b53a3a"];
 
+    DiagnosticsCollector [label=<
+      <b>DiagnosticsCollector</b><br/>
+      startup timing
+    >, fillcolor="#ffd7d7", color="#b53a3a"];
+
     FrameTimer [label=<
       <b>FrameTimer</b><br/>
       frame timing stats
@@ -81,8 +93,13 @@ digraph DraxulArchitecturePrompt {
     SplitTree -> InputDispatcher [style=invis, weight=30];
     InputDispatcher -> GuiActionHandler [style=invis, weight=30];
     GuiActionHandler -> UiPanel [style=invis, weight=30];
-    UiPanel -> FrameTimer [style=invis, weight=30];
+    UiPanel -> DiagnosticsCollector [style=invis, weight=30];
+    DiagnosticsCollector -> FrameTimer [style=invis, weight=30];
   }
+
+  // ─────────────────────────────────────────────────
+  // Renderer hierarchy
+  // ─────────────────────────────────────────────────
 
   subgraph cluster_renderer {
     label="Renderer hierarchy";
@@ -101,17 +118,20 @@ digraph DraxulArchitecturePrompt {
       <b>IGridRenderer</b>
     >, fillcolor="#dcecff", color="#4f83cc"];
 
+    IRenderPass [label=<
+      <b>IRenderPass</b>
+    >, fillcolor="#dcecff", color="#4f83cc"];
+
+    IRenderContext [label=<
+      <b>IRenderContext</b>
+    >, fillcolor="#dcecff", color="#4f83cc"];
+
     IImGuiHost [label=<
       <b>IImGuiHost</b>
     >, fillcolor="#dcecff", color="#4f83cc"];
 
     ICaptureRenderer [label=<
       <b>ICaptureRenderer</b>
-    >, fillcolor="#dcecff", color="#4f83cc"];
-
-    IRenderer [label=<
-      <b>IRenderer</b><br/>
-      compatibility aggregate
     >, fillcolor="#dcecff", color="#4f83cc"];
 
     RendererBundle [label=<
@@ -136,14 +156,19 @@ digraph DraxulArchitecturePrompt {
 
     IBaseRenderer -> I3DRenderer [style=invis, weight=30];
     I3DRenderer -> IGridRenderer [style=invis, weight=30];
-    IGridRenderer -> IImGuiHost [style=invis, weight=30];
+    IGridRenderer -> IRenderPass [style=invis, weight=30];
+    IRenderPass -> IRenderContext [style=invis, weight=30];
+    IRenderContext -> IImGuiHost [style=invis, weight=30];
     IImGuiHost -> ICaptureRenderer [style=invis, weight=30];
-    ICaptureRenderer -> IRenderer [style=invis, weight=30];
-    IRenderer -> RendererBundle [style=invis, weight=30];
+    ICaptureRenderer -> RendererBundle [style=invis, weight=30];
     RendererBundle -> IGridHandle [style=invis, weight=30];
     IGridHandle -> MetalRenderer [style=invis, weight=30];
     MetalRenderer -> VkRenderer [style=invis, weight=30];
   }
+
+  // ─────────────────────────────────────────────────
+  // Host hierarchy
+  // ─────────────────────────────────────────────────
 
   subgraph cluster_hosts {
     label="Host hierarchy";
@@ -178,24 +203,17 @@ digraph DraxulArchitecturePrompt {
 
     LocalTerminalHost [label=<
       <b>LocalTerminalHost</b><br/>
+      bash / zsh / powershell / WSL<br/>
       selection + scrollback + mouse
-    >, fillcolor="#ffe9a8", color="#c7981d"];
+    >, fillcolor="#d9f5dd", color="#3d8c50"];
 
     NvimHost [label=<
       <b>NvimHost</b>
     >, fillcolor="#d9f5dd", color="#3d8c50"];
 
-    ShellHost [label=<
-      <b>ShellHost</b><br/>
-      bash / zsh / WSL
-    >, fillcolor="#d9f5dd", color="#3d8c50"];
-
-    PowerShellHost [label=<
-      <b>PowerShellHost</b>
-    >, fillcolor="#d9f5dd", color="#3d8c50"];
-
     MegaCityHost [label=<
-      <b>MegaCityHost</b>
+      <b>MegaCityHost</b><br/>
+      code-analysis 3D city
     >, fillcolor="#d9f5dd", color="#3d8c50"];
 
     IHostCallbacks -> IHost [style=invis, weight=30];
@@ -205,10 +223,12 @@ digraph DraxulArchitecturePrompt {
     GridHostBase -> TerminalHostBase [style=invis, weight=30];
     TerminalHostBase -> LocalTerminalHost [style=invis, weight=30];
     LocalTerminalHost -> NvimHost [style=invis, weight=30];
-    NvimHost -> ShellHost [style=invis, weight=30];
-    ShellHost -> PowerShellHost [style=invis, weight=30];
-    PowerShellHost -> MegaCityHost [style=invis, weight=30];
+    NvimHost -> MegaCityHost [style=invis, weight=30];
   }
+
+  // ─────────────────────────────────────────────────
+  // Window
+  // ─────────────────────────────────────────────────
 
   subgraph cluster_window {
     label="Window";
@@ -226,6 +246,10 @@ digraph DraxulArchitecturePrompt {
 
     IWindow -> SdlWindow [style=invis, weight=30];
   }
+
+  // ─────────────────────────────────────────────────
+  // Font & Grid
+  // ─────────────────────────────────────────────────
 
   subgraph cluster_grid {
     label="Font & Grid";
@@ -291,6 +315,10 @@ digraph DraxulArchitecturePrompt {
     SelectionManager -> ScrollbackBuffer [style=invis, weight=30];
   }
 
+  // ─────────────────────────────────────────────────
+  // Neovim runtime
+  // ─────────────────────────────────────────────────
+
   subgraph cluster_nvim {
     label="Neovim runtime";
     color="#7a4cc2";
@@ -331,53 +359,215 @@ digraph DraxulArchitecturePrompt {
     UiRequestWorker -> StartupResizeState [style=invis, weight=30];
   }
 
-  // Inheritance: hollow arrows.
+  // ─────────────────────────────────────────────────
+  // MegaCity subsystem
+  // ─────────────────────────────────────────────────
+
+  subgraph cluster_megacity {
+    label="MegaCity subsystem";
+    color="#2d6a4f";
+    style="rounded";
+
+    SceneWorld [label=<
+      <b>SceneWorld</b><br/>
+      ECS registry (EnTT)
+    >, fillcolor="#eadbff", color="#7a4cc2"];
+
+    IsometricCamera [label=<
+      <b>IsometricCamera</b><br/>
+      ortho projection + orbit
+    >, fillcolor="#eadbff", color="#7a4cc2"];
+
+    IsometricScenePass [label=<
+      <b>IsometricScenePass</b><br/>
+      implements IRenderPass
+    >, fillcolor="#d9f5dd", color="#3d8c50"];
+
+    MeshLibrary [label=<
+      <b>MeshLibrary</b><br/>
+      cube, floor, sign meshes
+    >, fillcolor="#eadbff", color="#7a4cc2"];
+
+    SemanticCityLayout [label=<
+      <b>SemanticCityLayout</b><br/>
+      code-analysis city generation
+    >, fillcolor="#eadbff", color="#7a4cc2"];
+
+    SignLabelAtlas [label=<
+      <b>SignLabelAtlas</b><br/>
+      building name labels
+    >, fillcolor="#eadbff", color="#7a4cc2"];
+
+    MegaCityCodeConfig [label=<
+      <b>MegaCityCodeConfig</b><br/>
+      visualization tuning params
+    >, fillcolor="#eadbff", color="#7a4cc2"];
+
+    TreesitterPanel [label=<
+      <b>TreesitterPanel</b><br/>
+      ImGui codebase analysis UI
+    >, fillcolor="#eadbff", color="#7a4cc2"];
+
+    SceneWorld -> IsometricCamera [style=invis, weight=30];
+    IsometricCamera -> IsometricScenePass [style=invis, weight=30];
+    IsometricScenePass -> MeshLibrary [style=invis, weight=30];
+    MeshLibrary -> SemanticCityLayout [style=invis, weight=30];
+    SemanticCityLayout -> SignLabelAtlas [style=invis, weight=30];
+    SignLabelAtlas -> MegaCityCodeConfig [style=invis, weight=30];
+    MegaCityCodeConfig -> TreesitterPanel [style=invis, weight=30];
+  }
+
+  // ─────────────────────────────────────────────────
+  // Code analysis pipeline
+  // ─────────────────────────────────────────────────
+
+  subgraph cluster_codeanalysis {
+    label="Code analysis pipeline";
+    color="#7a4cc2";
+    style="rounded";
+
+    CodebaseScanner [label=<
+      <b>CodebaseScanner</b><br/>
+      background tree-sitter scan
+    >, fillcolor="#eadbff", color="#7a4cc2"];
+
+    CodebaseSnapshot [label=<
+      <b>CodebaseSnapshot</b><br/>
+      immutable parse result
+    >, fillcolor="#eadbff", color="#7a4cc2"];
+
+    CityDatabase [label=<
+      <b>CityDatabase</b><br/>
+      SQLite symbol storage
+    >, fillcolor="#eadbff", color="#7a4cc2"];
+
+    CityClassRecord [label=<
+      <b>CityClassRecord</b><br/>
+      mapped entity data
+    >, fillcolor="#eadbff", color="#7a4cc2"];
+
+    CodebaseScanner -> CodebaseSnapshot [style=invis, weight=30];
+    CodebaseSnapshot -> CityDatabase [style=invis, weight=30];
+    CityDatabase -> CityClassRecord [style=invis, weight=30];
+  }
+
+  // ─────────────────────────────────────────────────
+  // ECS components (data-only)
+  // ─────────────────────────────────────────────────
+
+  subgraph cluster_ecs {
+    label="ECS components";
+    color="#2d6a4f";
+    style="rounded";
+
+    WorldPosition [label=<
+      <b>WorldPosition</b><br/>
+      x, z ground plane
+    >, fillcolor="#d9f5dd", color="#3d8c50"];
+
+    Elevation [label=<
+      <b>Elevation</b>
+    >, fillcolor="#d9f5dd", color="#3d8c50"];
+
+    Appearance [label=<
+      <b>Appearance</b><br/>
+      mesh ID + color
+    >, fillcolor="#d9f5dd", color="#3d8c50"];
+
+    BuildingMetrics [label=<
+      <b>BuildingMetrics</b><br/>
+      footprint, height, road
+    >, fillcolor="#d9f5dd", color="#3d8c50"];
+
+    RoadMetrics [label=<
+      <b>RoadMetrics</b>
+    >, fillcolor="#d9f5dd", color="#3d8c50"];
+
+    TreeMetrics [label=<
+      <b>TreeMetrics</b>
+    >, fillcolor="#d9f5dd", color="#3d8c50"];
+
+    SignMetrics [label=<
+      <b>SignMetrics</b>
+    >, fillcolor="#d9f5dd", color="#3d8c50"];
+
+    SourceSymbol [label=<
+      <b>SourceSymbol</b><br/>
+      file + name link
+    >, fillcolor="#d9f5dd", color="#3d8c50"];
+
+    WorldPosition -> Elevation [style=invis, weight=30];
+    Elevation -> Appearance [style=invis, weight=30];
+    Appearance -> BuildingMetrics [style=invis, weight=30];
+    BuildingMetrics -> RoadMetrics [style=invis, weight=30];
+    RoadMetrics -> TreeMetrics [style=invis, weight=30];
+    TreeMetrics -> SignMetrics [style=invis, weight=30];
+    SignMetrics -> SourceSymbol [style=invis, weight=30];
+  }
+
+  // ═════════════════════════════════════════════════
+  // Inheritance: hollow arrows
+  // ═════════════════════════════════════════════════
+
+  // Renderer hierarchy
   SdlWindow -> IWindow [arrowhead=empty, label="implements"];
   I3DRenderer -> IBaseRenderer [arrowhead=empty, label="extends"];
   IGridRenderer -> I3DRenderer [arrowhead=empty, label="extends"];
-  IRenderer -> IGridRenderer [arrowhead=empty, label="extends"];
-  IRenderer -> IImGuiHost [arrowhead=empty, label="extends"];
-  IRenderer -> ICaptureRenderer [arrowhead=empty, label="extends"];
-  MetalRenderer -> IRenderer [arrowhead=empty, label="implements"];
-  VkRenderer -> IRenderer [arrowhead=empty, label="implements"];
+  MetalRenderer -> IGridRenderer [arrowhead=empty, label="implements"];
+  MetalRenderer -> IImGuiHost [arrowhead=empty, label="implements"];
+  MetalRenderer -> ICaptureRenderer [arrowhead=empty, label="implements"];
+  VkRenderer -> IGridRenderer [arrowhead=empty, label="implements"];
+  VkRenderer -> IImGuiHost [arrowhead=empty, label="implements"];
+  VkRenderer -> ICaptureRenderer [arrowhead=empty, label="implements"];
+  IsometricScenePass -> IRenderPass [arrowhead=empty, label="implements"];
 
+  // Host hierarchy
   I3DHost -> IHost [arrowhead=empty, label="extends"];
   IGridHost -> I3DHost [arrowhead=empty, label="extends"];
   GridHostBase -> IGridHost [arrowhead=empty, label="extends"];
   TerminalHostBase -> GridHostBase [arrowhead=empty, label="extends"];
   LocalTerminalHost -> TerminalHostBase [arrowhead=empty, label="extends"];
   NvimHost -> GridHostBase [arrowhead=empty, label="extends"];
-  ShellHost -> LocalTerminalHost [arrowhead=empty, label="extends"];
-  PowerShellHost -> LocalTerminalHost [arrowhead=empty, label="extends"];
   MegaCityHost -> I3DHost [arrowhead=empty, label="implements"];
   App -> IHostCallbacks [arrowhead=empty, label="implements"];
 
-  // Composition/ownership: dashed line, filled arrow.
+  // ═════════════════════════════════════════════════
+  // Composition/ownership: dashed line, filled arrow
+  // ═════════════════════════════════════════════════
+
+  // App owns
   App -> HostManager [style=dashed, arrowhead=vee, label="owns"];
   App -> InputDispatcher [style=dashed, arrowhead=vee, label="owns"];
   App -> GuiActionHandler [style=dashed, arrowhead=vee, label="owns"];
   App -> UiPanel [style=dashed, arrowhead=vee, label="owns"];
+  App -> DiagnosticsCollector [style=dashed, arrowhead=vee, label="owns"];
   App -> FrameTimer [style=dashed, arrowhead=vee, label="owns"];
   App -> IWindow [style=dashed, arrowhead=vee, label="owns"];
   App -> RendererBundle [style=dashed, arrowhead=vee, label="owns"];
   App -> TextService [style=dashed, arrowhead=vee, label="owns"];
 
+  // HostManager owns
   HostManager -> SplitTree [style=dashed, arrowhead=vee, label="owns"];
   HostManager -> IHost [style=dashed, arrowhead=vee, label="owns hosts"];
 
+  // GridHostBase owns
   GridHostBase -> Grid [style=dashed, arrowhead=vee, label="owns"];
   GridHostBase -> HighlightTable [style=dashed, arrowhead=vee, label="owns"];
   GridHostBase -> GridRenderingPipeline [style=dashed, arrowhead=vee, label="owns"];
   GridHostBase -> CursorBlinker [style=dashed, arrowhead=vee, label="owns"];
   GridHostBase -> IGridHandle [style=dashed, arrowhead=vee, label="owns"];
 
+  // TerminalHostBase owns
   TerminalHostBase -> VtParser [style=dashed, arrowhead=vee, label="owns"];
   TerminalHostBase -> VtState [style=dashed, arrowhead=vee, label="owns"];
   TerminalHostBase -> AltScreenManager [style=dashed, arrowhead=vee, label="owns"];
+
+  // LocalTerminalHost owns
   LocalTerminalHost -> MouseReporter [style=dashed, arrowhead=vee, label="owns"];
   LocalTerminalHost -> SelectionManager [style=dashed, arrowhead=vee, label="owns"];
   LocalTerminalHost -> ScrollbackBuffer [style=dashed, arrowhead=vee, label="owns"];
 
+  // NvimHost owns
   NvimHost -> NvimProcess [style=dashed, arrowhead=vee, label="owns"];
   NvimHost -> NvimRpc [style=dashed, arrowhead=vee, label="owns"];
   NvimHost -> UiEventHandler [style=dashed, arrowhead=vee, label="owns"];
@@ -385,7 +575,24 @@ digraph DraxulArchitecturePrompt {
   NvimHost -> UiRequestWorker [style=dashed, arrowhead=vee, label="owns"];
   NvimHost -> StartupResizeState [style=dashed, arrowhead=vee, label="owns"];
 
-  // Cross-links.
+  // MegaCityHost owns
+  MegaCityHost -> SceneWorld [style=dashed, arrowhead=vee, label="owns"];
+  MegaCityHost -> IsometricCamera [style=dashed, arrowhead=vee, label="owns"];
+  MegaCityHost -> IsometricScenePass [style=dashed, arrowhead=vee, label="owns (shared)"];
+  MegaCityHost -> CodebaseScanner [style=dashed, arrowhead=vee, label="owns"];
+  MegaCityHost -> CityDatabase [style=dashed, arrowhead=vee, label="owns"];
+  MegaCityHost -> SignLabelAtlas [style=dashed, arrowhead=vee, label="owns (shared)"];
+  MegaCityHost -> MegaCityCodeConfig [style=dashed, arrowhead=vee, label="owns"];
+
+  // SceneWorld owns ECS components
+  SceneWorld -> WorldPosition [style=dashed, arrowhead=vee, label="registry stores"];
+  SceneWorld -> Appearance [style=dashed, arrowhead=vee, label="registry stores"];
+  SceneWorld -> BuildingMetrics [style=dashed, arrowhead=vee, label="registry stores"];
+
+  // ═════════════════════════════════════════════════
+  // Cross-links (uses / queries)
+  // ═════════════════════════════════════════════════
+
   RendererBundle -> IGridRenderer [label="grid()", constraint=false, color="#94a3b8"];
   RendererBundle -> IImGuiHost [label="imgui()", constraint=false, color="#94a3b8"];
   RendererBundle -> ICaptureRenderer [label="capture()", constraint=false, color="#94a3b8"];
@@ -414,7 +621,7 @@ digraph DraxulArchitecturePrompt {
   GuiActionHandler -> UiPanel [label="toggle diagnostics", constraint=false, color="#94a3b8"];
   GuiActionHandler -> IHost [label="copy/paste/actions", constraint=false, color="#94a3b8"];
   GuiActionHandler -> HostManager [label="split panes", constraint=false, color="#94a3b8"];
-  GuiActionHandler -> IImGuiHost [label="font texture rebuild path", constraint=false, color="#94a3b8"];
+  GuiActionHandler -> IImGuiHost [label="font texture rebuild", constraint=false, color="#94a3b8"];
 
   UiPanel -> IImGuiHost [label="produces ImGui draw data", constraint=false, color="#94a3b8"];
   App -> IGridRenderer [label="frame lifecycle", constraint=false, color="#94a3b8"];
@@ -425,10 +632,23 @@ digraph DraxulArchitecturePrompt {
   NvimInput -> NvimRpc [label="sends input", constraint=false, color="#94a3b8"];
   UiRequestWorker -> NvimRpc [label="async requests", constraint=false, color="#94a3b8"];
 
+  // MegaCity cross-links
   MegaCityHost -> I3DRenderer [label="registers 3D pass", constraint=false, color="#94a3b8"];
-  MegaCityHost -> IImGuiHost [label="contributes windows", constraint=false, color="#94a3b8"];
+  MegaCityHost -> IImGuiHost [label="contributes ImGui", constraint=false, color="#94a3b8"];
+  MegaCityHost -> TextService [label="sign label rendering", constraint=false, color="#94a3b8"];
+  IsometricScenePass -> IRenderContext [label="records into", constraint=false, color="#94a3b8"];
+  SemanticCityLayout -> CityClassRecord [label="reads from", constraint=false, color="#94a3b8"];
+  SemanticCityLayout -> MegaCityCodeConfig [label="tuned by", constraint=false, color="#94a3b8"];
+  CodebaseScanner -> CodebaseSnapshot [label="produces", constraint=false, color="#94a3b8"];
+  CityDatabase -> CodebaseSnapshot [label="reconciles", constraint=false, color="#94a3b8"];
+  CityDatabase -> CityClassRecord [label="queries", constraint=false, color="#94a3b8"];
+  SignLabelAtlas -> TextService [label="rasterizes via", constraint=false, color="#94a3b8"];
+  TreesitterPanel -> CodebaseSnapshot [label="displays", constraint=false, color="#94a3b8"];
 
-  // Data flow strip at bottom.
+  // ═════════════════════════════════════════════════
+  // Data flow
+  // ═════════════════════════════════════════════════
+
   {
     rank=same;
     FlowStart [label=<
@@ -450,17 +670,25 @@ digraph DraxulArchitecturePrompt {
       InputDispatcher -&gt; LocalTerminalHost -&gt; PTY/ConPTY write<br align="left"/>
       PTY output -&gt; VtParser/TerminalHostBase -&gt; Grid -&gt; GridRenderingPipeline -&gt; Renderer
     >, fillcolor="#fff6d6", color="#c7981d"];
+
+    MegaCityPath [label=<
+      <b>megacity path</b><br/>
+      CodebaseScanner -&gt; CodebaseSnapshot -&gt; CityDatabase -&gt; CityClassRecord<br align="left"/>
+      SemanticCityLayout -&gt; SceneWorld (ECS) -&gt; SceneSnapshot -&gt; IsometricScenePass -&gt; Renderer
+    >, fillcolor="#fff6d6", color="#c7981d"];
   }
 
   FlowStart -> WindowEvent [style=dashed, arrowhead=vee];
   WindowEvent -> NvimPath [style=dashed, arrowhead=vee];
   WindowEvent -> TerminalPath [style=dashed, arrowhead=vee];
+  WindowEvent -> MegaCityPath [style=dashed, arrowhead=vee];
 
   // Threading note.
   Threading [label=<
     <b>Threading model</b><br align="left"/>
     Main thread: App loop, window events, rendering, host pump<br align="left"/>
     Nvim path: NvimRpc owns a reader thread for msgpack-RPC notifications<br align="left"/>
+    MegaCity: CodebaseScanner runs a background tree-sitter scan thread<br align="left"/>
     Host wakeups: background I/O requests frame via IHostCallbacks::wake_window()<br align="left"/>
     Terminal local process I/O is drained/coalesced by host pump before rendering
   >, fillcolor="#fff6d6", color="#c7981d"];

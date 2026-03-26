@@ -376,9 +376,15 @@ The workflow uses the same repo-local test scripts as local development, includi
 
 ## Architecture Diagrams
 
-Regenerate with `python scripts/build_docs.py`.
+### Architecture Overview
+
+![Draxul architecture](docs/architecture/architecture.claude.svg)
+
+Regenerate with the prompt in `plans/prompts/architecture_diagram.md`.
 
 ### CMake Target Dependencies
+
+Regenerate with `python scripts/build_docs.py`.
 
 ![CMake target dependency graph](docs/deps/deps.svg)
 
