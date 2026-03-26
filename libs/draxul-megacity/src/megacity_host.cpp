@@ -508,6 +508,33 @@ SignPlacementSpec place_module_road_sign(
     return placement;
 }
 
+SignPlacementSpec place_module_park_sign(
+    glm::vec2 park_center, float park_footprint, std::string_view text, const TextService* text_service,
+    const MegaCityCodeConfig& config)
+{
+    SignPlacementSpec placement;
+
+    // Width = park footprint; depth from font aspect ratio, clamped to fit.
+    float sign_width = park_footprint;
+    float sign_depth = sign_width * 0.25f; // fallback
+    if (text_service && !text.empty())
+    {
+        const int cw = std::max(text_service->metrics().cell_width, 1);
+        const int ch = std::max(text_service->metrics().cell_height, 1);
+        const float aspect = static_cast<float>(ch) / static_cast<float>(cw);
+        const float char_width = sign_width / std::max(static_cast<float>(text.size()), 1.0f);
+        sign_depth = char_width * aspect + 2.0f * config.road_sign_edge_inset;
+    }
+    placement.width = std::max(0.35f, sign_width);
+    placement.height = config.roof_sign_thickness;
+    placement.depth = std::clamp(
+        sign_depth, config.minimum_road_sign_depth, park_footprint * 0.5f);
+    placement.mesh = MeshId::RoofSign;
+    placement.center = park_center;
+    placement.yaw_radians = 0.0f;
+    return placement;
+}
+
 SignLabelRequest make_sign_request(
     std::string key, std::string_view text, const SignPlacementSpec& placement,
     const TextService* text_service, const MegaCityCodeConfig& config)
@@ -1194,14 +1221,14 @@ void MegaCityHost::rebuild_semantic_city()
             sign_requests.push_back(make_sign_request(building_sign_key(building), text, signs[0], ts, renderer_config_));
         }
 
-        if (!module_layout.buildings.empty())
+        if (module_layout.park_footprint > 0.0f)
         {
-            const SemanticCityBuilding& anchor = module_layout.buildings.front();
             const std::string name = module_display_name(module_layout.module_path);
-            const SignPlacementSpec road = place_module_road_sign(
-                anchor, name, sign_text_service_ ? sign_text_service_.get() : nullptr, renderer_config_);
+            const SignPlacementSpec park_sign = place_module_park_sign(
+                module_layout.park_center, module_layout.park_footprint,
+                name, sign_text_service_ ? sign_text_service_.get() : nullptr, renderer_config_);
             sign_requests.push_back(make_sign_request(
-                module_sign_key(module_layout.module_path), name, road,
+                module_sign_key(module_layout.module_path), name, park_sign,
                 sign_text_service_ ? sign_text_service_.get() : nullptr, renderer_config_));
         }
     }
@@ -1336,27 +1363,27 @@ void MegaCityHost::rebuild_semantic_city()
             }
         }
 
-        if (sign_label_atlas_ && !module_layout.buildings.empty())
+        if (sign_label_atlas_ && module_layout.park_footprint > 0.0f)
         {
-            const SemanticCityBuilding& anchor = module_layout.buildings.front();
             const auto it = sign_label_atlas_->entries.find(module_sign_key(module_layout.module_path));
             if (it != sign_label_atlas_->entries.end())
             {
                 const std::string name = module_display_name(module_layout.module_path);
-                const SignPlacementSpec road = place_module_road_sign(
-                    anchor, name, sign_text_service_ ? sign_text_service_.get() : nullptr, renderer_config_);
-                const SignMetrics sign = make_sign_metrics(road, it->second);
+                const SignPlacementSpec park_sign = place_module_park_sign(
+                    module_layout.park_center, module_layout.park_footprint,
+                    name, sign_text_service_ ? sign_text_service_.get() : nullptr, renderer_config_);
+                const SignMetrics sign = make_sign_metrics(park_sign, it->second);
                 world_->create_sign(
-                    road.center.x,
-                    road.center.y,
-                    renderer_config_.sidewalk_surface_lift
-                        + renderer_config_.sidewalk_surface_height
+                    park_sign.center.x,
+                    park_sign.center.y,
+                    building_base_elevation(renderer_config_)
+                        + renderer_config_.park_height
                         + sign.height * 0.5f
                         + renderer_config_.road_sign_lift,
                     sign,
-                    road.mesh,
+                    park_sign.mesh,
                     kModuleSignColor,
-                    SourceSymbol{ anchor.source_file_path, module_layout.module_path });
+                    SourceSymbol{ "", module_layout.module_path });
             }
         }
     }
