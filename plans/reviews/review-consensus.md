@@ -1,32 +1,36 @@
-All 34 files written. Here's the summary:
+All 25 new work items are in place alongside the existing `24 osc52-clipboard-read`. Here's a summary of what was produced:
 
 ---
 
 ## What was produced
 
-**`plans/reviews/review-consensus.md`** — full synthesis document covering:
-- How the three reviewers (Claude/GPT/Gemini) agreed, disagreed, and nuanced each other
-- A table of strong agreements and a disagreements section with resolutions
-- Stale/already-fixed issues called out explicitly
-- Recommended fix order across all 33 items
-- An interdependency table with sub-agent suggestions
+### `plans/reviews/review-consensus.md` — full synthesis
 
-**`plans/work-items/` — 33 new work items:**
+- **10 strong agreements** across all three reviewers (God Object `App`, untestable `run_render_test`, `void*` render context, MegaCity structural reach, error idiom inconsistency, `FT_Face` lifetime hazard, chord prefix stuck-state, `MegaCityCodeConfig` in core config, `Grid::scroll()` complexity, thin concurrency/persistence tests)
+- **Agent-specific findings** attributed by reviewer with `[C]`, `[G]`, `[P]` tags
+- **Disagreement table** with resolutions (error unification, App decomposition scope, MegaCity priority, `void*` strategy)
+- **Stale/already-fixed** issues called out explicitly (23 items already in complete or icebox, not re-planned)
+- **Recommended fix order** across all tiers
+- **Interdependency map** with sub-agent recommendations
 
-| Range | Category | Count |
+### 25 new work items
+
+| Range | Type | Count |
 |---|---|---|
-| `00–02` | Bugs | 3 |
-| `03–15` | Tests | 13 |
-| `16–23` | Refactors | 8 |
-| `24–32` | Features | 9 |
+| `00–03` | Bugs | 4 |
+| `04–12` | Tests | 9 |
+| `13–19` | Refactors | 7 |
+| `20–24` | Features | 5 |
 
-**Key interdependencies flagged:**
-- `00` (CWD fix) → `12` (CLI test validates the fix)
-- `02` (ligature alloc fix) → `09` (bounds test exercises the fix)
-- `07` (font cascade test) → `26` (per-pane font size feature needs that test first)
-- `17` (IRenderer cleanup) → `20` (render-test capture separation) — do in sequence, same agent
-- `16` (app-support split) ↔ `23` (UiRequestWorker evaluate) — coordinate scope
-- `25` (session restore) → check icebox `36` (window-state-persistence) for overlap
-- `08` (SplitTree min-size test) → `29` (pane drag-reorder depends on that ratio logic)
+### Key interdependencies flagged
 
-Items already in the icebox were not re-created (26 excluded items listed in the consensus doc).
+- `00` (FT_Face bug) → `11` (fontresolver test: add regression)
+- `01` (grid overflow) → `05` (grid OOB test covers it)
+- `02` (APPDATA bug) → `07` (config test covers it)
+- **`04 + 13`** = same agent pass (render-test refactor + test)
+- **`08 + 15`** = same agent pass (attr-cache refactor + test)
+- **`05 + 17`** = same agent pass (scroll split + OOB test)
+- **`09 + 10 + 12`** = same agent pass (MegaCity stability tests)
+- **`11 + 18`** = same agent pass (fontresolver extraction + test)
+- `19` (void* context) — coordinate scope with icebox `25 renderer-backend-parity-cleanup`
+- `20` (OSC 8) → `24` (OSC 133) share dispatch infrastructure; do OSC 8 first
