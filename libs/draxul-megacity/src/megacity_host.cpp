@@ -530,7 +530,10 @@ SignPlacementSpec place_module_park_sign(
     placement.depth = std::clamp(
         sign_depth, config.minimum_road_sign_depth, park_footprint * 0.5f);
     placement.mesh = MeshId::RoofSign;
-    placement.center = park_center;
+
+    // Place along the south edge of the park (negative Z).
+    const float half = park_footprint * 0.5f;
+    placement.center = { park_center.x, park_center.y - half + placement.depth * 0.5f };
     placement.yaw_radians = 0.0f;
     return placement;
 }
@@ -1227,9 +1230,13 @@ void MegaCityHost::rebuild_semantic_city()
             const SignPlacementSpec park_sign = place_module_park_sign(
                 module_layout.park_center, module_layout.park_footprint,
                 name, sign_text_service_ ? sign_text_service_.get() : nullptr, renderer_config_);
-            sign_requests.push_back(make_sign_request(
+            auto request = make_sign_request(
                 module_sign_key(module_layout.module_path), name, park_sign,
-                sign_text_service_ ? sign_text_service_.get() : nullptr, renderer_config_));
+                sign_text_service_ ? sign_text_service_.get() : nullptr, renderer_config_);
+            request.text_r = 255;
+            request.text_g = 255;
+            request.text_b = 255;
+            sign_requests.push_back(std::move(request));
         }
     }
     if (sign_text_service_)
@@ -1373,6 +1380,14 @@ void MegaCityHost::rebuild_semantic_city()
                     module_layout.park_center, module_layout.park_footprint,
                     name, sign_text_service_ ? sign_text_service_.get() : nullptr, renderer_config_);
                 const SignMetrics sign = make_sign_metrics(park_sign, it->second);
+
+                // Board color: slightly darker version of the park slab color.
+                const glm::vec3 kParkBrown(0.45f, 0.30f, 0.15f);
+                const glm::vec3 kParkGreen(0.25f, 0.65f, 0.20f);
+                const float q = std::clamp(module_layout.quality, 0.0f, 1.0f);
+                const glm::vec3 park_rgb = glm::mix(kParkBrown, kParkGreen, q) * 0.7f;
+                const glm::vec4 sign_board_color(park_rgb, 1.0f);
+
                 world_->create_sign(
                     park_sign.center.x,
                     park_sign.center.y,
@@ -1382,7 +1397,7 @@ void MegaCityHost::rebuild_semantic_city()
                         + renderer_config_.road_sign_lift,
                     sign,
                     park_sign.mesh,
-                    kModuleSignColor,
+                    sign_board_color,
                     SourceSymbol{ "", module_layout.module_path });
             }
         }
