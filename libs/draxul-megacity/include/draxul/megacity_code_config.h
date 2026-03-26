@@ -2,6 +2,8 @@
 
 #include <draxul/config_document.h>
 
+#include <glm/vec3.hpp>
+
 #include <cstdint>
 #include <toml++/toml.hpp>
 
@@ -70,6 +72,10 @@ struct MegaCityCodeConfig
     float park_height = 0.15f;
 
     float sign_label_point_size = 18.0f;
+    glm::vec3 module_sign_board_color{ 1.0f, 1.0f, 1.0f };
+    glm::vec3 module_sign_text_color{ 0.0f, 0.0f, 0.0f };
+    glm::vec3 building_sign_board_color{ 1.0f, 1.0f, 1.0f };
+    glm::vec3 building_sign_text_color{ 0.0f, 0.0f, 0.0f };
     MegaCitySignPlacement building_sign_placement = MegaCitySignPlacement::WallEast;
     float roof_sign_thickness = 0.05f;
     float roof_sign_depth = 0.42f;

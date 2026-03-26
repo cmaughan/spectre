@@ -91,6 +91,23 @@ std::optional<float> get_float(const toml::table& table, const char* key)
     return std::nullopt;
 }
 
+void assign_vec3(const toml::table& table, const char* key, glm::vec3& target)
+{
+    if (auto parsed = toml_support::get_vec3(table, key); parsed.has_value())
+        target = *parsed;
+}
+
+void assign_legacy_color3(
+    const toml::table& table, const char* key_r, const char* key_g, const char* key_b, glm::vec3& target)
+{
+    if (auto parsed = get_float(table, key_r); parsed.has_value())
+        target.r = *parsed;
+    if (auto parsed = get_float(table, key_g); parsed.has_value())
+        target.g = *parsed;
+    if (auto parsed = get_float(table, key_b); parsed.has_value())
+        target.b = *parsed;
+}
+
 } // namespace
 
 void apply_megacity_code_table(MegaCityCodeConfig& config, const toml::table& table)
@@ -156,6 +173,24 @@ void apply_megacity_code_table(MegaCityCodeConfig& config, const toml::table& ta
     assign_float("park_height", config.park_height);
 
     assign_float("sign_label_point_size", config.sign_label_point_size);
+    assign_vec3(table, "module_sign_board_color", config.module_sign_board_color);
+    assign_vec3(table, "module_sign_text_color", config.module_sign_text_color);
+    assign_vec3(table, "building_sign_board_color", config.building_sign_board_color);
+    assign_vec3(table, "building_sign_text_color", config.building_sign_text_color);
+    assign_legacy_color3(
+        table, "module_sign_board_r", "module_sign_board_g", "module_sign_board_b", config.module_sign_board_color);
+    assign_legacy_color3(
+        table, "module_sign_text_r", "module_sign_text_g", "module_sign_text_b", config.module_sign_text_color);
+    assign_legacy_color3(
+        table, "building_sign_board_r", "building_sign_board_g", "building_sign_board_b",
+        config.building_sign_board_color);
+    assign_legacy_color3(
+        table, "building_sign_text_r", "building_sign_text_g", "building_sign_text_b", config.building_sign_text_color);
+    assign_legacy_color3(table, "flat_sign_board_r", "flat_sign_board_g", "flat_sign_board_b", config.module_sign_board_color);
+    assign_legacy_color3(table, "flat_sign_text_r", "flat_sign_text_g", "flat_sign_text_b", config.module_sign_text_color);
+    assign_legacy_color3(table, "wall_sign_board_r", "wall_sign_board_g", "wall_sign_board_b", config.building_sign_board_color);
+    assign_legacy_color3(table, "wall_sign_text_r", "wall_sign_text_g", "wall_sign_text_b", config.building_sign_text_color);
+    assign_legacy_color3(table, "sign_text_r", "sign_text_g", "sign_text_b", config.module_sign_text_color);
     if (auto placement = toml_support::get_string(table, "building_sign_placement"))
     {
         if (auto parsed = parse_megacity_sign_placement(*placement); parsed.has_value())
@@ -245,6 +280,10 @@ toml::table serialize_megacity_code_table(const MegaCityCodeConfig& config)
     table.insert_or_assign("park_footprint", static_cast<double>(config.park_footprint));
     table.insert_or_assign("park_height", static_cast<double>(config.park_height));
     table.insert_or_assign("sign_label_point_size", static_cast<double>(config.sign_label_point_size));
+    toml_support::insert_vec3(table, "module_sign_board_color", config.module_sign_board_color);
+    toml_support::insert_vec3(table, "module_sign_text_color", config.module_sign_text_color);
+    toml_support::insert_vec3(table, "building_sign_board_color", config.building_sign_board_color);
+    toml_support::insert_vec3(table, "building_sign_text_color", config.building_sign_text_color);
     table.insert_or_assign("building_sign_placement", std::string(format_megacity_sign_placement(config.building_sign_placement)));
     table.insert_or_assign("roof_sign_thickness", static_cast<double>(config.roof_sign_thickness));
     table.insert_or_assign("roof_sign_depth", static_cast<double>(config.roof_sign_depth));

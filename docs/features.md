@@ -84,6 +84,7 @@ Toggle with F12. Shows:
 - Atlas usage ratio and glyph count
 - Startup profiling step timings
 - MegaCity renderer controls, including AO debug view (`Final Scene`, `Ambient Occlusion`, `Decoded Normals`, `World Position`) and AO denoise toggle
+- MegaCity sign styling controls, including separate module-sign and building-sign board/text colors
 
 ---
 

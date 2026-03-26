@@ -74,9 +74,6 @@ constexpr std::array<glm::vec4, 26> kModuleAccentPalette = {
 constexpr glm::vec4 kRoadColor(0.46f, 0.46f, 0.48f, 1.0f);
 constexpr glm::vec4 kSidewalkSurfaceColor(0.72f, 0.72f, 0.74f, 1.0f);
 constexpr glm::vec4 kRoadSurfaceColor(0.18f, 0.18f, 0.19f, 1.0f);
-constexpr glm::vec4 kSignBoardColor(1.0f, 1.0f, 1.0f, 1.0f);
-constexpr glm::vec4 kBuildingSignColor = kSignBoardColor;
-constexpr glm::vec4 kModuleSignColor = kSignBoardColor;
 
 struct SignPlacementSpec
 {
@@ -96,6 +93,30 @@ float building_base_elevation(const MegaCityCodeConfig& config)
 float world_floor_height(const MegaCityCodeConfig& config)
 {
     return config.road_surface_height * config.world_floor_height_scale;
+}
+
+glm::vec4 color_with_alpha(const glm::vec3& color, float alpha = 1.0f)
+{
+    return glm::vec4(
+        std::clamp(color.r, 0.0f, 1.0f),
+        std::clamp(color.g, 0.0f, 1.0f),
+        std::clamp(color.b, 0.0f, 1.0f),
+        alpha);
+}
+
+glm::vec4 module_sign_board_color(const MegaCityCodeConfig& config)
+{
+    return color_with_alpha(config.module_sign_board_color);
+}
+
+glm::vec4 building_sign_board_color(const MegaCityCodeConfig& config)
+{
+    return color_with_alpha(config.building_sign_board_color);
+}
+
+uint8_t color_channel_to_byte(float value)
+{
+    return static_cast<uint8_t>(std::lround(std::clamp(value, 0.0f, 1.0f) * 255.0f));
 }
 
 MegaCityCodeConfig world_rebuild_signature(MegaCityCodeConfig config)
@@ -565,12 +586,17 @@ SignLabelRequest make_sign_request(
         pixel_height = 16;
     }
 
+    const bool building_sign = placement.mesh == MeshId::WallSign;
+    const glm::vec3& text_color = building_sign ? config.building_sign_text_color : config.module_sign_text_color;
     return SignLabelRequest{
         .key = std::move(key),
         .text = std::string(text),
         .target_pixel_width = pixel_width,
         .target_pixel_height = pixel_height,
         .vertical_align = SignLabelVerticalAlign::Center,
+        .text_r = color_channel_to_byte(text_color.r),
+        .text_g = color_channel_to_byte(text_color.g),
+        .text_b = color_channel_to_byte(text_color.b),
     };
 }
 
@@ -1379,13 +1405,16 @@ void MegaCityHost::rebuild_semantic_city()
                     {
                         const SignMetrics sign = make_sign_metrics(placement, it->second);
                         const float sign_y = total_height - sign.height * 0.5f;
+                        const glm::vec4 sign_color
+                            = placement.mesh == MeshId::RoofSign ? module_sign_board_color(renderer_config_)
+                                                                 : building_sign_board_color(renderer_config_);
                         world_->create_sign(
                             placement.center.x,
                             placement.center.y,
                             sign_y,
                             sign,
                             placement.mesh,
-                            kBuildingSignColor,
+                            sign_color,
                             SourceSymbol{ building.source_file_path, building.qualified_name });
                     }
                 }
@@ -1424,13 +1453,6 @@ void MegaCityHost::rebuild_semantic_city()
                     name, sign_text_service_ ? sign_text_service_.get() : nullptr, renderer_config_);
                 const SignMetrics sign = make_sign_metrics(park_sign, it->second);
 
-                // Board color: slightly darker version of the park slab color.
-                const glm::vec3 kParkBrown(0.45f, 0.30f, 0.15f);
-                const glm::vec3 kParkGreen(0.25f, 0.65f, 0.20f);
-                const float q = std::clamp(module_layout.quality, 0.0f, 1.0f);
-                const glm::vec3 park_rgb = glm::mix(kParkBrown, kParkGreen, q) * 0.7f;
-                const glm::vec4 sign_board_color(park_rgb, 1.0f);
-
                 world_->create_sign(
                     park_sign.center.x,
                     park_sign.center.y,
@@ -1440,7 +1462,7 @@ void MegaCityHost::rebuild_semantic_city()
                         + renderer_config_.road_sign_lift,
                     sign,
                     park_sign.mesh,
-                    sign_board_color,
+                    module_sign_board_color(renderer_config_),
                     SourceSymbol{ "", module_layout.module_path });
             }
         }

@@ -704,6 +704,15 @@ bool render_renderer_controls(MegacityRendererControls& controls)
         changed |= item_changed;
         note_commit();
     };
+    auto edit_color3 = [&](const char* label, glm::vec3& value) {
+        float color[3] = { value.r, value.g, value.b };
+        if (ImGui::ColorEdit3(label, color))
+        {
+            value = glm::vec3(color[0], color[1], color[2]);
+            changed = true;
+            controls.committed_edit = true;
+        }
+    };
 
     if (ImGui::TreeNodeEx("##renderer_build", ImGuiTreeNodeFlags_SpanAvailWidth, "City Build"))
     {
@@ -744,6 +753,10 @@ bool render_renderer_controls(MegacityRendererControls& controls)
         edit_float("Sign Text Hidden <= px", config.sign_text_hidden_px, 0.1f, 0.0f, 64.0f, "%.1f");
         edit_float("Sign Text Full >= px", config.sign_text_full_px, 0.1f, 0.0f, 64.0f, "%.1f");
         edit_float("Sign Label Point Size", config.sign_label_point_size, 0.25f, 1.0f, 72.0f, "%.1f");
+        edit_color3("Module Sign Board Color", config.module_sign_board_color);
+        edit_color3("Module Sign Text Color", config.module_sign_text_color);
+        edit_color3("Building Sign Board Color", config.building_sign_board_color);
+        edit_color3("Building Sign Text Color", config.building_sign_text_color);
         edit_int("Wall Sign Text Padding", config.wall_sign_text_padding, 1, 0, 64);
 
         static constexpr std::array<const char*, 8> kPlacementLabels = {
