@@ -50,6 +50,35 @@ std::string_view format_megacity_sign_placement(MegaCitySignPlacement value)
     return "wall_east";
 }
 
+std::optional<MegaCityAODebugView> parse_megacity_ao_debug_view(std::string_view value)
+{
+    if (value == "final_scene")
+        return MegaCityAODebugView::FinalScene;
+    if (value == "ambient_occlusion")
+        return MegaCityAODebugView::AmbientOcclusion;
+    if (value == "decoded_normals")
+        return MegaCityAODebugView::DecodedNormals;
+    if (value == "world_position")
+        return MegaCityAODebugView::WorldPosition;
+    return std::nullopt;
+}
+
+std::string_view format_megacity_ao_debug_view(MegaCityAODebugView value)
+{
+    switch (value)
+    {
+    case MegaCityAODebugView::FinalScene:
+        return "final_scene";
+    case MegaCityAODebugView::AmbientOcclusion:
+        return "ambient_occlusion";
+    case MegaCityAODebugView::DecodedNormals:
+        return "decoded_normals";
+    case MegaCityAODebugView::WorldPosition:
+        return "world_position";
+    }
+    return "final_scene";
+}
+
 namespace
 {
 
@@ -82,11 +111,25 @@ void apply_megacity_code_table(MegaCityCodeConfig& config, const toml::table& ta
     assign_float("sign_text_hidden_px", config.sign_text_hidden_px);
     assign_float("sign_text_full_px", config.sign_text_full_px);
     assign_float("output_gamma", config.output_gamma);
-    assign_bool("show_ao_greyscale", config.show_ao_greyscale);
+    if (auto debug_view = toml_support::get_string(table, "ao_debug_view"))
+    {
+        if (auto parsed = parse_megacity_ao_debug_view(*debug_view); parsed.has_value())
+            config.ao_debug_view = *parsed;
+    }
+    else if (auto legacy_show_ao = toml_support::get_bool(table, "show_ao_greyscale"); legacy_show_ao.value_or(false))
+    {
+        config.ao_debug_view = MegaCityAODebugView::AmbientOcclusion;
+    }
+    assign_bool("ao_denoise", config.ao_denoise);
+    assign_float("ao_radius", config.ao_radius);
+    assign_float("ao_bias", config.ao_bias);
+    assign_float("ao_power", config.ao_power);
+    assign_int("ao_kernel_size", config.ao_kernel_size);
     assign_float("height_multiplier", config.height_multiplier);
     assign_bool("clamp_semantic_metrics", config.clamp_semantic_metrics);
     assign_bool("hide_test_entities", config.hide_test_entities);
     assign_bool("auto_rebuild", config.auto_rebuild);
+    assign_bool("show_ui_panels", config.show_ui_panels);
 
     assign_float("placement_step", config.placement_step);
     assign_int("max_spiral_rings", config.max_spiral_rings);
@@ -170,11 +213,17 @@ toml::table serialize_megacity_code_table(const MegaCityCodeConfig& config)
     table.insert_or_assign("sign_text_hidden_px", static_cast<double>(config.sign_text_hidden_px));
     table.insert_or_assign("sign_text_full_px", static_cast<double>(config.sign_text_full_px));
     table.insert_or_assign("output_gamma", static_cast<double>(config.output_gamma));
-    table.insert_or_assign("show_ao_greyscale", config.show_ao_greyscale);
+    table.insert_or_assign("ao_debug_view", std::string(format_megacity_ao_debug_view(config.ao_debug_view)));
+    table.insert_or_assign("ao_denoise", config.ao_denoise);
+    table.insert_or_assign("ao_radius", static_cast<double>(config.ao_radius));
+    table.insert_or_assign("ao_bias", static_cast<double>(config.ao_bias));
+    table.insert_or_assign("ao_power", static_cast<double>(config.ao_power));
+    table.insert_or_assign("ao_kernel_size", config.ao_kernel_size);
     table.insert_or_assign("height_multiplier", static_cast<double>(config.height_multiplier));
     table.insert_or_assign("clamp_semantic_metrics", config.clamp_semantic_metrics);
     table.insert_or_assign("hide_test_entities", config.hide_test_entities);
     table.insert_or_assign("auto_rebuild", config.auto_rebuild);
+    table.insert_or_assign("show_ui_panels", config.show_ui_panels);
     table.insert_or_assign("placement_step", static_cast<double>(config.placement_step));
     table.insert_or_assign("max_spiral_rings", config.max_spiral_rings);
     table.insert_or_assign("lot_road_reserve_fraction", static_cast<double>(config.lot_road_reserve_fraction));

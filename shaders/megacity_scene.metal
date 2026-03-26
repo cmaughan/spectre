@@ -13,6 +13,8 @@ struct FrameUniforms
     float4 render_tuning;
     float4 screen_params;
     float4 ao_params;
+    float4 debug_view;
+    float4 world_debug_bounds;
 };
 
 struct ObjectUniforms
@@ -72,9 +74,10 @@ fragment float4 scene_fragment(
         (in.position.xy - frame.screen_params.xy) * frame.screen_params.zw,
         float2(0.0),
         float2(1.0));
-    const float ao = clamp(aoTexture.sample(aoSampler, screen_uv).r, 0.0, 1.0);
-    if (frame.render_tuning.w > 0.5)
-        return float4(ao, ao, ao, 1.0);
+    const float3 ao_debug = aoTexture.sample(aoSampler, screen_uv).rgb;
+    const float ao = clamp(ao_debug.r, 0.0, 1.0);
+    if (frame.debug_view.x > 0.5)
+        return float4(ao_debug, 1.0);
     const float3 light_dir = normalize(-frame.light_dir.xyz);
     const float ndotl = max(dot(normal_ws, light_dir), 0.0);
     const float ambient = max(frame.render_tuning.z, 0.0);

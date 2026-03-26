@@ -118,6 +118,8 @@ private:
     float city_max_x_ = 2.5f;
     float city_min_z_ = -2.5f;
     float city_max_z_ = 2.5f;
+    bool show_ui_panels_ = true;
+    std::string imgui_ini_path_;
     bool continuous_refresh_enabled_ = false;
     bool move_left_ = false;
     bool move_right_ = false;

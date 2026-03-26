@@ -20,16 +20,30 @@ enum class MegaCitySignPlacement : uint8_t
     WallWest,
 };
 
+enum class MegaCityAODebugView : uint8_t
+{
+    FinalScene,
+    AmbientOcclusion,
+    DecodedNormals,
+    WorldPosition,
+};
+
 struct MegaCityCodeConfig
 {
     float sign_text_hidden_px = 1.5f;
     float sign_text_full_px = 8.0f;
     float output_gamma = 1.0f;
-    bool show_ao_greyscale = false;
+    MegaCityAODebugView ao_debug_view = MegaCityAODebugView::FinalScene;
+    bool ao_denoise = true;
+    float ao_radius = 1.6f;
+    float ao_bias = 0.12f;
+    float ao_power = 1.35f;
+    int ao_kernel_size = 16;
     float height_multiplier = 1.5f;
     bool clamp_semantic_metrics = false;
     bool hide_test_entities = true;
     bool auto_rebuild = true;
+    bool show_ui_panels = true;
 
     float placement_step = 0.5f;
     int max_spiral_rings = 4096;
@@ -108,6 +122,8 @@ struct MegaCityCodeConfig
 
 [[nodiscard]] std::optional<MegaCitySignPlacement> parse_megacity_sign_placement(std::string_view value);
 [[nodiscard]] std::string_view format_megacity_sign_placement(MegaCitySignPlacement value);
+[[nodiscard]] std::optional<MegaCityAODebugView> parse_megacity_ao_debug_view(std::string_view value);
+[[nodiscard]] std::string_view format_megacity_ao_debug_view(MegaCityAODebugView value);
 
 void apply_megacity_code_table(MegaCityCodeConfig& config, const toml::table& table);
 [[nodiscard]] toml::table serialize_megacity_code_table(const MegaCityCodeConfig& config);

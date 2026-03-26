@@ -13,6 +13,8 @@ struct FrameUniforms
     float4 render_tuning;
     float4 screen_params;
     float4 ao_params; // x = radius_world, y = radius_pixels, z = bias, w = power
+    float4 debug_view;
+    float4 world_debug_bounds;
 };
 
 struct VertexOut
@@ -61,47 +63,78 @@ float3 reconstruct_world(constant FrameUniforms& frame, float2 uv, float depth)
     return world.xyz / max(world.w, 1e-6);
 }
 
-float direction_occlusion(
-    constant FrameUniforms& frame,
-    texture2d<float> materialTexture,
-    depth2d<float> depthTexture,
-    sampler gbufferSampler,
-    float2 uv,
-    float3 world_pos,
-    float3 normal_ws,
-    float2 dir)
+float2 ndc_to_uv(constant FrameUniforms& frame, float2 ndc)
 {
-    constexpr int kStepCount = 4;
+    const float uv_y = (frame.proj[1][1] >= 0.0)
+        ? (1.0 - ndc.y) * 0.5
+        : (ndc.y + 1.0) * 0.5;
+    return float2(ndc.x * 0.5 + 0.5, uv_y);
+}
 
-    float max_horizon = -1.0;
-    const float radius_world = max(frame.ao_params.x, 1e-3);
-    const float radius_pixels = max(frame.ao_params.y, 1.0);
-    const float bias = clamp(frame.ao_params.z, 0.0, 0.95);
+float hash1(float n)
+{
+    return fract(sin(n) * 43758.5453123);
+}
 
-    for (int step_index = 1; step_index <= kStepCount; ++step_index)
-    {
-        const float t = (float(step_index) - 0.5) / float(kStepCount);
-        const float2 sample_uv = uv + dir * (radius_pixels * t) * frame.screen_params.zw;
-        if (any(sample_uv < 0.0) || any(sample_uv > 1.0))
-            continue;
+float spatial_weight(int2 offset)
+{
+    constexpr float sigma = 1.35;
+    const float r2 = float(offset.x * offset.x + offset.y * offset.y);
+    return exp(-0.5 * r2 / (sigma * sigma));
+}
 
-        const float sample_depth = depthTexture.sample(gbufferSampler, sample_uv);
-        if (sample_depth >= 0.99999)
-            continue;
+float2 tiled_noise(float2 pixel)
+{
+    const float2 cell = fmod(floor(pixel), 4.0);
+    const float seed = cell.x + cell.y * 4.0;
+    return normalize(float2(hash1(seed * 17.0 + 0.13), hash1(seed * 31.0 + 0.71)) * 2.0 - 1.0);
+}
 
-        const float3 sample_world = reconstruct_world(frame, sample_uv, sample_depth);
-        const float3 sample_vec = sample_world - world_pos;
-        const float sample_dist = length(sample_vec);
-        if (sample_dist <= 1e-4 || sample_dist > radius_world)
-            continue;
+float3 kernel_sample(int index, int count)
+{
+    const float i = float(index);
+    const float u = hash1(i * 12.9898 + 0.17);
+    const float v = hash1(i * 78.233 + 0.53);
+    const float phi = 6.28318530718 * u;
+    const float z = v;
+    const float r = sqrt(max(1.0 - z * z, 0.0));
+    const float3 sample = float3(cos(phi) * r, sin(phi) * r, z);
+    const float t = (i + 0.5) / float(count);
+    const float scale = mix(0.1, 1.0, t * t);
+    return sample * scale;
+}
 
-        const float3 sample_dir = sample_vec / sample_dist;
-        const float horizon = dot(normal_ws, sample_dir);
-        const float distance_weight = 1.0 - smoothstep(radius_world * 0.35, radius_world, sample_dist);
-        max_horizon = max(max_horizon, horizon * distance_weight);
-    }
+int kernel_size(constant FrameUniforms& frame)
+{
+    return int(clamp(floor(frame.debug_view.z + 0.5), 1.0, 64.0));
+}
 
-    return max(max_horizon - bias, 0.0);
+int debug_view_mode(constant FrameUniforms& frame)
+{
+    return int(floor(frame.debug_view.x + 0.5));
+}
+
+bool ao_denoise_enabled(constant FrameUniforms& frame)
+{
+    return frame.debug_view.y > 0.5;
+}
+
+float3 world_position_false_color(constant FrameUniforms& frame, float3 world_pos)
+{
+    const float min_x = frame.world_debug_bounds.x;
+    const float max_x = frame.world_debug_bounds.y;
+    const float min_z = frame.world_debug_bounds.z;
+    const float max_z = frame.world_debug_bounds.w;
+    const float span_x = max(max_x - min_x, 1e-3);
+    const float span_z = max(max_z - min_z, 1e-3);
+    const float span_y = max(max(span_x, span_z) * 0.35, 8.0);
+    return clamp(
+        float3(
+            (world_pos.x - min_x) / span_x,
+            world_pos.y / span_y,
+            (world_pos.z - min_z) / span_z),
+        float3(0.0),
+        float3(1.0));
 }
 
 fragment float4 ao_fragment(
@@ -122,18 +155,112 @@ fragment float4 ao_fragment(
     const float4 material = materialTexture.sample(gbufferSampler, screen_uv);
     const float3 normal_ws = oct_decode(material.rg);
     const float3 world_pos = reconstruct_world(frame, screen_uv, depth);
+    const float3 normal_vs = normalize(float3x3(frame.view[0].xyz, frame.view[1].xyz, frame.view[2].xyz) * normal_ws);
+    const float3 frag_pos_vs = float3(frame.view * float4(world_pos, 1.0));
+    const float2 random_vec_2d = tiled_noise(in.position.xy);
+    const float3 random_vec = float3(random_vec_2d, 0.0);
+    const float3 tangent = normalize(random_vec - normal_vs * dot(random_vec, normal_vs));
+    const float3 bitangent = cross(normal_vs, tangent);
+    const float3x3 tbn = float3x3(tangent, bitangent, normal_vs);
 
-    constexpr int kDirectionCount = 8;
+    const float radius_world = max(frame.ao_params.x, 1e-3);
+    const float bias = clamp(frame.ao_params.z, 0.0, 0.95);
+    const int sample_count = kernel_size(frame);
     float occlusion = 0.0;
-    for (int direction_index = 0; direction_index < kDirectionCount; ++direction_index)
+    for (int sample_index = 0; sample_index < sample_count; ++sample_index)
     {
-        const float angle = (6.28318530718 * float(direction_index)) / float(kDirectionCount);
-        const float2 dir = float2(cos(angle), sin(angle));
-        occlusion += direction_occlusion(
-            frame, materialTexture, depthTexture, gbufferSampler, screen_uv, world_pos, normal_ws, dir);
+        const float3 sample_pos_vs = frag_pos_vs + (tbn * kernel_sample(sample_index, sample_count)) * radius_world;
+        const float4 offset = frame.proj * float4(sample_pos_vs, 1.0);
+        if (abs(offset.w) <= 1e-6)
+            continue;
+        const float3 ndc = offset.xyz / offset.w;
+        const float2 sample_uv = ndc_to_uv(frame, ndc.xy);
+        if (any(sample_uv < 0.0) || any(sample_uv > 1.0))
+            continue;
+
+        const float sample_depth = depthTexture.sample(gbufferSampler, sample_uv);
+        if (sample_depth >= 0.99999)
+            continue;
+
+        const float3 sample_world = reconstruct_world(frame, sample_uv, sample_depth);
+        const float3 sample_depth_vs = float3(frame.view * float4(sample_world, 1.0));
+        const float range_check = smoothstep(0.0, 1.0, radius_world / max(abs(frag_pos_vs.z - sample_depth_vs.z), 1e-4));
+        occlusion += (sample_depth_vs.z >= sample_pos_vs.z + bias ? 1.0 : 0.0) * range_check;
     }
 
-    float visibility = 1.0 - occlusion / float(kDirectionCount);
+    float visibility = 1.0 - occlusion / float(sample_count);
     visibility = pow(clamp(visibility, 0.0, 1.0), max(frame.ao_params.w, 1e-3));
     return float4(visibility, 0.0, 0.0, 1.0);
+}
+
+fragment float4 ao_blur_fragment(
+    VertexOut in [[stage_in]],
+    constant FrameUniforms& frame [[buffer(0)]],
+    texture2d<float> rawAoTexture [[texture(0)]],
+    texture2d<float> materialTexture [[texture(1)]],
+    depth2d<float> depthTexture [[texture(2)]],
+    sampler pointSampler [[sampler(0)]])
+{
+    const int debug_mode = debug_view_mode(frame);
+    const float2 center_uv = clamp(
+        (in.position.xy - frame.screen_params.xy) * frame.screen_params.zw,
+        float2(0.0),
+        float2(1.0));
+
+    const float center_depth = depthTexture.sample(pointSampler, center_uv);
+    if (center_depth >= 0.99999)
+    {
+        const float3 background = debug_mode >= 2 ? float3(0.0) : float3(1.0);
+        return float4(background, 1.0);
+    }
+
+    const float4 center_material = materialTexture.sample(pointSampler, center_uv);
+    const float3 center_normal = oct_decode(center_material.rg);
+    const float3 center_world = reconstruct_world(frame, center_uv, center_depth);
+    const float center_ao = rawAoTexture.sample(pointSampler, center_uv).r;
+    if (debug_mode == 2)
+        return float4(center_normal * 0.5 + 0.5, 1.0);
+    if (debug_mode == 3)
+        return float4(world_position_false_color(frame, center_world), 1.0);
+    if (!ao_denoise_enabled(frame))
+        return float4(center_ao, center_ao, center_ao, 1.0);
+
+    const float radius_world = max(frame.ao_params.x, 1e-3);
+
+    float weighted_sum = center_ao;
+    float total_weight = 1.0;
+
+    for (int y = -2; y <= 2; ++y)
+    {
+        for (int x = -2; x <= 2; ++x)
+        {
+            if (x == 0 && y == 0)
+                continue;
+
+            const float2 sample_uv = center_uv + float2(float(x), float(y)) * frame.screen_params.zw;
+            if (any(sample_uv < 0.0) || any(sample_uv > 1.0))
+                continue;
+
+            const float sample_depth = depthTexture.sample(pointSampler, sample_uv);
+            if (sample_depth >= 0.99999)
+                continue;
+
+            const float4 sample_material = materialTexture.sample(pointSampler, sample_uv);
+            const float3 sample_normal = oct_decode(sample_material.rg);
+            const float3 sample_world = reconstruct_world(frame, sample_uv, sample_depth);
+            const float sample_ao = rawAoTexture.sample(pointSampler, sample_uv).r;
+
+            const float normal_weight = pow(max(dot(center_normal, sample_normal), 0.0), 12.0);
+            const float distance_weight = exp(-length(sample_world - center_world) / max(radius_world * 0.35, 1e-3));
+            const float weight = spatial_weight(int2(x, y)) * normal_weight * distance_weight;
+            if (weight <= 1e-4)
+                continue;
+
+            weighted_sum += sample_ao * weight;
+            total_weight += weight;
+        }
+    }
+
+    const float visibility = weighted_sum / max(total_weight, 1e-4);
+    return float4(visibility, visibility, visibility, 1.0);
 }

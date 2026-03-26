@@ -28,6 +28,8 @@ struct FrameUniforms
     simd_float4 render_tuning;
     simd_float4 screen_params; // x = viewport origin x, y = viewport origin y, z = 1 / viewport width, w = 1 / viewport height
     simd_float4 ao_params; // x = radius world, y = radius pixels, z = bias, w = power
+    simd_float4 debug_view; // x = AO debug mode, y = AO denoise enabled
+    simd_float4 world_debug_bounds; // x = min x, y = max x, z = min z, w = max z
 };
 
 struct ObjectUniforms
@@ -241,6 +243,7 @@ struct GBufferTargets
 {
     ObjCRef<id<MTLTexture>> material; // RGBA8Unorm — RG octahedral normal, B roughness, A specular
     ObjCRef<id<MTLTexture>> base_color; // RGBA8Unorm — RGB albedo, A metallic
+    ObjCRef<id<MTLTexture>> ao_raw; // RGBA8Unorm — raw ambient occlusion before denoise
     ObjCRef<id<MTLTexture>> ao; // RGBA8Unorm — R ambient occlusion, GBA reserved
     ObjCRef<id<MTLTexture>> depth; // Depth32Float — hardware depth
     int width = 0;
@@ -268,7 +271,9 @@ struct IsometricScenePass::State
     // GBuffer pre-pass resources
     ObjCRef<id<MTLRenderPipelineState>> gbuffer_pipeline;
     ObjCRef<id<MTLRenderPipelineState>> ao_pipeline;
+    ObjCRef<id<MTLRenderPipelineState>> ao_blur_pipeline;
     ObjCRef<id<MTLSamplerState>> gbuffer_sampler;
+    ObjCRef<id<MTLSamplerState>> gbuffer_point_sampler;
     std::vector<GBufferTargets> gbuffer_targets; // per frame
     bool gbuffer_initialized = false;
     uint32_t last_prepass_frame = 0;
@@ -481,7 +486,8 @@ struct IsometricScenePass::State
     bool init_gbuffer(id<MTLDevice> device)
     {
         if (gbuffer_initialized)
-            return gbuffer_pipeline.get() != nil && ao_pipeline.get() != nil && gbuffer_sampler.get() != nil;
+            return gbuffer_pipeline.get() != nil && ao_pipeline.get() != nil && ao_blur_pipeline.get() != nil
+                && gbuffer_sampler.get() != nil && gbuffer_point_sampler.get() != nil;
 
         gbuffer_initialized = true;
 
@@ -559,9 +565,10 @@ struct IsometricScenePass::State
 
         id<MTLFunction> ao_vert_fn = [aoLibrary newFunctionWithName:@"ao_vertex"];
         id<MTLFunction> ao_frag_fn = [aoLibrary newFunctionWithName:@"ao_fragment"];
-        if (!ao_vert_fn || !ao_frag_fn)
+        id<MTLFunction> ao_blur_frag_fn = [aoLibrary newFunctionWithName:@"ao_blur_fragment"];
+        if (!ao_vert_fn || !ao_frag_fn || !ao_blur_frag_fn)
         {
-            DRAXUL_LOG_ERROR(LogCategory::App, "MegaCity: ao_vertex or ao_fragment not found");
+            DRAXUL_LOG_ERROR(LogCategory::App, "MegaCity: AO shader functions not found");
             return false;
         }
 
@@ -580,6 +587,21 @@ struct IsometricScenePass::State
         }
         ao_pipeline.reset(ao_pso);
 
+        MTLRenderPipelineDescriptor* ao_blur_desc = [[MTLRenderPipelineDescriptor alloc] init];
+        ao_blur_desc.vertexFunction = ao_vert_fn;
+        ao_blur_desc.fragmentFunction = ao_blur_frag_fn;
+        ao_blur_desc.colorAttachments[0].pixelFormat = MTLPixelFormatRGBA8Unorm;
+
+        id<MTLRenderPipelineState> ao_blur_pso = [device newRenderPipelineStateWithDescriptor:ao_blur_desc error:&error];
+        if (!ao_blur_pso)
+        {
+            DRAXUL_LOG_ERROR(LogCategory::App,
+                "MegaCity: failed to create AO blur pipeline: %s",
+                error ? [[error localizedDescription] UTF8String] : "unknown");
+            return false;
+        }
+        ao_blur_pipeline.reset(ao_blur_pso);
+
         MTLSamplerDescriptor* gbuffer_sampler_desc = [[MTLSamplerDescriptor alloc] init];
         gbuffer_sampler_desc.minFilter = MTLSamplerMinMagFilterLinear;
         gbuffer_sampler_desc.magFilter = MTLSamplerMinMagFilterLinear;
@@ -591,6 +613,20 @@ struct IsometricScenePass::State
         if (!gbuffer_sampler)
         {
             DRAXUL_LOG_ERROR(LogCategory::App, "MegaCity: failed to create GBuffer sampler");
+            return false;
+        }
+
+        MTLSamplerDescriptor* gbuffer_point_sampler_desc = [[MTLSamplerDescriptor alloc] init];
+        gbuffer_point_sampler_desc.minFilter = MTLSamplerMinMagFilterNearest;
+        gbuffer_point_sampler_desc.magFilter = MTLSamplerMinMagFilterNearest;
+        gbuffer_point_sampler_desc.mipFilter = MTLSamplerMipFilterNotMipmapped;
+        gbuffer_point_sampler_desc.sAddressMode = MTLSamplerAddressModeClampToEdge;
+        gbuffer_point_sampler_desc.tAddressMode = MTLSamplerAddressModeClampToEdge;
+        gbuffer_point_sampler_desc.rAddressMode = MTLSamplerAddressModeClampToEdge;
+        gbuffer_point_sampler.reset([device newSamplerStateWithDescriptor:gbuffer_point_sampler_desc]);
+        if (!gbuffer_point_sampler)
+        {
+            DRAXUL_LOG_ERROR(LogCategory::App, "MegaCity: failed to create point-sampled GBuffer sampler");
             return false;
         }
         DRAXUL_LOG_INFO(LogCategory::App, "MegaCity: GBuffer pipeline initialized");
@@ -632,12 +668,13 @@ struct IsometricScenePass::State
 
             targets.material.reset([device newTextureWithDescriptor:rgba8_desc]);
             targets.base_color.reset([device newTextureWithDescriptor:rgba8_desc]);
+            targets.ao_raw.reset([device newTextureWithDescriptor:rgba8_desc]);
             targets.ao.reset([device newTextureWithDescriptor:rgba8_desc]);
             targets.depth.reset([device newTextureWithDescriptor:depth_desc]);
             targets.width = width;
             targets.height = height;
 
-            if (!targets.material || !targets.base_color || !targets.ao || !targets.depth)
+            if (!targets.material || !targets.base_color || !targets.ao_raw || !targets.ao || !targets.depth)
             {
                 DRAXUL_LOG_ERROR(LogCategory::App, "MegaCity: failed to create GBuffer textures");
                 gbuffer_targets.clear();
@@ -753,6 +790,8 @@ void IsometricScenePass::record_prepass(IRenderContext& ctx)
         compute_ao_radius_pixels(scene_.camera.proj, scene_.camera.ao_settings.x, vh),
         scene_.camera.ao_settings.y,
         scene_.camera.ao_settings.z);
+    frame.debug_view = simd_make_float4(0.0f, 1.0f, 0.0f, 0.0f);
+    frame.world_debug_bounds = simd_make_float4(-5.0f, 5.0f, -5.0f, 5.0f);
     std::memcpy([frame_resources.frame_uniforms.get() contents], &frame, sizeof(frame));
 
     [encoder setRenderPipelineState:state_->gbuffer_pipeline.get()];
@@ -823,7 +862,7 @@ void IsometricScenePass::record_prepass(IRenderContext& ctx)
     [encoder endEncoding];
 
     MTLRenderPassDescriptor* aoDesc = [MTLRenderPassDescriptor renderPassDescriptor];
-    aoDesc.colorAttachments[0].texture = gbuffer.ao.get();
+    aoDesc.colorAttachments[0].texture = gbuffer.ao_raw.get();
     aoDesc.colorAttachments[0].loadAction = MTLLoadActionDontCare;
     aoDesc.colorAttachments[0].storeAction = MTLStoreActionStore;
 
@@ -838,9 +877,30 @@ void IsometricScenePass::record_prepass(IRenderContext& ctx)
     [aoEncoder setFragmentBuffer:frame_resources.frame_uniforms.get() offset:0 atIndex:0];
     [aoEncoder setFragmentTexture:gbuffer.material.get() atIndex:0];
     [aoEncoder setFragmentTexture:gbuffer.depth.get() atIndex:1];
-    [aoEncoder setFragmentSamplerState:state_->gbuffer_sampler.get() atIndex:0];
+    [aoEncoder setFragmentSamplerState:state_->gbuffer_point_sampler.get() atIndex:0];
     [aoEncoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
     [aoEncoder endEncoding];
+
+    MTLRenderPassDescriptor* blurDesc = [MTLRenderPassDescriptor renderPassDescriptor];
+    blurDesc.colorAttachments[0].texture = gbuffer.ao.get();
+    blurDesc.colorAttachments[0].loadAction = MTLLoadActionDontCare;
+    blurDesc.colorAttachments[0].storeAction = MTLStoreActionStore;
+
+    id<MTLRenderCommandEncoder> blurEncoder = [cmd_buf renderCommandEncoderWithDescriptor:blurDesc];
+    if (!blurEncoder)
+        return;
+
+    [blurEncoder setViewport:viewport];
+    [blurEncoder setScissorRect:scissor];
+    [blurEncoder setRenderPipelineState:state_->ao_blur_pipeline.get()];
+    [blurEncoder setCullMode:MTLCullModeNone];
+    [blurEncoder setFragmentBuffer:frame_resources.frame_uniforms.get() offset:0 atIndex:0];
+    [blurEncoder setFragmentTexture:gbuffer.ao_raw.get() atIndex:0];
+    [blurEncoder setFragmentTexture:gbuffer.material.get() atIndex:1];
+    [blurEncoder setFragmentTexture:gbuffer.depth.get() atIndex:2];
+    [blurEncoder setFragmentSamplerState:state_->gbuffer_point_sampler.get() atIndex:0];
+    [blurEncoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+    [blurEncoder endEncoding];
 }
 
 void IsometricScenePass::record(IRenderContext& ctx)
@@ -925,6 +985,16 @@ void IsometricScenePass::record(IRenderContext& ctx)
         compute_ao_radius_pixels(scene_.camera.proj, scene_.camera.ao_settings.x, ctx.viewport_h()),
         scene_.camera.ao_settings.y,
         scene_.camera.ao_settings.z);
+    frame.debug_view = simd_make_float4(
+        scene_.camera.debug_view.x,
+        scene_.camera.debug_view.y,
+        scene_.camera.debug_view.z,
+        scene_.camera.debug_view.w);
+    frame.world_debug_bounds = simd_make_float4(
+        scene_.camera.world_debug_bounds.x,
+        scene_.camera.world_debug_bounds.y,
+        scene_.camera.world_debug_bounds.z,
+        scene_.camera.world_debug_bounds.w);
     std::memcpy([frame_resources.frame_uniforms.get() contents], &frame, sizeof(frame));
 
     [encoder setRenderPipelineState:state_->pipeline.get()];

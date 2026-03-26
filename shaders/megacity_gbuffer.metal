@@ -13,6 +13,8 @@ struct FrameUniforms
     float4 render_tuning;
     float4 screen_params;
     float4 ao_params;
+    float4 debug_view;
+    float4 world_debug_bounds;
 };
 
 struct ObjectUniforms

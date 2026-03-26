@@ -104,7 +104,12 @@ MegaCityCodeConfig world_rebuild_signature(MegaCityCodeConfig config)
     config.sign_text_hidden_px = 0.0f;
     config.sign_text_full_px = 0.0f;
     config.output_gamma = 1.0f;
-    config.show_ao_greyscale = false;
+    config.ao_debug_view = MegaCityAODebugView::FinalScene;
+    config.ao_denoise = true;
+    config.ao_radius = 0.0f;
+    config.ao_bias = 0.0f;
+    config.ao_power = 0.0f;
+    config.ao_kernel_size = 0;
     config.world_floor_height_scale = 0.0f;
     config.world_floor_top_y = 0.0f;
     config.world_floor_grid_y_offset = 0.0f;
@@ -644,7 +649,16 @@ bool MegaCityHost::initialize(const HostContext& context, IHostCallbacks& callba
         ? load_megacity_code_config(*config_document_, renderer_defaults_)
         : renderer_defaults_;
     pending_renderer_config_ = renderer_config_;
+    show_ui_panels_ = renderer_config_.show_ui_panels;
     restore_camera_after_initial_build_ = renderer_config_.camera_state_valid;
+
+    // Enable ImGui layout persistence alongside config.toml
+    {
+        std::filesystem::path ini_path = ConfigDocument::default_path().parent_path() / "megacity_imgui.ini";
+        imgui_ini_path_ = ini_path.string();
+        if (std::filesystem::exists(ini_path))
+            ImGui::LoadIniSettingsFromDisk(imgui_ini_path_.c_str());
+    }
     sign_font_path_ = context.text_service->primary_font_path();
     display_ppi_ = context.display_ppi;
     viewport_ = context.initial_viewport;
@@ -731,6 +745,14 @@ void MegaCityHost::reset_camera_to_default_frame()
 
 void MegaCityHost::on_key(const KeyEvent& event)
 {
+    // F1 toggles UI panels (press only, not release)
+    if (event.pressed
+        && (event.scancode == SDL_SCANCODE_F1 || event.keycode == SDLK_F1))
+    {
+        dispatch_action("toggle_ui_panels");
+        return;
+    }
+
     bool changed = false;
     if (is_left_arrow(event))
     {
@@ -879,6 +901,9 @@ void MegaCityHost::render_imgui(float dt)
         ImGuiDockNodeFlags_PassthruCentralNode);
     ImGui::End();
 
+    if (!show_ui_panels_)
+        return;
+
     if (scene_pass_)
         scene_pass_->render_gbuffer_debug_ui();
 
@@ -979,6 +1004,11 @@ void MegaCityHost::shutdown()
         grid_thread_.join();
     city_grid_.reset();
 
+    // Save ImGui layout state
+    if (!imgui_ini_path_.empty())
+        ImGui::SaveIniSettingsToDisk(imgui_ini_path_.c_str());
+
+    pending_renderer_config_.show_ui_panels = show_ui_panels_;
     if (config_document_)
         store_megacity_code_config(*config_document_, pending_renderer_config_, renderer_defaults_);
     scanner_.stop();
@@ -1044,8 +1074,17 @@ SceneSnapshot MegaCityHost::build_scene_snapshot() const
         renderer_config_.output_gamma,
         renderer_config_.point_light_brightness,
         renderer_config_.ambient_strength,
-        renderer_config_.show_ao_greyscale ? 1.0f : 0.0f);
-    scene.camera.ao_settings = glm::vec4(1.6f, 0.12f, 1.35f, 0.0f);
+        0.0f);
+    scene.camera.ao_settings = glm::vec4(
+        renderer_config_.ao_radius,
+        renderer_config_.ao_bias,
+        renderer_config_.ao_power,
+        0.0f);
+    scene.camera.debug_view = glm::vec4(
+        static_cast<float>(renderer_config_.ao_debug_view),
+        renderer_config_.ao_denoise ? 1.0f : 0.0f,
+        static_cast<float>(renderer_config_.ao_kernel_size),
+        0.0f);
 
     const GroundFootprint footprint = camera_->visible_ground_footprint(0.0f);
     const float tile_size = world_->tile_size();
@@ -1165,6 +1204,7 @@ SceneSnapshot MegaCityHost::build_scene_snapshot() const
 
     const float span = std::max(max_x - min_x, max_z - min_z);
     world_span_ = std::max(span, 1.0f);
+    scene.camera.world_debug_bounds = glm::vec4(min_x, max_x, min_z, max_z);
     scene.camera.point_light_pos = glm::vec4(
         renderer_config_.point_light_x,
         renderer_config_.point_light_y,
@@ -1642,6 +1682,13 @@ bool MegaCityHost::dispatch_action(std::string_view action)
         running_ = false;
         if (callbacks_)
             callbacks_->request_quit();
+        return true;
+    }
+    if (action == "toggle_ui_panels")
+    {
+        show_ui_panels_ = !show_ui_panels_;
+        if (callbacks_)
+            callbacks_->request_frame();
         return true;
     }
     return false;

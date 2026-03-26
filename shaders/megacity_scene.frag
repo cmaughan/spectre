@@ -10,6 +10,8 @@ layout(set = 0, binding = 0) uniform FrameUniforms {
     vec4 render_tuning;
     vec4 screen_params;
     vec4 ao_params;
+    vec4 debug_view;
+    vec4 world_debug_bounds;
 } frame;
 layout(set = 0, binding = 1) uniform sampler2D sign_atlas;
 layout(set = 0, binding = 2) uniform sampler2D ao_buffer;
@@ -29,10 +31,11 @@ void main()
         (gl_FragCoord.xy - frame.screen_params.xy) * frame.screen_params.zw,
         vec2(0.0),
         vec2(1.0));
-    float ao = clamp(texture(ao_buffer, screen_uv).r, 0.0, 1.0);
-    if (frame.render_tuning.w > 0.5)
+    vec3 ao_debug = texture(ao_buffer, screen_uv).rgb;
+    float ao = clamp(ao_debug.r, 0.0, 1.0);
+    if (frame.debug_view.x > 0.5)
     {
-        out_frag_color = vec4(vec3(ao), 1.0);
+        out_frag_color = vec4(ao_debug, 1.0);
         return;
     }
     vec3 light_dir = normalize(-frame.light_dir.xyz);

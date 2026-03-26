@@ -10,6 +10,8 @@ layout(set = 0, binding = 0) uniform FrameUniforms {
     vec4 render_tuning;
     vec4 screen_params;
     vec4 ao_params;
+    vec4 debug_view;
+    vec4 world_debug_bounds;
 } frame;
 
 layout(push_constant) uniform ObjectUniforms {

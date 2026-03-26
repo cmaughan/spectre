@@ -764,10 +764,10 @@ bool render_renderer_controls(MegacityRendererControls& controls)
             controls.committed_edit = true;
         }
 
-        edit_float("Roof Sign Thickness", config.roof_sign_thickness, 0.005f, 0.001f, 2.0f, "%.3f");
-        edit_float("Roof Sign Depth", config.roof_sign_depth, 0.01f, 0.01f, 8.0f, "%.2f");
-        edit_float("Roof Sign Edge Inset", config.roof_sign_edge_inset, 0.01f, 0.0f, 4.0f, "%.2f");
-        edit_float("Roof Sign Side Inset", config.roof_sign_side_inset, 0.01f, 0.0f, 4.0f, "%.2f");
+        edit_float("Floor/Module Sign Thickness", config.roof_sign_thickness, 0.005f, 0.001f, 2.0f, "%.3f");
+        edit_float("Floor/Module Sign Depth", config.roof_sign_depth, 0.01f, 0.01f, 8.0f, "%.2f");
+        edit_float("Floor/Module Sign Edge Inset", config.roof_sign_edge_inset, 0.01f, 0.0f, 4.0f, "%.2f");
+        edit_float("Floor/Module Sign Side Inset", config.roof_sign_side_inset, 0.01f, 0.0f, 4.0f, "%.2f");
         edit_float("Wall Sign Thickness", config.wall_sign_thickness, 0.005f, 0.001f, 2.0f, "%.3f");
         edit_float("Wall Sign Face Gap", config.wall_sign_face_gap, 0.001f, 0.0f, 1.0f, "%.3f");
         edit_float("Wall Sign Width", config.wall_sign_width, 0.01f, 0.05f, 16.0f, "%.2f");
@@ -779,7 +779,7 @@ bool render_renderer_controls(MegacityRendererControls& controls)
         edit_float("Minimum Road Sign Depth", config.minimum_road_sign_depth, 0.01f, 0.01f, 8.0f, "%.2f");
         edit_float("Sidewalk Sign Edge Inset", config.sidewalk_sign_edge_inset, 0.01f, 0.0f, 4.0f, "%.2f");
         edit_float("Road Sign Lift", config.road_sign_lift, 0.001f, 0.0f, 1.0f, "%.3f");
-        edit_float("Sign Pixels / World Unit", config.roof_sign_pixels_per_world_unit, 1.0f, 8.0f, 2048.0f, "%.1f");
+        edit_float("Floor/Module Sign Pixels / World Unit", config.roof_sign_pixels_per_world_unit, 1.0f, 8.0f, 2048.0f, "%.1f");
         ImGui::TreePop();
     }
 
@@ -824,9 +824,26 @@ bool render_renderer_controls(MegacityRendererControls& controls)
         }
         edit_float("Point Light Brightness", config.point_light_brightness, 0.01f, 0.0f, 8.0f, "%.2f");
         edit_float("Output Gamma", config.output_gamma, 0.01f, 0.1f, 4.0f, "%.2f");
-        const bool ao_debug_changed = ImGui::Checkbox("Show AO Greyscale", &config.show_ao_greyscale);
-        changed |= ao_debug_changed;
-        if (ao_debug_changed)
+        edit_float("AO Radius", config.ao_radius, 0.05f, 0.01f, 64.0f, "%.2f");
+        edit_float("AO Bias", config.ao_bias, 0.01f, 0.0f, 1.0f, "%.2f");
+        edit_float("AO Power", config.ao_power, 0.01f, 0.1f, 8.0f, "%.2f");
+        edit_int("AO Kernel Size", config.ao_kernel_size, 1, 1, 64);
+        static constexpr std::array<const char*, 4> kAODebugLabels = {
+            "Final Scene",
+            "Ambient Occlusion",
+            "Decoded Normals",
+            "World Position",
+        };
+        int ao_debug_view = static_cast<int>(config.ao_debug_view);
+        if (ImGui::Combo("AO Debug View", &ao_debug_view, kAODebugLabels.data(), static_cast<int>(kAODebugLabels.size())))
+        {
+            config.ao_debug_view = static_cast<MegaCityAODebugView>(std::clamp(ao_debug_view, 0, 3));
+            changed = true;
+            controls.committed_edit = true;
+        }
+        const bool ao_denoise_changed = ImGui::Checkbox("AO Denoise", &config.ao_denoise);
+        changed |= ao_denoise_changed;
+        if (ao_denoise_changed)
             controls.committed_edit = true;
         ImGui::TreePop();
     }
