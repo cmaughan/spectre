@@ -3,7 +3,6 @@
 #include <atomic>
 #include <chrono>
 #include <draxul/citydb.h>
-#include <draxul/geometry_mesh.h>
 #include <draxul/host.h>
 #include <draxul/megacity_code_config.h>
 #include <draxul/treesitter.h>
@@ -17,6 +16,7 @@ namespace draxul
 {
 
 class CityInputState;
+struct GeometryMesh;
 class IsometricCamera;
 class IsometricScenePass;
 struct SignLabelAtlas;

@@ -56,7 +56,7 @@ target_link_libraries(draxul-megacity PUBLIC
     EnTT::EnTT
 )
 
-target_link_libraries(draxul-megacity PUBLIC
+target_link_libraries(draxul-megacity PRIVATE
     draxul-geometry
 )
 
