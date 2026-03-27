@@ -1,0 +1,169 @@
+#include "scene_snapshot_builder.h"
+#include "city_helpers.h"
+#include "isometric_camera.h"
+#include "scene_world.h"
+#include "sign_label_atlas.h"
+#include <algorithm>
+#include <cmath>
+#include <draxul/megacity_code_config.h>
+#include <glm/gtc/matrix_transform.hpp>
+#include <limits>
+
+namespace draxul
+{
+
+SceneSnapshotResult build_scene_snapshot(
+    const IsometricCamera& camera,
+    const SceneWorld& world,
+    const MegaCityCodeConfig& config,
+    const std::shared_ptr<SignLabelAtlas>& label_atlas)
+{
+    SceneSnapshotResult result;
+    SceneSnapshot& scene = result.snapshot;
+
+    scene.camera.view = camera.view_matrix();
+    scene.camera.proj = camera.proj_matrix();
+    scene.camera.inv_view_proj = glm::inverse(scene.camera.proj * scene.camera.view);
+    scene.camera.camera_pos = glm::vec4(camera.position(), 1.0f);
+    scene.camera.light_dir = glm::normalize(glm::vec4(
+        config.directional_light_x,
+        config.directional_light_y,
+        config.directional_light_z,
+        0.0f));
+    scene.camera.label_fade_px = glm::vec4(
+        config.sign_text_hidden_px,
+        config.sign_text_full_px,
+        0.0f,
+        0.0f);
+    scene.camera.render_tuning = glm::vec4(
+        config.output_gamma,
+        config.point_light_brightness,
+        config.ambient_strength,
+        0.0f);
+    scene.camera.ao_settings = glm::vec4(
+        config.ao_radius,
+        config.ao_bias,
+        config.ao_power,
+        0.0f);
+    scene.camera.debug_view = glm::vec4(
+        static_cast<float>(config.ao_debug_view),
+        config.ao_denoise ? 1.0f : 0.0f,
+        static_cast<float>(config.ao_kernel_size),
+        0.0f);
+
+    const GroundFootprint footprint = camera.visible_ground_footprint(0.0f);
+    const float tile_size = world.tile_size();
+    const float grid_tile_size = tile_size * config.world_floor_grid_tile_scale;
+    scene.floor_grid.enabled = true;
+    scene.floor_grid.min_x = static_cast<int>(std::floor(footprint.min_x / grid_tile_size)) - 1;
+    scene.floor_grid.max_x = static_cast<int>(std::ceil(footprint.max_x / grid_tile_size)) + 1;
+    scene.floor_grid.min_z = static_cast<int>(std::floor(footprint.min_z / grid_tile_size)) - 1;
+    scene.floor_grid.max_z = static_cast<int>(std::ceil(footprint.max_z / grid_tile_size)) + 1;
+    scene.floor_grid.tile_size = grid_tile_size;
+    scene.floor_grid.line_width = tile_size * config.world_floor_grid_line_width;
+    scene.floor_grid.y = config.world_floor_top_y
+        - world_floor_height(config)
+        - config.world_floor_grid_y_offset;
+    scene.floor_grid.color = glm::vec4(0.62f, 0.62f, 0.66f, 1.0f);
+    if (label_atlas)
+    {
+        std::shared_ptr<const SignLabelAtlas> alias(label_atlas);
+        scene.label_atlas = std::shared_ptr<const LabelAtlasData>(alias, &label_atlas->image);
+    }
+
+    // Query the ECS registry for all entities with position + appearance.
+    const auto& reg = world.registry();
+    auto view = reg.view<const WorldPosition, const Elevation, const Appearance>();
+    float min_x = std::numeric_limits<float>::max();
+    float max_x = std::numeric_limits<float>::lowest();
+    float min_z = std::numeric_limits<float>::max();
+    float max_z = std::numeric_limits<float>::lowest();
+    float building_min_x = std::numeric_limits<float>::max();
+    float building_max_x = std::numeric_limits<float>::lowest();
+    float building_min_z = std::numeric_limits<float>::max();
+    float building_max_z = std::numeric_limits<float>::lowest();
+    float max_building_lot_margin = 0.0f;
+    for (auto [entity, pos, elev, appearance] : view.each())
+    {
+        SceneObject obj;
+        obj.mesh = appearance.mesh;
+        obj.material = appearance.material;
+        obj.material_info = appearance.material_info;
+        const glm::vec3 world_pos{ pos.x, elev.value, pos.z };
+        float extent_x = 1.0f;
+        float extent_z = 1.0f;
+
+        // Scale the cube by building metrics if present.
+        glm::mat4 transform = glm::translate(glm::mat4(1.0f), world_pos);
+        if (const auto* bm = reg.try_get<BuildingMetrics>(entity))
+        {
+            extent_x = bm->footprint;
+            extent_z = bm->footprint;
+            transform = glm::translate(transform, glm::vec3(0.0f, bm->height * 0.5f, 0.0f));
+            transform = glm::scale(transform, glm::vec3(bm->footprint, bm->height, bm->footprint));
+            building_min_x = std::min(building_min_x, pos.x - bm->footprint * 0.5f);
+            building_max_x = std::max(building_max_x, pos.x + bm->footprint * 0.5f);
+            building_min_z = std::min(building_min_z, pos.z - bm->footprint * 0.5f);
+            building_max_z = std::max(building_max_z, pos.z + bm->footprint * 0.5f);
+            max_building_lot_margin = std::max(
+                max_building_lot_margin, bm->sidewalk_width + bm->road_width);
+        }
+        else if (const auto* rm = reg.try_get<RoadMetrics>(entity))
+        {
+            extent_x = rm->extent_x;
+            extent_z = rm->extent_z;
+            transform = glm::translate(transform, glm::vec3(0.0f, rm->height * 0.5f, 0.0f));
+            transform = glm::scale(transform, glm::vec3(rm->extent_x, rm->height, rm->extent_z));
+        }
+        else if (const auto* rsm = reg.try_get<RoadSurfaceMetrics>(entity))
+        {
+            extent_x = rsm->extent_x;
+            extent_z = rsm->extent_z;
+            transform = glm::scale(transform, glm::vec3(rsm->extent_x, 1.0f, rsm->extent_z));
+        }
+        else if (const auto* sm = reg.try_get<SignMetrics>(entity))
+        {
+            const bool quarter_turn = std::abs(std::sin(sm->yaw_radians)) > 0.70710678f;
+            extent_x = quarter_turn ? sm->depth : sm->width;
+            extent_z = quarter_turn ? sm->width : sm->depth;
+            transform = glm::rotate(transform, sm->yaw_radians, glm::vec3(0.0f, 1.0f, 0.0f));
+            transform = glm::scale(transform, glm::vec3(sm->width, sm->height, sm->depth));
+            obj.uv_rect = sm->uv_rect;
+            obj.label_ink_pixel_size = sm->label_ink_pixel_size;
+        }
+        else
+        {
+            transform = glm::translate(transform, glm::vec3(0.0f, 0.5f, 0.0f));
+        }
+
+        obj.world = transform;
+        obj.color = appearance.color;
+        scene.objects.push_back(obj);
+
+        min_x = std::min(min_x, pos.x - extent_x * 0.5f);
+        max_x = std::max(max_x, pos.x + extent_x * 0.5f);
+        min_z = std::min(min_z, pos.z - extent_z * 0.5f);
+        max_z = std::max(max_z, pos.z + extent_z * 0.5f);
+    }
+
+    if (min_x > max_x || min_z > max_z)
+    {
+        min_x = -2.5f;
+        max_x = 2.5f;
+        min_z = -2.5f;
+        max_z = 2.5f;
+    }
+
+    const float span = std::max(max_x - min_x, max_z - min_z);
+    result.world_span = std::max(span, 1.0f);
+    scene.camera.world_debug_bounds = glm::vec4(min_x, max_x, min_z, max_z);
+    scene.camera.point_light_pos = glm::vec4(
+        config.point_light_x,
+        config.point_light_y,
+        config.point_light_z,
+        std::max(config.point_light_radius, 1.0f));
+
+    return result;
+}
+
+} // namespace draxul

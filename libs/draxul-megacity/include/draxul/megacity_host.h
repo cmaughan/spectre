@@ -15,6 +15,7 @@
 namespace draxul
 {
 
+class CityInputState;
 class IsometricCamera;
 class IsometricScenePass;
 struct SignLabelAtlas;
@@ -22,7 +23,6 @@ struct SemanticMegacityModel;
 struct SemanticMegacityLayout;
 struct CityGrid;
 class SceneWorld;
-struct SceneSnapshot;
 
 // MegaCityHost is a non-terminal I3DHost that renders a small 3D scene directly
 // into the GPU render pass. It does not use the grid path, but it does use the
@@ -86,10 +86,8 @@ private:
     void refresh_sign_text_service();
     void sync_camera_state_to_configs();
     void reset_camera_to_default_frame();
-    bool movement_active() const;
-    bool drag_smoothing_active() const;
-    SceneSnapshot build_scene_snapshot() const;
 
+    std::unique_ptr<CityInputState> input_;
     IHostCallbacks* callbacks_ = nullptr;
     HostViewport viewport_;
     std::shared_ptr<IsometricScenePass> scene_pass_;
@@ -112,7 +110,7 @@ private:
     int pixel_w_ = 800;
     int pixel_h_ = 600;
     bool running_ = false;
-    mutable float world_span_ = 5.0f;
+    float world_span_ = 5.0f;
     bool scene_dirty_ = true;
     bool world_rebuild_pending_ = false;
     bool city_db_reconciled_ = false;
@@ -125,20 +123,6 @@ private:
     bool show_ui_panels_ = true;
     std::string imgui_ini_path_;
     bool continuous_refresh_enabled_ = false;
-    bool move_left_ = false;
-    bool move_right_ = false;
-    bool move_up_ = false;
-    bool move_down_ = false;
-    bool orbit_left_ = false;
-    bool orbit_right_ = false;
-    bool zoom_in_ = false;
-    bool zoom_out_ = false;
-    bool pitch_up_ = false;
-    bool pitch_down_ = false;
-    bool dragging_scene_ = false;
-    glm::vec2 pending_drag_pan_{ 0.0f };
-    float pending_drag_orbit_ = 0.0f;
-    glm::ivec2 last_drag_pos_{ 0 };
     std::chrono::steady_clock::time_point last_activity_time_ = std::chrono::steady_clock::now();
     std::chrono::steady_clock::time_point last_pump_time_ = std::chrono::steady_clock::now();
 
