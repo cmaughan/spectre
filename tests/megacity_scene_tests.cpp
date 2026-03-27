@@ -591,10 +591,10 @@ TEST_CASE("semantic megacity road surface spans the shared building footprint en
     const CitySurfaceBounds bounds = compute_city_road_surface_bounds(layout);
 
     REQUIRE(bounds.valid());
-    CHECK(bounds.min_x == Catch::Approx(-3.0f));
-    CHECK(bounds.max_x == Catch::Approx(11.0f));
-    CHECK(bounds.min_z == Catch::Approx(-3.0f));
-    CHECK(bounds.max_z == Catch::Approx(3.0f));
+    CHECK(bounds.min_x == Catch::Approx(-6.0f));
+    CHECK(bounds.max_x == Catch::Approx(14.0f));
+    CHECK(bounds.min_z == Catch::Approx(-6.0f));
+    CHECK(bounds.max_z == Catch::Approx(6.0f));
 }
 
 TEST_CASE("city grid uses one shared road surface under the building envelope", "[megacity]")
@@ -640,7 +640,7 @@ TEST_CASE("city grid uses one shared road surface under the building envelope", 
     CHECK(sample_cell(0.0f, 0.0f) == kCityGridBuilding);
     CHECK(sample_cell(2.5f, 0.0f) == kCityGridSidewalk);
     CHECK(sample_cell(4.0f, 0.0f) == kCityGridRoad);
-    CHECK(sample_cell(-4.0f, 0.0f) == kCityGridEmpty);
+    CHECK(sample_cell(-4.0f, 0.0f) == kCityGridRoad);
 }
 
 TEST_CASE("roof sign mesh textures only the top face", "[megacity]")

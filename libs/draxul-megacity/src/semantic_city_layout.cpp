@@ -380,7 +380,7 @@ CitySurfaceBounds compute_city_road_surface_bounds(const SemanticMegacityLayout&
     {
         for (const auto& building : module_layout.buildings)
         {
-            const float half_extent = building.metrics.footprint * 0.5f + building.metrics.sidewalk_width;
+            const float half_extent = building.metrics.footprint * 0.5f + building.metrics.sidewalk_width + building.metrics.road_width;
             const float min_x = building.center.x - half_extent;
             const float max_x = building.center.x + half_extent;
             const float min_z = building.center.y - half_extent;
