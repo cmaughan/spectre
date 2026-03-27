@@ -34,6 +34,7 @@ struct VertexIn
     float3 color [[attribute(2)]];
     float2 uv [[attribute(3)]];
     float tex_blend [[attribute(4)]];
+    float4 tangent [[attribute(5)]];
 };
 
 struct VertexOut

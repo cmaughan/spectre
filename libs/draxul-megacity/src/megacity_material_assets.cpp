@@ -62,6 +62,16 @@ AsphaltRoadMaterialImages load_asphalt_road_material_images()
     return images;
 }
 
+PavingSidewalkMaterialImages load_paving_sidewalk_material_images()
+{
+    PavingSidewalkMaterialImages images;
+    images.albedo = load_rgba8_image(resolve_megacity_asset_path("textures/PavingStones111_1K-JPG_Color.jpg"));
+    images.normal = load_rgba8_image(resolve_megacity_asset_path("textures/PavingStones111_1K-JPG_NormalGL.jpg"));
+    images.roughness = load_rgba8_image(resolve_megacity_asset_path("textures/PavingStones111_1K-JPG_Roughness.jpg"));
+    images.ao = load_rgba8_image(resolve_megacity_asset_path("textures/PavingStones111_1K-JPG_AmbientOcclusion.jpg"));
+    return images;
+}
+
 WoodBuildingMaterialImages load_wood_building_material_images()
 {
     WoodBuildingMaterialImages images;

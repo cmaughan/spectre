@@ -636,6 +636,10 @@ struct IsometricScenePass::State
     ImageResource road_normal;
     ImageResource road_roughness;
     ImageResource road_ao;
+    ImageResource sidewalk_albedo;
+    ImageResource sidewalk_normal;
+    ImageResource sidewalk_roughness;
+    ImageResource sidewalk_ao;
     ImageResource wood_albedo;
     ImageResource wood_normal;
     ImageResource wood_roughness;
@@ -646,7 +650,7 @@ struct IsometricScenePass::State
 
     bool create_device_resources(uint32_t frame_count)
     {
-        VkDescriptorSetLayoutBinding scene_bindings[11] = {};
+        VkDescriptorSetLayoutBinding scene_bindings[15] = {};
         scene_bindings[0].binding = 0;
         scene_bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         scene_bindings[0].descriptorCount = 1;
@@ -691,9 +695,25 @@ struct IsometricScenePass::State
         scene_bindings[10].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         scene_bindings[10].descriptorCount = 1;
         scene_bindings[10].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        scene_bindings[11].binding = 11;
+        scene_bindings[11].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        scene_bindings[11].descriptorCount = 1;
+        scene_bindings[11].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        scene_bindings[12].binding = 12;
+        scene_bindings[12].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        scene_bindings[12].descriptorCount = 1;
+        scene_bindings[12].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        scene_bindings[13].binding = 13;
+        scene_bindings[13].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        scene_bindings[13].descriptorCount = 1;
+        scene_bindings[13].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        scene_bindings[14].binding = 14;
+        scene_bindings[14].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        scene_bindings[14].descriptorCount = 1;
+        scene_bindings[14].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
         VkDescriptorSetLayoutCreateInfo layout_ci = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
-        layout_ci.bindingCount = 11;
+        layout_ci.bindingCount = 15;
         layout_ci.pBindings = scene_bindings;
         if (vkCreateDescriptorSetLayout(device, &layout_ci, nullptr, &descriptor_set_layout) != VK_SUCCESS)
         {
@@ -732,7 +752,7 @@ struct IsometricScenePass::State
         pool_sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         pool_sizes[0].descriptorCount = frame_count;
         pool_sizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        pool_sizes[1].descriptorCount = frame_count * 10;
+        pool_sizes[1].descriptorCount = frame_count * 14;
 
         VkDescriptorPoolCreateInfo pool_ci = { VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO };
         pool_ci.maxSets = frame_count;
@@ -871,6 +891,10 @@ struct IsometricScenePass::State
             && road_normal.image != VK_NULL_HANDLE
             && road_roughness.image != VK_NULL_HANDLE
             && road_ao.image != VK_NULL_HANDLE
+            && sidewalk_albedo.image != VK_NULL_HANDLE
+            && sidewalk_normal.image != VK_NULL_HANDLE
+            && sidewalk_roughness.image != VK_NULL_HANDLE
+            && sidewalk_ao.image != VK_NULL_HANDLE
             && wood_albedo.image != VK_NULL_HANDLE
             && wood_normal.image != VK_NULL_HANDLE
             && wood_roughness.image != VK_NULL_HANDLE
@@ -880,8 +904,9 @@ struct IsometricScenePass::State
         }
 
         const AsphaltRoadMaterialImages road_images = load_asphalt_road_material_images();
+        const PavingSidewalkMaterialImages sidewalk_images = load_paving_sidewalk_material_images();
         const WoodBuildingMaterialImages wood_images = load_wood_building_material_images();
-        if (!road_images.valid() || !wood_images.valid())
+        if (!road_images.valid() || !sidewalk_images.valid() || !wood_images.valid())
         {
             DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity: failed to load Megacity material images");
             return false;
@@ -891,6 +916,10 @@ struct IsometricScenePass::State
         destroy_image(device, allocator, road_normal);
         destroy_image(device, allocator, road_roughness);
         destroy_image(device, allocator, road_ao);
+        destroy_image(device, allocator, sidewalk_albedo);
+        destroy_image(device, allocator, sidewalk_normal);
+        destroy_image(device, allocator, sidewalk_roughness);
+        destroy_image(device, allocator, sidewalk_ao);
         destroy_image(device, allocator, wood_albedo);
         destroy_image(device, allocator, wood_normal);
         destroy_image(device, allocator, wood_roughness);
@@ -912,6 +941,22 @@ struct IsometricScenePass::State
                 ctx.physical_device(), device, allocator,
                 road_images.ao.width, road_images.ao.height,
                 VK_FORMAT_R8G8B8A8_UNORM, VK_SAMPLER_ADDRESS_MODE_REPEAT, true, road_ao)
+            || !create_sampled_image(
+                ctx.physical_device(), device, allocator,
+                sidewalk_images.albedo.width, sidewalk_images.albedo.height,
+                VK_FORMAT_R8G8B8A8_SRGB, VK_SAMPLER_ADDRESS_MODE_REPEAT, true, sidewalk_albedo)
+            || !create_sampled_image(
+                ctx.physical_device(), device, allocator,
+                sidewalk_images.normal.width, sidewalk_images.normal.height,
+                VK_FORMAT_R8G8B8A8_UNORM, VK_SAMPLER_ADDRESS_MODE_REPEAT, true, sidewalk_normal)
+            || !create_sampled_image(
+                ctx.physical_device(), device, allocator,
+                sidewalk_images.roughness.width, sidewalk_images.roughness.height,
+                VK_FORMAT_R8G8B8A8_UNORM, VK_SAMPLER_ADDRESS_MODE_REPEAT, true, sidewalk_roughness)
+            || !create_sampled_image(
+                ctx.physical_device(), device, allocator,
+                sidewalk_images.ao.width, sidewalk_images.ao.height,
+                VK_FORMAT_R8G8B8A8_UNORM, VK_SAMPLER_ADDRESS_MODE_REPEAT, true, sidewalk_ao)
             || !create_sampled_image(
                 ctx.physical_device(), device, allocator,
                 wood_images.albedo.width, wood_images.albedo.height,
@@ -937,6 +982,10 @@ struct IsometricScenePass::State
             || !upload_rgba_texture(allocator, cmd, material_staging, road_images.normal, road_normal)
             || !upload_rgba_texture(allocator, cmd, material_staging, road_images.roughness, road_roughness)
             || !upload_rgba_texture(allocator, cmd, material_staging, road_images.ao, road_ao)
+            || !upload_rgba_texture(allocator, cmd, material_staging, sidewalk_images.albedo, sidewalk_albedo)
+            || !upload_rgba_texture(allocator, cmd, material_staging, sidewalk_images.normal, sidewalk_normal)
+            || !upload_rgba_texture(allocator, cmd, material_staging, sidewalk_images.roughness, sidewalk_roughness)
+            || !upload_rgba_texture(allocator, cmd, material_staging, sidewalk_images.ao, sidewalk_ao)
             || !upload_rgba_texture(allocator, cmd, material_staging, wood_images.albedo, wood_albedo)
             || !upload_rgba_texture(allocator, cmd, material_staging, wood_images.normal, wood_normal)
             || !upload_rgba_texture(allocator, cmd, material_staging, wood_images.roughness, wood_roughness)
@@ -947,6 +996,10 @@ struct IsometricScenePass::State
             destroy_image(device, allocator, road_normal);
             destroy_image(device, allocator, road_roughness);
             destroy_image(device, allocator, road_ao);
+            destroy_image(device, allocator, sidewalk_albedo);
+            destroy_image(device, allocator, sidewalk_normal);
+            destroy_image(device, allocator, sidewalk_roughness);
+            destroy_image(device, allocator, sidewalk_ao);
             destroy_image(device, allocator, wood_albedo);
             destroy_image(device, allocator, wood_normal);
             destroy_image(device, allocator, wood_roughness);
@@ -994,6 +1047,14 @@ struct IsometricScenePass::State
             && road_roughness.sampler != VK_NULL_HANDLE
             && road_ao.view != VK_NULL_HANDLE
             && road_ao.sampler != VK_NULL_HANDLE;
+        const bool have_sidewalk_materials = sidewalk_albedo.view != VK_NULL_HANDLE
+            && sidewalk_albedo.sampler != VK_NULL_HANDLE
+            && sidewalk_normal.view != VK_NULL_HANDLE
+            && sidewalk_normal.sampler != VK_NULL_HANDLE
+            && sidewalk_roughness.view != VK_NULL_HANDLE
+            && sidewalk_roughness.sampler != VK_NULL_HANDLE
+            && sidewalk_ao.view != VK_NULL_HANDLE
+            && sidewalk_ao.sampler != VK_NULL_HANDLE;
         const bool have_wood_materials = wood_albedo.view != VK_NULL_HANDLE
             && wood_albedo.sampler != VK_NULL_HANDLE
             && wood_normal.view != VK_NULL_HANDLE
@@ -1032,6 +1093,20 @@ struct IsometricScenePass::State
             road_infos[3].imageView = road_ao.view;
             road_infos[3].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
+            VkDescriptorImageInfo sidewalk_infos[4] = {};
+            sidewalk_infos[0].sampler = sidewalk_albedo.sampler;
+            sidewalk_infos[0].imageView = sidewalk_albedo.view;
+            sidewalk_infos[0].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            sidewalk_infos[1].sampler = sidewalk_normal.sampler;
+            sidewalk_infos[1].imageView = sidewalk_normal.view;
+            sidewalk_infos[1].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            sidewalk_infos[2].sampler = sidewalk_roughness.sampler;
+            sidewalk_infos[2].imageView = sidewalk_roughness.view;
+            sidewalk_infos[2].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            sidewalk_infos[3].sampler = sidewalk_ao.sampler;
+            sidewalk_infos[3].imageView = sidewalk_ao.view;
+            sidewalk_infos[3].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
             VkDescriptorImageInfo wood_infos[4] = {};
             wood_infos[0].sampler = wood_albedo.sampler;
             wood_infos[0].imageView = wood_albedo.view;
@@ -1046,7 +1121,7 @@ struct IsometricScenePass::State
             wood_infos[3].imageView = wood_ao.view;
             wood_infos[3].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-            VkWriteDescriptorSet writes[9] = {};
+            VkWriteDescriptorSet writes[13] = {};
             uint32_t write_count = 0;
 
             writes[write_count].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -1071,13 +1146,27 @@ struct IsometricScenePass::State
                 }
             }
 
+            if (have_sidewalk_materials)
+            {
+                for (uint32_t sidewalk_index = 0; sidewalk_index < 4; ++sidewalk_index)
+                {
+                    writes[write_count].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                    writes[write_count].dstSet = frame.descriptor_set;
+                    writes[write_count].dstBinding = 7 + sidewalk_index;
+                    writes[write_count].descriptorCount = 1;
+                    writes[write_count].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                    writes[write_count].pImageInfo = &sidewalk_infos[sidewalk_index];
+                    ++write_count;
+                }
+            }
+
             if (have_wood_materials)
             {
                 for (uint32_t wood_index = 0; wood_index < 4; ++wood_index)
                 {
                     writes[write_count].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
                     writes[write_count].dstSet = frame.descriptor_set;
-                    writes[write_count].dstBinding = 7 + wood_index;
+                    writes[write_count].dstBinding = 11 + wood_index;
                     writes[write_count].descriptorCount = 1;
                     writes[write_count].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
                     writes[write_count].pImageInfo = &wood_infos[wood_index];
@@ -1246,7 +1335,7 @@ struct IsometricScenePass::State
         binding.stride = sizeof(SceneVertex);
         binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-        VkVertexInputAttributeDescription attributes[5] = {};
+        VkVertexInputAttributeDescription attributes[6] = {};
         attributes[0].location = 0;
         attributes[0].binding = 0;
         attributes[0].format = VK_FORMAT_R32G32B32_SFLOAT;
@@ -1267,11 +1356,15 @@ struct IsometricScenePass::State
         attributes[4].binding = 0;
         attributes[4].format = VK_FORMAT_R32_SFLOAT;
         attributes[4].offset = offsetof(SceneVertex, tex_blend);
+        attributes[5].location = 5;
+        attributes[5].binding = 0;
+        attributes[5].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+        attributes[5].offset = offsetof(SceneVertex, tangent);
 
         VkPipelineVertexInputStateCreateInfo vertex_input = { VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
         vertex_input.vertexBindingDescriptionCount = 1;
         vertex_input.pVertexBindingDescriptions = &binding;
-        vertex_input.vertexAttributeDescriptionCount = 5;
+        vertex_input.vertexAttributeDescriptionCount = 6;
         vertex_input.pVertexAttributeDescriptions = attributes;
 
         VkPipelineInputAssemblyStateCreateInfo input_assembly = { VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO };
@@ -1543,7 +1636,7 @@ struct IsometricScenePass::State
         binding.stride = sizeof(SceneVertex);
         binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-        VkVertexInputAttributeDescription attributes[5] = {};
+        VkVertexInputAttributeDescription attributes[6] = {};
         attributes[0].location = 0;
         attributes[0].format = VK_FORMAT_R32G32B32_SFLOAT;
         attributes[0].offset = offsetof(SceneVertex, position);
@@ -1559,13 +1652,16 @@ struct IsometricScenePass::State
         attributes[4].location = 4;
         attributes[4].format = VK_FORMAT_R32_SFLOAT;
         attributes[4].offset = offsetof(SceneVertex, tex_blend);
+        attributes[5].location = 5;
+        attributes[5].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+        attributes[5].offset = offsetof(SceneVertex, tangent);
 
         VkPipelineVertexInputStateCreateInfo vertex_input = {
             VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO
         };
         vertex_input.vertexBindingDescriptionCount = 1;
         vertex_input.pVertexBindingDescriptions = &binding;
-        vertex_input.vertexAttributeDescriptionCount = 5;
+        vertex_input.vertexAttributeDescriptionCount = 6;
         vertex_input.pVertexAttributeDescriptions = attributes;
 
         VkPipelineInputAssemblyStateCreateInfo input_assembly = {
@@ -2002,6 +2098,10 @@ struct IsometricScenePass::State
             destroy_image(device, allocator, road_normal);
             destroy_image(device, allocator, road_roughness);
             destroy_image(device, allocator, road_ao);
+            destroy_image(device, allocator, sidewalk_albedo);
+            destroy_image(device, allocator, sidewalk_normal);
+            destroy_image(device, allocator, sidewalk_roughness);
+            destroy_image(device, allocator, sidewalk_ao);
             destroy_image(device, allocator, wood_albedo);
             destroy_image(device, allocator, wood_normal);
             destroy_image(device, allocator, wood_roughness);

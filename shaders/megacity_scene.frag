@@ -20,10 +20,14 @@ layout(set = 0, binding = 3) uniform sampler2D road_albedo_texture;
 layout(set = 0, binding = 4) uniform sampler2D road_normal_texture;
 layout(set = 0, binding = 5) uniform sampler2D road_roughness_texture;
 layout(set = 0, binding = 6) uniform sampler2D road_ao_texture;
-layout(set = 0, binding = 7) uniform sampler2D wood_albedo_texture;
-layout(set = 0, binding = 8) uniform sampler2D wood_normal_texture;
-layout(set = 0, binding = 9) uniform sampler2D wood_roughness_texture;
-layout(set = 0, binding = 10) uniform sampler2D wood_ao_texture;
+layout(set = 0, binding = 7) uniform sampler2D sidewalk_albedo_texture;
+layout(set = 0, binding = 8) uniform sampler2D sidewalk_normal_texture;
+layout(set = 0, binding = 9) uniform sampler2D sidewalk_roughness_texture;
+layout(set = 0, binding = 10) uniform sampler2D sidewalk_ao_texture;
+layout(set = 0, binding = 11) uniform sampler2D wood_albedo_texture;
+layout(set = 0, binding = 12) uniform sampler2D wood_normal_texture;
+layout(set = 0, binding = 13) uniform sampler2D wood_roughness_texture;
+layout(set = 0, binding = 14) uniform sampler2D wood_ao_texture;
 
 layout(location = 0) in vec3 in_normal_ws;
 layout(location = 1) in vec3 in_base_color;
@@ -32,11 +36,14 @@ layout(location = 3) in vec2 in_atlas_uv;
 layout(location = 4) in float in_tex_blend;
 layout(location = 5) in vec2 in_label_ink_pixel_size;
 layout(location = 6) flat in vec4 in_material_info;
+layout(location = 7) in vec2 in_material_uv;
+layout(location = 8) in vec4 in_tangent_ws;
 layout(location = 0) out vec4 out_frag_color;
 
 const float kPi = 3.14159265359;
 const int kMaterialAsphaltRoad = 1;
-const int kMaterialWoodBuilding = 2;
+const int kMaterialPavingSidewalk = 2;
+const int kMaterialWoodBuilding = 3;
 
 float distribution_ggx(vec3 n, vec3 h, float roughness)
 {
@@ -71,37 +78,11 @@ int material_id()
     return int(floor(in_material_info.x + 0.5));
 }
 
-void dominant_axis_mapping(vec3 normal_ws, float uv_scale, out vec2 uv, out mat3 tbn)
+mat3 tangent_basis(vec3 normal_ws, vec4 tangent_ws)
 {
-    vec3 abs_n = abs(normal_ws);
-    if (abs_n.y >= abs_n.x && abs_n.y >= abs_n.z)
-    {
-        float sign_y = normal_ws.y >= 0.0 ? 1.0 : -1.0;
-        uv = vec2(in_world_position.x, -sign_y * in_world_position.z) * uv_scale;
-        tbn = mat3(
-            vec3(1.0, 0.0, 0.0),
-            vec3(0.0, 0.0, -sign_y),
-            vec3(0.0, sign_y, 0.0));
-        return;
-    }
-
-    if (abs_n.x >= abs_n.z)
-    {
-        float sign_x = normal_ws.x >= 0.0 ? 1.0 : -1.0;
-        uv = vec2(-sign_x * in_world_position.z, in_world_position.y) * uv_scale;
-        tbn = mat3(
-            vec3(0.0, 0.0, -sign_x),
-            vec3(0.0, 1.0, 0.0),
-            vec3(sign_x, 0.0, 0.0));
-        return;
-    }
-
-    float sign_z = normal_ws.z >= 0.0 ? 1.0 : -1.0;
-    uv = vec2(sign_z * in_world_position.x, in_world_position.y) * uv_scale;
-    tbn = mat3(
-        vec3(sign_z, 0.0, 0.0),
-        vec3(0.0, 1.0, 0.0),
-        vec3(0.0, 0.0, sign_z));
+    vec3 tangent = normalize(tangent_ws.xyz);
+    vec3 bitangent = normalize(cross(normal_ws, tangent) * tangent_ws.w);
+    return mat3(tangent, bitangent, normal_ws);
 }
 
 void main()
@@ -115,26 +96,34 @@ void main()
     int id = material_id();
     if (id == kMaterialAsphaltRoad)
     {
-        vec2 road_uv = in_world_position.xz * in_material_info.y;
+        vec2 road_uv = in_material_uv * in_material_info.y;
         vec3 tangent_normal = texture(road_normal_texture, road_uv).xyz * 2.0 - 1.0;
         tangent_normal.xy *= max(in_material_info.z, 0.0);
         tangent_normal = normalize(tangent_normal);
-
-        vec3 t = vec3(1.0, 0.0, 0.0);
-        vec3 b = vec3(0.0, 0.0, 1.0);
-        mat3 tbn = mat3(t, b, normal_ws);
+        mat3 tbn = tangent_basis(normal_ws, in_tangent_ws);
 
         normal_ws = normalize(tbn * tangent_normal);
         albedo = texture(road_albedo_texture, road_uv).rgb * in_base_color;
         roughness = clamp(texture(road_roughness_texture, road_uv).r, 0.04, 1.0);
         material_ao = mix(1.0, texture(road_ao_texture, road_uv).r, clamp(in_material_info.w, 0.0, 1.0));
     }
+    else if (id == kMaterialPavingSidewalk)
+    {
+        vec2 sidewalk_uv = in_material_uv * in_material_info.y;
+        vec3 tangent_normal = texture(sidewalk_normal_texture, sidewalk_uv).xyz * 2.0 - 1.0;
+        tangent_normal.xy *= max(in_material_info.z, 0.0);
+        tangent_normal = normalize(tangent_normal);
+        mat3 tbn = tangent_basis(normal_ws, in_tangent_ws);
+
+        normal_ws = normalize(tbn * tangent_normal);
+        albedo = texture(sidewalk_albedo_texture, sidewalk_uv).rgb * in_base_color;
+        roughness = clamp(texture(sidewalk_roughness_texture, sidewalk_uv).r, 0.04, 1.0);
+        material_ao = mix(1.0, texture(sidewalk_ao_texture, sidewalk_uv).r, clamp(in_material_info.w, 0.0, 1.0));
+    }
     else if (id == kMaterialWoodBuilding)
     {
-        vec2 wood_uv;
-        mat3 tbn;
-        dominant_axis_mapping(normal_ws, in_material_info.y, wood_uv, tbn);
-
+        vec2 wood_uv = in_material_uv * in_material_info.y;
+        mat3 tbn = tangent_basis(normal_ws, in_tangent_ws);
         vec3 tangent_normal = texture(wood_normal_texture, wood_uv).xyz * 2.0 - 1.0;
         tangent_normal.xy *= max(in_material_info.z, 0.0);
         tangent_normal = normalize(tangent_normal);

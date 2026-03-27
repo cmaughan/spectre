@@ -56,6 +56,10 @@ target_link_libraries(draxul-megacity PUBLIC
     EnTT::EnTT
 )
 
+target_link_libraries(draxul-megacity PRIVATE
+    draxul-geometry
+)
+
 # Bake in the source root so the scanner can find the repo at runtime.
 target_compile_definitions(draxul-megacity PRIVATE
     "DRAXUL_REPO_ROOT=\"${CMAKE_SOURCE_DIR}\""

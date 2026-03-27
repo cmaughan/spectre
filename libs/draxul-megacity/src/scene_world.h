@@ -32,7 +32,7 @@ public:
     entt::entity create_road(float world_x, float world_z, const RoadMetrics& metrics,
         const glm::vec4& color, SourceSymbol source = {}, float elevation = 0.0f);
 
-    // Create a textured road surface quad at the given world-space center position.
+    // Create a textured road surface cuboid at the given world-space center position.
     entt::entity create_road_surface(float world_x, float world_z, const RoadSurfaceMetrics& metrics,
         SourceSymbol source = {}, float elevation = 0.0f);
 

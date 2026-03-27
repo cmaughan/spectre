@@ -290,6 +290,10 @@ struct IsometricScenePass::State
     ObjCRef<id<MTLTexture>> road_normal_texture;
     ObjCRef<id<MTLTexture>> road_roughness_texture;
     ObjCRef<id<MTLTexture>> road_ao_texture;
+    ObjCRef<id<MTLTexture>> sidewalk_albedo_texture;
+    ObjCRef<id<MTLTexture>> sidewalk_normal_texture;
+    ObjCRef<id<MTLTexture>> sidewalk_roughness_texture;
+    ObjCRef<id<MTLTexture>> sidewalk_ao_texture;
     ObjCRef<id<MTLTexture>> wood_albedo_texture;
     ObjCRef<id<MTLTexture>> wood_normal_texture;
     ObjCRef<id<MTLTexture>> wood_roughness_texture;
@@ -345,6 +349,9 @@ struct IsometricScenePass::State
         vertex_desc.attributes[4].format = MTLVertexFormatFloat;
         vertex_desc.attributes[4].offset = offsetof(SceneVertex, tex_blend);
         vertex_desc.attributes[4].bufferIndex = 0;
+        vertex_desc.attributes[5].format = MTLVertexFormatFloat4;
+        vertex_desc.attributes[5].offset = offsetof(SceneVertex, tangent);
+        vertex_desc.attributes[5].bufferIndex = 0;
         vertex_desc.layouts[0].stride = sizeof(SceneVertex);
         vertex_desc.layouts[0].stepFunction = MTLVertexStepFunctionPerVertex;
 
@@ -546,13 +553,15 @@ struct IsometricScenePass::State
     bool ensure_road_materials(id<MTLCommandBuffer> cmd_buf)
     {
         if (road_albedo_texture && road_normal_texture && road_roughness_texture && road_ao_texture
+            && sidewalk_albedo_texture && sidewalk_normal_texture && sidewalk_roughness_texture && sidewalk_ao_texture
             && wood_albedo_texture && wood_normal_texture && wood_roughness_texture && wood_ao_texture
             && material_sampler)
             return true;
 
         const AsphaltRoadMaterialImages road_images = load_asphalt_road_material_images();
+        const PavingSidewalkMaterialImages sidewalk_images = load_paving_sidewalk_material_images();
         const WoodBuildingMaterialImages wood_images = load_wood_building_material_images();
-        if (!road_images.valid() || !wood_images.valid())
+        if (!road_images.valid() || !sidewalk_images.valid() || !wood_images.valid())
         {
             DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity: failed to load Megacity material images");
             return false;
@@ -562,11 +571,16 @@ struct IsometricScenePass::State
         road_normal_texture.reset(make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm, road_images.normal));
         road_roughness_texture.reset(make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm, road_images.roughness));
         road_ao_texture.reset(make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm, road_images.ao));
+        sidewalk_albedo_texture.reset(make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm_sRGB, sidewalk_images.albedo));
+        sidewalk_normal_texture.reset(make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm, sidewalk_images.normal));
+        sidewalk_roughness_texture.reset(make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm, sidewalk_images.roughness));
+        sidewalk_ao_texture.reset(make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm, sidewalk_images.ao));
         wood_albedo_texture.reset(make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm_sRGB, wood_images.albedo));
         wood_normal_texture.reset(make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm, wood_images.normal));
         wood_roughness_texture.reset(make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm, wood_images.roughness));
         wood_ao_texture.reset(make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm, wood_images.ao));
         if (!road_albedo_texture || !road_normal_texture || !road_roughness_texture || !road_ao_texture
+            || !sidewalk_albedo_texture || !sidewalk_normal_texture || !sidewalk_roughness_texture || !sidewalk_ao_texture
             || !wood_albedo_texture || !wood_normal_texture || !wood_roughness_texture || !wood_ao_texture)
             return false;
 
@@ -629,6 +643,9 @@ struct IsometricScenePass::State
         vertex_desc.attributes[4].format = MTLVertexFormatFloat;
         vertex_desc.attributes[4].offset = offsetof(SceneVertex, tex_blend);
         vertex_desc.attributes[4].bufferIndex = 0;
+        vertex_desc.attributes[5].format = MTLVertexFormatFloat4;
+        vertex_desc.attributes[5].offset = offsetof(SceneVertex, tangent);
+        vertex_desc.attributes[5].bufferIndex = 0;
         vertex_desc.layouts[0].stride = sizeof(SceneVertex);
         vertex_desc.layouts[0].stepFunction = MTLVertexStepFunctionPerVertex;
 
@@ -1121,10 +1138,14 @@ void IsometricScenePass::record(IRenderContext& ctx)
     [encoder setFragmentTexture:state_->road_normal_texture.get() atIndex:3];
     [encoder setFragmentTexture:state_->road_roughness_texture.get() atIndex:4];
     [encoder setFragmentTexture:state_->road_ao_texture.get() atIndex:5];
-    [encoder setFragmentTexture:state_->wood_albedo_texture.get() atIndex:6];
-    [encoder setFragmentTexture:state_->wood_normal_texture.get() atIndex:7];
-    [encoder setFragmentTexture:state_->wood_roughness_texture.get() atIndex:8];
-    [encoder setFragmentTexture:state_->wood_ao_texture.get() atIndex:9];
+    [encoder setFragmentTexture:state_->sidewalk_albedo_texture.get() atIndex:6];
+    [encoder setFragmentTexture:state_->sidewalk_normal_texture.get() atIndex:7];
+    [encoder setFragmentTexture:state_->sidewalk_roughness_texture.get() atIndex:8];
+    [encoder setFragmentTexture:state_->sidewalk_ao_texture.get() atIndex:9];
+    [encoder setFragmentTexture:state_->wood_albedo_texture.get() atIndex:10];
+    [encoder setFragmentTexture:state_->wood_normal_texture.get() atIndex:11];
+    [encoder setFragmentTexture:state_->wood_roughness_texture.get() atIndex:12];
+    [encoder setFragmentTexture:state_->wood_ao_texture.get() atIndex:13];
     [encoder setFragmentSamplerState:state_->label_sampler.get() atIndex:0];
     [encoder setFragmentSamplerState:state_->gbuffer_sampler.get() atIndex:1];
     [encoder setFragmentSamplerState:state_->material_sampler.get() atIndex:2];

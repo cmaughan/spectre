@@ -1,0 +1,12 @@
+add_library(draxul-geometry STATIC
+    src/primitive_meshes.cpp
+    src/tree_generator.cpp
+)
+
+target_include_directories(draxul-geometry PUBLIC
+    include
+)
+
+target_link_libraries(draxul-geometry PUBLIC
+    glm
+)

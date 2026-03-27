@@ -112,6 +112,7 @@ SceneSnapshotResult build_scene_snapshot(
         {
             extent_x = rm->extent_x;
             extent_z = rm->extent_z;
+            obj.uv_rect = glm::vec4(0.0f, 0.0f, rm->extent_x, rm->extent_z);
             transform = glm::translate(transform, glm::vec3(0.0f, rm->height * 0.5f, 0.0f));
             transform = glm::scale(transform, glm::vec3(rm->extent_x, rm->height, rm->extent_z));
         }
@@ -119,7 +120,9 @@ SceneSnapshotResult build_scene_snapshot(
         {
             extent_x = rsm->extent_x;
             extent_z = rsm->extent_z;
-            transform = glm::scale(transform, glm::vec3(rsm->extent_x, 1.0f, rsm->extent_z));
+            obj.uv_rect = glm::vec4(0.0f, 0.0f, rsm->extent_x, rsm->extent_z);
+            transform = glm::translate(transform, glm::vec3(0.0f, rsm->height * 0.5f, 0.0f));
+            transform = glm::scale(transform, glm::vec3(rsm->extent_x, rsm->height, rsm->extent_z));
         }
         else if (const auto* sm = reg.try_get<SignMetrics>(entity))
         {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <draxul/geometry_mesh.h>
 #include <glm/glm.hpp>
 #include <memory>
 #include <vector>
@@ -22,7 +23,8 @@ enum class MaterialId : uint32_t
 {
     FlatColor = 0,
     AsphaltRoad = 1,
-    WoodBuilding = 2,
+    PavingSidewalk = 2,
+    WoodBuilding = 3,
 };
 
 struct LabelAtlasData
@@ -86,19 +88,7 @@ struct SceneSnapshot
     std::vector<SceneObject> objects;
 };
 
-struct SceneVertex
-{
-    glm::vec3 position{ 0.0f };
-    glm::vec3 normal{ 0.0f, 1.0f, 0.0f };
-    glm::vec3 color{ 1.0f };
-    glm::vec2 uv{ 0.0f };
-    float tex_blend = 0.0f;
-};
-
-struct MeshData
-{
-    std::vector<SceneVertex> vertices;
-    std::vector<uint16_t> indices;
-};
+using SceneVertex = GeometryVertex;
+using MeshData = GeometryMesh;
 
 } // namespace draxul

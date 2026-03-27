@@ -2,6 +2,7 @@
 
 #ifdef DRAXUL_ENABLE_MEGACITY
 
+#include <draxul/primitive_meshes.h>
 #include <draxul/tree_generator.h>
 
 #include <glm/geometric.hpp>
@@ -47,7 +48,6 @@ TEST_CASE("tree generator emits a valid trunk scaffold mesh", "[geometry]")
         CHECK(vertex.color.g <= Catch::Approx(1.0f));
         CHECK(vertex.color.b >= Catch::Approx(0.0f));
         CHECK(vertex.color.b <= Catch::Approx(1.0f));
-        CHECK(vertex.color.a == Catch::Approx(1.0f));
     }
 }
 
@@ -67,6 +67,24 @@ TEST_CASE("tree generator is deterministic for a fixed seed", "[geometry]")
     CHECK(a.vertices[7].normal == b.vertices[7].normal);
     CHECK(a.vertices.back().color == b.vertices.back().color);
     CHECK(a.indices == b.indices);
+}
+
+TEST_CASE("unit cube geometry uses the shared vertex format", "[geometry]")
+{
+    const GeometryMesh mesh = build_unit_cube_geometry();
+
+    REQUIRE(mesh.vertices.size() == 24);
+    REQUIRE(mesh.indices.size() == 36);
+
+    for (const GeometryVertex& vertex : mesh.vertices)
+    {
+        CHECK(glm::length(vertex.normal) == Catch::Approx(1.0f).margin(0.001f));
+        CHECK(std::abs(glm::dot(vertex.normal, glm::vec3(vertex.tangent))) <= Catch::Approx(0.001f));
+        CHECK(vertex.uv.x >= Catch::Approx(0.0f));
+        CHECK(vertex.uv.x <= Catch::Approx(1.0f));
+        CHECK(vertex.uv.y >= Catch::Approx(0.0f));
+        CHECK(vertex.uv.y <= Catch::Approx(1.0f));
+    }
 }
 
 #endif

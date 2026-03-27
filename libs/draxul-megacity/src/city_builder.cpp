@@ -537,12 +537,13 @@ CityBuildResult build_city(
             RoadSurfaceMetrics{
                 road_surface_bounds.max_x - road_surface_bounds.min_x,
                 road_surface_bounds.max_z - road_surface_bounds.min_z,
+                config.road_surface_height,
                 kRoadMaterialUvScale,
                 1.0f,
                 1.0f,
             },
             SourceSymbol{},
-            config.road_surface_height + kRoadSurfaceTextureLift);
+            kRoadSurfaceTextureLift);
     }
     for (const auto& module_layout : layout->modules)
     {

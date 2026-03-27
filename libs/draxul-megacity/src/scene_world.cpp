@@ -9,6 +9,9 @@ namespace
 constexpr float kWoodBuildingUvScale = 0.45f;
 constexpr float kWoodBuildingNormalStrength = 0.7f;
 constexpr float kWoodBuildingAoStrength = 0.45f;
+constexpr float kSidewalkPavingUvScale = 0.85f;
+constexpr float kSidewalkPavingNormalStrength = 0.8f;
+constexpr float kSidewalkPavingAoStrength = 0.55f;
 
 } // namespace
 
@@ -72,7 +75,16 @@ entt::entity SceneWorld::create_road(float world_x, float world_z,
     registry_.emplace<WorldPosition>(entity, world_x, world_z);
     registry_.emplace<Elevation>(entity, elevation);
     registry_.emplace<RoadMetrics>(entity, metrics);
-    registry_.emplace<Appearance>(entity, MeshId::Cube, MaterialId::FlatColor, color, glm::vec4(0.0f, 1.0f, 1.0f, 1.0f));
+    registry_.emplace<Appearance>(
+        entity,
+        MeshId::Cube,
+        MaterialId::PavingSidewalk,
+        color,
+        glm::vec4(
+            static_cast<float>(MaterialId::PavingSidewalk),
+            kSidewalkPavingUvScale,
+            kSidewalkPavingNormalStrength,
+            kSidewalkPavingAoStrength));
     if (!source.file.empty() || !source.name.empty())
         registry_.emplace<SourceSymbol>(entity, std::move(source));
     return entity;

@@ -54,6 +54,7 @@ struct RoadSurfaceMetrics
 {
     float extent_x = 1.0f;
     float extent_z = 1.0f;
+    float height = 0.03f;
     float uv_scale = 0.35f;
     float normal_strength = 1.0f;
     float ao_strength = 1.0f;
