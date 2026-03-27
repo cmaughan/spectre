@@ -618,9 +618,10 @@ SemanticMegacityLayout build_semantic_megacity_layout(
     megacity.max_z = std::numeric_limits<float>::lowest();
 
     // Place the central park module at the origin — it represents the whole codebase.
+    // Central park is double the size of regular module parks.
     {
         const float step = std::max(config.placement_step, 0.01f);
-        const float park_fp = std::max(step, snap_to_grid(config.park_footprint, step));
+        const float park_fp = std::max(step, snap_to_grid(config.park_footprint * 2.0f, step));
         const float park_half = park_fp * 0.5f;
 
         SemanticCityModuleLayout central;

@@ -353,11 +353,13 @@ SignPlacementSpec place_module_road_sign(
     return placement;
 }
 
-SignPlacementSpec place_module_park_sign(
+// Returns two signs for a park: [0] on the south edge facing north, [1] on the north edge facing south.
+// Text on each side faces outward so it's readable from either direction.
+std::array<SignPlacementSpec, 2> place_module_park_signs(
     glm::vec2 park_center, float park_footprint, std::string_view text, const TextService* text_service,
     const MegaCityCodeConfig& config)
 {
-    SignPlacementSpec placement;
+    SignPlacementSpec base;
 
     float sign_width = park_footprint;
     float sign_depth = sign_width * 0.25f;
@@ -369,16 +371,25 @@ SignPlacementSpec place_module_park_sign(
         const float char_width = sign_width / std::max(static_cast<float>(text.size()), 1.0f);
         sign_depth = char_width * aspect + 2.0f * config.road_sign_edge_inset;
     }
-    placement.width = std::max(0.35f, sign_width);
-    placement.height = config.roof_sign_thickness;
-    placement.depth = std::clamp(
+    base.width = std::max(0.35f, sign_width);
+    base.height = config.roof_sign_thickness;
+    base.depth = std::clamp(
         sign_depth, config.minimum_road_sign_depth, park_footprint * 0.33f);
-    placement.mesh = MeshId::RoofSign;
+    base.mesh = MeshId::RoofSign;
 
     const float half = park_footprint * 0.5f;
-    placement.center = { park_center.x, park_center.y - half + placement.depth * 0.5f };
-    placement.yaw_radians = 0.0f;
-    return placement;
+
+    // South edge, facing north (yaw = 0)
+    SignPlacementSpec south = base;
+    south.center = { park_center.x, park_center.y - half + base.depth * 0.5f };
+    south.yaw_radians = 0.0f;
+
+    // North edge, facing south (yaw = π)
+    SignPlacementSpec north = base;
+    north.center = { park_center.x, park_center.y + half - base.depth * 0.5f };
+    north.yaw_radians = glm::pi<float>();
+
+    return { south, north };
 }
 
 SignLabelRequest make_sign_request(
@@ -498,11 +509,12 @@ CityBuildResult build_city(
         if (module_layout.park_footprint > 0.0f)
         {
             const std::string name = module_display_name(module_layout.module_path);
-            const SignPlacementSpec park_sign = place_module_park_sign(
+            const auto park_signs = place_module_park_signs(
                 module_layout.park_center, module_layout.park_footprint,
                 name, text_service, config);
+            // Both signs share the same atlas entry (same text/key).
             auto request = make_sign_request(
-                module_sign_key(module_layout.module_path), name, park_sign, text_service, config);
+                module_sign_key(module_layout.module_path), name, park_signs[0], text_service, config);
             request.text_r = 255;
             request.text_g = 255;
             request.text_b = 255;
@@ -653,22 +665,26 @@ CityBuildResult build_city(
             if (it != sign_label_atlas->entries.end())
             {
                 const std::string name = module_display_name(module_layout.module_path);
-                const SignPlacementSpec park_sign = place_module_park_sign(
+                const auto park_signs = place_module_park_signs(
                     module_layout.park_center, module_layout.park_footprint,
                     name, text_service, config);
-                const SignMetrics sign = make_sign_metrics(park_sign, it->second);
 
-                world.create_sign(
-                    park_sign.center.x,
-                    park_sign.center.y,
-                    building_base_elevation(config)
-                        + config.park_height
-                        + sign.height * 0.5f
-                        + config.road_sign_lift,
-                    sign,
-                    park_sign.mesh,
-                    module_sign_board_color(config),
-                    SourceSymbol{ "", module_layout.module_path });
+                // Place both signs (south and north edges) so text is readable from either side.
+                for (const SignPlacementSpec& park_sign : park_signs)
+                {
+                    const SignMetrics sign = make_sign_metrics(park_sign, it->second);
+                    world.create_sign(
+                        park_sign.center.x,
+                        park_sign.center.y,
+                        building_base_elevation(config)
+                            + config.park_height
+                            + sign.height * 0.5f
+                            + config.road_sign_lift,
+                        sign,
+                        park_sign.mesh,
+                        module_sign_board_color(config),
+                        SourceSymbol{ "", module_layout.module_path });
+                }
             }
         }
     }
