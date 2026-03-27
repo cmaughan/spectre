@@ -240,7 +240,7 @@ fragment float4 scene_fragment(
         direct_lighting += (kd * albedo / 3.14159265359f + specular) * radiance * point_ndotl;
     }
 
-    float3 shaded = albedo * (hemi * ambient * combined_ao) + direct_lighting;
+    float3 shaded = albedo * (hemi * ambient * combined_ao) + direct_lighting * combined_ao;
     if (in.tex_blend > 0.5f)
     {
         const float4 label = signAtlas.sample(signSampler, in.atlas_uv);
