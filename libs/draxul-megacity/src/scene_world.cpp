@@ -22,22 +22,31 @@ void SceneWorld::clear()
 }
 
 entt::entity SceneWorld::create_building(float world_x, float world_z, float elevation,
-    const BuildingMetrics& metrics, const glm::vec4& color, SourceSymbol source)
+    const BuildingMetrics& metrics, const glm::vec4& color, SourceSymbol source,
+    MaterialId material)
 {
     const auto entity = registry_.create();
     registry_.emplace<WorldPosition>(entity, world_x, world_z);
     registry_.emplace<Elevation>(entity, elevation);
     registry_.emplace<BuildingMetrics>(entity, metrics);
-    registry_.emplace<Appearance>(
-        entity,
-        MeshId::Cube,
-        MaterialId::WoodBuilding,
-        color,
-        glm::vec4(
-            static_cast<float>(MaterialId::WoodBuilding),
-            kWoodBuildingUvScale,
-            kWoodBuildingNormalStrength,
-            kWoodBuildingAoStrength));
+    if (material == MaterialId::WoodBuilding)
+    {
+        registry_.emplace<Appearance>(
+            entity,
+            MeshId::Cube,
+            MaterialId::WoodBuilding,
+            color,
+            glm::vec4(
+                static_cast<float>(MaterialId::WoodBuilding),
+                kWoodBuildingUvScale,
+                kWoodBuildingNormalStrength,
+                kWoodBuildingAoStrength));
+    }
+    else
+    {
+        registry_.emplace<Appearance>(
+            entity, MeshId::Cube, material, color, glm::vec4(0.0f, 1.0f, 1.0f, 1.0f));
+    }
     if (!source.file.empty() || !source.name.empty())
         registry_.emplace<SourceSymbol>(entity, std::move(source));
     return entity;

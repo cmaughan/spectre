@@ -566,7 +566,8 @@ CityBuildResult build_city(
                 building_base_elevation(config),
                 park_metrics,
                 park_color,
-                SourceSymbol{ "", module_layout.module_path });
+                SourceSymbol{ "", module_layout.module_path },
+                MaterialId::FlatColor);
         }
 
         const glm::vec4 module_color = module_building_color(module_layout.module_path);
