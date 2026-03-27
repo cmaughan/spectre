@@ -160,7 +160,7 @@ SceneSnapshotResult build_scene_snapshot(
         static_cast<float>(config.debug_view),
         config.ao_denoise ? 1.0f : 0.0f,
         static_cast<float>(config.ao_kernel_size),
-        0.0f);
+        config.wireframe ? 1.0f : 0.0f);
 
     const GroundFootprint footprint = camera.visible_ground_footprint(0.0f);
     const float tile_size = world.tile_size();

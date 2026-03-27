@@ -173,6 +173,7 @@ void apply_megacity_code_table(MegaCityCodeConfig& config, const toml::table& ta
         if (auto parsed = parse_megacity_debug_view(*legacy_dv); parsed.has_value())
             config.debug_view = *parsed;
     }
+    assign_bool("wireframe", config.wireframe);
     assign_bool("ao_denoise", config.ao_denoise);
     assign_float("ao_radius", config.ao_radius);
     assign_float("ao_bias", config.ao_bias);
@@ -304,6 +305,7 @@ toml::table serialize_megacity_code_table(const MegaCityCodeConfig& config)
     toml_support::insert_vec2(table, "sign_text_px_range", config.sign_text_px_range);
     table.insert_or_assign("output_gamma", static_cast<double>(config.output_gamma));
     table.insert_or_assign("debug_view", std::string(format_megacity_debug_view(config.debug_view)));
+    table.insert_or_assign("wireframe", config.wireframe);
     table.insert_or_assign("ao_denoise", config.ao_denoise);
     table.insert_or_assign("ao_radius", static_cast<double>(config.ao_radius));
     table.insert_or_assign("ao_bias", static_cast<double>(config.ao_bias));

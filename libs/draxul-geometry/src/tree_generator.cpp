@@ -47,7 +47,17 @@ struct BranchAttachment
     glm::vec3 surface_center{ 0.0f };
     glm::vec3 surface_normal{ 0.0f, 1.0f, 0.0f };
     glm::vec3 surface_u{ 1.0f, 0.0f, 0.0f };
+    glm::vec3 root_basis_u{ 1.0f, 0.0f, 0.0f };
+    glm::vec3 root_basis_v{ 0.0f, 0.0f, 1.0f };
     float collar_radius = 0.05f;
+    uint32_t parent_ring_start = 0;
+    int parent_frame_index = 0;
+    int parent_row_count = 0;
+    int parent_segment_center = 0;
+    int parent_segment_span = 1;
+    int child_segment_center = 0;
+    int child_segment_span = 1;
+    std::vector<uint32_t> parent_arc_indices;
 };
 
 float hash_to_unit_float(uint64_t seed, uint32_t a, uint32_t b)
@@ -110,6 +120,122 @@ bool can_append_vertices(const GeometryMesh& mesh, size_t additional_vertices)
     return mesh.vertices.size() <= (kMaxGeometryVertices - additional_vertices);
 }
 
+int wrap_segment(int segment, int radial_segments)
+{
+    if (radial_segments <= 0)
+        return 0;
+    int wrapped = segment % radial_segments;
+    if (wrapped < 0)
+        wrapped += radial_segments;
+    return wrapped;
+}
+
+int shortest_segment_delta(int segment, int center, int radial_segments)
+{
+    int delta = wrap_segment(segment - center, radial_segments);
+    if (delta > radial_segments / 2)
+        delta -= radial_segments;
+    return delta;
+}
+
+uint32_t ring_vertex_index(uint32_t ring_start, int radial_segments, int row_index, int segment)
+{
+    const uint32_t row_offset = static_cast<uint32_t>(row_index * (radial_segments + 1));
+    return ring_start + row_offset + static_cast<uint32_t>(wrap_segment(segment, radial_segments));
+}
+
+std::vector<uint32_t> build_arc_indices(
+    uint32_t ring_start,
+    int radial_segments,
+    int row_index,
+    int segment_center,
+    int segment_span,
+    bool reverse)
+{
+    std::vector<uint32_t> indices;
+    indices.reserve(static_cast<size_t>(segment_span * 2 + 1));
+    if (!reverse)
+    {
+        for (int offset = -segment_span; offset <= segment_span; ++offset)
+            indices.push_back(ring_vertex_index(ring_start, radial_segments, row_index, segment_center + offset));
+    }
+    else
+    {
+        for (int offset = segment_span; offset >= -segment_span; --offset)
+            indices.push_back(ring_vertex_index(ring_start, radial_segments, row_index, segment_center + offset));
+    }
+    return indices;
+}
+
+void append_double_sided_bridge(
+    GeometryMesh& mesh,
+    const std::vector<uint32_t>& edge_a,
+    const std::vector<uint32_t>& edge_b)
+{
+    if (edge_a.size() != edge_b.size() || edge_a.size() < 2)
+        return;
+
+    for (size_t i = 0; i + 1 < edge_a.size(); ++i)
+    {
+        const uint32_t a0 = edge_a[i];
+        const uint32_t a1 = edge_a[i + 1];
+        const uint32_t b0 = edge_b[i];
+        const uint32_t b1 = edge_b[i + 1];
+
+        mesh.indices.push_back(a0);
+        mesh.indices.push_back(a1);
+        mesh.indices.push_back(b1);
+        mesh.indices.push_back(a0);
+        mesh.indices.push_back(b1);
+        mesh.indices.push_back(b0);
+
+        mesh.indices.push_back(b1);
+        mesh.indices.push_back(a1);
+        mesh.indices.push_back(a0);
+        mesh.indices.push_back(b0);
+        mesh.indices.push_back(b1);
+        mesh.indices.push_back(a0);
+    }
+}
+
+void append_attachment_bridge(
+    GeometryMesh& bark_mesh,
+    const BranchAttachment& attachment,
+    uint32_t child_ring_start,
+    int radial_segments)
+{
+    if (!attachment.enabled || radial_segments < 3)
+        return;
+
+    const int parent_row = std::clamp(
+        attachment.parent_frame_index,
+        0,
+        std::max(attachment.parent_row_count - 1, 0));
+    const std::vector<uint32_t> parent_arc = build_arc_indices(
+        attachment.parent_ring_start,
+        radial_segments,
+        parent_row,
+        attachment.parent_segment_center,
+        attachment.parent_segment_span,
+        false);
+
+    const glm::vec3 root_back = -attachment.surface_normal;
+    const float child_angle = std::atan2(
+        glm::dot(root_back, attachment.root_basis_v),
+        glm::dot(root_back, attachment.root_basis_u));
+    const int child_segment_center = static_cast<int>(std::lround(
+        (child_angle / kTwoPi) * static_cast<float>(radial_segments)));
+    const std::vector<uint32_t> child_arc = build_arc_indices(
+        child_ring_start,
+        radial_segments,
+        0,
+        child_segment_center,
+        attachment.parent_segment_span,
+        true);
+
+    append_double_sided_bridge(bark_mesh, parent_arc, child_arc);
+}
+
 void prepend_attachment_ring(
     std::vector<BranchFrame>& frames,
     float length,
@@ -119,13 +245,14 @@ void prepend_attachment_ring(
         return;
 
     const glm::vec3 surface_normal = glm::normalize(attachment.surface_normal);
-    const glm::vec3 surface_u = project_basis(attachment.surface_u, surface_normal);
-    const glm::vec3 surface_v = glm::normalize(glm::cross(surface_normal, surface_u));
+    const glm::vec3 root_axis = frames.front().axis;
+    const glm::vec3 surface_u = project_basis(attachment.surface_u, root_axis);
+    const glm::vec3 surface_v = glm::normalize(glm::cross(root_axis, surface_u));
     const float collar_radius = std::max(attachment.collar_radius, 0.005f);
 
     BranchFrame root_frame;
     root_frame.center = attachment.surface_center;
-    root_frame.axis = surface_normal;
+    root_frame.axis = root_axis;
     root_frame.basis_u = surface_u;
     root_frame.basis_v = surface_v;
     root_frame.radius = collar_radius;
@@ -329,8 +456,10 @@ bool append_branch_rings(
     GeometryMesh& bark_mesh,
     const DraxulTreeParams& params,
     const std::vector<BranchFrame>& frames,
+    const BranchAttachment* attachment,
     uint32_t branch_id,
     uint32_t& out_ring_start,
+    uint32_t& out_tip_ring_start,
     int radial_segments)
 {
     const size_t branch_vertex_count = frames.size() * static_cast<size_t>(radial_segments + 1);
@@ -338,6 +467,8 @@ bool append_branch_rings(
         return false;
 
     out_ring_start = static_cast<uint32_t>(bark_mesh.vertices.size());
+    std::vector<std::vector<uint32_t>> row_indices(
+        frames.size(), std::vector<uint32_t>(static_cast<size_t>(radial_segments + 1), 0u));
     for (size_t ring_index = 0; ring_index < frames.size(); ++ring_index)
     {
         const BranchFrame& frame = frames[ring_index];
@@ -345,9 +476,51 @@ bool append_branch_rings(
             (static_cast<float>(branch_id % 11U) * 0.04f) + frame.t * 0.75f,
             0.0f,
             1.0f);
-        for (int segment = 0; segment <= radial_segments; ++segment)
+        const bool use_shared_root = attachment != nullptr && attachment->enabled && ring_index == 0
+            && !attachment->parent_arc_indices.empty();
+        for (int segment = 0; segment < radial_segments; ++segment)
         {
             const float u = static_cast<float>(segment) / static_cast<float>(radial_segments);
+            const float angle = u * kTwoPi;
+            const float c = std::cos(angle);
+            const float s = std::sin(angle);
+            if (use_shared_root)
+            {
+                const int delta = shortest_segment_delta(
+                    segment,
+                    attachment->child_segment_center,
+                    radial_segments);
+                if (std::abs(delta) <= attachment->child_segment_span)
+                {
+                    const size_t arc_index = static_cast<size_t>(delta + attachment->child_segment_span);
+                    if (arc_index < attachment->parent_arc_indices.size())
+                    {
+                        row_indices[ring_index][segment] = attachment->parent_arc_indices[arc_index];
+                        continue;
+                    }
+                }
+            }
+
+            const glm::vec3 radial = glm::normalize(c * frame.basis_u + s * frame.basis_v);
+            const glm::vec3 tangent_dir = glm::normalize(-s * frame.basis_u + c * frame.basis_v);
+
+            GeometryVertex vertex;
+            vertex.position = frame.center + radial * frame.radius;
+            vertex.normal = radial;
+            vertex.tangent = glm::vec4(tangent_dir, 1.0f);
+            vertex.color = bark_color_for_vertex(
+                params,
+                color_t,
+                branch_id * 4096U + static_cast<uint32_t>(ring_index),
+                static_cast<uint32_t>(segment));
+            vertex.uv = { u, frame.t };
+            row_indices[ring_index][segment] = static_cast<uint32_t>(bark_mesh.vertices.size());
+            bark_mesh.vertices.push_back(vertex);
+        }
+        row_indices[ring_index][radial_segments] = row_indices[ring_index][0];
+        if (!use_shared_root)
+        {
+            const float u = 1.0f;
             const float angle = u * kTwoPi;
             const float c = std::cos(angle);
             const float s = std::sin(angle);
@@ -362,23 +535,21 @@ bool append_branch_rings(
                 params,
                 color_t,
                 branch_id * 4096U + static_cast<uint32_t>(ring_index),
-                static_cast<uint32_t>(segment));
-            vertex.uv = { u, frame.t };
+                static_cast<uint32_t>(radial_segments));
+            vertex.uv = { 1.0f, frame.t };
+            row_indices[ring_index][radial_segments] = static_cast<uint32_t>(bark_mesh.vertices.size());
             bark_mesh.vertices.push_back(vertex);
         }
     }
 
-    const int ring_vertex_count = radial_segments + 1;
     for (size_t ring_index = 0; ring_index + 1 < frames.size(); ++ring_index)
     {
-        const uint32_t row0 = out_ring_start + static_cast<uint32_t>(ring_index * static_cast<size_t>(ring_vertex_count));
-        const uint32_t row1 = row0 + static_cast<uint32_t>(ring_vertex_count);
         for (int segment = 0; segment < radial_segments; ++segment)
         {
-            const uint32_t a = row0 + static_cast<uint32_t>(segment);
-            const uint32_t b = row0 + static_cast<uint32_t>(segment + 1);
-            const uint32_t c = row1 + static_cast<uint32_t>(segment + 1);
-            const uint32_t d = row1 + static_cast<uint32_t>(segment);
+            const uint32_t a = row_indices[ring_index][segment];
+            const uint32_t b = row_indices[ring_index][segment + 1];
+            const uint32_t c = row_indices[ring_index + 1][segment + 1];
+            const uint32_t d = row_indices[ring_index + 1][segment];
 
             bark_mesh.indices.push_back(a);
             bark_mesh.indices.push_back(b);
@@ -388,6 +559,7 @@ bool append_branch_rings(
             bark_mesh.indices.push_back(d);
         }
     }
+    out_tip_ring_start = row_indices.back()[0];
     return true;
 }
 
@@ -541,12 +713,18 @@ void append_branch(
     if (frames.size() < 2)
         return;
 
-    if (attachment != nullptr && attachment->enabled)
-        prepend_attachment_ring(frames, length, *attachment);
-
     const int radial_segments = std::max(params.radial_segments, 3);
     uint32_t ring_start = 0;
-    if (!append_branch_rings(bark_mesh, params, frames, branch_id, ring_start, radial_segments))
+    uint32_t tip_ring_start = 0;
+    if (!append_branch_rings(
+            bark_mesh,
+            params,
+            frames,
+            attachment,
+            branch_id,
+            ring_start,
+            tip_ring_start,
+            radial_segments))
         return;
 
     if (close_base)
@@ -562,8 +740,6 @@ void append_branch(
             true);
     }
 
-    const uint32_t tip_ring_start = ring_start
-        + static_cast<uint32_t>((frames.size() - 1) * static_cast<size_t>(radial_segments + 1));
     (void)append_cap(
         bark_mesh,
         params,
@@ -644,14 +820,13 @@ void append_branch(
                 * std::lerp(0.28f, 0.42f, hash_to_unit_float(params.seed, branch_id, static_cast<uint32_t>(child_index) + 241U)),
             0.006f * params.overall_scale);
         const glm::vec3 attachment_center = frame.center + radial_dir * frame.radius;
+        const float embed_depth = std::max(
+            child_base_radius * std::lerp(1.35f, 0.95f, junction_t),
+            frame.radius * std::lerp(0.28f, 0.16f, junction_t));
         const glm::vec3 child_origin = attachment_center
-            + child_direction * (child_base_radius * std::lerp(0.35f, 0.55f, junction_t));
-        BranchAttachment attachment;
-        attachment.enabled = true;
-        attachment.surface_center = attachment_center;
-        attachment.surface_normal = radial_dir;
-        attachment.surface_u = frame.axis;
-        attachment.collar_radius = child_base_radius * std::lerp(1.10f, 0.96f, junction_t);
+            - child_direction * embed_depth
+            - radial_dir * std::min(child_base_radius * 0.24f, frame.radius * 0.18f);
+        const float embedded_length = child_length + embed_depth * 0.85f;
 
         append_branch(
             bark_mesh,
@@ -659,13 +834,13 @@ void append_branch(
             params,
             child_origin,
             child_direction,
-            child_length,
+            embedded_length,
             child_base_radius,
             child_tip_radius,
             depth + 1,
             branch_id * 7U + static_cast<uint32_t>(child_index) + 1U,
             false,
-            &attachment);
+            nullptr);
     }
 }
 

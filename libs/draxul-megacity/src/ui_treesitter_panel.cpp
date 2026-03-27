@@ -1003,6 +1003,10 @@ bool render_renderer_controls(MegacityRendererControls& controls)
             changed = true;
             controls.committed_edit = true;
         }
+        const bool wireframe_changed = ImGui::Checkbox("Wireframe", &config.wireframe);
+        changed |= wireframe_changed;
+        if (wireframe_changed)
+            controls.committed_edit = true;
     }
 
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.68f, 0.68f, 0.68f, 1.0f));

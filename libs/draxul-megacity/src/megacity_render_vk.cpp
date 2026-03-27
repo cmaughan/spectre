@@ -641,6 +641,8 @@ struct IsometricScenePass::State
     VkPipelineLayout prepass_pipeline_layout = VK_NULL_HANDLE;
     VkPipeline pipeline = VK_NULL_HANDLE;
     VkPipeline debug_pipeline = VK_NULL_HANDLE;
+    VkPipeline wireframe_pipeline = VK_NULL_HANDLE;
+    VkPipeline debug_wireframe_pipeline = VK_NULL_HANDLE;
     MeshBuffers cube_mesh;
     MeshBuffers floor_mesh;
     MeshBuffers tree_bark_mesh;
@@ -1378,6 +1380,50 @@ struct IsometricScenePass::State
             vkDestroyShaderModule(device, debug_frag, nullptr);
         }
 
+        // Create wireframe variants (requires fillModeNonSolid device feature)
+        VkPhysicalDeviceFeatures features{};
+        vkGetPhysicalDeviceFeatures(physical_device, &features);
+        if (features.fillModeNonSolid)
+        {
+            raster.polygonMode = VK_POLYGON_MODE_LINE;
+
+            // Wireframe scene pipeline
+            stages[0].module = load_shader(device, (shader_dir / "megacity_scene.vert.spv").string());
+            stages[1].module = load_shader(device, (shader_dir / "megacity_scene.frag.spv").string());
+            if (stages[0].module && stages[1].module)
+            {
+                pipeline_ci.pStages = stages;
+                vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipeline_ci, nullptr, &wireframe_pipeline);
+            }
+            if (stages[0].module)
+                vkDestroyShaderModule(device, stages[0].module, nullptr);
+            if (stages[1].module)
+                vkDestroyShaderModule(device, stages[1].module, nullptr);
+
+            // Wireframe debug pipeline
+            auto wf_debug_vert = load_shader(device, (shader_dir / "megacity_scene.vert.spv").string());
+            auto wf_debug_frag = load_shader(device, (shader_dir / "megacity_debug.frag.spv").string());
+            if (wf_debug_vert && wf_debug_frag)
+            {
+                VkPipelineShaderStageCreateInfo wf_stages[2] = {};
+                wf_stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+                wf_stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+                wf_stages[0].module = wf_debug_vert;
+                wf_stages[0].pName = "main";
+                wf_stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+                wf_stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+                wf_stages[1].module = wf_debug_frag;
+                wf_stages[1].pName = "main";
+                pipeline_ci.pStages = wf_stages;
+                vkCreateGraphicsPipelines(
+                    device, VK_NULL_HANDLE, 1, &pipeline_ci, nullptr, &debug_wireframe_pipeline);
+            }
+            if (wf_debug_vert)
+                vkDestroyShaderModule(device, wf_debug_vert, nullptr);
+            if (wf_debug_frag)
+                vkDestroyShaderModule(device, wf_debug_frag, nullptr);
+        }
+
         return true;
     }
 
@@ -2061,6 +2107,10 @@ struct IsometricScenePass::State
                 destroy_buffer(allocator, frame.material_uniforms);
             }
         }
+        if (debug_wireframe_pipeline != VK_NULL_HANDLE)
+            vkDestroyPipeline(device, debug_wireframe_pipeline, nullptr);
+        if (wireframe_pipeline != VK_NULL_HANDLE)
+            vkDestroyPipeline(device, wireframe_pipeline, nullptr);
         if (debug_pipeline != VK_NULL_HANDLE)
             vkDestroyPipeline(device, debug_pipeline, nullptr);
         if (pipeline != VK_NULL_HANDLE)
@@ -2373,7 +2423,15 @@ void IsometricScenePass::record(IRenderContext& ctx)
 
     const int debug_mode = static_cast<int>(scene_.camera.debug_view.x + 0.5f);
     const bool use_debug = debug_mode > 0 && state_->debug_pipeline != VK_NULL_HANDLE;
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, use_debug ? state_->debug_pipeline : state_->pipeline);
+    const bool use_wireframe = scene_.camera.debug_view.w > 0.5f;
+    VkPipeline bound_pipeline = state_->pipeline;
+    if (use_debug && use_wireframe && state_->debug_wireframe_pipeline != VK_NULL_HANDLE)
+        bound_pipeline = state_->debug_wireframe_pipeline;
+    else if (use_debug)
+        bound_pipeline = state_->debug_pipeline;
+    else if (use_wireframe && state_->wireframe_pipeline != VK_NULL_HANDLE)
+        bound_pipeline = state_->wireframe_pipeline;
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, bound_pipeline);
     // For raw AO debug (mode 1), temporarily rebind the raw AO texture to the descriptor
     if (debug_mode == 1 && frame_index < state_->gbuffer_targets.size())
     {

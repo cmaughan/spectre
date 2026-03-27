@@ -1295,6 +1295,8 @@ void IsometricScenePass::record(IRenderContext& ctx)
     [encoder setRenderPipelineState:use_debug ? state_->debug_pipeline.get() : state_->pipeline.get()];
     [encoder setDepthStencilState:state_->depth_state.get()];
     [encoder setFrontFacingWinding:MTLWindingCounterClockwise];
+    const bool wireframe = scene_.camera.debug_view.w > 0.5f;
+    [encoder setTriangleFillMode:wireframe ? MTLTriangleFillModeLines : MTLTriangleFillModeFill];
     [encoder setVertexBuffer:frame_resources.frame_uniforms.get() offset:0 atIndex:1];
     [encoder setFragmentBuffer:frame_resources.frame_uniforms.get() offset:0 atIndex:1];
     [encoder setFragmentBuffer:frame_resources.material_uniforms.get() offset:0 atIndex:3];
@@ -1384,6 +1386,9 @@ void IsometricScenePass::record(IRenderContext& ctx)
                            indexBuffer:grid_slice.index_buffer
                      indexBufferOffset:grid_slice.index_offset];
     }
+
+    if (wireframe)
+        [encoder setTriangleFillMode:MTLTriangleFillModeFill];
 }
 
 void IsometricScenePass::render_gbuffer_debug_ui()
