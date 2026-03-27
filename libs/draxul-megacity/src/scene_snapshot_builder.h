@@ -23,6 +23,7 @@ SceneSnapshotResult build_scene_snapshot(
     const SceneWorld& world,
     const MegaCityCodeConfig& config,
     const std::shared_ptr<SignLabelAtlas>& label_atlas,
-    const std::shared_ptr<const MeshData>& tree_mesh);
+    const std::shared_ptr<const MeshData>& tree_bark_mesh,
+    const std::shared_ptr<const MeshData>& tree_leaf_mesh);
 
 } // namespace draxul

@@ -112,6 +112,8 @@ float3 fresnel_schlick(float cosTheta, float3 f0)
 
 constant uint kShadingTexturedTintedPbr = 1u;
 constant uint kShadingVertexTintPbr = 2u;
+constant uint kShadingLeafCutoutPbr = 3u;
+constant float kLeafAlphaCutoff = 0.35f;
 
 float3x3 tangent_basis(float3 normal_ws, float4 tangent_ws)
 {
@@ -126,7 +128,7 @@ fragment float4 scene_fragment(
     constant MaterialUniforms& materialTable [[buffer(3)]],
     texture2d<float> signAtlas [[texture(0)]],
     texture2d<float> aoTexture [[texture(1)]],
-    array<texture2d<float>, 15> materialTextures [[texture(2)]],
+    array<texture2d<float>, 20> materialTextures [[texture(2)]],
     sampler signSampler [[sampler(0)]],
     sampler aoSampler [[sampler(1)]],
     sampler materialSampler [[sampler(2)]])
@@ -136,6 +138,7 @@ fragment float4 scene_fragment(
     float roughness = 0.65f;
     float metallic = 0.0f;
     float material_ao = 1.0f;
+    float leaf_scattering = 0.0f;
     const MaterialInstance material = materialTable.materials[min(in.material_index, 63u)];
     const float2 material_uv = in.material_uv * material.scalar_params.x;
     const float normal_strength = max(material.scalar_params.y, 0.0f);
@@ -145,7 +148,7 @@ fragment float4 scene_fragment(
     if (material.metadata.x == kShadingTexturedTintedPbr)
     {
         float3 tangent_normal = materialTextures[material.texture_indices.y].sample(materialSampler, material_uv).xyz
-            * 2.0f
+                * 2.0f
             - 1.0f;
         tangent_normal.xy *= normal_strength;
         tangent_normal = normalize(tangent_normal);
@@ -162,11 +165,33 @@ fragment float4 scene_fragment(
             materialTextures[material.texture_indices.w].sample(materialSampler, material_uv).r,
             ao_strength);
     }
+    else if (material.metadata.x == kShadingLeafCutoutPbr)
+    {
+        const float opacity = materialTextures[material.texture_indices.w].sample(materialSampler, material_uv).r;
+        if (opacity < kLeafAlphaCutoff)
+            discard_fragment();
+
+        float3 tangent_normal = materialTextures[material.texture_indices.y].sample(materialSampler, material_uv).xyz
+                * 2.0f
+            - 1.0f;
+        tangent_normal.xy *= normal_strength;
+        tangent_normal = normalize(tangent_normal);
+        const float3x3 tbn = tangent_basis(normal_ws, in.tangent_ws);
+        normal_ws = normalize(tbn * tangent_normal);
+        albedo = materialTextures[material.texture_indices.x].sample(materialSampler, material_uv).rgb
+            * in.base_color;
+        roughness = clamp(
+            materialTextures[material.texture_indices.z].sample(materialSampler, material_uv).r,
+            0.04f,
+            1.0f);
+        leaf_scattering = materialTextures[material.metadata.y].sample(materialSampler, material_uv).r
+            * ao_strength;
+    }
     else if (material.metadata.x == kShadingVertexTintPbr)
     {
         const float3x3 tbn = tangent_basis(normal_ws, in.tangent_ws);
         float3 tangent_normal = materialTextures[material.texture_indices.y].sample(materialSampler, material_uv).xyz
-            * 2.0f
+                * 2.0f
             - 1.0f;
         tangent_normal.xy *= normal_strength;
         tangent_normal = normalize(tangent_normal);
@@ -214,6 +239,11 @@ fragment float4 scene_fragment(
         const float3 kd = (1.0f - fresnel) * (1.0f - metallic);
         const float3 radiance = hemi * 0.52f;
         direct_lighting += (kd * albedo / 3.14159265359f + specular) * radiance * ndotl;
+        if (leaf_scattering > 0.0f)
+        {
+            const float transmitted = max(dot(-normal_ws, light_dir), 0.0f);
+            direct_lighting += albedo * radiance * (leaf_scattering * 0.45f) * transmitted;
+        }
     }
 
     const float3 point_vec = frame.point_light_pos.xyz - in.world_position;
@@ -234,6 +264,11 @@ fragment float4 scene_fragment(
         const float3 radiance = float3(1.05f, 0.98f, 0.90f)
             * max(frame.render_tuning.y, 0.0f) * point_atten * point_atten;
         direct_lighting += (kd * albedo / 3.14159265359f + specular) * radiance * point_ndotl;
+        if (leaf_scattering > 0.0f)
+        {
+            const float transmitted = max(dot(-normal_ws, point_dir), 0.0f);
+            direct_lighting += albedo * radiance * (leaf_scattering * 0.60f) * transmitted;
+        }
     }
 
     float3 shaded = albedo * (hemi * ambient * combined_ao) + direct_lighting;

@@ -17,7 +17,8 @@ enum class MeshId : uint32_t
     Grid,
     Floor,
     Cube,
-    Tree,
+    TreeBark,
+    TreeLeaves,
     RoadSurface,
     RoofSign,
     WallSign,
@@ -29,6 +30,7 @@ enum class MaterialId : uint32_t
     AsphaltRoad = 1,
     PavingSidewalk = 2,
     WoodBuilding = 3,
+    LeafCards = 4,
 };
 
 enum class MaterialShadingModel : uint32_t
@@ -36,6 +38,7 @@ enum class MaterialShadingModel : uint32_t
     FlatColor = 0,
     TexturedTintedPbr = 1,
     VertexTintPbr = 2,
+    LeafCutoutPbr = 3,
 };
 
 enum class SceneTextureId : uint32_t
@@ -55,9 +58,14 @@ enum class SceneTextureId : uint32_t
     WoodNormal = 12,
     WoodRoughness = 13,
     WoodAo = 14,
+    LeafAlbedo = 15,
+    LeafNormal = 16,
+    LeafRoughness = 17,
+    LeafOpacity = 18,
+    LeafScattering = 19,
 };
 
-constexpr uint32_t kSceneMaterialTextureCount = 15;
+constexpr uint32_t kSceneMaterialTextureCount = 20;
 constexpr uint32_t kMaxSceneMaterials = 64;
 
 struct LabelAtlasData
@@ -78,6 +86,7 @@ struct SceneObject
 {
     MeshId mesh = MeshId::Cube;
     uint32_t material_index = 0;
+    bool double_sided = false;
     glm::mat4 world{ 1.0f };
     glm::vec4 color{ 1.0f };
     glm::vec4 uv_rect{ 0.0f, 0.0f, 1.0f, 1.0f };
@@ -87,13 +96,14 @@ struct SceneObject
 struct SceneMaterial
 {
     MaterialShadingModel shading_model = MaterialShadingModel::FlatColor;
-    glm::vec4 scalar_params{ 1.0f, 1.0f, 1.0f, 0.0f }; // x = uv scale, y = normal strength, z = AO strength, w = metallic
+    glm::vec4 scalar_params{ 1.0f, 1.0f, 1.0f, 0.0f }; // x = uv scale, y = normal strength, z = material-specific strength, w = metallic
     glm::uvec4 texture_indices{
         static_cast<uint32_t>(SceneTextureId::FallbackAlbedoSrgb),
         static_cast<uint32_t>(SceneTextureId::FallbackNormal),
         static_cast<uint32_t>(SceneTextureId::FallbackScalar),
         static_cast<uint32_t>(SceneTextureId::FallbackScalar),
     };
+    glm::uvec4 metadata{ 0u };
 };
 
 struct SceneCameraData
@@ -129,7 +139,8 @@ struct SceneSnapshot
     SceneCameraData camera;
     FloorGridSpec floor_grid;
     std::shared_ptr<const LabelAtlasData> label_atlas;
-    std::shared_ptr<const MeshData> tree_mesh;
+    std::shared_ptr<const MeshData> tree_bark_mesh;
+    std::shared_ptr<const MeshData> tree_leaf_mesh;
     std::vector<SceneMaterial> materials;
     std::vector<SceneObject> objects;
 };

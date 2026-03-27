@@ -24,8 +24,12 @@ public:
         const BuildingMetrics& metrics, const glm::vec4& color, SourceSymbol source = {},
         MaterialId material = MaterialId::WoodBuilding);
 
-    // Create a tree entity at the given world-space center position.
-    entt::entity create_tree(float world_x, float world_z, float elevation,
+    // Create a bark tree entity at the given world-space center position.
+    entt::entity create_tree_bark(float world_x, float world_z, float elevation,
+        const TreeMetrics& metrics, const glm::vec4& color, SourceSymbol source = {});
+
+    // Create a leaf tree entity at the given world-space center position.
+    entt::entity create_tree_leaves(float world_x, float world_z, float elevation,
         const TreeMetrics& metrics, const glm::vec4& color, SourceSymbol source = {});
 
     // Create a road-strip entity at the given world-space center position.

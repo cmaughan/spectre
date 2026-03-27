@@ -52,7 +52,7 @@ MeshData build_floor_box_mesh()
     return build_unit_cube_mesh();
 }
 
-MeshData build_tree_mesh()
+MeshData build_tree_bark_mesh()
 {
     DraxulTreeParams params = make_tree_params_from_age(40.0f);
     params.seed = 7;
@@ -63,7 +63,18 @@ MeshData build_tree_mesh()
     params.bark_color_root = { 0.18f, 0.12f, 0.08f };
     params.bark_color_tip = { 0.42f, 0.31f, 0.21f };
     params.bark_color_noise = 0.05f;
-    return generate_draxul_tree(params);
+    return generate_draxul_tree_meshes(params).bark_mesh;
+}
+
+MeshData build_tree_leaf_mesh()
+{
+    DraxulTreeParams params = make_tree_params_from_age(40.0f);
+    params.seed = 7;
+    params.radial_segments = 12;
+    params.trunk_length = 7.0f;
+    params.trunk_base_radius = 0.55f;
+    params.trunk_tip_radius = 0.22f;
+    return generate_draxul_tree_meshes(params).leaf_mesh;
 }
 
 MeshData build_road_surface_mesh()

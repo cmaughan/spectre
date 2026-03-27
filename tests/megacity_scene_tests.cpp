@@ -118,7 +118,7 @@ TEST_CASE("megacity world starts empty", "[megacity]")
     CHECK(view.begin() == view.end());
 }
 
-TEST_CASE("megacity world creates tree entities with the tree mesh", "[megacity]")
+TEST_CASE("megacity world creates bark and leaf tree entities", "[megacity]")
 {
     SceneWorld world;
     const TreeMetrics metrics{
@@ -126,20 +126,32 @@ TEST_CASE("megacity world creates tree entities with the tree mesh", "[megacity]
         .canopy_radius = 1.6f,
     };
 
-    const entt::entity entity = world.create_tree(
+    const entt::entity bark_entity = world.create_tree_bark(
         2.0f,
         3.0f,
         0.25f,
         metrics,
         glm::vec4(1.0f),
-        SourceSymbol{ "", "CentralParkTree" });
+        SourceSymbol{ "", "CentralParkTreeBark" });
+    const entt::entity leaf_entity = world.create_tree_leaves(
+        2.0f,
+        3.0f,
+        0.25f,
+        metrics,
+        glm::vec4(1.0f),
+        SourceSymbol{ "", "CentralParkTreeLeaves" });
 
-    const auto& appearance = world.registry().get<Appearance>(entity);
-    const auto& stored_metrics = world.registry().get<TreeMetrics>(entity);
-    const auto& elevation = world.registry().get<Elevation>(entity);
+    const auto& bark_appearance = world.registry().get<Appearance>(bark_entity);
+    const auto& leaf_appearance = world.registry().get<Appearance>(leaf_entity);
+    const auto& stored_metrics = world.registry().get<TreeMetrics>(bark_entity);
+    const auto& elevation = world.registry().get<Elevation>(bark_entity);
 
-    CHECK(appearance.mesh == MeshId::Tree);
-    CHECK(appearance.material == MaterialId::FlatColor);
+    CHECK(bark_appearance.mesh == MeshId::TreeBark);
+    CHECK(bark_appearance.material == MaterialId::FlatColor);
+    CHECK_FALSE(bark_appearance.double_sided);
+    CHECK(leaf_appearance.mesh == MeshId::TreeLeaves);
+    CHECK(leaf_appearance.material == MaterialId::LeafCards);
+    CHECK_FALSE(leaf_appearance.double_sided);
     CHECK(stored_metrics.height == Catch::Approx(7.0f));
     CHECK(stored_metrics.canopy_radius == Catch::Approx(1.6f));
     CHECK(elevation.value == Catch::Approx(0.25f));
@@ -1042,7 +1054,8 @@ TEST_CASE("megacity mesh library builds expected primitive counts", "[megacity]"
 {
     const MeshData cube = build_unit_cube_mesh();
     const MeshData floor = build_floor_box_mesh();
-    const MeshData tree = build_tree_mesh();
+    const MeshData tree_bark = build_tree_bark_mesh();
+    const MeshData tree_leaf = build_tree_leaf_mesh();
     const MeshData filled = build_grid_mesh(2, 2, 1.0f);
 
     FloorGridSpec grid;
@@ -1063,11 +1076,16 @@ TEST_CASE("megacity mesh library builds expected primitive counts", "[megacity]"
     CHECK(floor.indices.size() == 36);
     CHECK(triangle_up_normal_y(floor, 8) > 0.0f);
 
-    CHECK_FALSE(tree.vertices.empty());
-    CHECK_FALSE(tree.indices.empty());
-    CHECK(tree.indices.size() % 3 == 0);
+    CHECK_FALSE(tree_bark.vertices.empty());
+    CHECK_FALSE(tree_bark.indices.empty());
+    CHECK(tree_bark.indices.size() % 3 == 0);
+    CHECK_FALSE(tree_leaf.vertices.empty());
+    CHECK_FALSE(tree_leaf.indices.empty());
+    CHECK(tree_leaf.indices.size() % 3 == 0);
     float tree_max_y = 0.0f;
-    for (const auto& vertex : tree.vertices)
+    for (const auto& vertex : tree_bark.vertices)
+        tree_max_y = std::max(tree_max_y, vertex.position.y);
+    for (const auto& vertex : tree_leaf.vertices)
         tree_max_y = std::max(tree_max_y, vertex.position.y);
     CHECK(tree_max_y >= Catch::Approx(7.0f).margin(0.01f));
 

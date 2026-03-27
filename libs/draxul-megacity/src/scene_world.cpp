@@ -12,6 +12,9 @@ constexpr float kWoodBuildingAoStrength = 0.45f;
 constexpr float kSidewalkPavingUvScale = 0.85f;
 constexpr float kSidewalkPavingNormalStrength = 0.8f;
 constexpr float kSidewalkPavingAoStrength = 0.55f;
+constexpr float kLeafAtlasUvScale = 1.0f;
+constexpr float kLeafAtlasNormalStrength = 0.55f;
+constexpr float kLeafAtlasScatteringStrength = 0.85f;
 
 } // namespace
 
@@ -38,6 +41,7 @@ entt::entity SceneWorld::create_building(float world_x, float world_z, float ele
             entity,
             MeshId::Cube,
             MaterialId::WoodBuilding,
+            false,
             color,
             glm::vec4(
                 static_cast<float>(MaterialId::WoodBuilding),
@@ -48,21 +52,50 @@ entt::entity SceneWorld::create_building(float world_x, float world_z, float ele
     else
     {
         registry_.emplace<Appearance>(
-            entity, MeshId::Cube, material, color, glm::vec4(0.0f, 1.0f, 1.0f, 1.0f));
+            entity, MeshId::Cube, material, false, color, glm::vec4(0.0f, 1.0f, 1.0f, 1.0f));
     }
     if (!source.file.empty() || !source.name.empty())
         registry_.emplace<SourceSymbol>(entity, std::move(source));
     return entity;
 }
 
-entt::entity SceneWorld::create_tree(float world_x, float world_z, float elevation,
+entt::entity SceneWorld::create_tree_bark(float world_x, float world_z, float elevation,
     const TreeMetrics& metrics, const glm::vec4& color, SourceSymbol source)
 {
     const auto entity = registry_.create();
     registry_.emplace<WorldPosition>(entity, world_x, world_z);
     registry_.emplace<Elevation>(entity, elevation);
     registry_.emplace<TreeMetrics>(entity, metrics);
-    registry_.emplace<Appearance>(entity, MeshId::Tree, MaterialId::FlatColor, color, glm::vec4(0.0f, 1.0f, 1.0f, 1.0f));
+    registry_.emplace<Appearance>(
+        entity,
+        MeshId::TreeBark,
+        MaterialId::FlatColor,
+        false,
+        color,
+        glm::vec4(0.0f, 1.0f, 1.0f, 1.0f));
+    if (!source.file.empty() || !source.name.empty())
+        registry_.emplace<SourceSymbol>(entity, std::move(source));
+    return entity;
+}
+
+entt::entity SceneWorld::create_tree_leaves(float world_x, float world_z, float elevation,
+    const TreeMetrics& metrics, const glm::vec4& color, SourceSymbol source)
+{
+    const auto entity = registry_.create();
+    registry_.emplace<WorldPosition>(entity, world_x, world_z);
+    registry_.emplace<Elevation>(entity, elevation);
+    registry_.emplace<TreeMetrics>(entity, metrics);
+    registry_.emplace<Appearance>(
+        entity,
+        MeshId::TreeLeaves,
+        MaterialId::LeafCards,
+        false,
+        color,
+        glm::vec4(
+            static_cast<float>(MaterialId::LeafCards),
+            kLeafAtlasUvScale,
+            kLeafAtlasNormalStrength,
+            kLeafAtlasScatteringStrength));
     if (!source.file.empty() || !source.name.empty())
         registry_.emplace<SourceSymbol>(entity, std::move(source));
     return entity;
@@ -79,6 +112,7 @@ entt::entity SceneWorld::create_road(float world_x, float world_z,
         entity,
         MeshId::Cube,
         MaterialId::PavingSidewalk,
+        false,
         color,
         glm::vec4(
             static_cast<float>(MaterialId::PavingSidewalk),
@@ -101,6 +135,7 @@ entt::entity SceneWorld::create_road_surface(float world_x, float world_z,
         entity,
         MeshId::RoadSurface,
         MaterialId::AsphaltRoad,
+        false,
         glm::vec4(1.0f),
         glm::vec4(static_cast<float>(MaterialId::AsphaltRoad), metrics.uv_scale, metrics.normal_strength, metrics.ao_strength));
     if (!source.file.empty() || !source.name.empty())
@@ -115,7 +150,7 @@ entt::entity SceneWorld::create_sign(float world_x, float world_z, float elevati
     registry_.emplace<WorldPosition>(entity, world_x, world_z);
     registry_.emplace<Elevation>(entity, elevation);
     registry_.emplace<SignMetrics>(entity, metrics);
-    registry_.emplace<Appearance>(entity, mesh, MaterialId::FlatColor, color, glm::vec4(0.0f, 1.0f, 1.0f, 1.0f));
+    registry_.emplace<Appearance>(entity, mesh, MaterialId::FlatColor, false, color, glm::vec4(0.0f, 1.0f, 1.0f, 1.0f));
     if (!source.file.empty() || !source.name.empty())
         registry_.emplace<SourceSymbol>(entity, std::move(source));
     return entity;

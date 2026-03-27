@@ -840,8 +840,10 @@ bool render_renderer_controls(MegacityRendererControls& controls)
             edit_float("Branch Wander", config.central_park_tree_branch_wander, 0.01f, 0.0f, 2.0f, "%.2f");
             edit_float("Bend Frequency", config.central_park_tree_wander_frequency, 0.01f, 0.0f, 1.0f, "%.2f");
             edit_float("Bend Deviation", config.central_park_tree_wander_deviation, 0.01f, 0.0f, 2.0f, "%.2f");
-            edit_float("Leaf Density", config.central_park_tree_leaf_density, 0.05f, 0.0f, 4.0f, "%.2f");
+            edit_float("Leaf Density", config.central_park_tree_leaf_density, 0.05f, 0.0f, 10.0f, "%.2f");
             edit_float("Leaf Orientation Randomness", config.central_park_tree_leaf_orientation_randomness, 0.01f, 0.0f, 1.0f, "%.2f");
+            edit_vec2("Leaf Size Range", config.central_park_tree_leaf_size_range, 0.05f, 0.1f, 12.0f, "%.2f");
+            edit_int("Leaf Start Depth", config.central_park_tree_leaf_start_depth, 1, 0, 6);
             edit_float("Bark Noise", config.central_park_tree_bark_color_noise, 0.005f, 0.0f, 0.5f, "%.3f");
             edit_color3("Bark Root Color", config.central_park_tree_bark_root);
             edit_color3("Bark Tip Color", config.central_park_tree_bark_tip);

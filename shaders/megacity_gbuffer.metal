@@ -27,6 +27,18 @@ struct ObjectUniforms
     float4 label_metrics;
 };
 
+struct MaterialInstance
+{
+    float4 scalar_params;
+    uint4 texture_indices;
+    uint4 metadata;
+};
+
+struct MaterialUniforms
+{
+    MaterialInstance materials[64];
+};
+
 struct VertexIn
 {
     float3 position [[attribute(0)]];
@@ -41,11 +53,13 @@ struct VertexOut
 {
     float4 position [[position]];
     float3 normal_ws;
+    uint material_index;
+    float2 material_uv;
 };
 
 struct GBufferOut
 {
-    half4 normal [[color(0)]];      // RG = octahedral normal, BA reserved
+    half4 normal [[color(0)]]; // RG = octahedral normal, BA reserved
 };
 
 // Octahedral encoding: unit normal → [0,1]^2
@@ -66,13 +80,29 @@ vertex VertexOut gbuffer_vertex(VertexIn in [[stage_in]],
     const float4 world_position = object.world * float4(in.position, 1.0);
     out.position = frame.proj * frame.view * world_position;
     out.normal_ws = normalize(float3x3(object.world[0].xyz, object.world[1].xyz, object.world[2].xyz) * in.normal);
+    out.material_index = object.material_data.x;
+    out.material_uv = in.uv * object.uv_rect.zw;
     return out;
 }
 
 fragment GBufferOut gbuffer_fragment(
-    VertexOut in [[stage_in]])
+    VertexOut in [[stage_in]],
+    constant MaterialUniforms& materialTable [[buffer(3)]],
+    array<texture2d<float>, 20> materialTextures [[texture(2)]],
+    sampler materialSampler [[sampler(2)]])
 {
     GBufferOut out;
+    constexpr uint kShadingLeafCutoutPbr = 3u;
+    constexpr float kLeafAlphaCutoff = 0.35f;
+    const MaterialInstance material = materialTable.materials[min(in.material_index, 63u)];
+    if (material.metadata.x == kShadingLeafCutoutPbr)
+    {
+        const float2 material_uv = in.material_uv * material.scalar_params.x;
+        const float opacity = materialTextures[material.texture_indices.w].sample(materialSampler, material_uv).r;
+        if (opacity < kLeafAlphaCutoff)
+            discard_fragment();
+    }
+
     float3 normal_ws = normalize(in.normal_ws);
     out.normal = half4(half2(oct_encode(normalize(normal_ws))), 0.0h, 1.0h);
     return out;

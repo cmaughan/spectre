@@ -33,7 +33,8 @@ struct CityBuildResult
     float default_light_y = 0.0f;
     float default_light_z = 0.0f;
     float default_light_radius = 0.0f;
-    std::shared_ptr<const GeometryMesh> tree_mesh;
+    std::shared_ptr<const GeometryMesh> tree_bark_mesh;
+    std::shared_ptr<const GeometryMesh> tree_leaf_mesh;
 };
 
 // Build (or rebuild) the semantic city into the given SceneWorld.

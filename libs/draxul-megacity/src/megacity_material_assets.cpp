@@ -82,4 +82,15 @@ WoodBuildingMaterialImages load_wood_building_material_images()
     return images;
 }
 
+LeafAtlasMaterialImages load_leaf_atlas_material_images()
+{
+    LeafAtlasMaterialImages images;
+    images.albedo = load_rgba8_image(resolve_megacity_asset_path("textures/LeafSet023_1K-JPG_Color.jpg"));
+    images.normal = load_rgba8_image(resolve_megacity_asset_path("textures/LeafSet023_1K-JPG_NormalGL.jpg"));
+    images.roughness = load_rgba8_image(resolve_megacity_asset_path("textures/LeafSet023_1K-JPG_Roughness.jpg"));
+    images.opacity = load_rgba8_image(resolve_megacity_asset_path("textures/LeafSet023_1K-JPG_Opacity.jpg"));
+    images.scattering = load_rgba8_image(resolve_megacity_asset_path("textures/LeafSet023_1K-JPG_Scattering.jpg"));
+    return images;
+}
+
 } // namespace draxul

@@ -158,9 +158,9 @@ MaterialUniforms build_material_uniforms(const SceneSnapshot& scene)
             material.texture_indices.w);
         uniforms.materials[index].metadata = simd_make_uint4(
             static_cast<uint32_t>(material.shading_model),
-            0u,
-            0u,
-            0u);
+            material.metadata.y,
+            material.metadata.z,
+            material.metadata.w);
     }
     return uniforms;
 }
@@ -306,11 +306,13 @@ struct IsometricScenePass::State
     ObjCRef<id<MTLDepthStencilState>> depth_state;
     MeshBuffers cube_mesh;
     MeshBuffers floor_mesh;
-    MeshBuffers tree_mesh;
+    MeshBuffers tree_bark_mesh;
+    MeshBuffers tree_leaf_mesh;
     MeshBuffers road_surface_mesh;
     MeshBuffers roof_sign_mesh;
     MeshBuffers wall_sign_mesh;
-    const MeshData* tree_mesh_source = nullptr;
+    const MeshData* tree_bark_mesh_source = nullptr;
+    const MeshData* tree_leaf_mesh_source = nullptr;
     MeshData cached_grid_mesh;
     FloorGridSpec cached_grid_spec;
     bool has_cached_grid_mesh = false;
@@ -423,9 +425,14 @@ struct IsometricScenePass::State
             DRAXUL_LOG_ERROR(LogCategory::App, "MegaCity: failed to upload floor mesh");
             return false;
         }
-        if (!upload_mesh(device, build_tree_mesh(), tree_mesh))
+        if (!upload_mesh(device, build_tree_bark_mesh(), tree_bark_mesh))
         {
-            DRAXUL_LOG_ERROR(LogCategory::App, "MegaCity: failed to upload tree mesh");
+            DRAXUL_LOG_ERROR(LogCategory::App, "MegaCity: failed to upload tree bark mesh");
+            return false;
+        }
+        if (!upload_mesh(device, build_tree_leaf_mesh(), tree_leaf_mesh))
+        {
+            DRAXUL_LOG_ERROR(LogCategory::App, "MegaCity: failed to upload tree leaf mesh");
             return false;
         }
         if (!upload_mesh(device, build_road_surface_mesh(), road_surface_mesh))
@@ -491,22 +498,35 @@ struct IsometricScenePass::State
         return true;
     }
 
-    bool ensure_tree_mesh(id<MTLDevice> device, const std::shared_ptr<const MeshData>& tree_mesh_data)
+    bool ensure_tree_mesh(
+        id<MTLDevice> device,
+        const std::shared_ptr<const MeshData>& tree_bark_mesh_data,
+        const std::shared_ptr<const MeshData>& tree_leaf_mesh_data)
     {
-        if (!tree_mesh_data)
-            return true;
-        if (tree_mesh_source == tree_mesh_data.get() && tree_mesh.index_count > 0)
-            return true;
-
-        MeshBuffers replacement;
-        if (!upload_mesh(device, *tree_mesh_data, replacement))
+        if (tree_bark_mesh_data
+            && !(tree_bark_mesh_source == tree_bark_mesh_data.get() && tree_bark_mesh.index_count > 0))
         {
-            DRAXUL_LOG_ERROR(LogCategory::App, "MegaCity: failed to upload procedural tree mesh");
-            return false;
+            MeshBuffers replacement;
+            if (!upload_mesh(device, *tree_bark_mesh_data, replacement))
+            {
+                DRAXUL_LOG_ERROR(LogCategory::App, "MegaCity: failed to upload procedural tree bark mesh");
+                return false;
+            }
+            tree_bark_mesh = std::move(replacement);
+            tree_bark_mesh_source = tree_bark_mesh_data.get();
         }
-
-        tree_mesh = std::move(replacement);
-        tree_mesh_source = tree_mesh_data.get();
+        if (tree_leaf_mesh_data
+            && !(tree_leaf_mesh_source == tree_leaf_mesh_data.get() && tree_leaf_mesh.index_count > 0))
+        {
+            MeshBuffers replacement;
+            if (!upload_mesh(device, *tree_leaf_mesh_data, replacement))
+            {
+                DRAXUL_LOG_ERROR(LogCategory::App, "MegaCity: failed to upload procedural tree leaf mesh");
+                return false;
+            }
+            tree_leaf_mesh = std::move(replacement);
+            tree_leaf_mesh_source = tree_leaf_mesh_data.get();
+        }
         return true;
     }
 
@@ -631,7 +651,8 @@ struct IsometricScenePass::State
         const AsphaltRoadMaterialImages road_images = load_asphalt_road_material_images();
         const PavingSidewalkMaterialImages sidewalk_images = load_paving_sidewalk_material_images();
         const WoodBuildingMaterialImages wood_images = load_wood_building_material_images();
-        if (!road_images.valid() || !sidewalk_images.valid() || !wood_images.valid())
+        const LeafAtlasMaterialImages leaf_images = load_leaf_atlas_material_images();
+        if (!road_images.valid() || !sidewalk_images.valid() || !wood_images.valid() || !leaf_images.valid())
         {
             DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity: failed to load Megacity material images");
             return false;
@@ -667,6 +688,16 @@ struct IsometricScenePass::State
             make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm, wood_images.roughness));
         material_textures[static_cast<size_t>(SceneTextureId::WoodAo)].reset(
             make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm, wood_images.ao));
+        material_textures[static_cast<size_t>(SceneTextureId::LeafAlbedo)].reset(
+            make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm_sRGB, leaf_images.albedo));
+        material_textures[static_cast<size_t>(SceneTextureId::LeafNormal)].reset(
+            make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm, leaf_images.normal));
+        material_textures[static_cast<size_t>(SceneTextureId::LeafRoughness)].reset(
+            make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm, leaf_images.roughness));
+        material_textures[static_cast<size_t>(SceneTextureId::LeafOpacity)].reset(
+            make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm, leaf_images.opacity));
+        material_textures[static_cast<size_t>(SceneTextureId::LeafScattering)].reset(
+            make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm, leaf_images.scattering));
         if (!std::all_of(material_textures.begin(), material_textures.end(),
                 [](const ObjCRef<id<MTLTexture>>& texture) { return texture.get() != nil; }))
             return false;
@@ -925,7 +956,7 @@ void IsometricScenePass::record_prepass(IRenderContext& ctx)
     auto& frame_resources = state_->frame_resources[frame_index];
     frame_resources.geometry_arena.reset();
 
-    if (!state_->ensure_tree_mesh(cmd_buf.device, scene_.tree_mesh))
+    if (!state_->ensure_tree_mesh(cmd_buf.device, scene_.tree_bark_mesh, scene_.tree_leaf_mesh))
         return;
 
     MeshSlice grid_slice;
@@ -1004,9 +1035,12 @@ void IsometricScenePass::record_prepass(IRenderContext& ctx)
 
     [encoder setRenderPipelineState:state_->gbuffer_pipeline.get()];
     [encoder setDepthStencilState:state_->depth_state.get()];
-    [encoder setCullMode:MTLCullModeBack];
     [encoder setFrontFacingWinding:MTLWindingCounterClockwise];
     [encoder setVertexBuffer:frame_resources.frame_uniforms.get() offset:0 atIndex:1];
+    [encoder setFragmentBuffer:frame_resources.material_uniforms.get() offset:0 atIndex:3];
+    for (NSUInteger texture_index = 0; texture_index < state_->material_textures.size(); ++texture_index)
+        [encoder setFragmentTexture:state_->material_textures[texture_index].get() atIndex:2 + texture_index];
+    [encoder setFragmentSamplerState:state_->material_sampler.get() atIndex:2];
 
     // Draw scene objects
     for (const SceneObject& obj : scene_.objects)
@@ -1020,8 +1054,11 @@ void IsometricScenePass::record_prepass(IRenderContext& ctx)
         case MeshId::Cube:
             mesh = &state_->cube_mesh;
             break;
-        case MeshId::Tree:
-            mesh = &state_->tree_mesh;
+        case MeshId::TreeBark:
+            mesh = &state_->tree_bark_mesh;
+            break;
+        case MeshId::TreeLeaves:
+            mesh = &state_->tree_leaf_mesh;
             break;
         case MeshId::RoadSurface:
             mesh = &state_->road_surface_mesh;
@@ -1042,9 +1079,10 @@ void IsometricScenePass::record_prepass(IRenderContext& ctx)
         object.world = to_simd_matrix(obj.world);
         object.color = simd_make_float4(obj.color.x, obj.color.y, obj.color.z, obj.color.w);
         object.material_data = simd_make_uint4(obj.material_index, 0u, 0u, 0u);
-        object.uv_rect = simd_make_float4(0.0f, 0.0f, 1.0f, 1.0f);
+        object.uv_rect = simd_make_float4(obj.uv_rect.x, obj.uv_rect.y, obj.uv_rect.z, obj.uv_rect.w);
         object.label_metrics = simd_make_float4(0.0f, 0.0f, 0.0f, 0.0f);
 
+        [encoder setCullMode:obj.double_sided ? MTLCullModeNone : MTLCullModeBack];
         [encoder setVertexBuffer:mesh->vertex_buffer.get() offset:0 atIndex:0];
         [encoder setVertexBytes:&object length:sizeof(object) atIndex:2];
         [encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle
@@ -1144,7 +1182,7 @@ void IsometricScenePass::record(IRenderContext& ctx)
     auto& frame_resources = state_->frame_resources[frame_index];
     frame_resources.geometry_arena.reset();
 
-    if (!state_->ensure_tree_mesh(cmd_buf.device, scene_.tree_mesh))
+    if (!state_->ensure_tree_mesh(cmd_buf.device, scene_.tree_bark_mesh, scene_.tree_leaf_mesh))
         return;
 
     MeshSlice grid_slice;
@@ -1225,7 +1263,6 @@ void IsometricScenePass::record(IRenderContext& ctx)
 
     [encoder setRenderPipelineState:state_->pipeline.get()];
     [encoder setDepthStencilState:state_->depth_state.get()];
-    [encoder setCullMode:MTLCullModeBack];
     [encoder setFrontFacingWinding:MTLWindingCounterClockwise];
     [encoder setVertexBuffer:frame_resources.frame_uniforms.get() offset:0 atIndex:1];
     [encoder setFragmentBuffer:frame_resources.frame_uniforms.get() offset:0 atIndex:1];
@@ -1249,8 +1286,11 @@ void IsometricScenePass::record(IRenderContext& ctx)
         case MeshId::Cube:
             mesh = &state_->cube_mesh;
             break;
-        case MeshId::Tree:
-            mesh = &state_->tree_mesh;
+        case MeshId::TreeBark:
+            mesh = &state_->tree_bark_mesh;
+            break;
+        case MeshId::TreeLeaves:
+            mesh = &state_->tree_leaf_mesh;
             break;
         case MeshId::RoadSurface:
             mesh = &state_->road_surface_mesh;
@@ -1278,6 +1318,7 @@ void IsometricScenePass::record(IRenderContext& ctx)
             0.0f,
             0.0f);
 
+        [encoder setCullMode:obj.double_sided ? MTLCullModeNone : MTLCullModeBack];
         [encoder setVertexBuffer:mesh->vertex_buffer.get() offset:0 atIndex:0];
         [encoder setVertexBytes:&object length:sizeof(object) atIndex:2];
         [encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle

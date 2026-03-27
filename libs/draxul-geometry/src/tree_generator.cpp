@@ -4,6 +4,7 @@
 #include <glm/geometric.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <numbers>
@@ -16,6 +17,17 @@ namespace
 
 constexpr float kPi = std::numbers::pi_v<float>;
 constexpr float kTwoPi = 2.0f * kPi;
+constexpr float kLeafAtlasSize = 1024.0f;
+
+// Padded atlas rects derived from LeafSet023_1K-JPG_Opacity.jpg.
+constexpr std::array<glm::vec4, 6> kLeafAtlasRects = { {
+    glm::vec4(532.0f / kLeafAtlasSize, 17.0f / kLeafAtlasSize, 1022.0f / kLeafAtlasSize, 335.0f / kLeafAtlasSize),
+    glm::vec4(20.0f / kLeafAtlasSize, 32.0f / kLeafAtlasSize, 486.0f / kLeafAtlasSize, 300.0f / kLeafAtlasSize),
+    glm::vec4(32.0f / kLeafAtlasSize, 368.0f / kLeafAtlasSize, 489.0f / kLeafAtlasSize, 662.0f / kLeafAtlasSize),
+    glm::vec4(524.0f / kLeafAtlasSize, 378.0f / kLeafAtlasSize, 1022.0f / kLeafAtlasSize, 657.0f / kLeafAtlasSize),
+    glm::vec4(10.0f / kLeafAtlasSize, 702.0f / kLeafAtlasSize, 503.0f / kLeafAtlasSize, 1001.0f / kLeafAtlasSize),
+    glm::vec4(564.0f / kLeafAtlasSize, 715.0f / kLeafAtlasSize, 1002.0f / kLeafAtlasSize, 990.0f / kLeafAtlasSize),
+} };
 
 struct BranchFrame
 {
@@ -71,6 +83,73 @@ glm::vec3 bark_color_for_vertex(const DraxulTreeParams& params, float t, uint32_
     const glm::vec3 base = glm::mix(params.bark_color_root, params.bark_color_tip, std::clamp(t, 0.0f, 1.0f));
     const float noise = (hash_to_unit_float(params.seed, ring_index, segment_index) * 2.0f - 1.0f) * params.bark_color_noise;
     return glm::clamp(base + glm::vec3(noise), glm::vec3(0.0f), glm::vec3(1.0f));
+}
+
+glm::vec3 leaf_color_for_quad(const DraxulTreeParams& params, uint32_t branch_id, uint32_t leaf_index)
+{
+    (void)params;
+    (void)branch_id;
+    (void)leaf_index;
+    return glm::vec3(1.0f);
+}
+
+void append_double_sided_quad(
+    GeometryMesh& mesh,
+    const glm::vec3& center,
+    const glm::vec3& right,
+    const glm::vec3& up,
+    const glm::vec3& normal,
+    const glm::vec3& color,
+    const glm::vec4& uv_rect)
+{
+    if (mesh.vertices.size() > (std::numeric_limits<uint16_t>::max() - 8U))
+        return;
+
+    const uint16_t base_index = static_cast<uint16_t>(mesh.vertices.size());
+    const glm::vec3 p0 = center - right - up;
+    const glm::vec3 p1 = center + right - up;
+    const glm::vec3 p2 = center + right + up;
+    const glm::vec3 p3 = center - right + up;
+
+    auto push_vertex = [&](const glm::vec3& position, const glm::vec3& vertex_normal, const glm::vec2& uv, const glm::vec3& tangent_dir) {
+        GeometryVertex vertex;
+        vertex.position = position;
+        vertex.normal = vertex_normal;
+        vertex.color = color;
+        vertex.uv = uv;
+        vertex.tangent = glm::vec4(glm::normalize(tangent_dir), 1.0f);
+        mesh.vertices.push_back(vertex);
+    };
+
+    const glm::vec2 uv00(uv_rect.x, uv_rect.y);
+    const glm::vec2 uv10(uv_rect.z, uv_rect.y);
+    const glm::vec2 uv11(uv_rect.z, uv_rect.w);
+    const glm::vec2 uv01(uv_rect.x, uv_rect.w);
+
+    push_vertex(p0, normal, uv00, right);
+    push_vertex(p1, normal, uv10, right);
+    push_vertex(p2, normal, uv11, right);
+    push_vertex(p3, normal, uv01, right);
+    push_vertex(p0, -normal, uv00, -right);
+    push_vertex(p3, -normal, uv01, -right);
+    push_vertex(p2, -normal, uv11, -right);
+    push_vertex(p1, -normal, uv10, -right);
+
+    const std::array<uint16_t, 12> quad_indices = {
+        static_cast<uint16_t>(base_index + 0U),
+        static_cast<uint16_t>(base_index + 1U),
+        static_cast<uint16_t>(base_index + 2U),
+        static_cast<uint16_t>(base_index + 0U),
+        static_cast<uint16_t>(base_index + 2U),
+        static_cast<uint16_t>(base_index + 3U),
+        static_cast<uint16_t>(base_index + 4U),
+        static_cast<uint16_t>(base_index + 5U),
+        static_cast<uint16_t>(base_index + 6U),
+        static_cast<uint16_t>(base_index + 4U),
+        static_cast<uint16_t>(base_index + 6U),
+        static_cast<uint16_t>(base_index + 7U),
+    };
+    mesh.indices.insert(mesh.indices.end(), quad_indices.begin(), quad_indices.end());
 }
 
 std::vector<float> build_ring_distances(const DraxulTreeParams& params, float length, float spacing_scale)
@@ -194,14 +273,14 @@ std::vector<BranchFrame> build_branch_frames(
 }
 
 void append_branch_rings(
-    GeometryMesh& mesh,
+    GeometryMesh& bark_mesh,
     const DraxulTreeParams& params,
     const std::vector<BranchFrame>& frames,
     uint32_t branch_id,
     uint32_t& out_ring_start,
     int radial_segments)
 {
-    out_ring_start = static_cast<uint32_t>(mesh.vertices.size());
+    out_ring_start = static_cast<uint32_t>(bark_mesh.vertices.size());
     for (size_t ring_index = 0; ring_index < frames.size(); ++ring_index)
     {
         const BranchFrame& frame = frames[ring_index];
@@ -228,7 +307,7 @@ void append_branch_rings(
                 branch_id * 4096U + static_cast<uint32_t>(ring_index),
                 static_cast<uint32_t>(segment));
             vertex.uv = { u, frame.t };
-            mesh.vertices.push_back(vertex);
+            bark_mesh.vertices.push_back(vertex);
         }
     }
 
@@ -244,13 +323,122 @@ void append_branch_rings(
             const uint32_t c = row1 + static_cast<uint32_t>(segment + 1);
             const uint32_t d = row1 + static_cast<uint32_t>(segment);
 
-            mesh.indices.push_back(a);
-            mesh.indices.push_back(b);
-            mesh.indices.push_back(c);
-            mesh.indices.push_back(a);
-            mesh.indices.push_back(c);
-            mesh.indices.push_back(d);
+            bark_mesh.indices.push_back(a);
+            bark_mesh.indices.push_back(b);
+            bark_mesh.indices.push_back(c);
+            bark_mesh.indices.push_back(a);
+            bark_mesh.indices.push_back(c);
+            bark_mesh.indices.push_back(d);
         }
+    }
+}
+
+void append_branch_leaves(
+    GeometryMesh& leaf_mesh,
+    const DraxulTreeParams& params,
+    const std::vector<BranchFrame>& frames,
+    int depth,
+    uint32_t branch_id)
+{
+    if (params.leaf_density <= 0.0f || frames.size() < 3 || depth < params.leaf_start_depth)
+        return;
+
+    const float min_leaf_size = std::min(params.leaf_size_range.x, params.leaf_size_range.y);
+    const float max_leaf_size = std::max(params.leaf_size_range.x, params.leaf_size_range.y);
+    const float orientation_randomness = std::clamp(params.leaf_orientation_randomness, 0.0f, 1.0f);
+    uint32_t leaf_index = 0;
+    for (size_t frame_index = 1; frame_index + 1 < frames.size(); ++frame_index)
+    {
+        const BranchFrame& frame = frames[frame_index];
+        const float canopy_t = depth == 0
+            ? std::clamp((frame.t - 0.62f) / 0.38f, 0.0f, 1.0f)
+            : std::clamp((frame.t - 0.18f) / 0.82f, 0.0f, 1.0f);
+        if (canopy_t <= 0.0f)
+            continue;
+
+        const float base_probability = depth == 0 ? 0.16f : 0.34f;
+        const float spawn_probability = std::min(
+            base_probability * params.leaf_density * std::lerp(0.45f, 1.0f, canopy_t),
+            0.95f);
+        const float spawn_roll = hash_to_unit_float(
+            params.seed + branch_id * 79U,
+            branch_id,
+            static_cast<uint32_t>(frame_index) + 431U);
+        if (spawn_roll > spawn_probability)
+            continue;
+
+        const float azimuth = hash_to_unit_float(
+                                  params.seed + branch_id * 83U,
+                                  branch_id,
+                                  static_cast<uint32_t>(frame_index) + 463U)
+            * kTwoPi;
+        const glm::vec3 radial_dir = glm::normalize(
+            std::cos(azimuth) * frame.basis_u
+            + std::sin(azimuth) * frame.basis_v);
+        const glm::vec3 random_lateral = glm::normalize(
+            std::cos(azimuth + kPi * 0.5f) * frame.basis_u
+            + std::sin(azimuth + kPi * 0.5f) * frame.basis_v);
+        glm::vec3 leaf_normal = glm::normalize(
+            glm::mix(radial_dir, random_lateral, orientation_randomness * 0.65f)
+            + frame.axis
+                * ((hash_to_unit_float(
+                        params.seed + branch_id * 89U,
+                        branch_id,
+                        static_cast<uint32_t>(frame_index) + 509U)
+                           * 2.0f
+                       - 1.0f)
+                    * orientation_randomness
+                    * 0.35f));
+        glm::vec3 leaf_up_seed = glm::normalize(
+            glm::mix(frame.axis, random_lateral, orientation_randomness * 0.45f)
+            + radial_dir * (orientation_randomness * 0.12f));
+        glm::vec3 leaf_right = glm::cross(leaf_up_seed, leaf_normal);
+        if (glm::dot(leaf_right, leaf_right) < 1e-6f)
+            leaf_right = orthogonal_unit(leaf_normal);
+        else
+            leaf_right = glm::normalize(leaf_right);
+        if (glm::dot(leaf_right, radial_dir) < 0.0f)
+            leaf_right = -leaf_right;
+        const glm::vec3 leaf_up = glm::normalize(glm::cross(leaf_normal, leaf_right));
+
+        const float leaf_width = std::max(
+            frame.radius
+                * std::lerp(
+                    min_leaf_size,
+                    max_leaf_size,
+                    hash_to_unit_float(
+                        params.seed + branch_id * 97U,
+                        branch_id,
+                        static_cast<uint32_t>(frame_index) + 541U)),
+            0.09f * params.overall_scale);
+        const float leaf_height = leaf_width
+            * std::lerp(
+                1.35f,
+                1.85f,
+                hash_to_unit_float(
+                    params.seed + branch_id * 101U,
+                    branch_id,
+                    static_cast<uint32_t>(frame_index) + 577U));
+        const glm::vec3 leaf_center = frame.center
+            + radial_dir * (frame.radius + leaf_width * 0.18f)
+            + frame.axis * (leaf_height * 0.10f);
+
+        const uint32_t atlas_index = static_cast<uint32_t>(hash_to_int(
+            params.seed + branch_id * 109U,
+            branch_id,
+            leaf_index + 607U,
+            0,
+            static_cast<int>(kLeafAtlasRects.size()) - 1));
+
+        append_double_sided_quad(
+            leaf_mesh,
+            leaf_center,
+            leaf_right * (leaf_width * 0.5f),
+            leaf_up * (leaf_height * 0.5f),
+            leaf_normal,
+            leaf_color_for_quad(params, branch_id, leaf_index),
+            kLeafAtlasRects[atlas_index]);
+        ++leaf_index;
     }
 }
 
@@ -265,7 +453,8 @@ void append_cap(
     bool flip_winding = false);
 
 void append_branch(
-    GeometryMesh& mesh,
+    GeometryMesh& bark_mesh,
+    GeometryMesh& leaf_mesh,
     const DraxulTreeParams& params,
     const glm::vec3& origin,
     const glm::vec3& direction,
@@ -295,12 +484,12 @@ void append_branch(
 
     const int radial_segments = std::max(params.radial_segments, 3);
     uint32_t ring_start = 0;
-    append_branch_rings(mesh, params, frames, branch_id, ring_start, radial_segments);
+    append_branch_rings(bark_mesh, params, frames, branch_id, ring_start, radial_segments);
 
     if (close_base)
     {
         append_cap(
-            mesh,
+            bark_mesh,
             params,
             ring_start,
             radial_segments,
@@ -313,7 +502,7 @@ void append_branch(
     const uint32_t tip_ring_start = ring_start
         + static_cast<uint32_t>((frames.size() - 1) * static_cast<size_t>(radial_segments + 1));
     append_cap(
-        mesh,
+        bark_mesh,
         params,
         tip_ring_start,
         radial_segments,
@@ -321,6 +510,8 @@ void append_branch(
         frames.back().axis,
         1.0f,
         false);
+
+    append_branch_leaves(leaf_mesh, params, frames, depth, branch_id);
 
     if (depth >= params.max_branch_depth
         || params.child_branches_max <= 0
@@ -383,7 +574,8 @@ void append_branch(
             0.006f * params.overall_scale);
 
         append_branch(
-            mesh,
+            bark_mesh,
+            leaf_mesh,
             params,
             child_origin,
             child_direction,
@@ -459,12 +651,16 @@ DraxulTreeParams make_tree_params_from_age(float age_years)
     params.branch_wander = std::lerp(0.12f, 0.34f, t);
     params.wander_frequency = std::lerp(0.12f, 0.30f, t);
     params.wander_deviation = std::lerp(0.18f, 0.55f, t);
+    params.leaf_density = std::lerp(0.45f, 1.15f, t);
+    params.leaf_orientation_randomness = std::lerp(0.18f, 0.45f, t);
+    params.leaf_size_range = glm::vec2(std::lerp(2.8f, 3.6f, t), std::lerp(4.2f, 5.2f, t));
+    params.leaf_start_depth = t < 0.18f ? 0 : 1;
     return params;
 }
 
-GeometryMesh generate_draxul_tree(const DraxulTreeParams& input_params)
+DraxulTreeMeshes generate_draxul_tree_meshes(const DraxulTreeParams& input_params)
 {
-    GeometryMesh mesh;
+    DraxulTreeMeshes meshes;
 
     DraxulTreeParams params = input_params;
     params.age_years = std::max(params.age_years, 0.5f);
@@ -486,16 +682,23 @@ GeometryMesh generate_draxul_tree(const DraxulTreeParams& input_params)
     params.branch_wander = std::clamp(params.branch_wander, 0.0f, 2.0f);
     params.wander_frequency = std::clamp(params.wander_frequency, 0.0f, 1.0f);
     params.wander_deviation = std::clamp(params.wander_deviation, 0.0f, 2.0f);
+    params.leaf_density = std::clamp(params.leaf_density, 0.0f, 10.0f);
+    params.leaf_orientation_randomness = std::clamp(params.leaf_orientation_randomness, 0.0f, 1.0f);
+    params.leaf_size_range = glm::clamp(params.leaf_size_range, glm::vec2(0.1f), glm::vec2(12.0f));
+    params.leaf_start_depth = std::max(params.leaf_start_depth, 0);
 
     const float scale = params.overall_scale;
     const float trunk_length = std::min(params.trunk_length * scale, params.max_height);
     const float base_radius = params.trunk_base_radius * scale;
     const float tip_radius = params.trunk_tip_radius * scale;
-    mesh.vertices.reserve(8192);
-    mesh.indices.reserve(24576);
+    meshes.bark_mesh.vertices.reserve(8192);
+    meshes.bark_mesh.indices.reserve(24576);
+    meshes.leaf_mesh.vertices.reserve(4096);
+    meshes.leaf_mesh.indices.reserve(6144);
 
     append_branch(
-        mesh,
+        meshes.bark_mesh,
+        meshes.leaf_mesh,
         params,
         glm::vec3(0.0f),
         glm::vec3(0.0f, 1.0f, 0.0f),
@@ -506,7 +709,25 @@ GeometryMesh generate_draxul_tree(const DraxulTreeParams& input_params)
         1U,
         true);
 
-    return mesh;
+    return meshes;
+}
+
+GeometryMesh generate_draxul_tree(const DraxulTreeParams& params)
+{
+    DraxulTreeMeshes split = generate_draxul_tree_meshes(params);
+    GeometryMesh merged = std::move(split.bark_mesh);
+    if (split.leaf_mesh.vertices.empty())
+        return merged;
+
+    const uint16_t vertex_offset = static_cast<uint16_t>(merged.vertices.size());
+    merged.vertices.insert(
+        merged.vertices.end(),
+        split.leaf_mesh.vertices.begin(),
+        split.leaf_mesh.vertices.end());
+    merged.indices.reserve(merged.indices.size() + split.leaf_mesh.indices.size());
+    for (uint16_t index : split.leaf_mesh.indices)
+        merged.indices.push_back(static_cast<uint16_t>(vertex_offset + index));
+    return merged;
 }
 
 } // namespace draxul

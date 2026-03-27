@@ -37,9 +37,25 @@ using AsphaltRoadMaterialImages = TexturedMaterialImages;
 using PavingSidewalkMaterialImages = TexturedMaterialImages;
 using WoodBuildingMaterialImages = TexturedMaterialImages;
 
+struct LeafAtlasMaterialImages
+{
+    LoadedTextureImage albedo;
+    LoadedTextureImage normal;
+    LoadedTextureImage roughness;
+    LoadedTextureImage opacity;
+    LoadedTextureImage scattering;
+
+    [[nodiscard]] bool valid() const
+    {
+        return albedo.valid() && normal.valid() && roughness.valid()
+            && opacity.valid() && scattering.valid();
+    }
+};
+
 [[nodiscard]] std::filesystem::path resolve_megacity_asset_path(const std::filesystem::path& relative_path);
 [[nodiscard]] AsphaltRoadMaterialImages load_asphalt_road_material_images();
 [[nodiscard]] PavingSidewalkMaterialImages load_paving_sidewalk_material_images();
 [[nodiscard]] WoodBuildingMaterialImages load_wood_building_material_images();
+[[nodiscard]] LeafAtlasMaterialImages load_leaf_atlas_material_images();
 
 } // namespace draxul

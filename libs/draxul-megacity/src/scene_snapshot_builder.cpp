@@ -59,6 +59,24 @@ SceneMaterial build_scene_material(const Appearance& appearance)
             static_cast<uint32_t>(SceneTextureId::WoodRoughness),
             static_cast<uint32_t>(SceneTextureId::WoodAo));
         break;
+    case MaterialId::LeafCards:
+        material.shading_model = MaterialShadingModel::LeafCutoutPbr;
+        material.scalar_params = glm::vec4(
+            appearance.material_info.y,
+            appearance.material_info.z,
+            appearance.material_info.w,
+            0.0f);
+        material.texture_indices = glm::uvec4(
+            static_cast<uint32_t>(SceneTextureId::LeafAlbedo),
+            static_cast<uint32_t>(SceneTextureId::LeafNormal),
+            static_cast<uint32_t>(SceneTextureId::LeafRoughness),
+            static_cast<uint32_t>(SceneTextureId::LeafOpacity));
+        material.metadata = glm::uvec4(
+            0u,
+            static_cast<uint32_t>(SceneTextureId::LeafScattering),
+            0u,
+            0u);
+        break;
     case MaterialId::FlatColor:
     default:
         break;
@@ -70,7 +88,8 @@ bool same_scene_material(const SceneMaterial& lhs, const SceneMaterial& rhs)
 {
     return lhs.shading_model == rhs.shading_model
         && lhs.scalar_params == rhs.scalar_params
-        && lhs.texture_indices == rhs.texture_indices;
+        && lhs.texture_indices == rhs.texture_indices
+        && lhs.metadata == rhs.metadata;
 }
 
 uint32_t find_or_append_material(SceneSnapshot& scene, const Appearance& appearance)
@@ -96,11 +115,13 @@ SceneSnapshotResult build_scene_snapshot(
     const SceneWorld& world,
     const MegaCityCodeConfig& config,
     const std::shared_ptr<SignLabelAtlas>& label_atlas,
-    const std::shared_ptr<const MeshData>& tree_mesh)
+    const std::shared_ptr<const MeshData>& tree_bark_mesh,
+    const std::shared_ptr<const MeshData>& tree_leaf_mesh)
 {
     SceneSnapshotResult result;
     SceneSnapshot& scene = result.snapshot;
-    scene.tree_mesh = tree_mesh;
+    scene.tree_bark_mesh = tree_bark_mesh;
+    scene.tree_leaf_mesh = tree_leaf_mesh;
 
     scene.camera.view = camera.view_matrix();
     scene.camera.proj = camera.proj_matrix();
@@ -168,6 +189,7 @@ SceneSnapshotResult build_scene_snapshot(
         SceneObject obj;
         obj.mesh = appearance.mesh;
         obj.material_index = find_or_append_material(scene, appearance);
+        obj.double_sided = appearance.double_sided;
         const glm::vec3 world_pos{ pos.x, elev.value, pos.z };
         float extent_x = 1.0f;
         float extent_z = 1.0f;

@@ -191,9 +191,9 @@ MaterialUniforms build_material_uniforms(const SceneSnapshot& scene)
         uniforms.materials[index].texture_indices = material.texture_indices;
         uniforms.materials[index].metadata = glm::uvec4(
             static_cast<uint32_t>(material.shading_model),
-            0u,
-            0u,
-            0u);
+            material.metadata.y,
+            material.metadata.z,
+            material.metadata.w);
     }
     return uniforms;
 }
@@ -642,11 +642,13 @@ struct IsometricScenePass::State
     VkPipeline pipeline = VK_NULL_HANDLE;
     MeshBuffers cube_mesh;
     MeshBuffers floor_mesh;
-    MeshBuffers tree_mesh;
+    MeshBuffers tree_bark_mesh;
+    MeshBuffers tree_leaf_mesh;
     MeshBuffers road_surface_mesh;
     MeshBuffers roof_sign_mesh;
     MeshBuffers wall_sign_mesh;
-    const MeshData* tree_mesh_source = nullptr;
+    const MeshData* tree_bark_mesh_source = nullptr;
+    const MeshData* tree_leaf_mesh_source = nullptr;
     MeshData cached_grid_mesh;
     FloorGridSpec cached_grid_spec;
     bool has_cached_grid_mesh = false;
@@ -847,9 +849,14 @@ struct IsometricScenePass::State
             DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity scene: failed to upload floor mesh");
             return false;
         }
-        if (!upload_mesh(allocator, build_tree_mesh(), tree_mesh))
+        if (!upload_mesh(allocator, build_tree_bark_mesh(), tree_bark_mesh))
         {
-            DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity scene: failed to upload tree mesh");
+            DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity scene: failed to upload tree bark mesh");
+            return false;
+        }
+        if (!upload_mesh(allocator, build_tree_leaf_mesh(), tree_leaf_mesh))
+        {
+            DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity scene: failed to upload tree leaf mesh");
             return false;
         }
         if (!upload_mesh(allocator, build_road_surface_mesh(), road_surface_mesh))
@@ -899,7 +906,8 @@ struct IsometricScenePass::State
         const AsphaltRoadMaterialImages road_images = load_asphalt_road_material_images();
         const PavingSidewalkMaterialImages sidewalk_images = load_paving_sidewalk_material_images();
         const WoodBuildingMaterialImages wood_images = load_wood_building_material_images();
-        if (!road_images.valid() || !sidewalk_images.valid() || !wood_images.valid())
+        const LeafAtlasMaterialImages leaf_images = load_leaf_atlas_material_images();
+        if (!road_images.valid() || !sidewalk_images.valid() || !wood_images.valid() || !leaf_images.valid())
         {
             DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity: failed to load Megacity material images");
             return false;
@@ -941,6 +949,11 @@ struct IsometricScenePass::State
             { SceneTextureId::WoodNormal, &wood_images.normal, VK_FORMAT_R8G8B8A8_UNORM },
             { SceneTextureId::WoodRoughness, &wood_images.roughness, VK_FORMAT_R8G8B8A8_UNORM },
             { SceneTextureId::WoodAo, &wood_images.ao, VK_FORMAT_R8G8B8A8_UNORM },
+            { SceneTextureId::LeafAlbedo, &leaf_images.albedo, VK_FORMAT_R8G8B8A8_SRGB },
+            { SceneTextureId::LeafNormal, &leaf_images.normal, VK_FORMAT_R8G8B8A8_UNORM },
+            { SceneTextureId::LeafRoughness, &leaf_images.roughness, VK_FORMAT_R8G8B8A8_UNORM },
+            { SceneTextureId::LeafOpacity, &leaf_images.opacity, VK_FORMAT_R8G8B8A8_UNORM },
+            { SceneTextureId::LeafScattering, &leaf_images.scattering, VK_FORMAT_R8G8B8A8_UNORM },
         } };
 
         for (const TextureLoadSpec& spec : load_specs)
@@ -970,23 +983,36 @@ struct IsometricScenePass::State
         return true;
     }
 
-    bool ensure_tree_mesh(const std::shared_ptr<const MeshData>& tree_mesh_data)
+    bool ensure_tree_mesh(
+        const std::shared_ptr<const MeshData>& tree_bark_mesh_data,
+        const std::shared_ptr<const MeshData>& tree_leaf_mesh_data)
     {
-        if (!tree_mesh_data)
-            return true;
-        if (tree_mesh_source == tree_mesh_data.get() && tree_mesh.index_count > 0)
-            return true;
-
-        MeshBuffers replacement;
-        if (!upload_mesh(allocator, *tree_mesh_data, replacement))
+        if (tree_bark_mesh_data
+            && !(tree_bark_mesh_source == tree_bark_mesh_data.get() && tree_bark_mesh.index_count > 0))
         {
-            DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity scene: failed to upload procedural tree mesh");
-            return false;
+            MeshBuffers replacement;
+            if (!upload_mesh(allocator, *tree_bark_mesh_data, replacement))
+            {
+                DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity scene: failed to upload procedural tree bark mesh");
+                return false;
+            }
+            destroy_mesh(allocator, tree_bark_mesh);
+            tree_bark_mesh = std::move(replacement);
+            tree_bark_mesh_source = tree_bark_mesh_data.get();
         }
-
-        destroy_mesh(allocator, tree_mesh);
-        tree_mesh = std::move(replacement);
-        tree_mesh_source = tree_mesh_data.get();
+        if (tree_leaf_mesh_data
+            && !(tree_leaf_mesh_source == tree_leaf_mesh_data.get() && tree_leaf_mesh.index_count > 0))
+        {
+            MeshBuffers replacement;
+            if (!upload_mesh(allocator, *tree_leaf_mesh_data, replacement))
+            {
+                DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity scene: failed to upload procedural tree leaf mesh");
+                return false;
+            }
+            destroy_mesh(allocator, tree_leaf_mesh);
+            tree_leaf_mesh = std::move(replacement);
+            tree_leaf_mesh_source = tree_leaf_mesh_data.get();
+        }
         return true;
     }
 
@@ -1619,7 +1645,7 @@ struct IsometricScenePass::State
         pipeline_ci.pDepthStencilState = &depth_stencil;
         pipeline_ci.pColorBlendState = &blend;
         pipeline_ci.pDynamicState = &dynamic;
-        pipeline_ci.layout = prepass_pipeline_layout;
+        pipeline_ci.layout = pipeline_layout;
         pipeline_ci.renderPass = gbuffer_render_pass;
         pipeline_ci.subpass = 0;
 
@@ -1984,7 +2010,8 @@ struct IsometricScenePass::State
         {
             destroy_mesh(allocator, cube_mesh);
             destroy_mesh(allocator, floor_mesh);
-            destroy_mesh(allocator, tree_mesh);
+            destroy_mesh(allocator, tree_bark_mesh);
+            destroy_mesh(allocator, tree_leaf_mesh);
             destroy_mesh(allocator, road_surface_mesh);
             destroy_mesh(allocator, roof_sign_mesh);
             destroy_mesh(allocator, wall_sign_mesh);
@@ -2082,7 +2109,7 @@ void IsometricScenePass::record_prepass(IRenderContext& ctx)
     // Ensure floor grid mesh
     if (!state_->ensure_floor_grid(scene_.floor_grid))
         return;
-    if (!state_->ensure_tree_mesh(scene_.tree_mesh))
+    if (!state_->ensure_tree_mesh(scene_.tree_bark_mesh, scene_.tree_leaf_mesh))
         return;
     MeshSlice grid_slice;
     if (state_->has_cached_grid_mesh
@@ -2141,8 +2168,8 @@ void IsometricScenePass::record_prepass(IRenderContext& ctx)
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, state_->gbuffer_pipeline);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, state_->prepass_pipeline_layout,
-        0, 1, &frame_res.prepass_descriptor_set, 0, nullptr);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, state_->pipeline_layout,
+        0, 1, &frame_res.descriptor_set, 0, nullptr);
 
     // Draw scene objects into GBuffer
     const MeshBuffers* last_mesh = nullptr;
@@ -2157,8 +2184,11 @@ void IsometricScenePass::record_prepass(IRenderContext& ctx)
         case MeshId::Cube:
             mesh = &state_->cube_mesh;
             break;
-        case MeshId::Tree:
-            mesh = &state_->tree_mesh;
+        case MeshId::TreeBark:
+            mesh = &state_->tree_bark_mesh;
+            break;
+        case MeshId::TreeLeaves:
+            mesh = &state_->tree_leaf_mesh;
             break;
         case MeshId::RoadSurface:
             mesh = &state_->road_surface_mesh;
@@ -2188,9 +2218,9 @@ void IsometricScenePass::record_prepass(IRenderContext& ctx)
         push.world = obj.world;
         push.color = obj.color;
         push.material_data = glm::uvec4(obj.material_index, 0u, 0u, 0u);
-        push.uv_rect = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f);
+        push.uv_rect = obj.uv_rect;
         push.label_metrics = glm::vec4(0.0f);
-        vkCmdPushConstants(cmd, state_->prepass_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push), &push);
+        vkCmdPushConstants(cmd, state_->pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push), &push);
         vkCmdDrawIndexed(cmd, mesh->index_count, 1, 0, 0, 0);
     }
 
@@ -2208,7 +2238,7 @@ void IsometricScenePass::record_prepass(IRenderContext& ctx)
         VkDeviceSize vertex_offset = grid_slice.vertex_offset;
         vkCmdBindVertexBuffers(cmd, 0, 1, &vertex_buffer, &vertex_offset);
         vkCmdBindIndexBuffer(cmd, grid_slice.index_buffer, grid_slice.index_offset, VK_INDEX_TYPE_UINT16);
-        vkCmdPushConstants(cmd, state_->prepass_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push), &push);
+        vkCmdPushConstants(cmd, state_->pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push), &push);
         vkCmdDrawIndexed(cmd, grid_slice.index_count, 1, 0, 0, 0);
     }
 
@@ -2268,7 +2298,7 @@ void IsometricScenePass::record(IRenderContext& ctx)
         return;
     if (!state_->ensure_road_materials(*vk_ctx, cmd))
         return;
-    if (!state_->ensure_tree_mesh(scene_.tree_mesh))
+    if (!state_->ensure_tree_mesh(scene_.tree_bark_mesh, scene_.tree_leaf_mesh))
         return;
     if (!state_->ensure_label_atlas(*vk_ctx, cmd, scene_.label_atlas))
         return;
@@ -2322,8 +2352,11 @@ void IsometricScenePass::record(IRenderContext& ctx)
         case MeshId::Cube:
             mesh = &state_->cube_mesh;
             break;
-        case MeshId::Tree:
-            mesh = &state_->tree_mesh;
+        case MeshId::TreeBark:
+            mesh = &state_->tree_bark_mesh;
+            break;
+        case MeshId::TreeLeaves:
+            mesh = &state_->tree_leaf_mesh;
             break;
         case MeshId::RoadSurface:
             mesh = &state_->road_surface_mesh;

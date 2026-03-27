@@ -1,6 +1,7 @@
 #version 450
 
-layout(set = 0, binding = 0) uniform FrameUniforms {
+layout(set = 0, binding = 0) uniform FrameUniforms
+{
     mat4 view;
     mat4 proj;
     mat4 inv_view_proj;
@@ -13,19 +14,23 @@ layout(set = 0, binding = 0) uniform FrameUniforms {
     vec4 ao_params;
     vec4 debug_view;
     vec4 world_debug_bounds;
-} frame;
-struct MaterialInstance {
+}
+frame;
+struct MaterialInstance
+{
     vec4 scalar_params;
     uvec4 texture_indices;
     uvec4 metadata;
 };
 
-layout(set = 0, binding = 1) uniform MaterialUniforms {
+layout(set = 0, binding = 1) uniform MaterialUniforms
+{
     MaterialInstance materials[64];
-} material_table;
+}
+material_table;
 layout(set = 0, binding = 2) uniform sampler2D sign_atlas;
 layout(set = 0, binding = 3) uniform sampler2D ao_buffer;
-layout(set = 0, binding = 4) uniform sampler2D material_textures[15];
+layout(set = 0, binding = 4) uniform sampler2D material_textures[20];
 
 layout(location = 0) in vec3 in_normal_ws;
 layout(location = 1) in vec3 in_base_color;
@@ -42,6 +47,8 @@ const float kPi = 3.14159265359;
 const uint kShadingFlatColor = 0u;
 const uint kShadingTexturedTintedPbr = 1u;
 const uint kShadingVertexTintPbr = 2u;
+const uint kShadingLeafCutoutPbr = 3u;
+const float kLeafAlphaCutoff = 0.35;
 
 float distribution_ggx(vec3 n, vec3 h, float roughness)
 {
@@ -90,6 +97,7 @@ void main()
     float roughness = 0.65;
     float metallic = 0.0;
     float material_ao = 1.0;
+    float leaf_scattering = 0.0;
     MaterialInstance material = material_table.materials[min(in_material_index, 63u)];
     vec2 material_uv = in_material_uv * material.scalar_params.x;
     float normal_strength = max(material.scalar_params.y, 0.0);
@@ -119,6 +127,22 @@ void main()
         albedo = in_base_color;
         roughness = clamp(sample_material_texture(material.texture_indices.z, material_uv).r, 0.04, 1.0);
         material_ao = mix(1.0, sample_material_texture(material.texture_indices.w, material_uv).r, ao_strength);
+    }
+    else if (material.metadata.x == kShadingLeafCutoutPbr)
+    {
+        float opacity = sample_material_texture(material.texture_indices.w, material_uv).r;
+        if (opacity < kLeafAlphaCutoff)
+            discard;
+
+        vec3 tangent_normal = sample_material_texture(material.texture_indices.y, material_uv).xyz * 2.0 - 1.0;
+        tangent_normal.xy *= normal_strength;
+        tangent_normal = normalize(tangent_normal);
+        mat3 tbn = tangent_basis(normal_ws, in_tangent_ws);
+
+        normal_ws = normalize(tbn * tangent_normal);
+        albedo = sample_material_texture(material.texture_indices.x, material_uv).rgb * in_base_color;
+        roughness = clamp(sample_material_texture(material.texture_indices.z, material_uv).r, 0.04, 1.0);
+        leaf_scattering = sample_material_texture(material.metadata.y, material_uv).r * ao_strength;
     }
 
     vec2 screen_uv = clamp(
@@ -156,6 +180,11 @@ void main()
         vec3 kd = (1.0 - fresnel) * (1.0 - metallic);
         vec3 radiance = hemi * 0.52;
         direct_lighting += (kd * albedo / kPi + specular) * radiance * ndotl;
+        if (leaf_scattering > 0.0)
+        {
+            float transmitted = max(dot(-normal_ws, dir_light), 0.0);
+            direct_lighting += albedo * radiance * (leaf_scattering * 0.45) * transmitted;
+        }
     }
 
     vec3 point_vec = frame.point_light_pos.xyz - in_world_position;
@@ -177,6 +206,11 @@ void main()
         vec3 radiance = vec3(1.05, 0.98, 0.90)
             * max(frame.render_tuning.y, 0.0) * point_atten * point_atten;
         direct_lighting += (kd * albedo / kPi + specular) * radiance * point_ndotl;
+        if (leaf_scattering > 0.0)
+        {
+            float transmitted = max(dot(-normal_ws, point_dir), 0.0);
+            direct_lighting += albedo * radiance * (leaf_scattering * 0.60) * transmitted;
+        }
     }
 
     vec3 shaded = albedo * ambient_lighting + direct_lighting;

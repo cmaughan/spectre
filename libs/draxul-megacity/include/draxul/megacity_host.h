@@ -99,7 +99,8 @@ private:
     CityDatabase city_db_;
     std::unique_ptr<TextService> sign_text_service_;
     std::shared_ptr<SignLabelAtlas> sign_label_atlas_;
-    std::shared_ptr<const GeometryMesh> tree_mesh_;
+    std::shared_ptr<const GeometryMesh> tree_bark_mesh_;
+    std::shared_ptr<const GeometryMesh> tree_leaf_mesh_;
     std::shared_ptr<const SemanticMegacityModel> semantic_model_;
     std::vector<std::string> available_modules_;
     ConfigDocument* config_document_ = nullptr;

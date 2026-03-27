@@ -712,6 +712,10 @@ TEST_CASE("megacity config round-trips through config document", "[config][megac
     current.central_park_tree_branch_wander = 0.36f;
     current.central_park_tree_wander_frequency = 0.44f;
     current.central_park_tree_wander_deviation = 0.72f;
+    current.central_park_tree_leaf_density = 1.65f;
+    current.central_park_tree_leaf_orientation_randomness = 0.58f;
+    current.central_park_tree_leaf_size_range = glm::vec2(2.2f, 6.8f);
+    current.central_park_tree_leaf_start_depth = 2;
     current.central_park_tree_bark_color_noise = 0.06f;
     current.central_park_tree_bark_root = glm::vec3(0.29f, 0.20f, 0.14f);
     current.central_park_tree_bark_tip = glm::vec3(0.63f, 0.49f, 0.36f);

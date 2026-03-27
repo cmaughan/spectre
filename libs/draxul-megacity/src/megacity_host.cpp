@@ -406,7 +406,13 @@ void MegaCityHost::attach_3d_renderer(I3DRenderer& renderer)
 
     if (scene_pass_ && camera_ && world_)
     {
-        auto result = build_scene_snapshot(*camera_, *world_, renderer_config_, sign_label_atlas_, tree_mesh_);
+        auto result = build_scene_snapshot(
+            *camera_,
+            *world_,
+            renderer_config_,
+            sign_label_atlas_,
+            tree_bark_mesh_,
+            tree_leaf_mesh_);
         world_span_ = result.world_span;
         scene_pass_->set_scene(std::move(result.snapshot));
         scene_dirty_ = false;
@@ -490,7 +496,8 @@ void MegaCityHost::rebuild_semantic_city()
     auto result = build_city(
         *world_, city_db_, sign_text_service_.get(),
         available_modules_, renderer_config_, sign_label_revision_);
-    tree_mesh_ = result.tree_mesh;
+    tree_bark_mesh_ = result.tree_bark_mesh;
+    tree_leaf_mesh_ = result.tree_leaf_mesh;
 
     // Apply city bounds.
     city_bounds_valid_ = result.city_bounds_valid;
@@ -665,7 +672,13 @@ void MegaCityHost::pump()
 
     if (scene_dirty_ && scene_pass_ && camera_ && world_)
     {
-        auto result = build_scene_snapshot(*camera_, *world_, renderer_config_, sign_label_atlas_, tree_mesh_);
+        auto result = build_scene_snapshot(
+            *camera_,
+            *world_,
+            renderer_config_,
+            sign_label_atlas_,
+            tree_bark_mesh_,
+            tree_leaf_mesh_);
         world_span_ = result.world_span;
         scene_pass_->set_scene(std::move(result.snapshot));
         scene_dirty_ = false;

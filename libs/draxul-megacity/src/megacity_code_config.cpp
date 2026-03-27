@@ -194,6 +194,12 @@ void apply_megacity_code_table(MegaCityCodeConfig& config, const toml::table& ta
     assign_float("central_park_tree_branch_wander", config.central_park_tree_branch_wander);
     assign_float("central_park_tree_wander_frequency", config.central_park_tree_wander_frequency);
     assign_float("central_park_tree_wander_deviation", config.central_park_tree_wander_deviation);
+    assign_float("central_park_tree_leaf_density", config.central_park_tree_leaf_density);
+    assign_float(
+        "central_park_tree_leaf_orientation_randomness",
+        config.central_park_tree_leaf_orientation_randomness);
+    assign_vec2(table, "central_park_tree_leaf_size_range", config.central_park_tree_leaf_size_range);
+    assign_int("central_park_tree_leaf_start_depth", config.central_park_tree_leaf_start_depth);
     assign_float("central_park_tree_bark_color_noise", config.central_park_tree_bark_color_noise);
     assign_vec3(table, "central_park_tree_bark_root", config.central_park_tree_bark_root);
     assign_vec3(table, "central_park_tree_bark_tip", config.central_park_tree_bark_tip);
@@ -315,6 +321,12 @@ toml::table serialize_megacity_code_table(const MegaCityCodeConfig& config)
     table.insert_or_assign("central_park_tree_branch_wander", static_cast<double>(config.central_park_tree_branch_wander));
     table.insert_or_assign("central_park_tree_wander_frequency", static_cast<double>(config.central_park_tree_wander_frequency));
     table.insert_or_assign("central_park_tree_wander_deviation", static_cast<double>(config.central_park_tree_wander_deviation));
+    table.insert_or_assign("central_park_tree_leaf_density", static_cast<double>(config.central_park_tree_leaf_density));
+    table.insert_or_assign(
+        "central_park_tree_leaf_orientation_randomness",
+        static_cast<double>(config.central_park_tree_leaf_orientation_randomness));
+    toml_support::insert_vec2(table, "central_park_tree_leaf_size_range", config.central_park_tree_leaf_size_range);
+    table.insert_or_assign("central_park_tree_leaf_start_depth", config.central_park_tree_leaf_start_depth);
     table.insert_or_assign("central_park_tree_bark_color_noise", static_cast<double>(config.central_park_tree_bark_color_noise));
     table.insert_or_assign("central_park_tree_bark_root", toml_support::make_array(config.central_park_tree_bark_root));
     table.insert_or_assign("central_park_tree_bark_tip", toml_support::make_array(config.central_park_tree_bark_tip));

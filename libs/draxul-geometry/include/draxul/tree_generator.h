@@ -3,6 +3,7 @@
 #include <draxul/geometry_mesh.h>
 
 #include <cstdint>
+#include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 
 namespace draxul
@@ -43,6 +44,10 @@ struct DraxulTreeParams
     float branch_wander = 0.28f;
     float wander_frequency = 0.22f;
     float wander_deviation = 0.45f;
+    float leaf_density = 1.0f;
+    float leaf_orientation_randomness = 0.35f;
+    glm::vec2 leaf_size_range{ 3.6f, 5.2f };
+    int leaf_start_depth = 1;
     float taper_power = 1.25f;
     float tip_ring_spacing_scale = 0.5f;
 
@@ -51,13 +56,22 @@ struct DraxulTreeParams
     float bark_color_noise = 0.08f;
 };
 
+struct DraxulTreeMeshes
+{
+    GeometryMesh bark_mesh;
+    GeometryMesh leaf_mesh;
+};
+
 // High-level age dial for later presets. The current scaffold maps age to a
 // bounded trunk-first parameter set.
 [[nodiscard]] DraxulTreeParams make_tree_params_from_age(float age_years);
 
-// Trunk-first scaffold for the future full recursive tree generator.
-// The current implementation emits a tapered trunk mesh with valid normals,
-// tangents, colors, UVs, and caps.
+// Split bark/leaves output for renderers that want independent material or
+// raster state.
+[[nodiscard]] DraxulTreeMeshes generate_draxul_tree_meshes(const DraxulTreeParams& params);
+
+// Convenience merged tree mesh. This combines bark and leaves into a single
+// mesh for simpler consumers and tests.
 [[nodiscard]] GeometryMesh generate_draxul_tree(const DraxulTreeParams& params);
 
 } // namespace draxul

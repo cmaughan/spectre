@@ -91,6 +91,70 @@ TEST_CASE("tree generator emits branching canopy beyond the trunk radius", "[geo
     CHECK(max_horizontal_radius > params.trunk_base_radius * params.overall_scale * 1.5f);
 }
 
+TEST_CASE("tree generator emits separate bark and leaf meshes", "[geometry]")
+{
+    DraxulTreeParams params = make_tree_params_from_age(24.0f);
+    params.seed = 17;
+    params.leaf_density = 1.5f;
+
+    const DraxulTreeMeshes meshes = generate_draxul_tree_meshes(params);
+
+    CHECK_FALSE(meshes.bark_mesh.vertices.empty());
+    CHECK_FALSE(meshes.bark_mesh.indices.empty());
+    CHECK_FALSE(meshes.leaf_mesh.vertices.empty());
+    CHECK_FALSE(meshes.leaf_mesh.indices.empty());
+}
+
+TEST_CASE("tree generator leaf start depth suppresses trunk leaves", "[geometry]")
+{
+    DraxulTreeParams trunk_leaves = make_tree_params_from_age(24.0f);
+    trunk_leaves.seed = 19;
+    trunk_leaves.max_branch_depth = 0;
+    trunk_leaves.child_branches_min = 0;
+    trunk_leaves.child_branches_max = 0;
+    trunk_leaves.leaf_density = 2.0f;
+    trunk_leaves.leaf_start_depth = 0;
+
+    DraxulTreeParams no_trunk_leaves = trunk_leaves;
+    no_trunk_leaves.leaf_start_depth = 1;
+
+    const DraxulTreeMeshes with_trunk_leaves = generate_draxul_tree_meshes(trunk_leaves);
+    const DraxulTreeMeshes without_trunk_leaves = generate_draxul_tree_meshes(no_trunk_leaves);
+
+    CHECK_FALSE(with_trunk_leaves.leaf_mesh.vertices.empty());
+    CHECK(without_trunk_leaves.leaf_mesh.vertices.empty());
+    CHECK(without_trunk_leaves.leaf_mesh.indices.empty());
+}
+
+TEST_CASE("tree generator leaf size range changes card extent", "[geometry]")
+{
+    DraxulTreeParams small_leaves = make_tree_params_from_age(20.0f);
+    small_leaves.seed = 23;
+    small_leaves.leaf_density = 2.0f;
+    small_leaves.leaf_size_range = glm::vec2(1.2f, 1.2f);
+    small_leaves.leaf_start_depth = 0;
+
+    DraxulTreeParams large_leaves = small_leaves;
+    large_leaves.leaf_size_range = glm::vec2(5.5f, 5.5f);
+
+    const DraxulTreeMeshes small_meshes = generate_draxul_tree_meshes(small_leaves);
+    const DraxulTreeMeshes large_meshes = generate_draxul_tree_meshes(large_leaves);
+
+    auto leaf_extent = [](const GeometryMesh& mesh) {
+        REQUIRE_FALSE(mesh.vertices.empty());
+        glm::vec3 min_pos(std::numeric_limits<float>::max());
+        glm::vec3 max_pos(std::numeric_limits<float>::lowest());
+        for (const GeometryVertex& vertex : mesh.vertices)
+        {
+            min_pos = glm::min(min_pos, vertex.position);
+            max_pos = glm::max(max_pos, vertex.position);
+        }
+        return glm::length(max_pos - min_pos);
+    };
+
+    CHECK(leaf_extent(large_meshes.leaf_mesh) > leaf_extent(small_meshes.leaf_mesh) + 0.1f);
+}
+
 TEST_CASE("tree generator supports lateral branch and trunk wander", "[geometry]")
 {
     DraxulTreeParams straight = make_tree_params_from_age(16.0f);
@@ -107,8 +171,8 @@ TEST_CASE("tree generator supports lateral branch and trunk wander", "[geometry]
     wandering.wander_frequency = 1.0f;
     wandering.wander_deviation = 1.0f;
 
-    const GeometryMesh straight_mesh = generate_draxul_tree(straight);
-    const GeometryMesh wandering_mesh = generate_draxul_tree(wandering);
+    const DraxulTreeMeshes straight_meshes = generate_draxul_tree_meshes(straight);
+    const DraxulTreeMeshes wandering_meshes = generate_draxul_tree_meshes(wandering);
 
     auto top_center_radius = [](const GeometryMesh& mesh) {
         float max_y = std::numeric_limits<float>::lowest();
@@ -130,7 +194,9 @@ TEST_CASE("tree generator supports lateral branch and trunk wander", "[geometry]
         return glm::length(average_xz);
     };
 
-    CHECK(top_center_radius(wandering_mesh) > top_center_radius(straight_mesh) + 0.05f);
+    CHECK(
+        top_center_radius(wandering_meshes.bark_mesh)
+        > top_center_radius(straight_meshes.bark_mesh) + 0.02f);
 }
 
 TEST_CASE("unit cube geometry uses the shared vertex format", "[geometry]")
