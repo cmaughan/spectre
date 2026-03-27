@@ -724,152 +724,209 @@ bool render_renderer_controls(MegacityRendererControls& controls)
         note_commit();
     };
 
+    // -- City Build --------------------------------------------------------
     if (ImGui::TreeNodeEx("##renderer_build", ImGuiTreeNodeFlags_SpanAvailWidth, "City Build"))
     {
-        const bool module_selection_missing = !config.selected_module_path.empty()
-            && std::find(
-                   controls.available_modules.begin(),
-                   controls.available_modules.end(),
-                   config.selected_module_path)
-                == controls.available_modules.end();
-        const std::string current_module_label = config.selected_module_path.empty()
-            ? "All Modules"
-            : module_selection_missing
-            ? ("Missing: " + config.selected_module_path)
-            : config.selected_module_path;
-        if (ImGui::BeginCombo("Module View", current_module_label.c_str()))
+        // Module / View
+        if (ImGui::TreeNodeEx("##build_module", ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_DefaultOpen, "Module / View"))
         {
-            const bool all_modules_selected = config.selected_module_path.empty();
-            if (ImGui::Selectable("All Modules", all_modules_selected))
+            const bool module_selection_missing = !config.selected_module_path.empty()
+                && std::find(
+                       controls.available_modules.begin(),
+                       controls.available_modules.end(),
+                       config.selected_module_path)
+                    == controls.available_modules.end();
+            const std::string current_module_label = config.selected_module_path.empty()
+                ? "All Modules"
+                : module_selection_missing
+                ? ("Missing: " + config.selected_module_path)
+                : config.selected_module_path;
+            if (ImGui::BeginCombo("Module View", current_module_label.c_str()))
             {
-                config.selected_module_path.clear();
-                changed = true;
-                controls.committed_edit = true;
-            }
-            if (all_modules_selected)
-                ImGui::SetItemDefaultFocus();
-
-            for (const std::string& module_path : controls.available_modules)
-            {
-                const bool module_selected = module_path == config.selected_module_path;
-                if (ImGui::Selectable(module_path.c_str(), module_selected))
+                const bool all_modules_selected = config.selected_module_path.empty();
+                if (ImGui::Selectable("All Modules", all_modules_selected))
                 {
-                    config.selected_module_path = module_path;
+                    config.selected_module_path.clear();
                     changed = true;
                     controls.committed_edit = true;
                 }
-                if (module_selected)
+                if (all_modules_selected)
                     ImGui::SetItemDefaultFocus();
+
+                for (const std::string& module_path : controls.available_modules)
+                {
+                    const bool module_selected = module_path == config.selected_module_path;
+                    if (ImGui::Selectable(module_path.c_str(), module_selected))
+                    {
+                        config.selected_module_path = module_path;
+                        changed = true;
+                        controls.committed_edit = true;
+                    }
+                    if (module_selected)
+                        ImGui::SetItemDefaultFocus();
+                }
+
+                if (module_selection_missing)
+                {
+                    ImGui::Separator();
+                    ImGui::BeginDisabled();
+                    ImGui::Selectable(current_module_label.c_str(), true);
+                    ImGui::EndDisabled();
+                }
+
+                ImGui::EndCombo();
             }
 
-            if (module_selection_missing)
-            {
-                ImGui::Separator();
-                ImGui::BeginDisabled();
-                ImGui::Selectable(current_module_label.c_str(), true);
-                ImGui::EndDisabled();
-            }
-
-            ImGui::EndCombo();
+            const bool clamp_changed = ImGui::Checkbox("Clamp Semantic Metrics", &config.clamp_semantic_metrics);
+            changed |= clamp_changed;
+            if (clamp_changed)
+                controls.committed_edit = true;
+            const bool hide_tests_changed = ImGui::Checkbox("Hide Test Entities", &config.hide_test_entities);
+            changed |= hide_tests_changed;
+            if (hide_tests_changed)
+                controls.committed_edit = true;
+            edit_float("Height Multiplier", config.height_multiplier, 0.05f, 0.1f, 8.0f, "%.2f");
+            edit_float("Placement Step", config.placement_step, 0.01f, 0.05f, 8.0f, "%.2f");
+            edit_int("Max Spiral Rings", config.max_spiral_rings, 8, 8, 65536);
+            ImGui::TreePop();
         }
 
-        const bool clamp_changed = ImGui::Checkbox("Clamp Semantic Metrics", &config.clamp_semantic_metrics);
-        changed |= clamp_changed;
-        if (clamp_changed)
-            controls.committed_edit = true;
-        const bool hide_tests_changed = ImGui::Checkbox("Hide Test Entities", &config.hide_test_entities);
-        changed |= hide_tests_changed;
-        if (hide_tests_changed)
-            controls.committed_edit = true;
-        edit_float("Height Multiplier", config.height_multiplier, 0.05f, 0.1f, 8.0f, "%.2f");
-        edit_float("Placement Step", config.placement_step, 0.01f, 0.05f, 8.0f, "%.2f");
-        edit_int("Max Spiral Rings", config.max_spiral_rings, 8, 8, 65536);
-        edit_float("Footprint Base", config.footprint_base, 0.05f, 0.0f, 32.0f, "%.2f");
-        edit_vec2("Footprint Range", config.footprint_range, 0.05f, 0.0f, 64.0f, "%.2f");
-        edit_float("Footprint Unclamped Scale", config.footprint_unclamped_scale, 0.01f, 0.0f, 4.0f, "%.2f");
-        edit_float("Height Base", config.height_base, 0.05f, 0.0f, 32.0f, "%.2f");
-        edit_float("Height Mass Weight", config.height_mass_weight, 0.01f, 0.0f, 8.0f, "%.2f");
-        edit_float("Height Count Weight", config.height_count_weight, 0.01f, 0.0f, 8.0f, "%.2f");
-        edit_vec2("Height Range", config.height_range, 0.05f, 0.0f, 64.0f, "%.2f");
-        edit_float("Height Unclamped Count Weight", config.height_unclamped_count_weight, 0.01f, 0.0f, 8.0f, "%.2f");
-        edit_float("Road Width Base", config.road_width_base, 0.01f, 0.0f, 16.0f, "%.2f");
-        edit_float("Road Width Scale", config.road_width_scale, 0.01f, 0.0f, 8.0f, "%.2f");
-        edit_vec2("Road Width Range", config.road_width_range, 0.01f, 0.0f, 32.0f, "%.2f");
-        edit_float("Sidewalk Width", config.sidewalk_width, 0.01f, 0.0f, 16.0f, "%.2f");
-        edit_float("Park Footprint", config.park_footprint, 0.5f, 0.0f, 32.0f, "%.1f");
-        edit_float("Park Height", config.park_height, 0.01f, 0.0f, 2.0f, "%.2f");
-        edit_float("Park Sidewalk Width", config.park_sidewalk_width, 0.01f, 0.0f, 16.0f, "%.2f");
-        edit_float("Park Road Width", config.park_road_width, 0.01f, 0.0f, 16.0f, "%.2f");
-        edit_float("Park Sign Max Depth", config.park_sign_max_depth_fraction, 0.01f, 0.05f, 1.0f, "%.2f");
-        edit_vec2("Central Park Scale", config.central_park_scale, 0.1f, 1.0f, 3.0f, "%.1f");
-        edit_float("Tree Age (Years)", config.central_park_tree_age_years, 0.5f, 0.5f, 200.0f, "%.1f");
-        edit_int("Tree Seed", config.central_park_tree_seed, 1, 0, 1 << 20);
-        edit_float("Tree Overall Scale", config.central_park_tree_overall_scale, 0.05f, 0.1f, 4.0f, "%.2f");
-        edit_int("Tree Radial Segments", config.central_park_tree_radial_segments, 1, 3, 32);
-        edit_int("Tree Max Branch Depth", config.central_park_tree_max_branch_depth, 1, 0, 6);
-        edit_int("Tree Child Branches Min", config.central_park_tree_child_branches_min, 1, 0, 8);
-        edit_int("Tree Child Branches Max", config.central_park_tree_child_branches_max, 1, 0, 12);
-        edit_float("Tree Branch Length Scale", config.central_park_tree_branch_length_scale, 0.01f, 0.1f, 1.0f, "%.2f");
-        edit_float("Tree Branch Radius Scale", config.central_park_tree_branch_radius_scale, 0.01f, 0.1f, 1.0f, "%.2f");
-        edit_float("Tree Upward Bias", config.central_park_tree_upward_bias, 0.01f, -1.0f, 2.0f, "%.2f");
-        edit_float("Tree Outward Bias", config.central_park_tree_outward_bias, 0.01f, 0.0f, 2.0f, "%.2f");
-        edit_float("Tree Curvature", config.central_park_tree_curvature, 0.01f, 0.0f, 1.0f, "%.2f");
-        edit_float("Tree Trunk Wander", config.central_park_tree_trunk_wander, 0.01f, 0.0f, 2.0f, "%.2f");
-        edit_float("Tree Branch Wander", config.central_park_tree_branch_wander, 0.01f, 0.0f, 2.0f, "%.2f");
-        edit_float("Tree Bend Frequency", config.central_park_tree_wander_frequency, 0.01f, 0.0f, 1.0f, "%.2f");
-        edit_float("Tree Bend Deviation", config.central_park_tree_wander_deviation, 0.01f, 0.0f, 2.0f, "%.2f");
-        edit_float("Tree Bark Noise", config.central_park_tree_bark_color_noise, 0.005f, 0.0f, 0.5f, "%.3f");
-        edit_color3("Tree Bark Root", config.central_park_tree_bark_root);
-        edit_color3("Tree Bark Tip", config.central_park_tree_bark_tip);
+        // Buildings
+        if (ImGui::TreeNodeEx("##build_buildings", ImGuiTreeNodeFlags_SpanAvailWidth, "Buildings"))
+        {
+            edit_float("Footprint Base", config.footprint_base, 0.05f, 0.0f, 32.0f, "%.2f");
+            edit_vec2("Footprint Range", config.footprint_range, 0.05f, 0.0f, 64.0f, "%.2f");
+            edit_float("Footprint Unclamped Scale", config.footprint_unclamped_scale, 0.01f, 0.0f, 4.0f, "%.2f");
+            edit_float("Height Base", config.height_base, 0.05f, 0.0f, 32.0f, "%.2f");
+            edit_float("Height Mass Weight", config.height_mass_weight, 0.01f, 0.0f, 8.0f, "%.2f");
+            edit_float("Height Count Weight", config.height_count_weight, 0.01f, 0.0f, 8.0f, "%.2f");
+            edit_vec2("Height Range", config.height_range, 0.05f, 0.0f, 64.0f, "%.2f");
+            edit_float("Height Unclamped Count Weight", config.height_unclamped_count_weight, 0.01f, 0.0f, 8.0f, "%.2f");
+            edit_float("Road Width Base", config.road_width_base, 0.01f, 0.0f, 16.0f, "%.2f");
+            edit_float("Road Width Scale", config.road_width_scale, 0.01f, 0.0f, 8.0f, "%.2f");
+            edit_vec2("Road Width Range", config.road_width_range, 0.01f, 0.0f, 32.0f, "%.2f");
+            edit_float("Sidewalk Width", config.sidewalk_width, 0.01f, 0.0f, 16.0f, "%.2f");
+            ImGui::TreePop();
+        }
+
+        // Parks
+        if (ImGui::TreeNodeEx("##build_parks", ImGuiTreeNodeFlags_SpanAvailWidth, "Parks"))
+        {
+            edit_float("Park Footprint", config.park_footprint, 0.5f, 0.0f, 32.0f, "%.1f");
+            edit_float("Park Height", config.park_height, 0.01f, 0.0f, 2.0f, "%.2f");
+            edit_float("Park Sidewalk Width", config.park_sidewalk_width, 0.01f, 0.0f, 16.0f, "%.2f");
+            edit_float("Park Road Width", config.park_road_width, 0.01f, 0.0f, 16.0f, "%.2f");
+            edit_float("Park Sign Max Depth", config.park_sign_max_depth_fraction, 0.01f, 0.05f, 1.0f, "%.2f");
+            edit_vec2("Central Park Scale", config.central_park_scale, 0.1f, 1.0f, 3.0f, "%.1f");
+            ImGui::TreePop();
+        }
+
+        // Tree
+        if (ImGui::TreeNodeEx("##build_tree", ImGuiTreeNodeFlags_SpanAvailWidth, "Tree"))
+        {
+            edit_float("Age (Years)", config.central_park_tree_age_years, 0.5f, 0.5f, 200.0f, "%.1f");
+            edit_int("Seed", config.central_park_tree_seed, 1, 0, 1 << 20);
+            edit_float("Overall Scale", config.central_park_tree_overall_scale, 0.05f, 0.1f, 4.0f, "%.2f");
+            edit_int("Radial Segments", config.central_park_tree_radial_segments, 1, 3, 32);
+            edit_int("Max Branch Depth", config.central_park_tree_max_branch_depth, 1, 0, 6);
+            edit_int("Child Branches Min", config.central_park_tree_child_branches_min, 1, 0, 8);
+            edit_int("Child Branches Max", config.central_park_tree_child_branches_max, 1, 0, 12);
+            edit_float("Branch Length Scale", config.central_park_tree_branch_length_scale, 0.01f, 0.1f, 1.0f, "%.2f");
+            edit_float("Branch Radius Scale", config.central_park_tree_branch_radius_scale, 0.01f, 0.1f, 1.0f, "%.2f");
+            edit_float("Upward Bias", config.central_park_tree_upward_bias, 0.01f, -1.0f, 2.0f, "%.2f");
+            edit_float("Outward Bias", config.central_park_tree_outward_bias, 0.01f, 0.0f, 2.0f, "%.2f");
+            edit_float("Curvature", config.central_park_tree_curvature, 0.01f, 0.0f, 1.0f, "%.2f");
+            edit_float("Trunk Wander", config.central_park_tree_trunk_wander, 0.01f, 0.0f, 2.0f, "%.2f");
+            edit_float("Branch Wander", config.central_park_tree_branch_wander, 0.01f, 0.0f, 2.0f, "%.2f");
+            edit_float("Bend Frequency", config.central_park_tree_wander_frequency, 0.01f, 0.0f, 1.0f, "%.2f");
+            edit_float("Bend Deviation", config.central_park_tree_wander_deviation, 0.01f, 0.0f, 2.0f, "%.2f");
+            edit_float("Leaf Density", config.central_park_tree_leaf_density, 0.05f, 0.0f, 4.0f, "%.2f");
+            edit_float("Leaf Orientation Randomness", config.central_park_tree_leaf_orientation_randomness, 0.01f, 0.0f, 1.0f, "%.2f");
+            edit_float("Bark Noise", config.central_park_tree_bark_color_noise, 0.005f, 0.0f, 0.5f, "%.3f");
+            edit_color3("Bark Root Color", config.central_park_tree_bark_root);
+            edit_color3("Bark Tip Color", config.central_park_tree_bark_tip);
+            ImGui::TreePop();
+        }
+
         ImGui::TreePop();
     }
 
+    // -- Signs -------------------------------------------------------------
     if (ImGui::TreeNodeEx("##renderer_signs", ImGuiTreeNodeFlags_SpanAvailWidth, "Signs"))
     {
-        edit_vec2("Sign Text px Range", config.sign_text_px_range, 0.1f, 0.0f, 64.0f, "%.1f");
-        edit_float("Sign Label Point Size", config.sign_label_point_size, 0.25f, 1.0f, 72.0f, "%.1f");
-        edit_color3("Module Sign Board Color", config.module_sign_board_color);
-        edit_color3("Module Sign Text Color", config.module_sign_text_color);
-        edit_color3("Building Sign Board Color", config.building_sign_board_color);
-        edit_color3("Building Sign Text Color", config.building_sign_text_color);
-        edit_int("Wall Sign Text Padding", config.wall_sign_text_padding, 1, 0, 64);
-
-        static constexpr std::array<const char*, 8> kPlacementLabels = {
-            "Roof North",
-            "Roof South",
-            "Roof East",
-            "Roof West",
-            "Wall North",
-            "Wall South",
-            "Wall East",
-            "Wall West",
-        };
-        int placement = static_cast<int>(config.building_sign_placement);
-        if (ImGui::Combo("Building Sign Placement", &placement, kPlacementLabels.data(), static_cast<int>(kPlacementLabels.size())))
+        // Text Rendering
+        if (ImGui::TreeNodeEx("##signs_text", ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_DefaultOpen, "Text Rendering"))
         {
-            config.building_sign_placement = static_cast<MegaCitySignPlacement>(std::clamp(placement, 0, 7));
-            changed = true;
-            controls.committed_edit = true;
+            edit_vec2("Fade px Range", config.sign_text_px_range, 0.1f, 0.0f, 64.0f, "%.1f");
+            edit_float("Label Point Size", config.sign_label_point_size, 0.25f, 1.0f, 72.0f, "%.1f");
+            edit_float("Pixels / World Unit", config.roof_sign_pixels_per_world_unit, 1.0f, 8.0f, 2048.0f, "%.1f");
+            ImGui::TreePop();
         }
 
-        edit_float("Floor/Module Sign Thickness", config.roof_sign_thickness, 0.005f, 0.001f, 2.0f, "%.3f");
-        edit_float("Floor/Module Sign Depth", config.roof_sign_depth, 0.01f, 0.01f, 8.0f, "%.2f");
-        edit_float("Floor/Module Sign Edge Inset", config.roof_sign_edge_inset, 0.01f, 0.0f, 4.0f, "%.2f");
-        edit_float("Floor/Module Sign Side Inset", config.roof_sign_side_inset, 0.01f, 0.0f, 4.0f, "%.2f");
-        edit_float("Wall Sign Thickness", config.wall_sign_thickness, 0.005f, 0.001f, 2.0f, "%.3f");
-        edit_float("Wall Sign Face Gap", config.wall_sign_face_gap, 0.001f, 0.0f, 1.0f, "%.3f");
-        edit_float("Wall Sign Width", config.wall_sign_width, 0.01f, 0.05f, 16.0f, "%.2f");
-        edit_float("Wall Sign Side Inset", config.wall_sign_side_inset, 0.01f, 0.0f, 4.0f, "%.2f");
-        edit_float("Wall Sign Top Inset", config.wall_sign_top_inset, 0.01f, 0.0f, 8.0f, "%.2f");
-        edit_float("Wall Sign Bottom Inset", config.wall_sign_bottom_inset, 0.01f, 0.0f, 8.0f, "%.2f");
-        edit_float("Road Sign Edge Inset", config.road_sign_edge_inset, 0.01f, 0.0f, 4.0f, "%.2f");
-        edit_float("Minimum Road Sign Depth", config.minimum_road_sign_depth, 0.01f, 0.01f, 8.0f, "%.2f");
-        edit_float("Sidewalk Sign Edge Inset", config.sidewalk_sign_edge_inset, 0.01f, 0.0f, 4.0f, "%.2f");
-        edit_float("Road Sign Lift", config.road_sign_lift, 0.001f, 0.0f, 1.0f, "%.3f");
-        edit_float("Floor/Module Sign Pixels / World Unit", config.roof_sign_pixels_per_world_unit, 1.0f, 8.0f, 2048.0f, "%.1f");
+        // Sign Colors
+        if (ImGui::TreeNodeEx("##signs_colors", ImGuiTreeNodeFlags_SpanAvailWidth, "Colors"))
+        {
+            edit_color3("Module Board", config.module_sign_board_color);
+            edit_color3("Module Text", config.module_sign_text_color);
+            edit_color3("Building Board", config.building_sign_board_color);
+            edit_color3("Building Text", config.building_sign_text_color);
+            ImGui::TreePop();
+        }
+
+        // Floor / Module Signs
+        if (ImGui::TreeNodeEx("##signs_floor", ImGuiTreeNodeFlags_SpanAvailWidth, "Floor / Module Signs"))
+        {
+            edit_float("Thickness", config.roof_sign_thickness, 0.005f, 0.001f, 2.0f, "%.3f");
+            edit_float("Depth", config.roof_sign_depth, 0.01f, 0.01f, 8.0f, "%.2f");
+            edit_float("Edge Inset", config.roof_sign_edge_inset, 0.01f, 0.0f, 4.0f, "%.2f");
+            edit_float("Side Inset", config.roof_sign_side_inset, 0.01f, 0.0f, 4.0f, "%.2f");
+            ImGui::TreePop();
+        }
+
+        // Wall Signs
+        if (ImGui::TreeNodeEx("##signs_wall", ImGuiTreeNodeFlags_SpanAvailWidth, "Wall Signs"))
+        {
+            static constexpr std::array<const char*, 8> kPlacementLabels = {
+                "Roof North",
+                "Roof South",
+                "Roof East",
+                "Roof West",
+                "Wall North",
+                "Wall South",
+                "Wall East",
+                "Wall West",
+            };
+            int placement = static_cast<int>(config.building_sign_placement);
+            if (ImGui::Combo("Placement", &placement, kPlacementLabels.data(), static_cast<int>(kPlacementLabels.size())))
+            {
+                config.building_sign_placement = static_cast<MegaCitySignPlacement>(std::clamp(placement, 0, 7));
+                changed = true;
+                controls.committed_edit = true;
+            }
+            edit_float("Thickness", config.wall_sign_thickness, 0.005f, 0.001f, 2.0f, "%.3f");
+            edit_float("Face Gap", config.wall_sign_face_gap, 0.001f, 0.0f, 1.0f, "%.3f");
+            edit_float("Width", config.wall_sign_width, 0.01f, 0.05f, 16.0f, "%.2f");
+            edit_float("Side Inset", config.wall_sign_side_inset, 0.01f, 0.0f, 4.0f, "%.2f");
+            edit_float("Top Inset", config.wall_sign_top_inset, 0.01f, 0.0f, 8.0f, "%.2f");
+            edit_float("Bottom Inset", config.wall_sign_bottom_inset, 0.01f, 0.0f, 8.0f, "%.2f");
+            edit_int("Text Padding", config.wall_sign_text_padding, 1, 0, 64);
+            ImGui::TreePop();
+        }
+
+        // Road / Sidewalk Signs
+        if (ImGui::TreeNodeEx("##signs_road", ImGuiTreeNodeFlags_SpanAvailWidth, "Road / Sidewalk Signs"))
+        {
+            edit_float("Road Edge Inset", config.road_sign_edge_inset, 0.01f, 0.0f, 4.0f, "%.2f");
+            edit_float("Min Road Depth", config.minimum_road_sign_depth, 0.01f, 0.01f, 8.0f, "%.2f");
+            edit_float("Sidewalk Edge Inset", config.sidewalk_sign_edge_inset, 0.01f, 0.0f, 4.0f, "%.2f");
+            edit_float("Lift", config.road_sign_lift, 0.001f, 0.0f, 1.0f, "%.3f");
+            ImGui::TreePop();
+        }
+
         ImGui::TreePop();
     }
 
+    // -- Surfaces ----------------------------------------------------------
     if (ImGui::TreeNodeEx("##renderer_surface", ImGuiTreeNodeFlags_SpanAvailWidth, "Surfaces"))
     {
         edit_float("Road Surface Height", config.road_surface_height, 0.001f, 0.001f, 4.0f, "%.3f");
@@ -883,42 +940,55 @@ bool render_renderer_controls(MegacityRendererControls& controls)
         ImGui::TreePop();
     }
 
+    // -- Lighting ----------------------------------------------------------
     if (ImGui::TreeNodeEx("##renderer_lighting", ImGuiTreeNodeFlags_SpanAvailWidth, "Lighting"))
     {
-        edit_float("Ambient", config.ambient_strength, 0.01f, 0.0f, 4.0f, "%.2f");
-        edit_vec3("Directional Light", config.directional_light_dir, 0.01f, -4.0f, 4.0f, "%.2f");
-        const glm::vec3 previous_point_pos = config.point_light_position;
-        const float previous_point_radius = config.point_light_radius;
-        edit_vec3("Point Light Position", config.point_light_position, 0.05f, -1024.0f, 1024.0f, "%.2f");
-        edit_float("Point Light Radius", config.point_light_radius, 0.05f, 0.1f, 2048.0f, "%.2f");
-        if (config.point_light_position != previous_point_pos
-            || config.point_light_radius != previous_point_radius)
+        // Lights
+        if (ImGui::TreeNodeEx("##lighting_lights", ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_DefaultOpen, "Lights"))
         {
-            config.point_light_position_valid = true;
+            edit_float("Ambient", config.ambient_strength, 0.01f, 0.0f, 4.0f, "%.2f");
+            edit_vec3("Directional Light", config.directional_light_dir, 0.01f, -4.0f, 4.0f, "%.2f");
+            const glm::vec3 previous_point_pos = config.point_light_position;
+            const float previous_point_radius = config.point_light_radius;
+            edit_vec3("Point Light Position", config.point_light_position, 0.05f, -1024.0f, 1024.0f, "%.2f");
+            edit_float("Point Light Radius", config.point_light_radius, 0.05f, 0.1f, 2048.0f, "%.2f");
+            if (config.point_light_position != previous_point_pos
+                || config.point_light_radius != previous_point_radius)
+            {
+                config.point_light_position_valid = true;
+            }
+            edit_float("Point Light Brightness", config.point_light_brightness, 0.01f, 0.0f, 8.0f, "%.2f");
+            edit_float("Output Gamma", config.output_gamma, 0.01f, 0.1f, 4.0f, "%.2f");
+            ImGui::TreePop();
         }
-        edit_float("Point Light Brightness", config.point_light_brightness, 0.01f, 0.0f, 8.0f, "%.2f");
-        edit_float("Output Gamma", config.output_gamma, 0.01f, 0.1f, 4.0f, "%.2f");
-        edit_float("AO Radius", config.ao_radius, 0.05f, 0.01f, 64.0f, "%.2f");
-        edit_float("AO Bias", config.ao_bias, 0.01f, 0.0f, 1.0f, "%.2f");
-        edit_float("AO Power", config.ao_power, 0.01f, 0.1f, 8.0f, "%.2f");
-        edit_int("AO Kernel Size", config.ao_kernel_size, 1, 1, 64);
-        static constexpr std::array<const char*, 4> kAODebugLabels = {
-            "Final Scene",
-            "Ambient Occlusion",
-            "Decoded Normals",
-            "World Position",
-        };
-        int ao_debug_view = static_cast<int>(config.ao_debug_view);
-        if (ImGui::Combo("AO Debug View", &ao_debug_view, kAODebugLabels.data(), static_cast<int>(kAODebugLabels.size())))
+
+        // Ambient Occlusion
+        if (ImGui::TreeNodeEx("##lighting_ao", ImGuiTreeNodeFlags_SpanAvailWidth, "Ambient Occlusion"))
         {
-            config.ao_debug_view = static_cast<MegaCityAODebugView>(std::clamp(ao_debug_view, 0, 3));
-            changed = true;
-            controls.committed_edit = true;
+            edit_float("Radius", config.ao_radius, 0.05f, 0.01f, 64.0f, "%.2f");
+            edit_float("Bias", config.ao_bias, 0.01f, 0.0f, 1.0f, "%.2f");
+            edit_float("Power", config.ao_power, 0.01f, 0.1f, 8.0f, "%.2f");
+            edit_int("Kernel Size", config.ao_kernel_size, 1, 1, 64);
+            const bool ao_denoise_changed = ImGui::Checkbox("Denoise", &config.ao_denoise);
+            changed |= ao_denoise_changed;
+            if (ao_denoise_changed)
+                controls.committed_edit = true;
+            static constexpr std::array<const char*, 4> kAODebugLabels = {
+                "Final Scene",
+                "Ambient Occlusion",
+                "Decoded Normals",
+                "World Position",
+            };
+            int ao_debug_view = static_cast<int>(config.ao_debug_view);
+            if (ImGui::Combo("Debug View", &ao_debug_view, kAODebugLabels.data(), static_cast<int>(kAODebugLabels.size())))
+            {
+                config.ao_debug_view = static_cast<MegaCityAODebugView>(std::clamp(ao_debug_view, 0, 3));
+                changed = true;
+                controls.committed_edit = true;
+            }
+            ImGui::TreePop();
         }
-        const bool ao_denoise_changed = ImGui::Checkbox("AO Denoise", &config.ao_denoise);
-        changed |= ao_denoise_changed;
-        if (ao_denoise_changed)
-            controls.committed_edit = true;
+
         ImGui::TreePop();
     }
 
