@@ -35,6 +35,13 @@ struct CityClassRecord
     bool is_abstract = false;
 };
 
+struct CodebaseHealthMetrics
+{
+    float complexity = 0.5f; // 0..1, higher = smaller avg function size
+    float cohesion = 0.5f; // 0..1, higher = better method-to-field ratio
+    float coupling = 0.5f; // 0..1, higher = fewer external dependencies
+};
+
 struct CityModuleRecord
 {
     std::string module_path;
@@ -42,7 +49,8 @@ struct CityModuleRecord
     int total_functions = 0;
     int total_function_lines = 0;
     float avg_function_size = 0.0f;
-    float quality = 0.5f; // 0..1, higher = better-factored code
+    float quality = 0.5f; // 0..1, higher = better-factored code (legacy, == complexity)
+    CodebaseHealthMetrics health;
 };
 
 class CityDatabase
@@ -69,6 +77,7 @@ public:
     [[nodiscard]] std::vector<std::string> list_modules() const;
     [[nodiscard]] std::vector<CityClassRecord> list_classes_in_module(std::string_view module_path) const;
     [[nodiscard]] CityModuleRecord module_record(std::string_view module_path) const;
+    [[nodiscard]] CodebaseHealthMetrics codebase_health() const;
 
 private:
     struct Impl;

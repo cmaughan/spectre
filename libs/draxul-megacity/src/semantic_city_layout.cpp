@@ -460,6 +460,7 @@ SemanticMegacityModel build_semantic_megacity_model(
         if (!module_model.empty())
         {
             module_model.quality = module_input.quality;
+            module_model.health = module_input.health;
             model.modules.push_back(std::move(module_model));
         }
     }

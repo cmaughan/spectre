@@ -26,7 +26,7 @@ namespace draxul
 namespace
 {
 
-constexpr int kSchemaVersion = 3;
+constexpr int kSchemaVersion = 4;
 
 class SqliteError final : public std::runtime_error
 {
@@ -529,19 +529,10 @@ void create_schema_v3(sqlite3* db)
     exec(db, "PRAGMA user_version = 3");
 }
 
-void migrate_v1_to_v3(sqlite3* db)
+void create_schema_v4(sqlite3* db)
 {
-    // The city DB is a derived cache, so a destructive migration is acceptable
-    // here and simpler than preserving the old intermediate layout.
-    exec(db, "DROP TABLE IF EXISTS city_modules");
-    exec(db, "DROP TABLE IF EXISTS city_entities");
-    exec(db, "DROP TABLE IF EXISTS symbols");
-    exec(db, "DROP TABLE IF EXISTS files");
-    create_schema_v3(db);
-}
+    create_schema_v2(db);
 
-void migrate_v2_to_v3(sqlite3* db)
-{
     exec(db, R"sql(
         CREATE TABLE IF NOT EXISTS city_modules (
             module_path TEXT PRIMARY KEY NOT NULL,
@@ -549,10 +540,32 @@ void migrate_v2_to_v3(sqlite3* db)
             total_functions INTEGER NOT NULL,
             total_function_lines INTEGER NOT NULL,
             avg_function_size REAL NOT NULL,
-            quality REAL NOT NULL
+            quality REAL NOT NULL,
+            complexity REAL NOT NULL DEFAULT 0.5,
+            cohesion REAL NOT NULL DEFAULT 0.5,
+            coupling REAL NOT NULL DEFAULT 0.5
         );
     )sql");
-    exec(db, "PRAGMA user_version = 3");
+    exec(db, "PRAGMA user_version = 4");
+}
+
+void migrate_to_v4_destructive(sqlite3* db)
+{
+    // The city DB is a derived cache, so a destructive migration is acceptable
+    // here and simpler than preserving the old intermediate layout.
+    exec(db, "DROP TABLE IF EXISTS city_modules");
+    exec(db, "DROP TABLE IF EXISTS city_entities");
+    exec(db, "DROP TABLE IF EXISTS symbols");
+    exec(db, "DROP TABLE IF EXISTS files");
+    create_schema_v4(db);
+}
+
+void migrate_v3_to_v4(sqlite3* db)
+{
+    exec(db, "ALTER TABLE city_modules ADD COLUMN complexity REAL NOT NULL DEFAULT 0.5");
+    exec(db, "ALTER TABLE city_modules ADD COLUMN cohesion REAL NOT NULL DEFAULT 0.5");
+    exec(db, "ALTER TABLE city_modules ADD COLUMN coupling REAL NOT NULL DEFAULT 0.5");
+    exec(db, "PRAGMA user_version = 4");
 }
 
 void migrate_schema(sqlite3* db)
@@ -569,11 +582,11 @@ void migrate_schema(sqlite3* db)
     }
 
     if (version == 0)
-        create_schema_v3(db);
-    else if (version == 1)
-        migrate_v1_to_v3(db);
-    else if (version == 2)
-        migrate_v2_to_v3(db);
+        create_schema_v4(db);
+    else if (version < 3)
+        migrate_to_v4_destructive(db);
+    else if (version == 3)
+        migrate_v3_to_v4(db);
 
     {
         sqlite3_stmt* raw_stmt = nullptr;
@@ -829,14 +842,8 @@ bool CityDatabase::reconcile_snapshot(const CodebaseSnapshot& snapshot)
         exec(impl_->db.get(), "DELETE FROM city_modules");
         Statement insert_module(impl_->db.get(),
             "INSERT INTO city_modules(module_path, building_count, total_functions, "
-            "total_function_lines, avg_function_size, quality) VALUES(?, ?, ?, ?, ?, ?)");
-
-        // Aggregate function sizes per module from the just-inserted entities.
-        Statement query_modules(impl_->db.get(),
-            "SELECT module_path, COUNT(*), SUM(building_functions), building_function_sizes_json "
-            "FROM city_entities "
-            "WHERE entity_kind IN ('building', 'tower', 'block') "
-            "GROUP BY module_path ORDER BY module_path");
+            "total_function_lines, avg_function_size, quality, complexity, cohesion, coupling) "
+            "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
         // We need per-module function size lists, but SQL can't easily parse JSON arrays.
         // So group by module_path and accumulate from the per-entity JSON in a second pass.
@@ -845,12 +852,15 @@ bool CityDatabase::reconcile_snapshot(const CodebaseSnapshot& snapshot)
             int building_count = 0;
             int total_functions = 0;
             int total_function_lines = 0;
+            int total_fields = 0;
+            int total_road_size = 0;
         };
         std::unordered_map<std::string, ModuleAgg> module_agg;
 
         {
             Statement entity_scan(impl_->db.get(),
-                "SELECT module_path, building_functions, building_function_sizes_json "
+                "SELECT module_path, building_functions, building_function_sizes_json, "
+                "base_size, road_size "
                 "FROM city_entities WHERE entity_kind IN ('building', 'tower', 'block')");
             const auto col_text = [&](int index) -> std::string {
                 const auto* t = sqlite3_column_text(entity_scan.raw(), index);
@@ -866,6 +876,8 @@ bool CityDatabase::reconcile_snapshot(const CodebaseSnapshot& snapshot)
                 const std::vector<int> sizes = parse_json_int_array(col_text(2));
                 for (const int sz : sizes)
                     agg.total_function_lines += sz;
+                agg.total_fields += sqlite3_column_int(entity_scan.raw(), 3);
+                agg.total_road_size += sqlite3_column_int(entity_scan.raw(), 4);
             }
         }
 
@@ -875,12 +887,34 @@ bool CityDatabase::reconcile_snapshot(const CodebaseSnapshot& snapshot)
                 ? static_cast<float>(agg.total_function_lines) / static_cast<float>(agg.total_functions)
                 : 0.0f;
 
-            // Quality: 1.0 for tiny avg function size, tapering toward 0.0 for large.
-            // An average of ~5 lines is excellent (quality ~0.67), ~30 lines is poor (~0.25).
-            // Formula: quality = 1 / (1 + avg/10), gives a smooth 0-1 curve.
-            const float quality = agg.total_functions > 0
+            // Complexity: smaller avg function size = higher score.
+            // ~5 LOC → 0.67, ~10 LOC → 0.5, ~30 LOC → 0.25.
+            const float complexity = agg.total_functions > 0
                 ? 1.0f / (1.0f + avg_fn_size / 10.0f)
-                : 0.5f; // no functions = neutral
+                : 0.5f;
+
+            // Cohesion: method-to-field ratio per entity, averaged across the module.
+            // A class with many methods relative to fields is well-encapsulated.
+            // ratio = functions / max(fields, 1); score = ratio / (ratio + 1) to map to 0..1.
+            const float avg_cohesion_ratio = agg.building_count > 0
+                ? static_cast<float>(agg.total_functions)
+                    / static_cast<float>(std::max(agg.total_fields, 1))
+                : 0.0f;
+            const float cohesion = agg.building_count > 0
+                ? avg_cohesion_ratio / (avg_cohesion_ratio + 1.0f)
+                : 0.5f;
+
+            // Coupling: fewer external type dependencies = higher score.
+            // avg_deps = total_road_size / building_count; score = 1 / (1 + avg_deps / 3).
+            const float avg_deps = agg.building_count > 0
+                ? static_cast<float>(agg.total_road_size) / static_cast<float>(agg.building_count)
+                : 0.0f;
+            const float coupling = agg.building_count > 0
+                ? 1.0f / (1.0f + avg_deps / 3.0f)
+                : 0.5f;
+
+            // Legacy quality = complexity for backward compatibility.
+            const float quality = complexity;
 
             insert_module.reuse();
             insert_module.bind_text(1, mp);
@@ -889,6 +923,9 @@ bool CityDatabase::reconcile_snapshot(const CodebaseSnapshot& snapshot)
             insert_module.bind_int(4, agg.total_function_lines);
             insert_module.bind_double(5, static_cast<double>(avg_fn_size));
             insert_module.bind_double(6, static_cast<double>(quality));
+            insert_module.bind_double(7, static_cast<double>(complexity));
+            insert_module.bind_double(8, static_cast<double>(cohesion));
+            insert_module.bind_double(9, static_cast<double>(coupling));
             insert_module.step_done();
         }
 
@@ -989,7 +1026,8 @@ CityModuleRecord CityDatabase::module_record(std::string_view module_path) const
     try
     {
         Statement stmt(impl_->db.get(),
-            "SELECT building_count, total_functions, total_function_lines, avg_function_size, quality "
+            "SELECT building_count, total_functions, total_function_lines, avg_function_size, "
+            "quality, complexity, cohesion, coupling "
             "FROM city_modules WHERE module_path = ?");
         stmt.bind_text(1, module_path);
         if (stmt.step() == SQLITE_ROW)
@@ -999,6 +1037,9 @@ CityModuleRecord CityDatabase::module_record(std::string_view module_path) const
             record.total_function_lines = sqlite3_column_int(stmt.raw(), 2);
             record.avg_function_size = static_cast<float>(sqlite3_column_double(stmt.raw(), 3));
             record.quality = static_cast<float>(sqlite3_column_double(stmt.raw(), 4));
+            record.health.complexity = static_cast<float>(sqlite3_column_double(stmt.raw(), 5));
+            record.health.cohesion = static_cast<float>(sqlite3_column_double(stmt.raw(), 6));
+            record.health.coupling = static_cast<float>(sqlite3_column_double(stmt.raw(), 7));
         }
     }
     catch (const std::exception& ex)
@@ -1007,6 +1048,38 @@ CityModuleRecord CityDatabase::module_record(std::string_view module_path) const
     }
 
     return record;
+}
+
+CodebaseHealthMetrics CityDatabase::codebase_health() const
+{
+    CodebaseHealthMetrics health;
+    if (!impl_ || !impl_->db)
+        return health;
+
+    try
+    {
+        // Weighted average of per-module metrics, weighted by building_count so larger
+        // modules contribute proportionally more to the global score.
+        Statement stmt(impl_->db.get(),
+            "SELECT SUM(building_count * complexity), SUM(building_count * cohesion), "
+            "SUM(building_count * coupling), SUM(building_count) FROM city_modules");
+        if (stmt.step() == SQLITE_ROW)
+        {
+            const double total_weight = sqlite3_column_double(stmt.raw(), 3);
+            if (total_weight > 0.0)
+            {
+                health.complexity = static_cast<float>(sqlite3_column_double(stmt.raw(), 0) / total_weight);
+                health.cohesion = static_cast<float>(sqlite3_column_double(stmt.raw(), 1) / total_weight);
+                health.coupling = static_cast<float>(sqlite3_column_double(stmt.raw(), 2) / total_weight);
+            }
+        }
+    }
+    catch (const std::exception& ex)
+    {
+        impl_->last_error = ex.what();
+    }
+
+    return health;
 }
 
 } // namespace draxul

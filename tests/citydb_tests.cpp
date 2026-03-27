@@ -144,6 +144,28 @@ TEST_CASE("city database reconciles tree-sitter snapshot into semantic tables", 
     CHECK(classes[2].function_sizes[0] == 7);
     CHECK(classes[2].road_size == 2);
 
+    // Verify per-module health metrics.
+    const CityModuleRecord mod = db.module_record("src");
+    CHECK(mod.building_count == 3);
+    CHECK(mod.total_functions == 1); // only Tower::tick
+    CHECK(mod.total_function_lines == 7);
+    // Complexity: 1/(1 + 7/10) = 1/1.7 ≈ 0.588
+    CHECK(mod.health.complexity > 0.5f);
+    CHECK(mod.health.complexity < 0.65f);
+    // Cohesion: ratio = 1 function / max(6 fields, 1) = 0.167; score = 0.167/1.167 ≈ 0.143
+    // (Tower has 3 fields, PlainData has 2, IView has 1 → total 6 fields, 1 function)
+    CHECK(mod.health.cohesion > 0.0f);
+    CHECK(mod.health.cohesion < 0.5f);
+    // Coupling: avg_deps = (2+0+1)/3 = 1.0; score = 1/(1+1/3) ≈ 0.75
+    CHECK(mod.health.coupling > 0.6f);
+    CHECK(mod.health.coupling < 0.85f);
+
+    // Verify global codebase health (single module, so should match).
+    const CodebaseHealthMetrics global = db.codebase_health();
+    CHECK(global.complexity == mod.health.complexity);
+    CHECK(global.cohesion == mod.health.cohesion);
+    CHECK(global.coupling == mod.health.coupling);
+
     std::filesystem::remove(db_path);
 }
 

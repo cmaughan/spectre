@@ -41,6 +41,7 @@ struct SemanticCityModuleModel
     std::string module_path;
     int connectivity = 0;
     float quality = 0.5f;
+    CodebaseHealthMetrics health;
     std::vector<SemanticCityBuilding> buildings;
 
     [[nodiscard]] bool empty() const
@@ -52,6 +53,7 @@ struct SemanticCityModuleModel
 struct SemanticMegacityModel
 {
     std::vector<SemanticCityModuleModel> modules;
+    CodebaseHealthMetrics codebase_health; // global metrics across all modules
 
     [[nodiscard]] bool empty() const
     {
@@ -72,6 +74,7 @@ struct SemanticCityModuleInput
     std::string module_path;
     std::vector<CityClassRecord> rows;
     float quality = 0.5f; // 0..1, from CityModuleRecord
+    CodebaseHealthMetrics health;
 };
 
 struct SemanticCityModuleLayout

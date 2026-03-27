@@ -456,11 +456,12 @@ CityBuildResult build_city(
             && module_path != config.selected_module_path)
             continue;
         const CityModuleRecord mod_record = city_db.module_record(module_path);
-        modules.push_back({ module_path, city_db.list_classes_in_module(module_path), mod_record.quality });
+        modules.push_back({ module_path, city_db.list_classes_in_module(module_path), mod_record.quality, mod_record.health });
     }
 
     auto semantic_model = std::make_shared<SemanticMegacityModel>(
         build_semantic_megacity_model(modules, config));
+    semantic_model->codebase_health = city_db.codebase_health();
     auto layout = std::make_unique<SemanticMegacityLayout>(
         build_semantic_megacity_layout(*semantic_model, config));
     result.city_bounds_valid = !layout->empty();
