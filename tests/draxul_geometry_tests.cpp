@@ -9,6 +9,10 @@
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 
+#include <algorithm>
+#include <cmath>
+#include <limits>
+
 using namespace draxul;
 
 TEST_CASE("tree params from age stay bounded", "[geometry]")
@@ -85,6 +89,48 @@ TEST_CASE("tree generator emits branching canopy beyond the trunk radius", "[geo
         max_horizontal_radius = std::max(max_horizontal_radius, glm::length(glm::vec2(vertex.position.x, vertex.position.z)));
 
     CHECK(max_horizontal_radius > params.trunk_base_radius * params.overall_scale * 1.5f);
+}
+
+TEST_CASE("tree generator supports lateral branch and trunk wander", "[geometry]")
+{
+    DraxulTreeParams straight = make_tree_params_from_age(16.0f);
+    straight.seed = 21;
+    straight.max_branch_depth = 0;
+    straight.curvature = 0.0f;
+    straight.trunk_wander = 0.0f;
+    straight.branch_wander = 0.0f;
+    straight.wander_frequency = 0.0f;
+    straight.wander_deviation = 0.0f;
+
+    DraxulTreeParams wandering = straight;
+    wandering.trunk_wander = 0.9f;
+    wandering.wander_frequency = 1.0f;
+    wandering.wander_deviation = 1.0f;
+
+    const GeometryMesh straight_mesh = generate_draxul_tree(straight);
+    const GeometryMesh wandering_mesh = generate_draxul_tree(wandering);
+
+    auto top_center_radius = [](const GeometryMesh& mesh) {
+        float max_y = std::numeric_limits<float>::lowest();
+        for (const GeometryVertex& vertex : mesh.vertices)
+            max_y = std::max(max_y, vertex.position.y);
+
+        glm::vec2 average_xz(0.0f);
+        int count = 0;
+        for (const GeometryVertex& vertex : mesh.vertices)
+        {
+            if (std::abs(vertex.position.y - max_y) <= 1e-4f)
+            {
+                average_xz += glm::vec2(vertex.position.x, vertex.position.z);
+                ++count;
+            }
+        }
+        REQUIRE(count > 0);
+        average_xz /= static_cast<float>(count);
+        return glm::length(average_xz);
+    };
+
+    CHECK(top_center_radius(wandering_mesh) > top_center_radius(straight_mesh) + 0.05f);
 }
 
 TEST_CASE("unit cube geometry uses the shared vertex format", "[geometry]")

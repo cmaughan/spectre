@@ -86,6 +86,10 @@ struct MegaCityCodeConfig
     float central_park_tree_upward_bias = 0.45f;
     float central_park_tree_outward_bias = 0.85f;
     float central_park_tree_curvature = 0.18f;
+    float central_park_tree_trunk_wander = 0.12f;
+    float central_park_tree_branch_wander = 0.28f;
+    float central_park_tree_wander_frequency = 0.22f;
+    float central_park_tree_wander_deviation = 0.45f;
     float central_park_tree_bark_color_noise = 0.04f;
     glm::vec3 central_park_tree_bark_root{ 0.32f, 0.23f, 0.16f };
     glm::vec3 central_park_tree_bark_tip{ 0.58f, 0.45f, 0.33f };

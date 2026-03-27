@@ -137,6 +137,10 @@ DraxulTreeParams make_central_park_tree_params(const MegaCityCodeConfig& config)
     params.upward_bias = config.central_park_tree_upward_bias;
     params.outward_bias = std::max(config.central_park_tree_outward_bias, 0.0f);
     params.curvature = std::clamp(config.central_park_tree_curvature, 0.0f, 1.0f);
+    params.trunk_wander = std::clamp(config.central_park_tree_trunk_wander, 0.0f, 2.0f);
+    params.branch_wander = std::clamp(config.central_park_tree_branch_wander, 0.0f, 2.0f);
+    params.wander_frequency = std::clamp(config.central_park_tree_wander_frequency, 0.0f, 1.0f);
+    params.wander_deviation = std::clamp(config.central_park_tree_wander_deviation, 0.0f, 2.0f);
     params.bark_color_noise = std::clamp(config.central_park_tree_bark_color_noise, 0.0f, 0.5f);
     params.bark_color_root = glm::clamp(config.central_park_tree_bark_root, glm::vec3(0.0f), glm::vec3(1.0f));
     params.bark_color_tip = glm::clamp(config.central_park_tree_bark_tip, glm::vec3(0.0f), glm::vec3(1.0f));

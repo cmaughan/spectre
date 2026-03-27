@@ -127,9 +127,17 @@ std::vector<BranchFrame> build_branch_frames(
         + world_up * (params.upward_bias * (depth == 0 ? 0.18f : 0.42f))
         - world_up * (params.droop_bias * (depth > 0 ? 0.15f : 0.03f)));
 
+    const float wander_strength = depth == 0 ? params.trunk_wander : params.branch_wander;
+    const float wander_frequency = std::clamp(params.wander_frequency, 0.0f, 1.0f);
+    const float wander_deviation = std::max(params.wander_deviation, 0.0f);
+    const float max_lateral_offset = wander_strength * wander_deviation * length * 0.18f;
+
     glm::vec3 center = origin;
     glm::vec3 axis = base_axis;
     float previous_distance = 0.0f;
+    glm::vec3 offset_target(0.0f);
+    glm::vec3 offset(0.0f);
+    glm::vec3 previous_offset(0.0f);
 
     for (size_t index = 0; index < distances.size(); ++index)
     {
@@ -142,6 +150,31 @@ std::vector<BranchFrame> build_branch_frames(
             basis_u = project_basis(basis_u, axis);
         }
         const glm::vec3 basis_v = glm::normalize(glm::cross(axis, basis_u));
+        if (index > 0 && index + 1 < distances.size())
+        {
+            const float event_roll = hash_to_unit_float(params.seed + branch_id * 61U, branch_id, static_cast<uint32_t>(index) + 271U);
+            if (event_roll < wander_frequency)
+            {
+                const float event_angle = hash_to_unit_float(
+                                              params.seed + branch_id * 67U,
+                                              branch_id,
+                                              static_cast<uint32_t>(index) + 311U)
+                    * kTwoPi;
+                const float event_magnitude = std::lerp(
+                    0.35f,
+                    1.0f,
+                    hash_to_unit_float(
+                        params.seed + branch_id * 71U,
+                        branch_id,
+                        static_cast<uint32_t>(index) + 353U));
+                offset_target = (std::cos(event_angle) * basis_u
+                                    + std::sin(event_angle) * basis_v)
+                    * (max_lateral_offset * event_magnitude * std::sin(t * kPi));
+            }
+            offset = glm::mix(offset, offset_target, 0.35f);
+            center += offset - previous_offset;
+            previous_offset = offset;
+        }
         const float taper_t = std::pow(t, params.taper_power);
         const float radius = std::lerp(base_radius, tip_radius, taper_t);
 
@@ -376,7 +409,7 @@ void append_cap(
     GeometryVertex center_vertex;
     center_vertex.position = center;
     center_vertex.normal = normal;
-    center_vertex.tangent = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f);
+    center_vertex.tangent = glm::vec4(orthogonal_unit(normal), 1.0f);
     center_vertex.color = bark_color_for_vertex(params, v_coord, static_cast<uint32_t>(v_coord * 1024.0f), 0);
     center_vertex.uv = { 0.5f, v_coord };
 
@@ -422,6 +455,10 @@ DraxulTreeParams make_tree_params_from_age(float age_years)
     params.max_branch_depth = std::max(1, static_cast<int>(std::lround(std::lerp(1.0f, 3.0f, t))));
     params.child_branches_min = t < 0.2f ? 0 : 1;
     params.child_branches_max = std::max(params.child_branches_min, static_cast<int>(std::lround(std::lerp(1.0f, 3.0f, t))));
+    params.trunk_wander = std::lerp(0.04f, 0.16f, t);
+    params.branch_wander = std::lerp(0.12f, 0.34f, t);
+    params.wander_frequency = std::lerp(0.12f, 0.30f, t);
+    params.wander_deviation = std::lerp(0.18f, 0.55f, t);
     return params;
 }
 
@@ -445,6 +482,10 @@ GeometryMesh generate_draxul_tree(const DraxulTreeParams& input_params)
     params.branch_length_scale = std::clamp(params.branch_length_scale, 0.1f, 1.0f);
     params.branch_radius_scale = std::clamp(params.branch_radius_scale, 0.1f, 1.0f);
     params.curvature = std::clamp(params.curvature, 0.0f, 1.0f);
+    params.trunk_wander = std::clamp(params.trunk_wander, 0.0f, 2.0f);
+    params.branch_wander = std::clamp(params.branch_wander, 0.0f, 2.0f);
+    params.wander_frequency = std::clamp(params.wander_frequency, 0.0f, 1.0f);
+    params.wander_deviation = std::clamp(params.wander_deviation, 0.0f, 2.0f);
 
     const float scale = params.overall_scale;
     const float trunk_length = std::min(params.trunk_length * scale, params.max_height);

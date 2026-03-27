@@ -39,6 +39,10 @@ struct DraxulTreeParams
     float droop_bias = 0.05f;
 
     float curvature = 0.12f;
+    float trunk_wander = 0.12f;
+    float branch_wander = 0.28f;
+    float wander_frequency = 0.22f;
+    float wander_deviation = 0.45f;
     float taper_power = 1.25f;
     float tip_ring_spacing_scale = 0.5f;
 

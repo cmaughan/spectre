@@ -814,6 +814,10 @@ bool render_renderer_controls(MegacityRendererControls& controls)
         edit_float("Tree Upward Bias", config.central_park_tree_upward_bias, 0.01f, -1.0f, 2.0f, "%.2f");
         edit_float("Tree Outward Bias", config.central_park_tree_outward_bias, 0.01f, 0.0f, 2.0f, "%.2f");
         edit_float("Tree Curvature", config.central_park_tree_curvature, 0.01f, 0.0f, 1.0f, "%.2f");
+        edit_float("Tree Trunk Wander", config.central_park_tree_trunk_wander, 0.01f, 0.0f, 2.0f, "%.2f");
+        edit_float("Tree Branch Wander", config.central_park_tree_branch_wander, 0.01f, 0.0f, 2.0f, "%.2f");
+        edit_float("Tree Bend Frequency", config.central_park_tree_wander_frequency, 0.01f, 0.0f, 1.0f, "%.2f");
+        edit_float("Tree Bend Deviation", config.central_park_tree_wander_deviation, 0.01f, 0.0f, 2.0f, "%.2f");
         edit_float("Tree Bark Noise", config.central_park_tree_bark_color_noise, 0.005f, 0.0f, 0.5f, "%.3f");
         edit_color3("Tree Bark Root", config.central_park_tree_bark_root);
         edit_color3("Tree Bark Tip", config.central_park_tree_bark_tip);

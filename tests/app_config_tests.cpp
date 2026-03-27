@@ -708,6 +708,10 @@ TEST_CASE("megacity config round-trips through config document", "[config][megac
     current.central_park_tree_upward_bias = 0.52f;
     current.central_park_tree_outward_bias = 0.92f;
     current.central_park_tree_curvature = 0.24f;
+    current.central_park_tree_trunk_wander = 0.18f;
+    current.central_park_tree_branch_wander = 0.36f;
+    current.central_park_tree_wander_frequency = 0.44f;
+    current.central_park_tree_wander_deviation = 0.72f;
     current.central_park_tree_bark_color_noise = 0.06f;
     current.central_park_tree_bark_root = glm::vec3(0.29f, 0.20f, 0.14f);
     current.central_park_tree_bark_tip = glm::vec3(0.63f, 0.49f, 0.36f);
