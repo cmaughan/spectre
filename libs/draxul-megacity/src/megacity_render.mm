@@ -5,6 +5,7 @@
 #include "objc_ref.h"
 #import <Metal/Metal.h>
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
 #include <draxul/log.h>
@@ -38,9 +39,21 @@ struct ObjectUniforms
 {
     simd_float4x4 world;
     simd_float4 color;
-    simd_float4 material_info;
+    simd_uint4 material_data;
     simd_float4 uv_rect;
     simd_float4 label_metrics;
+};
+
+struct MaterialInstanceUniform
+{
+    simd_float4 scalar_params;
+    simd_uint4 texture_indices;
+    simd_uint4 metadata;
+};
+
+struct MaterialUniforms
+{
+    std::array<MaterialInstanceUniform, kMaxSceneMaterials> materials;
 };
 
 struct MeshBuffers
@@ -92,6 +105,7 @@ struct TransientGeometryArena
 struct FrameResources
 {
     ObjCRef<id<MTLBuffer>> frame_uniforms;
+    ObjCRef<id<MTLBuffer>> material_uniforms;
     TransientGeometryArena geometry_arena;
 };
 
@@ -123,6 +137,32 @@ simd_float4x4 to_simd_matrix(const glm::mat4& mat)
             mat[column][3]);
     }
     return out;
+}
+
+MaterialUniforms build_material_uniforms(const SceneSnapshot& scene)
+{
+    MaterialUniforms uniforms{};
+    const size_t material_count = std::min(scene.materials.size(), uniforms.materials.size());
+    for (size_t index = 0; index < material_count; ++index)
+    {
+        const SceneMaterial& material = scene.materials[index];
+        uniforms.materials[index].scalar_params = simd_make_float4(
+            material.scalar_params.x,
+            material.scalar_params.y,
+            material.scalar_params.z,
+            material.scalar_params.w);
+        uniforms.materials[index].texture_indices = simd_make_uint4(
+            material.texture_indices.x,
+            material.texture_indices.y,
+            material.texture_indices.z,
+            material.texture_indices.w);
+        uniforms.materials[index].metadata = simd_make_uint4(
+            static_cast<uint32_t>(material.shading_model),
+            0u,
+            0u,
+            0u);
+    }
+    return uniforms;
 }
 
 float compute_ao_radius_pixels(const glm::mat4& proj, float radius_world, int viewport_h)
@@ -286,18 +326,7 @@ struct IsometricScenePass::State
     ObjCRef<id<MTLSamplerState>> gbuffer_sampler;
     ObjCRef<id<MTLSamplerState>> gbuffer_point_sampler;
     ObjCRef<id<MTLSamplerState>> material_sampler;
-    ObjCRef<id<MTLTexture>> road_albedo_texture;
-    ObjCRef<id<MTLTexture>> road_normal_texture;
-    ObjCRef<id<MTLTexture>> road_roughness_texture;
-    ObjCRef<id<MTLTexture>> road_ao_texture;
-    ObjCRef<id<MTLTexture>> sidewalk_albedo_texture;
-    ObjCRef<id<MTLTexture>> sidewalk_normal_texture;
-    ObjCRef<id<MTLTexture>> sidewalk_roughness_texture;
-    ObjCRef<id<MTLTexture>> sidewalk_ao_texture;
-    ObjCRef<id<MTLTexture>> wood_albedo_texture;
-    ObjCRef<id<MTLTexture>> wood_normal_texture;
-    ObjCRef<id<MTLTexture>> wood_roughness_texture;
-    ObjCRef<id<MTLTexture>> wood_ao_texture;
+    std::array<ObjCRef<id<MTLTexture>>, kSceneMaterialTextureCount> material_textures;
     std::vector<GBufferTargets> gbuffer_targets; // per frame
     bool gbuffer_initialized = false;
     uint32_t last_prepass_frame = 0;
@@ -444,6 +473,13 @@ struct IsometricScenePass::State
                 buffered_frame_count = 1;
                 return false;
             }
+            if (!ensure_buffer_capacity(device, sizeof(MaterialUniforms), frame.material_uniforms))
+            {
+                DRAXUL_LOG_ERROR(LogCategory::App, "MegaCity: failed to allocate material uniform buffer");
+                frame_resources.clear();
+                buffered_frame_count = 1;
+                return false;
+            }
         }
         return true;
     }
@@ -550,11 +586,19 @@ struct IsometricScenePass::State
         return texture;
     }
 
+    id<MTLTexture> make_solid_texture(id<MTLCommandBuffer> cmd_buf, MTLPixelFormat format, std::array<uint8_t, 4> rgba)
+    {
+        LoadedTextureImage image;
+        image.width = 1;
+        image.height = 1;
+        image.rgba.assign(rgba.begin(), rgba.end());
+        return make_texture(cmd_buf, format, image);
+    }
+
     bool ensure_road_materials(id<MTLCommandBuffer> cmd_buf)
     {
-        if (road_albedo_texture && road_normal_texture && road_roughness_texture && road_ao_texture
-            && sidewalk_albedo_texture && sidewalk_normal_texture && sidewalk_roughness_texture && sidewalk_ao_texture
-            && wood_albedo_texture && wood_normal_texture && wood_roughness_texture && wood_ao_texture
+        if (std::all_of(material_textures.begin(), material_textures.end(),
+                [](const ObjCRef<id<MTLTexture>>& texture) { return texture.get() != nil; })
             && material_sampler)
             return true;
 
@@ -567,21 +611,38 @@ struct IsometricScenePass::State
             return false;
         }
 
-        road_albedo_texture.reset(make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm_sRGB, road_images.albedo));
-        road_normal_texture.reset(make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm, road_images.normal));
-        road_roughness_texture.reset(make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm, road_images.roughness));
-        road_ao_texture.reset(make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm, road_images.ao));
-        sidewalk_albedo_texture.reset(make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm_sRGB, sidewalk_images.albedo));
-        sidewalk_normal_texture.reset(make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm, sidewalk_images.normal));
-        sidewalk_roughness_texture.reset(make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm, sidewalk_images.roughness));
-        sidewalk_ao_texture.reset(make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm, sidewalk_images.ao));
-        wood_albedo_texture.reset(make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm_sRGB, wood_images.albedo));
-        wood_normal_texture.reset(make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm, wood_images.normal));
-        wood_roughness_texture.reset(make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm, wood_images.roughness));
-        wood_ao_texture.reset(make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm, wood_images.ao));
-        if (!road_albedo_texture || !road_normal_texture || !road_roughness_texture || !road_ao_texture
-            || !sidewalk_albedo_texture || !sidewalk_normal_texture || !sidewalk_roughness_texture || !sidewalk_ao_texture
-            || !wood_albedo_texture || !wood_normal_texture || !wood_roughness_texture || !wood_ao_texture)
+        material_textures[static_cast<size_t>(SceneTextureId::FallbackAlbedoSrgb)].reset(
+            make_solid_texture(cmd_buf, MTLPixelFormatRGBA8Unorm_sRGB, { 255, 255, 255, 255 }));
+        material_textures[static_cast<size_t>(SceneTextureId::FallbackScalar)].reset(
+            make_solid_texture(cmd_buf, MTLPixelFormatRGBA8Unorm, { 255, 255, 255, 255 }));
+        material_textures[static_cast<size_t>(SceneTextureId::FallbackNormal)].reset(
+            make_solid_texture(cmd_buf, MTLPixelFormatRGBA8Unorm, { 128, 128, 255, 255 }));
+        material_textures[static_cast<size_t>(SceneTextureId::AsphaltAlbedo)].reset(
+            make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm_sRGB, road_images.albedo));
+        material_textures[static_cast<size_t>(SceneTextureId::AsphaltNormal)].reset(
+            make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm, road_images.normal));
+        material_textures[static_cast<size_t>(SceneTextureId::AsphaltRoughness)].reset(
+            make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm, road_images.roughness));
+        material_textures[static_cast<size_t>(SceneTextureId::AsphaltAo)].reset(
+            make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm, road_images.ao));
+        material_textures[static_cast<size_t>(SceneTextureId::SidewalkAlbedo)].reset(
+            make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm_sRGB, sidewalk_images.albedo));
+        material_textures[static_cast<size_t>(SceneTextureId::SidewalkNormal)].reset(
+            make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm, sidewalk_images.normal));
+        material_textures[static_cast<size_t>(SceneTextureId::SidewalkRoughness)].reset(
+            make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm, sidewalk_images.roughness));
+        material_textures[static_cast<size_t>(SceneTextureId::SidewalkAo)].reset(
+            make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm, sidewalk_images.ao));
+        material_textures[static_cast<size_t>(SceneTextureId::WoodAlbedo)].reset(
+            make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm_sRGB, wood_images.albedo));
+        material_textures[static_cast<size_t>(SceneTextureId::WoodNormal)].reset(
+            make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm, wood_images.normal));
+        material_textures[static_cast<size_t>(SceneTextureId::WoodRoughness)].reset(
+            make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm, wood_images.roughness));
+        material_textures[static_cast<size_t>(SceneTextureId::WoodAo)].reset(
+            make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm, wood_images.ao));
+        if (!std::all_of(material_textures.begin(), material_textures.end(),
+                [](const ObjCRef<id<MTLTexture>>& texture) { return texture.get() != nil; }))
             return false;
 
         MTLSamplerDescriptor* material_sampler_desc = [[MTLSamplerDescriptor alloc] init];
@@ -948,8 +1009,7 @@ void IsometricScenePass::record_prepass(IRenderContext& ctx)
         ObjectUniforms object;
         object.world = to_simd_matrix(obj.world);
         object.color = simd_make_float4(obj.color.x, obj.color.y, obj.color.z, obj.color.w);
-        object.material_info = simd_make_float4(
-            obj.material_info.x, obj.material_info.y, obj.material_info.z, obj.material_info.w);
+        object.material_data = simd_make_uint4(obj.material_index, 0u, 0u, 0u);
         object.uv_rect = simd_make_float4(0.0f, 0.0f, 1.0f, 1.0f);
         object.label_metrics = simd_make_float4(0.0f, 0.0f, 0.0f, 0.0f);
 
@@ -970,7 +1030,7 @@ void IsometricScenePass::record_prepass(IRenderContext& ctx)
         object.color = simd_make_float4(
             scene_.floor_grid.color.x, scene_.floor_grid.color.y,
             scene_.floor_grid.color.z, scene_.floor_grid.color.w);
-        object.material_info = simd_make_float4(0.0f, 1.0f, 1.0f, 1.0f);
+        object.material_data = simd_make_uint4(0u, 0u, 0u, 0u);
         object.uv_rect = simd_make_float4(0.0f, 0.0f, 1.0f, 1.0f);
         object.label_metrics = simd_make_float4(0.0f, 0.0f, 0.0f, 0.0f);
 
@@ -1125,6 +1185,8 @@ void IsometricScenePass::record(IRenderContext& ctx)
         scene_.camera.world_debug_bounds.z,
         scene_.camera.world_debug_bounds.w);
     std::memcpy([frame_resources.frame_uniforms.get() contents], &frame, sizeof(frame));
+    const MaterialUniforms material_uniforms = build_material_uniforms(scene_);
+    std::memcpy([frame_resources.material_uniforms.get() contents], &material_uniforms, sizeof(material_uniforms));
 
     [encoder setRenderPipelineState:state_->pipeline.get()];
     [encoder setDepthStencilState:state_->depth_state.get()];
@@ -1132,20 +1194,11 @@ void IsometricScenePass::record(IRenderContext& ctx)
     [encoder setFrontFacingWinding:MTLWindingCounterClockwise];
     [encoder setVertexBuffer:frame_resources.frame_uniforms.get() offset:0 atIndex:1];
     [encoder setFragmentBuffer:frame_resources.frame_uniforms.get() offset:0 atIndex:1];
+    [encoder setFragmentBuffer:frame_resources.material_uniforms.get() offset:0 atIndex:3];
     [encoder setFragmentTexture:state_->label_atlas_texture.get() atIndex:0];
     [encoder setFragmentTexture:state_->gbuffer_targets[frame_index].ao.get() atIndex:1];
-    [encoder setFragmentTexture:state_->road_albedo_texture.get() atIndex:2];
-    [encoder setFragmentTexture:state_->road_normal_texture.get() atIndex:3];
-    [encoder setFragmentTexture:state_->road_roughness_texture.get() atIndex:4];
-    [encoder setFragmentTexture:state_->road_ao_texture.get() atIndex:5];
-    [encoder setFragmentTexture:state_->sidewalk_albedo_texture.get() atIndex:6];
-    [encoder setFragmentTexture:state_->sidewalk_normal_texture.get() atIndex:7];
-    [encoder setFragmentTexture:state_->sidewalk_roughness_texture.get() atIndex:8];
-    [encoder setFragmentTexture:state_->sidewalk_ao_texture.get() atIndex:9];
-    [encoder setFragmentTexture:state_->wood_albedo_texture.get() atIndex:10];
-    [encoder setFragmentTexture:state_->wood_normal_texture.get() atIndex:11];
-    [encoder setFragmentTexture:state_->wood_roughness_texture.get() atIndex:12];
-    [encoder setFragmentTexture:state_->wood_ao_texture.get() atIndex:13];
+    for (NSUInteger texture_index = 0; texture_index < state_->material_textures.size(); ++texture_index)
+        [encoder setFragmentTexture:state_->material_textures[texture_index].get() atIndex:2 + texture_index];
     [encoder setFragmentSamplerState:state_->label_sampler.get() atIndex:0];
     [encoder setFragmentSamplerState:state_->gbuffer_sampler.get() atIndex:1];
     [encoder setFragmentSamplerState:state_->material_sampler.get() atIndex:2];
@@ -1179,8 +1232,7 @@ void IsometricScenePass::record(IRenderContext& ctx)
         ObjectUniforms object;
         object.world = to_simd_matrix(obj.world);
         object.color = simd_make_float4(obj.color.x, obj.color.y, obj.color.z, obj.color.w);
-        object.material_info = simd_make_float4(
-            obj.material_info.x, obj.material_info.y, obj.material_info.z, obj.material_info.w);
+        object.material_data = simd_make_uint4(obj.material_index, 0u, 0u, 0u);
         object.uv_rect = simd_make_float4(obj.uv_rect.x, obj.uv_rect.y, obj.uv_rect.z, obj.uv_rect.w);
         object.label_metrics = simd_make_float4(
             obj.label_ink_pixel_size.x,
@@ -1206,7 +1258,7 @@ void IsometricScenePass::record(IRenderContext& ctx)
             scene_.floor_grid.color.y,
             scene_.floor_grid.color.z,
             scene_.floor_grid.color.w);
-        object.material_info = simd_make_float4(0.0f, 1.0f, 1.0f, 1.0f);
+        object.material_data = simd_make_uint4(0u, 0u, 0u, 0u);
         object.uv_rect = simd_make_float4(0.0f, 0.0f, 1.0f, 1.0f);
         object.label_metrics = simd_make_float4(0.0f, 0.0f, 0.0f, 0.0f);
 

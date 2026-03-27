@@ -4,6 +4,7 @@
 #include "mesh_library.h"
 #include "vk_render_context.h"
 #include <algorithm>
+#include <array>
 #include <backends/imgui_impl_vulkan.h>
 #include <cstring>
 #include <draxul/log.h>
@@ -38,9 +39,21 @@ struct alignas(16) ObjectPushConstants
 {
     glm::mat4 world{ 1.0f };
     glm::vec4 color{ 1.0f };
-    glm::vec4 material_info{ 0.0f, 1.0f, 1.0f, 1.0f };
+    glm::uvec4 material_data{ 0u };
     glm::vec4 uv_rect{ 0.0f, 0.0f, 1.0f, 1.0f };
     glm::vec4 label_metrics{ 0.0f };
+};
+
+struct alignas(16) MaterialInstanceUniform
+{
+    glm::vec4 scalar_params{ 1.0f, 1.0f, 1.0f, 0.0f };
+    glm::uvec4 texture_indices{ 0u };
+    glm::uvec4 metadata{ 0u };
+};
+
+struct alignas(16) MaterialUniforms
+{
+    std::array<MaterialInstanceUniform, kMaxSceneMaterials> materials{};
 };
 
 struct Buffer
@@ -113,6 +126,7 @@ struct TransientGeometryArena
 struct FrameResources
 {
     Buffer frame_uniforms;
+    Buffer material_uniforms;
     TransientGeometryArena geometry_arena;
     VkDescriptorSet descriptor_set = VK_NULL_HANDLE;
     VkDescriptorSet prepass_descriptor_set = VK_NULL_HANDLE;
@@ -164,6 +178,24 @@ bool same_grid_spec(const FloorGridSpec& a, const FloorGridSpec& b)
         && a.color.y == b.color.y
         && a.color.z == b.color.z
         && a.color.w == b.color.w;
+}
+
+MaterialUniforms build_material_uniforms(const SceneSnapshot& scene)
+{
+    MaterialUniforms uniforms{};
+    const size_t material_count = std::min(scene.materials.size(), uniforms.materials.size());
+    for (size_t index = 0; index < material_count; ++index)
+    {
+        const SceneMaterial& material = scene.materials[index];
+        uniforms.materials[index].scalar_params = material.scalar_params;
+        uniforms.materials[index].texture_indices = material.texture_indices;
+        uniforms.materials[index].metadata = glm::uvec4(
+            static_cast<uint32_t>(material.shading_model),
+            0u,
+            0u,
+            0u);
+    }
+    return uniforms;
 }
 
 float compute_ao_radius_pixels(const glm::mat4& proj, float radius_world, int viewport_h)
@@ -632,31 +664,20 @@ struct IsometricScenePass::State
     VkPipeline ao_blur_pipeline = VK_NULL_HANDLE;
     VkSampler gbuffer_sampler = VK_NULL_HANDLE;
     VkSampler gbuffer_point_sampler = VK_NULL_HANDLE;
-    ImageResource road_albedo;
-    ImageResource road_normal;
-    ImageResource road_roughness;
-    ImageResource road_ao;
-    ImageResource sidewalk_albedo;
-    ImageResource sidewalk_normal;
-    ImageResource sidewalk_roughness;
-    ImageResource sidewalk_ao;
-    ImageResource wood_albedo;
-    ImageResource wood_normal;
-    ImageResource wood_roughness;
-    ImageResource wood_ao;
+    std::array<ImageResource, kSceneMaterialTextureCount> material_textures;
     std::vector<GBufferTargets> gbuffer_targets;
     bool gbuffer_initialized = false;
     uint32_t last_prepass_frame = 0;
 
     bool create_device_resources(uint32_t frame_count)
     {
-        VkDescriptorSetLayoutBinding scene_bindings[15] = {};
+        VkDescriptorSetLayoutBinding scene_bindings[5] = {};
         scene_bindings[0].binding = 0;
         scene_bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         scene_bindings[0].descriptorCount = 1;
         scene_bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
         scene_bindings[1].binding = 1;
-        scene_bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        scene_bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         scene_bindings[1].descriptorCount = 1;
         scene_bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
         scene_bindings[2].binding = 2;
@@ -669,51 +690,11 @@ struct IsometricScenePass::State
         scene_bindings[3].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
         scene_bindings[4].binding = 4;
         scene_bindings[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        scene_bindings[4].descriptorCount = 1;
+        scene_bindings[4].descriptorCount = kSceneMaterialTextureCount;
         scene_bindings[4].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-        scene_bindings[5].binding = 5;
-        scene_bindings[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        scene_bindings[5].descriptorCount = 1;
-        scene_bindings[5].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-        scene_bindings[6].binding = 6;
-        scene_bindings[6].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        scene_bindings[6].descriptorCount = 1;
-        scene_bindings[6].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-        scene_bindings[7].binding = 7;
-        scene_bindings[7].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        scene_bindings[7].descriptorCount = 1;
-        scene_bindings[7].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-        scene_bindings[8].binding = 8;
-        scene_bindings[8].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        scene_bindings[8].descriptorCount = 1;
-        scene_bindings[8].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-        scene_bindings[9].binding = 9;
-        scene_bindings[9].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        scene_bindings[9].descriptorCount = 1;
-        scene_bindings[9].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-        scene_bindings[10].binding = 10;
-        scene_bindings[10].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        scene_bindings[10].descriptorCount = 1;
-        scene_bindings[10].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-        scene_bindings[11].binding = 11;
-        scene_bindings[11].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        scene_bindings[11].descriptorCount = 1;
-        scene_bindings[11].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-        scene_bindings[12].binding = 12;
-        scene_bindings[12].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        scene_bindings[12].descriptorCount = 1;
-        scene_bindings[12].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-        scene_bindings[13].binding = 13;
-        scene_bindings[13].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        scene_bindings[13].descriptorCount = 1;
-        scene_bindings[13].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-        scene_bindings[14].binding = 14;
-        scene_bindings[14].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        scene_bindings[14].descriptorCount = 1;
-        scene_bindings[14].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
         VkDescriptorSetLayoutCreateInfo layout_ci = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
-        layout_ci.bindingCount = 15;
+        layout_ci.bindingCount = 5;
         layout_ci.pBindings = scene_bindings;
         if (vkCreateDescriptorSetLayout(device, &layout_ci, nullptr, &descriptor_set_layout) != VK_SUCCESS)
         {
@@ -750,9 +731,9 @@ struct IsometricScenePass::State
 
         VkDescriptorPoolSize pool_sizes[2] = {};
         pool_sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        pool_sizes[0].descriptorCount = frame_count;
+        pool_sizes[0].descriptorCount = frame_count * 2;
         pool_sizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        pool_sizes[1].descriptorCount = frame_count * 14;
+        pool_sizes[1].descriptorCount = frame_count * (2 + kSceneMaterialTextureCount);
 
         VkDescriptorPoolCreateInfo pool_ci = { VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO };
         pool_ci.maxSets = frame_count;
@@ -817,10 +798,19 @@ struct IsometricScenePass::State
                 DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity scene: failed to create frame uniform buffer");
                 return false;
             }
+            if (!create_mapped_buffer(allocator, sizeof(MaterialUniforms),
+                    VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, frame.material_uniforms))
+            {
+                DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity scene: failed to create material uniform buffer");
+                return false;
+            }
 
             VkDescriptorBufferInfo buffer_info = {};
             buffer_info.buffer = frame.frame_uniforms.buffer;
             buffer_info.range = sizeof(FrameUniforms);
+            VkDescriptorBufferInfo material_buffer_info = {};
+            material_buffer_info.buffer = frame.material_uniforms.buffer;
+            material_buffer_info.range = sizeof(MaterialUniforms);
 
             VkWriteDescriptorSet write = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
             write.dstSet = frame.descriptor_set;
@@ -828,10 +818,16 @@ struct IsometricScenePass::State
             write.descriptorCount = 1;
             write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
             write.pBufferInfo = &buffer_info;
+            VkWriteDescriptorSet material_write = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
+            material_write.dstSet = frame.descriptor_set;
+            material_write.dstBinding = 1;
+            material_write.descriptorCount = 1;
+            material_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            material_write.pBufferInfo = &material_buffer_info;
             VkWriteDescriptorSet prepass_write = write;
             prepass_write.dstSet = frame.prepass_descriptor_set;
-            VkWriteDescriptorSet writes[2] = { write, prepass_write };
-            vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
+            VkWriteDescriptorSet writes[3] = { write, material_write, prepass_write };
+            vkUpdateDescriptorSets(device, 3, writes, 0, nullptr);
         }
 
         buffered_frame_count = frame_count;
@@ -887,18 +883,8 @@ struct IsometricScenePass::State
 
     bool ensure_road_materials(const VkRenderContext& ctx, VkCommandBuffer cmd)
     {
-        if (road_albedo.image != VK_NULL_HANDLE
-            && road_normal.image != VK_NULL_HANDLE
-            && road_roughness.image != VK_NULL_HANDLE
-            && road_ao.image != VK_NULL_HANDLE
-            && sidewalk_albedo.image != VK_NULL_HANDLE
-            && sidewalk_normal.image != VK_NULL_HANDLE
-            && sidewalk_roughness.image != VK_NULL_HANDLE
-            && sidewalk_ao.image != VK_NULL_HANDLE
-            && wood_albedo.image != VK_NULL_HANDLE
-            && wood_normal.image != VK_NULL_HANDLE
-            && wood_roughness.image != VK_NULL_HANDLE
-            && wood_ao.image != VK_NULL_HANDLE)
+        if (std::all_of(material_textures.begin(), material_textures.end(),
+                [](const ImageResource& texture) { return texture.image != VK_NULL_HANDLE; }))
         {
             return true;
         }
@@ -912,99 +898,64 @@ struct IsometricScenePass::State
             return false;
         }
 
-        destroy_image(device, allocator, road_albedo);
-        destroy_image(device, allocator, road_normal);
-        destroy_image(device, allocator, road_roughness);
-        destroy_image(device, allocator, road_ao);
-        destroy_image(device, allocator, sidewalk_albedo);
-        destroy_image(device, allocator, sidewalk_normal);
-        destroy_image(device, allocator, sidewalk_roughness);
-        destroy_image(device, allocator, sidewalk_ao);
-        destroy_image(device, allocator, wood_albedo);
-        destroy_image(device, allocator, wood_normal);
-        destroy_image(device, allocator, wood_roughness);
-        destroy_image(device, allocator, wood_ao);
+        for (auto& texture : material_textures)
+            destroy_image(device, allocator, texture);
 
-        if (!create_sampled_image(
-                ctx.physical_device(), device, allocator,
-                road_images.albedo.width, road_images.albedo.height,
-                VK_FORMAT_R8G8B8A8_SRGB, VK_SAMPLER_ADDRESS_MODE_REPEAT, true, road_albedo)
-            || !create_sampled_image(
-                ctx.physical_device(), device, allocator,
-                road_images.normal.width, road_images.normal.height,
-                VK_FORMAT_R8G8B8A8_UNORM, VK_SAMPLER_ADDRESS_MODE_REPEAT, true, road_normal)
-            || !create_sampled_image(
-                ctx.physical_device(), device, allocator,
-                road_images.roughness.width, road_images.roughness.height,
-                VK_FORMAT_R8G8B8A8_UNORM, VK_SAMPLER_ADDRESS_MODE_REPEAT, true, road_roughness)
-            || !create_sampled_image(
-                ctx.physical_device(), device, allocator,
-                road_images.ao.width, road_images.ao.height,
-                VK_FORMAT_R8G8B8A8_UNORM, VK_SAMPLER_ADDRESS_MODE_REPEAT, true, road_ao)
-            || !create_sampled_image(
-                ctx.physical_device(), device, allocator,
-                sidewalk_images.albedo.width, sidewalk_images.albedo.height,
-                VK_FORMAT_R8G8B8A8_SRGB, VK_SAMPLER_ADDRESS_MODE_REPEAT, true, sidewalk_albedo)
-            || !create_sampled_image(
-                ctx.physical_device(), device, allocator,
-                sidewalk_images.normal.width, sidewalk_images.normal.height,
-                VK_FORMAT_R8G8B8A8_UNORM, VK_SAMPLER_ADDRESS_MODE_REPEAT, true, sidewalk_normal)
-            || !create_sampled_image(
-                ctx.physical_device(), device, allocator,
-                sidewalk_images.roughness.width, sidewalk_images.roughness.height,
-                VK_FORMAT_R8G8B8A8_UNORM, VK_SAMPLER_ADDRESS_MODE_REPEAT, true, sidewalk_roughness)
-            || !create_sampled_image(
-                ctx.physical_device(), device, allocator,
-                sidewalk_images.ao.width, sidewalk_images.ao.height,
-                VK_FORMAT_R8G8B8A8_UNORM, VK_SAMPLER_ADDRESS_MODE_REPEAT, true, sidewalk_ao)
-            || !create_sampled_image(
-                ctx.physical_device(), device, allocator,
-                wood_images.albedo.width, wood_images.albedo.height,
-                VK_FORMAT_R8G8B8A8_SRGB, VK_SAMPLER_ADDRESS_MODE_REPEAT, true, wood_albedo)
-            || !create_sampled_image(
-                ctx.physical_device(), device, allocator,
-                wood_images.normal.width, wood_images.normal.height,
-                VK_FORMAT_R8G8B8A8_UNORM, VK_SAMPLER_ADDRESS_MODE_REPEAT, true, wood_normal)
-            || !create_sampled_image(
-                ctx.physical_device(), device, allocator,
-                wood_images.roughness.width, wood_images.roughness.height,
-                VK_FORMAT_R8G8B8A8_UNORM, VK_SAMPLER_ADDRESS_MODE_REPEAT, true, wood_roughness)
-            || !create_sampled_image(
-                ctx.physical_device(), device, allocator,
-                wood_images.ao.width, wood_images.ao.height,
-                VK_FORMAT_R8G8B8A8_UNORM, VK_SAMPLER_ADDRESS_MODE_REPEAT, true, wood_ao))
-        {
-            DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity: failed to create Megacity material textures");
-            return false;
-        }
+        LoadedTextureImage fallback_albedo;
+        fallback_albedo.width = 1;
+        fallback_albedo.height = 1;
+        fallback_albedo.rgba = { 255, 255, 255, 255 };
+        LoadedTextureImage fallback_scalar = fallback_albedo;
+        LoadedTextureImage fallback_normal;
+        fallback_normal.width = 1;
+        fallback_normal.height = 1;
+        fallback_normal.rgba = { 128, 128, 255, 255 };
 
-        if (!upload_rgba_texture(allocator, cmd, material_staging, road_images.albedo, road_albedo)
-            || !upload_rgba_texture(allocator, cmd, material_staging, road_images.normal, road_normal)
-            || !upload_rgba_texture(allocator, cmd, material_staging, road_images.roughness, road_roughness)
-            || !upload_rgba_texture(allocator, cmd, material_staging, road_images.ao, road_ao)
-            || !upload_rgba_texture(allocator, cmd, material_staging, sidewalk_images.albedo, sidewalk_albedo)
-            || !upload_rgba_texture(allocator, cmd, material_staging, sidewalk_images.normal, sidewalk_normal)
-            || !upload_rgba_texture(allocator, cmd, material_staging, sidewalk_images.roughness, sidewalk_roughness)
-            || !upload_rgba_texture(allocator, cmd, material_staging, sidewalk_images.ao, sidewalk_ao)
-            || !upload_rgba_texture(allocator, cmd, material_staging, wood_images.albedo, wood_albedo)
-            || !upload_rgba_texture(allocator, cmd, material_staging, wood_images.normal, wood_normal)
-            || !upload_rgba_texture(allocator, cmd, material_staging, wood_images.roughness, wood_roughness)
-            || !upload_rgba_texture(allocator, cmd, material_staging, wood_images.ao, wood_ao))
+        struct TextureLoadSpec
         {
-            DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity: failed to upload Megacity material textures");
-            destroy_image(device, allocator, road_albedo);
-            destroy_image(device, allocator, road_normal);
-            destroy_image(device, allocator, road_roughness);
-            destroy_image(device, allocator, road_ao);
-            destroy_image(device, allocator, sidewalk_albedo);
-            destroy_image(device, allocator, sidewalk_normal);
-            destroy_image(device, allocator, sidewalk_roughness);
-            destroy_image(device, allocator, sidewalk_ao);
-            destroy_image(device, allocator, wood_albedo);
-            destroy_image(device, allocator, wood_normal);
-            destroy_image(device, allocator, wood_roughness);
-            destroy_image(device, allocator, wood_ao);
-            return false;
+            SceneTextureId id;
+            const LoadedTextureImage* image = nullptr;
+            VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
+        };
+
+        const std::array<TextureLoadSpec, kSceneMaterialTextureCount> load_specs = { {
+            { SceneTextureId::FallbackAlbedoSrgb, &fallback_albedo, VK_FORMAT_R8G8B8A8_SRGB },
+            { SceneTextureId::FallbackScalar, &fallback_scalar, VK_FORMAT_R8G8B8A8_UNORM },
+            { SceneTextureId::FallbackNormal, &fallback_normal, VK_FORMAT_R8G8B8A8_UNORM },
+            { SceneTextureId::AsphaltAlbedo, &road_images.albedo, VK_FORMAT_R8G8B8A8_SRGB },
+            { SceneTextureId::AsphaltNormal, &road_images.normal, VK_FORMAT_R8G8B8A8_UNORM },
+            { SceneTextureId::AsphaltRoughness, &road_images.roughness, VK_FORMAT_R8G8B8A8_UNORM },
+            { SceneTextureId::AsphaltAo, &road_images.ao, VK_FORMAT_R8G8B8A8_UNORM },
+            { SceneTextureId::SidewalkAlbedo, &sidewalk_images.albedo, VK_FORMAT_R8G8B8A8_SRGB },
+            { SceneTextureId::SidewalkNormal, &sidewalk_images.normal, VK_FORMAT_R8G8B8A8_UNORM },
+            { SceneTextureId::SidewalkRoughness, &sidewalk_images.roughness, VK_FORMAT_R8G8B8A8_UNORM },
+            { SceneTextureId::SidewalkAo, &sidewalk_images.ao, VK_FORMAT_R8G8B8A8_UNORM },
+            { SceneTextureId::WoodAlbedo, &wood_images.albedo, VK_FORMAT_R8G8B8A8_SRGB },
+            { SceneTextureId::WoodNormal, &wood_images.normal, VK_FORMAT_R8G8B8A8_UNORM },
+            { SceneTextureId::WoodRoughness, &wood_images.roughness, VK_FORMAT_R8G8B8A8_UNORM },
+            { SceneTextureId::WoodAo, &wood_images.ao, VK_FORMAT_R8G8B8A8_UNORM },
+        } };
+
+        for (const TextureLoadSpec& spec : load_specs)
+        {
+            ImageResource& texture = material_textures[static_cast<size_t>(spec.id)];
+            if (!create_sampled_image(
+                    ctx.physical_device(),
+                    device,
+                    allocator,
+                    spec.image->width,
+                    spec.image->height,
+                    spec.format,
+                    VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                    true,
+                    texture)
+                || !upload_rgba_texture(allocator, cmd, material_staging, *spec.image, texture))
+            {
+                DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity: failed to create or upload material texture");
+                for (auto& cleanup : material_textures)
+                    destroy_image(device, allocator, cleanup);
+                return false;
+            }
         }
 
         refresh_gbuffer_descriptors();
@@ -1026,7 +977,7 @@ struct IsometricScenePass::State
 
             VkWriteDescriptorSet write = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
             write.dstSet = frame.descriptor_set;
-            write.dstBinding = 1;
+            write.dstBinding = 2;
             write.descriptorCount = 1;
             write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
             write.pImageInfo = &image_info;
@@ -1039,30 +990,11 @@ struct IsometricScenePass::State
         if (gbuffer_sampler == VK_NULL_HANDLE || gbuffer_targets.empty())
             return;
 
-        const bool have_road_materials = road_albedo.view != VK_NULL_HANDLE
-            && road_albedo.sampler != VK_NULL_HANDLE
-            && road_normal.view != VK_NULL_HANDLE
-            && road_normal.sampler != VK_NULL_HANDLE
-            && road_roughness.view != VK_NULL_HANDLE
-            && road_roughness.sampler != VK_NULL_HANDLE
-            && road_ao.view != VK_NULL_HANDLE
-            && road_ao.sampler != VK_NULL_HANDLE;
-        const bool have_sidewalk_materials = sidewalk_albedo.view != VK_NULL_HANDLE
-            && sidewalk_albedo.sampler != VK_NULL_HANDLE
-            && sidewalk_normal.view != VK_NULL_HANDLE
-            && sidewalk_normal.sampler != VK_NULL_HANDLE
-            && sidewalk_roughness.view != VK_NULL_HANDLE
-            && sidewalk_roughness.sampler != VK_NULL_HANDLE
-            && sidewalk_ao.view != VK_NULL_HANDLE
-            && sidewalk_ao.sampler != VK_NULL_HANDLE;
-        const bool have_wood_materials = wood_albedo.view != VK_NULL_HANDLE
-            && wood_albedo.sampler != VK_NULL_HANDLE
-            && wood_normal.view != VK_NULL_HANDLE
-            && wood_normal.sampler != VK_NULL_HANDLE
-            && wood_roughness.view != VK_NULL_HANDLE
-            && wood_roughness.sampler != VK_NULL_HANDLE
-            && wood_ao.view != VK_NULL_HANDLE
-            && wood_ao.sampler != VK_NULL_HANDLE;
+        const bool have_material_textures = std::all_of(material_textures.begin(), material_textures.end(),
+            [](const ImageResource& texture) {
+                return texture.view != VK_NULL_HANDLE
+                    && texture.sampler != VK_NULL_HANDLE;
+            });
 
         for (size_t i = 0; i < frame_resources.size() && i < gbuffer_targets.size(); ++i)
         {
@@ -1079,99 +1011,34 @@ struct IsometricScenePass::State
             ao_info.imageView = gbuffer.ao_view;
             ao_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-            VkDescriptorImageInfo road_infos[4] = {};
-            road_infos[0].sampler = road_albedo.sampler;
-            road_infos[0].imageView = road_albedo.view;
-            road_infos[0].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            road_infos[1].sampler = road_normal.sampler;
-            road_infos[1].imageView = road_normal.view;
-            road_infos[1].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            road_infos[2].sampler = road_roughness.sampler;
-            road_infos[2].imageView = road_roughness.view;
-            road_infos[2].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            road_infos[3].sampler = road_ao.sampler;
-            road_infos[3].imageView = road_ao.view;
-            road_infos[3].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            std::array<VkDescriptorImageInfo, kSceneMaterialTextureCount> material_infos{};
+            for (size_t texture_index = 0; texture_index < material_textures.size(); ++texture_index)
+            {
+                material_infos[texture_index].sampler = material_textures[texture_index].sampler;
+                material_infos[texture_index].imageView = material_textures[texture_index].view;
+                material_infos[texture_index].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            }
 
-            VkDescriptorImageInfo sidewalk_infos[4] = {};
-            sidewalk_infos[0].sampler = sidewalk_albedo.sampler;
-            sidewalk_infos[0].imageView = sidewalk_albedo.view;
-            sidewalk_infos[0].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            sidewalk_infos[1].sampler = sidewalk_normal.sampler;
-            sidewalk_infos[1].imageView = sidewalk_normal.view;
-            sidewalk_infos[1].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            sidewalk_infos[2].sampler = sidewalk_roughness.sampler;
-            sidewalk_infos[2].imageView = sidewalk_roughness.view;
-            sidewalk_infos[2].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            sidewalk_infos[3].sampler = sidewalk_ao.sampler;
-            sidewalk_infos[3].imageView = sidewalk_ao.view;
-            sidewalk_infos[3].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-            VkDescriptorImageInfo wood_infos[4] = {};
-            wood_infos[0].sampler = wood_albedo.sampler;
-            wood_infos[0].imageView = wood_albedo.view;
-            wood_infos[0].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            wood_infos[1].sampler = wood_normal.sampler;
-            wood_infos[1].imageView = wood_normal.view;
-            wood_infos[1].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            wood_infos[2].sampler = wood_roughness.sampler;
-            wood_infos[2].imageView = wood_roughness.view;
-            wood_infos[2].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            wood_infos[3].sampler = wood_ao.sampler;
-            wood_infos[3].imageView = wood_ao.view;
-            wood_infos[3].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-            VkWriteDescriptorSet writes[13] = {};
+            VkWriteDescriptorSet writes[2] = {};
             uint32_t write_count = 0;
 
             writes[write_count].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             writes[write_count].dstSet = frame.descriptor_set;
-            writes[write_count].dstBinding = 2;
+            writes[write_count].dstBinding = 3;
             writes[write_count].descriptorCount = 1;
             writes[write_count].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
             writes[write_count].pImageInfo = &ao_info;
             ++write_count;
 
-            if (have_road_materials)
+            if (have_material_textures)
             {
-                for (uint32_t road_index = 0; road_index < 4; ++road_index)
-                {
-                    writes[write_count].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-                    writes[write_count].dstSet = frame.descriptor_set;
-                    writes[write_count].dstBinding = 3 + road_index;
-                    writes[write_count].descriptorCount = 1;
-                    writes[write_count].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-                    writes[write_count].pImageInfo = &road_infos[road_index];
-                    ++write_count;
-                }
-            }
-
-            if (have_sidewalk_materials)
-            {
-                for (uint32_t sidewalk_index = 0; sidewalk_index < 4; ++sidewalk_index)
-                {
-                    writes[write_count].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-                    writes[write_count].dstSet = frame.descriptor_set;
-                    writes[write_count].dstBinding = 7 + sidewalk_index;
-                    writes[write_count].descriptorCount = 1;
-                    writes[write_count].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-                    writes[write_count].pImageInfo = &sidewalk_infos[sidewalk_index];
-                    ++write_count;
-                }
-            }
-
-            if (have_wood_materials)
-            {
-                for (uint32_t wood_index = 0; wood_index < 4; ++wood_index)
-                {
-                    writes[write_count].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-                    writes[write_count].dstSet = frame.descriptor_set;
-                    writes[write_count].dstBinding = 11 + wood_index;
-                    writes[write_count].descriptorCount = 1;
-                    writes[write_count].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-                    writes[write_count].pImageInfo = &wood_infos[wood_index];
-                    ++write_count;
-                }
+                writes[write_count].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                writes[write_count].dstSet = frame.descriptor_set;
+                writes[write_count].dstBinding = 4;
+                writes[write_count].descriptorCount = static_cast<uint32_t>(material_infos.size());
+                writes[write_count].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                writes[write_count].pImageInfo = material_infos.data();
+                ++write_count;
             }
 
             vkUpdateDescriptorSets(device, write_count, writes, 0, nullptr);
@@ -2094,18 +1961,8 @@ struct IsometricScenePass::State
             destroy_mesh(allocator, roof_sign_mesh);
             destroy_mesh(allocator, wall_sign_mesh);
             destroy_image(device, allocator, label_atlas);
-            destroy_image(device, allocator, road_albedo);
-            destroy_image(device, allocator, road_normal);
-            destroy_image(device, allocator, road_roughness);
-            destroy_image(device, allocator, road_ao);
-            destroy_image(device, allocator, sidewalk_albedo);
-            destroy_image(device, allocator, sidewalk_normal);
-            destroy_image(device, allocator, sidewalk_roughness);
-            destroy_image(device, allocator, sidewalk_ao);
-            destroy_image(device, allocator, wood_albedo);
-            destroy_image(device, allocator, wood_normal);
-            destroy_image(device, allocator, wood_roughness);
-            destroy_image(device, allocator, wood_ao);
+            for (auto& texture : material_textures)
+                destroy_image(device, allocator, texture);
             destroy_buffer(allocator, label_staging);
             destroy_buffer(allocator, material_staging);
             for (auto& frame : frame_resources)
@@ -2113,6 +1970,7 @@ struct IsometricScenePass::State
                 destroy_buffer(allocator, frame.geometry_arena.vertices.buffer);
                 destroy_buffer(allocator, frame.geometry_arena.indices.buffer);
                 destroy_buffer(allocator, frame.frame_uniforms);
+                destroy_buffer(allocator, frame.material_uniforms);
             }
         }
         if (pipeline != VK_NULL_HANDLE)
@@ -2224,6 +2082,9 @@ void IsometricScenePass::record_prepass(IRenderContext& ctx)
     frame.world_debug_bounds = scene_.camera.world_debug_bounds;
     std::memcpy(frame_res.frame_uniforms.mapped, &frame, sizeof(frame));
     vmaFlushAllocation(vk_ctx->allocator(), frame_res.frame_uniforms.allocation, 0, sizeof(frame));
+    const MaterialUniforms material_uniforms = build_material_uniforms(scene_);
+    std::memcpy(frame_res.material_uniforms.mapped, &material_uniforms, sizeof(material_uniforms));
+    vmaFlushAllocation(vk_ctx->allocator(), frame_res.material_uniforms.allocation, 0, sizeof(material_uniforms));
 
     // Begin GBuffer render pass
     VkClearValue clear_values[2] = {};
@@ -2293,7 +2154,7 @@ void IsometricScenePass::record_prepass(IRenderContext& ctx)
         ObjectPushConstants push;
         push.world = obj.world;
         push.color = obj.color;
-        push.material_info = obj.material_info;
+        push.material_data = glm::uvec4(obj.material_index, 0u, 0u, 0u);
         push.uv_rect = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f);
         push.label_metrics = glm::vec4(0.0f);
         vkCmdPushConstants(cmd, state_->prepass_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push), &push);
@@ -2306,7 +2167,7 @@ void IsometricScenePass::record_prepass(IRenderContext& ctx)
         ObjectPushConstants push;
         push.world = glm::mat4(1.0f);
         push.color = scene_.floor_grid.color;
-        push.material_info = glm::vec4(0.0f, 1.0f, 1.0f, 1.0f);
+        push.material_data = glm::uvec4(0u);
         push.uv_rect = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f);
         push.label_metrics = glm::vec4(0.0f);
 
@@ -2406,6 +2267,9 @@ void IsometricScenePass::record(IRenderContext& ctx)
     frame.world_debug_bounds = scene_.camera.world_debug_bounds;
     std::memcpy(frame_resources.frame_uniforms.mapped, &frame, sizeof(frame));
     vmaFlushAllocation(vk_ctx->allocator(), frame_resources.frame_uniforms.allocation, 0, sizeof(frame));
+    const MaterialUniforms material_uniforms = build_material_uniforms(scene_);
+    std::memcpy(frame_resources.material_uniforms.mapped, &material_uniforms, sizeof(material_uniforms));
+    vmaFlushAllocation(vk_ctx->allocator(), frame_resources.material_uniforms.allocation, 0, sizeof(material_uniforms));
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, state_->pipeline);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, state_->pipeline_layout,
@@ -2450,7 +2314,7 @@ void IsometricScenePass::record(IRenderContext& ctx)
         ObjectPushConstants push;
         push.world = obj.world;
         push.color = obj.color;
-        push.material_info = obj.material_info;
+        push.material_data = glm::uvec4(obj.material_index, 0u, 0u, 0u);
         push.uv_rect = obj.uv_rect;
         push.label_metrics = glm::vec4(obj.label_ink_pixel_size, 0.0f, 0.0f);
         vkCmdPushConstants(cmd, state_->pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push), &push);
@@ -2462,7 +2326,7 @@ void IsometricScenePass::record(IRenderContext& ctx)
         ObjectPushConstants push;
         push.world = glm::mat4(1.0f);
         push.color = scene_.floor_grid.color;
-        push.material_info = glm::vec4(0.0f, 1.0f, 1.0f, 1.0f);
+        push.material_data = glm::uvec4(0u);
         push.uv_rect = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f);
         push.label_metrics = glm::vec4(0.0f);
 

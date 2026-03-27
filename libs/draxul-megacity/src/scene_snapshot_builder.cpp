@@ -12,6 +12,85 @@
 namespace draxul
 {
 
+namespace
+{
+
+SceneMaterial build_scene_material(const Appearance& appearance)
+{
+    SceneMaterial material;
+    switch (appearance.material)
+    {
+    case MaterialId::AsphaltRoad:
+        material.shading_model = MaterialShadingModel::TexturedTintedPbr;
+        material.scalar_params = glm::vec4(
+            appearance.material_info.y,
+            appearance.material_info.z,
+            appearance.material_info.w,
+            0.0f);
+        material.texture_indices = glm::uvec4(
+            static_cast<uint32_t>(SceneTextureId::AsphaltAlbedo),
+            static_cast<uint32_t>(SceneTextureId::AsphaltNormal),
+            static_cast<uint32_t>(SceneTextureId::AsphaltRoughness),
+            static_cast<uint32_t>(SceneTextureId::AsphaltAo));
+        break;
+    case MaterialId::PavingSidewalk:
+        material.shading_model = MaterialShadingModel::TexturedTintedPbr;
+        material.scalar_params = glm::vec4(
+            appearance.material_info.y,
+            appearance.material_info.z,
+            appearance.material_info.w,
+            0.0f);
+        material.texture_indices = glm::uvec4(
+            static_cast<uint32_t>(SceneTextureId::SidewalkAlbedo),
+            static_cast<uint32_t>(SceneTextureId::SidewalkNormal),
+            static_cast<uint32_t>(SceneTextureId::SidewalkRoughness),
+            static_cast<uint32_t>(SceneTextureId::SidewalkAo));
+        break;
+    case MaterialId::WoodBuilding:
+        material.shading_model = MaterialShadingModel::VertexTintPbr;
+        material.scalar_params = glm::vec4(
+            appearance.material_info.y,
+            appearance.material_info.z,
+            appearance.material_info.w,
+            0.0f);
+        material.texture_indices = glm::uvec4(
+            static_cast<uint32_t>(SceneTextureId::WoodAlbedo),
+            static_cast<uint32_t>(SceneTextureId::WoodNormal),
+            static_cast<uint32_t>(SceneTextureId::WoodRoughness),
+            static_cast<uint32_t>(SceneTextureId::WoodAo));
+        break;
+    case MaterialId::FlatColor:
+    default:
+        break;
+    }
+    return material;
+}
+
+bool same_scene_material(const SceneMaterial& lhs, const SceneMaterial& rhs)
+{
+    return lhs.shading_model == rhs.shading_model
+        && lhs.scalar_params == rhs.scalar_params
+        && lhs.texture_indices == rhs.texture_indices;
+}
+
+uint32_t find_or_append_material(SceneSnapshot& scene, const Appearance& appearance)
+{
+    const SceneMaterial candidate = build_scene_material(appearance);
+    for (uint32_t index = 0; index < scene.materials.size(); ++index)
+    {
+        if (same_scene_material(scene.materials[index], candidate))
+            return index;
+    }
+
+    if (scene.materials.size() >= kMaxSceneMaterials)
+        return 0;
+
+    scene.materials.push_back(candidate);
+    return static_cast<uint32_t>(scene.materials.size() - 1);
+}
+
+} // namespace
+
 SceneSnapshotResult build_scene_snapshot(
     const IsometricCamera& camera,
     const SceneWorld& world,
@@ -71,6 +150,9 @@ SceneSnapshotResult build_scene_snapshot(
         scene.label_atlas = std::shared_ptr<const LabelAtlasData>(alias, &label_atlas->image);
     }
 
+    scene.materials.clear();
+    scene.materials.push_back(SceneMaterial{});
+
     // Query the ECS registry for all entities with position + appearance.
     const auto& reg = world.registry();
     auto view = reg.view<const WorldPosition, const Elevation, const Appearance>();
@@ -87,8 +169,7 @@ SceneSnapshotResult build_scene_snapshot(
     {
         SceneObject obj;
         obj.mesh = appearance.mesh;
-        obj.material = appearance.material;
-        obj.material_info = appearance.material_info;
+        obj.material_index = find_or_append_material(scene, appearance);
         const glm::vec3 world_pos{ pos.x, elev.value, pos.z };
         float extent_x = 1.0f;
         float extent_z = 1.0f;

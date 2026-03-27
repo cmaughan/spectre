@@ -22,7 +22,7 @@ struct ObjectUniforms
 {
     float4x4 world;
     float4 color;
-    float4 material_info;
+    uint4 material_data;
     float4 uv_rect;
     float4 label_metrics;
 };

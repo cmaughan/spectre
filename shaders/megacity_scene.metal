@@ -22,9 +22,21 @@ struct ObjectUniforms
 {
     float4x4 world;
     float4 color;
-    float4 material_info;
+    uint4 material_data;
     float4 uv_rect;
     float4 label_metrics;
+};
+
+struct MaterialInstance
+{
+    float4 scalar_params;
+    uint4 texture_indices;
+    uint4 metadata;
+};
+
+struct MaterialUniforms
+{
+    MaterialInstance materials[64];
 };
 
 struct VertexIn
@@ -46,7 +58,7 @@ struct VertexOut
     float2 atlas_uv;
     float tex_blend;
     float2 label_ink_pixel_size;
-    float4 material_info;
+    uint material_index;
     float2 material_uv;
     float4 tangent_ws;
 };
@@ -64,7 +76,7 @@ vertex VertexOut scene_vertex(VertexIn in [[stage_in]],
     out.atlas_uv = mix(object.uv_rect.xy, object.uv_rect.zw, in.uv);
     out.tex_blend = in.tex_blend;
     out.label_ink_pixel_size = object.label_metrics.xy;
-    out.material_info = object.material_info;
+    out.material_index = object.material_data.x;
     out.material_uv = in.uv * object.uv_rect.zw;
     out.tangent_ws = float4(normalize(float3x3(object.world[0].xyz, object.world[1].xyz, object.world[2].xyz) * in.tangent.xyz), in.tangent.w);
     return out;
@@ -98,14 +110,8 @@ float3 fresnel_schlick(float cosTheta, float3 f0)
     return f0 + (1.0f - f0) * pow(clamp(1.0f - cosTheta, 0.0f, 1.0f), 5.0f);
 }
 
-constant int kMaterialAsphaltRoad = 1;
-constant int kMaterialPavingSidewalk = 2;
-constant int kMaterialWoodBuilding = 3;
-
-int material_id(float4 material_info)
-{
-    return int(floor(material_info.x + 0.5f));
-}
+constant uint kShadingTexturedTintedPbr = 1u;
+constant uint kShadingVertexTintPbr = 2u;
 
 float3x3 tangent_basis(float3 normal_ws, float4 tangent_ws)
 {
@@ -117,20 +123,10 @@ float3x3 tangent_basis(float3 normal_ws, float4 tangent_ws)
 fragment float4 scene_fragment(
     VertexOut in [[stage_in]],
     constant FrameUniforms& frame [[buffer(1)]],
+    constant MaterialUniforms& materialTable [[buffer(3)]],
     texture2d<float> signAtlas [[texture(0)]],
     texture2d<float> aoTexture [[texture(1)]],
-    texture2d<float> roadAlbedoTexture [[texture(2)]],
-    texture2d<float> roadNormalTexture [[texture(3)]],
-    texture2d<float> roadRoughnessTexture [[texture(4)]],
-    texture2d<float> roadAoTexture [[texture(5)]],
-    texture2d<float> sidewalkAlbedoTexture [[texture(6)]],
-    texture2d<float> sidewalkNormalTexture [[texture(7)]],
-    texture2d<float> sidewalkRoughnessTexture [[texture(8)]],
-    texture2d<float> sidewalkAoTexture [[texture(9)]],
-    texture2d<float> woodAlbedoTexture [[texture(10)]],
-    texture2d<float> woodNormalTexture [[texture(11)]],
-    texture2d<float> woodRoughnessTexture [[texture(12)]],
-    texture2d<float> woodAoTexture [[texture(13)]],
+    array<texture2d<float>, 15> materialTextures [[texture(2)]],
     sampler signSampler [[sampler(0)]],
     sampler aoSampler [[sampler(1)]],
     sampler materialSampler [[sampler(2)]])
@@ -138,46 +134,53 @@ fragment float4 scene_fragment(
     float3 normal_ws = normalize(in.normal_ws);
     float3 albedo = in.base_color;
     float roughness = 0.65f;
-    const float metallic = 0.0f;
+    float metallic = 0.0f;
     float material_ao = 1.0f;
+    const MaterialInstance material = materialTable.materials[min(in.material_index, 63u)];
+    const float2 material_uv = in.material_uv * material.scalar_params.x;
+    const float normal_strength = max(material.scalar_params.y, 0.0f);
+    const float ao_strength = clamp(material.scalar_params.z, 0.0f, 1.0f);
+    metallic = material.scalar_params.w;
 
-    const int id = material_id(in.material_info);
-    if (id == kMaterialAsphaltRoad)
+    if (material.metadata.x == kShadingTexturedTintedPbr)
     {
-        const float2 road_uv = in.material_uv * in.material_info.y;
-        float3 tangent_normal = roadNormalTexture.sample(materialSampler, road_uv).xyz * 2.0f - 1.0f;
-        tangent_normal.xy *= max(in.material_info.z, 0.0f);
+        float3 tangent_normal = materialTextures[material.texture_indices.y].sample(materialSampler, material_uv).xyz
+            * 2.0f
+            - 1.0f;
+        tangent_normal.xy *= normal_strength;
         tangent_normal = normalize(tangent_normal);
         const float3x3 tbn = tangent_basis(normal_ws, in.tangent_ws);
         normal_ws = normalize(tbn * tangent_normal);
-        albedo = roadAlbedoTexture.sample(materialSampler, road_uv).rgb * in.base_color;
-        roughness = clamp(roadRoughnessTexture.sample(materialSampler, road_uv).r, 0.04f, 1.0f);
-        material_ao = mix(1.0f, roadAoTexture.sample(materialSampler, road_uv).r, clamp(in.material_info.w, 0.0f, 1.0f));
+        albedo = materialTextures[material.texture_indices.x].sample(materialSampler, material_uv).rgb
+            * in.base_color;
+        roughness = clamp(
+            materialTextures[material.texture_indices.z].sample(materialSampler, material_uv).r,
+            0.04f,
+            1.0f);
+        material_ao = mix(
+            1.0f,
+            materialTextures[material.texture_indices.w].sample(materialSampler, material_uv).r,
+            ao_strength);
     }
-    else if (id == kMaterialPavingSidewalk)
+    else if (material.metadata.x == kShadingVertexTintPbr)
     {
-        const float2 sidewalk_uv = in.material_uv * in.material_info.y;
-        float3 tangent_normal = sidewalkNormalTexture.sample(materialSampler, sidewalk_uv).xyz * 2.0f - 1.0f;
-        tangent_normal.xy *= max(in.material_info.z, 0.0f);
-        tangent_normal = normalize(tangent_normal);
         const float3x3 tbn = tangent_basis(normal_ws, in.tangent_ws);
-        normal_ws = normalize(tbn * tangent_normal);
-        albedo = sidewalkAlbedoTexture.sample(materialSampler, sidewalk_uv).rgb * in.base_color;
-        roughness = clamp(sidewalkRoughnessTexture.sample(materialSampler, sidewalk_uv).r, 0.04f, 1.0f);
-        material_ao = mix(1.0f, sidewalkAoTexture.sample(materialSampler, sidewalk_uv).r, clamp(in.material_info.w, 0.0f, 1.0f));
-    }
-    else if (id == kMaterialWoodBuilding)
-    {
-        const float2 wood_uv = in.material_uv * in.material_info.y;
-        const float3x3 tbn = tangent_basis(normal_ws, in.tangent_ws);
-        float3 tangent_normal = woodNormalTexture.sample(materialSampler, wood_uv).xyz * 2.0f - 1.0f;
-        tangent_normal.xy *= max(in.material_info.z, 0.0f);
+        float3 tangent_normal = materialTextures[material.texture_indices.y].sample(materialSampler, material_uv).xyz
+            * 2.0f
+            - 1.0f;
+        tangent_normal.xy *= normal_strength;
         tangent_normal = normalize(tangent_normal);
 
         normal_ws = normalize(tbn * tangent_normal);
         albedo = in.base_color;
-        roughness = clamp(woodRoughnessTexture.sample(materialSampler, wood_uv).r, 0.04f, 1.0f);
-        material_ao = mix(1.0f, woodAoTexture.sample(materialSampler, wood_uv).r, clamp(in.material_info.w, 0.0f, 1.0f));
+        roughness = clamp(
+            materialTextures[material.texture_indices.z].sample(materialSampler, material_uv).r,
+            0.04f,
+            1.0f);
+        material_ao = mix(
+            1.0f,
+            materialTextures[material.texture_indices.w].sample(materialSampler, material_uv).r,
+            ao_strength);
     }
 
     const float2 screen_uv = clamp(
@@ -233,7 +236,7 @@ fragment float4 scene_fragment(
         direct_lighting += (kd * albedo / 3.14159265359f + specular) * radiance * point_ndotl;
     }
 
-    float3 shaded = albedo * (hemi * ambient * combined_ao) + direct_lighting * combined_ao;
+    float3 shaded = albedo * (hemi * ambient * combined_ao) + direct_lighting;
     if (in.tex_blend > 0.5f)
     {
         const float4 label = signAtlas.sample(signSampler, in.atlas_uv);

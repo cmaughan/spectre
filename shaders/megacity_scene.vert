@@ -18,7 +18,7 @@ layout(set = 0, binding = 0) uniform FrameUniforms {
 layout(push_constant) uniform ObjectUniforms {
     mat4 world;
     vec4 color;
-    vec4 material_info;
+    uvec4 material_data;
     vec4 uv_rect;
     vec4 label_metrics;
 } object_data;
@@ -36,7 +36,7 @@ layout(location = 2) out vec3 out_world_position;
 layout(location = 3) out vec2 out_atlas_uv;
 layout(location = 4) out float out_tex_blend;
 layout(location = 5) out vec2 out_label_ink_pixel_size;
-layout(location = 6) flat out vec4 out_material_info;
+layout(location = 6) flat out uint out_material_index;
 layout(location = 7) out vec2 out_material_uv;
 layout(location = 8) out vec4 out_tangent_ws;
 
@@ -50,7 +50,7 @@ void main()
     out_material_uv = in_uv * object_data.uv_rect.zw;
     out_tex_blend = in_tex_blend;
     out_label_ink_pixel_size = object_data.label_metrics.xy;
-    out_material_info = object_data.material_info;
+    out_material_index = object_data.material_data.x;
     out_tangent_ws = vec4(normalize(mat3(object_data.world) * in_tangent.xyz), in_tangent.w);
     gl_Position = frame.proj * frame.view * world_position;
 }

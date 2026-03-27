@@ -18,7 +18,7 @@ layout(set = 0, binding = 0) uniform FrameUniforms {
 layout(push_constant) uniform ObjectUniforms {
     mat4 world;
     vec4 color;
-    vec4 material_info;
+    uvec4 material_data;
     vec4 uv_rect;
     vec4 label_metrics;
 } object_data;

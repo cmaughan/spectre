@@ -27,6 +27,35 @@ enum class MaterialId : uint32_t
     WoodBuilding = 3,
 };
 
+enum class MaterialShadingModel : uint32_t
+{
+    FlatColor = 0,
+    TexturedTintedPbr = 1,
+    VertexTintPbr = 2,
+};
+
+enum class SceneTextureId : uint32_t
+{
+    FallbackAlbedoSrgb = 0,
+    FallbackScalar = 1,
+    FallbackNormal = 2,
+    AsphaltAlbedo = 3,
+    AsphaltNormal = 4,
+    AsphaltRoughness = 5,
+    AsphaltAo = 6,
+    SidewalkAlbedo = 7,
+    SidewalkNormal = 8,
+    SidewalkRoughness = 9,
+    SidewalkAo = 10,
+    WoodAlbedo = 11,
+    WoodNormal = 12,
+    WoodRoughness = 13,
+    WoodAo = 14,
+};
+
+constexpr uint32_t kSceneMaterialTextureCount = 15;
+constexpr uint32_t kMaxSceneMaterials = 64;
+
 struct LabelAtlasData
 {
     int width = 0;
@@ -44,12 +73,23 @@ struct LabelAtlasData
 struct SceneObject
 {
     MeshId mesh = MeshId::Cube;
-    MaterialId material = MaterialId::FlatColor;
+    uint32_t material_index = 0;
     glm::mat4 world{ 1.0f };
     glm::vec4 color{ 1.0f };
-    glm::vec4 material_info{ 0.0f, 1.0f, 1.0f, 1.0f }; // x = material id, y = uv scale, z = normal strength, w = AO strength
     glm::vec4 uv_rect{ 0.0f, 0.0f, 1.0f, 1.0f };
     glm::vec2 label_ink_pixel_size{ 0.0f };
+};
+
+struct SceneMaterial
+{
+    MaterialShadingModel shading_model = MaterialShadingModel::FlatColor;
+    glm::vec4 scalar_params{ 1.0f, 1.0f, 1.0f, 0.0f }; // x = uv scale, y = normal strength, z = AO strength, w = metallic
+    glm::uvec4 texture_indices{
+        static_cast<uint32_t>(SceneTextureId::FallbackAlbedoSrgb),
+        static_cast<uint32_t>(SceneTextureId::FallbackNormal),
+        static_cast<uint32_t>(SceneTextureId::FallbackScalar),
+        static_cast<uint32_t>(SceneTextureId::FallbackScalar),
+    };
 };
 
 struct SceneCameraData
@@ -85,6 +125,7 @@ struct SceneSnapshot
     SceneCameraData camera;
     FloorGridSpec floor_grid;
     std::shared_ptr<const LabelAtlasData> label_atlas;
+    std::vector<SceneMaterial> materials;
     std::vector<SceneObject> objects;
 };
 
