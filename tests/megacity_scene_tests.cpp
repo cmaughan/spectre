@@ -158,6 +158,34 @@ TEST_CASE("megacity world creates bark and leaf tree entities", "[megacity]")
     CHECK(elevation.value == Catch::Approx(0.25f));
 }
 
+TEST_CASE("megacity world creates module surface entities", "[megacity]")
+{
+    SceneWorld world;
+
+    const entt::entity entity = world.create_module_surface(
+        4.0f,
+        6.0f,
+        ModuleSurfaceMetrics{
+            .extent_x = 10.0f,
+            .extent_z = 14.0f,
+            .height = 0.018f,
+        },
+        glm::vec4(0.2f, 0.4f, 0.8f, 1.0f),
+        SourceSymbol{ "", "libs/example" },
+        0.05f);
+
+    const auto& appearance = world.registry().get<Appearance>(entity);
+    const auto& metrics = world.registry().get<ModuleSurfaceMetrics>(entity);
+    const auto& elevation = world.registry().get<Elevation>(entity);
+
+    CHECK(appearance.mesh == MeshId::Cube);
+    CHECK(appearance.material == MaterialId::FlatColor);
+    CHECK(metrics.extent_x == Catch::Approx(10.0f));
+    CHECK(metrics.extent_z == Catch::Approx(14.0f));
+    CHECK(metrics.height == Catch::Approx(0.018f));
+    CHECK(elevation.value == Catch::Approx(0.05f));
+}
+
 TEST_CASE("megacity camera projection responds to viewport aspect", "[megacity]")
 {
     IsometricCamera camera;

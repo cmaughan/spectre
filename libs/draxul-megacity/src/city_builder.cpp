@@ -27,6 +27,8 @@ namespace
 constexpr glm::vec4 kSidewalkSurfaceColor(0.72f, 0.72f, 0.74f, 1.0f);
 constexpr float kRoadSurfaceTextureLift = 0.002f;
 constexpr float kRoadMaterialUvScale = 0.28f;
+constexpr float kModuleSurfaceHeight = 0.018f;
+constexpr float kModuleSurfaceLift = 0.003f;
 constexpr float kDependencyRouteWidthScale = 0.18f;
 constexpr float kDependencyRouteMinWidth = 0.09f;
 constexpr float kDependencyRouteHeight = 0.045f;
@@ -583,6 +585,31 @@ CityBuildResult build_city(
             },
             SourceSymbol{},
             kRoadSurfaceTextureLift);
+    }
+
+    const float module_surface_elevation
+        = kRoadSurfaceTextureLift + config.road_surface_height + kModuleSurfaceLift;
+    for (const auto& module_layout : layout->modules)
+    {
+        if (module_layout.is_central_park || module_layout.buildings.empty())
+            continue;
+
+        const float extent_x = module_layout.max_x - module_layout.min_x;
+        const float extent_z = module_layout.max_z - module_layout.min_z;
+        if (extent_x <= 1e-4f || extent_z <= 1e-4f)
+            continue;
+
+        world.create_module_surface(
+            (module_layout.min_x + module_layout.max_x) * 0.5f,
+            (module_layout.min_z + module_layout.max_z) * 0.5f,
+            ModuleSurfaceMetrics{
+                extent_x,
+                extent_z,
+                kModuleSurfaceHeight,
+            },
+            module_building_color(module_layout.module_path),
+            SourceSymbol{ "", module_layout.module_path },
+            module_surface_elevation);
     }
 
     const float route_width = std::max(

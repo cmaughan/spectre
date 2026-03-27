@@ -28,6 +28,7 @@ Pane splits use the platform default shell (Zsh on macOS, PowerShell on Windows)
 - **Frames in flight**: 2 with synchronization primitives
 - **Pixel format**: BGRA8 Unorm (Neovim sends pre-sRGB colors)
 - **MegaCity materials**: Textured asphalt road surfaces, paving-stone sidewalks, bark-textured central-park trees, and experimental wood-sided building materials with albedo, normal, roughness, and material-AO maps, plus a depth/normal AO prepass and forward-lit AO debug/lighting controls
+- **MegaCity module surfaces**: Each non-central module now draws a thin module-colored extent plate above the shared road layer so module footprints are readable beneath sidewalks and buildings
 - **MegaCity park dressing**: Central park now includes a procedurally generated `DraxulTree` mesh with atlas-based PBR leaf cards
 - **MegaCity dependency routing**: The City Map panel now overlays routed building-to-building dependency lines driven by Tree-sitter field references and road-only semantic routing, and the same routed polylines are emitted into the 3D scene as thin raised connection strips
 

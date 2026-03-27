@@ -68,6 +68,13 @@ struct RouteSegmentMetrics
     float height = 0.04f;
 };
 
+struct ModuleSurfaceMetrics
+{
+    float extent_x = 1.0f;
+    float extent_z = 1.0f;
+    float height = 0.02f;
+};
+
 struct SignMetrics
 {
     float width = 1.0f;
