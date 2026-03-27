@@ -118,6 +118,33 @@ TEST_CASE("megacity world starts empty", "[megacity]")
     CHECK(view.begin() == view.end());
 }
 
+TEST_CASE("megacity world creates tree entities with the tree mesh", "[megacity]")
+{
+    SceneWorld world;
+    const TreeMetrics metrics{
+        .height = 7.0f,
+        .canopy_radius = 1.6f,
+    };
+
+    const entt::entity entity = world.create_tree(
+        2.0f,
+        3.0f,
+        0.25f,
+        metrics,
+        glm::vec4(1.0f),
+        SourceSymbol{ "", "CentralParkTree" });
+
+    const auto& appearance = world.registry().get<Appearance>(entity);
+    const auto& stored_metrics = world.registry().get<TreeMetrics>(entity);
+    const auto& elevation = world.registry().get<Elevation>(entity);
+
+    CHECK(appearance.mesh == MeshId::Tree);
+    CHECK(appearance.material == MaterialId::FlatColor);
+    CHECK(stored_metrics.height == Catch::Approx(7.0f));
+    CHECK(stored_metrics.canopy_radius == Catch::Approx(1.6f));
+    CHECK(elevation.value == Catch::Approx(0.25f));
+}
+
 TEST_CASE("megacity camera projection responds to viewport aspect", "[megacity]")
 {
     IsometricCamera camera;
@@ -1015,6 +1042,7 @@ TEST_CASE("megacity mesh library builds expected primitive counts", "[megacity]"
 {
     const MeshData cube = build_unit_cube_mesh();
     const MeshData floor = build_floor_box_mesh();
+    const MeshData tree = build_tree_mesh();
     const MeshData filled = build_grid_mesh(2, 2, 1.0f);
 
     FloorGridSpec grid;
@@ -1034,6 +1062,14 @@ TEST_CASE("megacity mesh library builds expected primitive counts", "[megacity]"
     CHECK(floor.vertices.size() == 24);
     CHECK(floor.indices.size() == 36);
     CHECK(triangle_up_normal_y(floor, 8) > 0.0f);
+
+    CHECK_FALSE(tree.vertices.empty());
+    CHECK_FALSE(tree.indices.empty());
+    CHECK(tree.indices.size() % 3 == 0);
+    float tree_max_y = 0.0f;
+    for (const auto& vertex : tree.vertices)
+        tree_max_y = std::max(tree_max_y, vertex.position.y);
+    CHECK(tree_max_y >= Catch::Approx(7.0f).margin(0.01f));
 
     CHECK(filled.vertices.size() == 16);
     CHECK(filled.indices.size() == 24);

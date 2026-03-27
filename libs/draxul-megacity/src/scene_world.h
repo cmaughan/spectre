@@ -25,8 +25,8 @@ public:
         MaterialId material = MaterialId::WoodBuilding);
 
     // Create a tree entity at the given world-space center position.
-    entt::entity create_tree(float world_x, float world_z, const TreeMetrics& metrics,
-        const glm::vec4& color, SourceSymbol source = {});
+    entt::entity create_tree(float world_x, float world_z, float elevation,
+        const TreeMetrics& metrics, const glm::vec4& color, SourceSymbol source = {});
 
     // Create a road-strip entity at the given world-space center position.
     entt::entity create_road(float world_x, float world_z, const RoadMetrics& metrics,

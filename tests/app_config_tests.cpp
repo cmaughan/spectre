@@ -642,7 +642,7 @@ TEST_CASE("config host section: unknown TOML table does not warn", "[config]")
     ScopedLogCapture capture;
     AppConfig::parse("window_width = 1280\n"
                      "[mega_city_code]\n"
-                     "sign_text_hidden_px = 1.5\n");
+                     "sign_text_px_range = [1.5, 8.0]\n");
     INFO("host-owned top-level tables should not produce an unknown-key warning");
     REQUIRE(!contains_message(capture.records, "Unknown key 'mega_city_code'"));
 }
@@ -656,9 +656,9 @@ TEST_CASE("config document merge preserves host-owned tables", "[config]")
         std::ofstream out(path, std::ios::trunc);
         out << "window_width = 1200\n"
                "[mega_city_code]\n"
-               "sign_text_hidden_px = 1.5\n"
+               "sign_text_px_range = [1.5, 8.0]\n"
                "[mega_city_code.defaults]\n"
-               "sign_text_full_px = 8.0\n";
+               "sign_text_px_range = [1.5, 8.0]\n";
     }
 
     ConfigDocument document = ConfigDocument::load_from_path(path);
@@ -672,9 +672,8 @@ TEST_CASE("config document merge preserves host-owned tables", "[config]")
     REQUIRE(saved.find("font_size = 17") != std::string::npos);
     INFO("host-owned tables should survive merge/save");
     REQUIRE(saved.find("[mega_city_code]") != std::string::npos);
-    REQUIRE(saved.find("sign_text_hidden_px = 1.5") != std::string::npos);
+    REQUIRE(saved.find("sign_text_px_range") != std::string::npos);
     REQUIRE(saved.find("[mega_city_code.defaults]") != std::string::npos);
-    REQUIRE(saved.find("sign_text_full_px = 8.0") != std::string::npos);
 }
 
 TEST_CASE("megacity config round-trips through config document", "[config][megacity]")
@@ -682,8 +681,7 @@ TEST_CASE("megacity config round-trips through config document", "[config][megac
     ConfigDocument document;
     MegaCityCodeConfig defaults;
     defaults.selected_module_path = "app";
-    defaults.sign_text_hidden_px = 2.5f;
-    defaults.sign_text_full_px = 12.0f;
+    defaults.sign_text_px_range = { 2.5f, 12.0f };
     defaults.clamp_semantic_metrics = true;
     defaults.building_sign_placement = MegaCitySignPlacement::WallNorth;
     defaults.auto_rebuild = true;
@@ -698,23 +696,35 @@ TEST_CASE("megacity config round-trips through config document", "[config][megac
     current.ao_bias = 0.08f;
     current.ao_power = 1.9f;
     current.ao_kernel_size = 24;
+    current.central_park_tree_age_years = 48.0f;
+    current.central_park_tree_seed = 101;
+    current.central_park_tree_overall_scale = 1.35f;
+    current.central_park_tree_radial_segments = 14;
+    current.central_park_tree_max_branch_depth = 4;
+    current.central_park_tree_child_branches_min = 3;
+    current.central_park_tree_child_branches_max = 5;
+    current.central_park_tree_branch_length_scale = 0.74f;
+    current.central_park_tree_branch_radius_scale = 0.58f;
+    current.central_park_tree_upward_bias = 0.52f;
+    current.central_park_tree_outward_bias = 0.92f;
+    current.central_park_tree_curvature = 0.24f;
+    current.central_park_tree_bark_color_noise = 0.06f;
+    current.central_park_tree_bark_root = glm::vec3(0.29f, 0.20f, 0.14f);
+    current.central_park_tree_bark_tip = glm::vec3(0.63f, 0.49f, 0.36f);
     current.module_sign_board_color = glm::vec3(0.85f, 0.80f, 0.72f);
     current.module_sign_text_color = glm::vec3(0.15f, 0.10f, 0.05f);
     current.building_sign_board_color = glm::vec3(0.72f, 0.78f, 0.88f);
     current.building_sign_text_color = glm::vec3(0.08f, 0.09f, 0.15f);
     current.ambient_strength = 0.62f;
     current.point_light_position_valid = true;
-    current.point_light_x = -14.0f;
-    current.point_light_y = 18.5f;
-    current.point_light_z = -9.5f;
+    current.point_light_position = { -14.0f, 18.5f, -9.5f };
     current.point_light_radius = 37.0f;
     current.point_light_brightness = 1.7f;
-    current.directional_light_x = -0.25f;
+    current.directional_light_dir.x = -0.25f;
     current.world_floor_grid_tile_scale = 3.0f;
     current.auto_rebuild = false;
     current.camera_state_valid = true;
-    current.camera_target_x = 12.5f;
-    current.camera_target_z = -8.25f;
+    current.camera_target = { 12.5f, -8.25f };
     current.camera_yaw = -1.75f;
     current.camera_pitch = 0.93f;
     current.camera_orbit_radius = 21.0f;

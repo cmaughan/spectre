@@ -1,5 +1,6 @@
 #pragma once
 
+#include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 
 #include <filesystem>
@@ -84,6 +85,43 @@ inline std::optional<double> get_double(const toml::table& table, std::string_vi
 inline std::optional<bool> get_bool(const toml::table& table, std::string_view key)
 {
     return table[key].value<bool>();
+}
+
+inline std::optional<glm::vec2> get_vec2(const toml::table& table, std::string_view key)
+{
+    const auto* arr = table[key].as_array();
+    if (!arr || arr->size() != 2)
+        return std::nullopt;
+
+    glm::vec2 value{ 0.0f };
+    for (size_t i = 0; i < 2; ++i)
+    {
+        if (auto parsed = (*arr)[i].value<double>())
+        {
+            value[i] = static_cast<float>(*parsed);
+            continue;
+        }
+        if (auto parsed = (*arr)[i].value<int64_t>())
+        {
+            value[i] = static_cast<float>(*parsed);
+            continue;
+        }
+        return std::nullopt;
+    }
+    return value;
+}
+
+inline toml::array make_array(const glm::vec2& value)
+{
+    toml::array array;
+    array.push_back(static_cast<double>(value.x));
+    array.push_back(static_cast<double>(value.y));
+    return array;
+}
+
+inline void insert_vec2(toml::table& table, std::string_view key, const glm::vec2& value)
+{
+    table.insert_or_assign(std::string(key), make_array(value));
 }
 
 inline std::optional<glm::vec3> get_vec3(const toml::table& table, std::string_view key)

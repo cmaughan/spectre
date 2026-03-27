@@ -36,8 +36,7 @@ constexpr auto kDragSmoothingTick = std::chrono::milliseconds(8);
 MegaCityCodeConfig world_rebuild_signature(MegaCityCodeConfig config)
 {
     config.auto_rebuild = false;
-    config.sign_text_hidden_px = 0.0f;
-    config.sign_text_full_px = 0.0f;
+    config.sign_text_px_range = glm::vec2(0.0f);
     config.output_gamma = 1.0f;
     config.ao_debug_view = MegaCityAODebugView::FinalScene;
     config.ao_denoise = true;
@@ -51,18 +50,13 @@ MegaCityCodeConfig world_rebuild_signature(MegaCityCodeConfig config)
     config.world_floor_grid_tile_scale = 0.0f;
     config.world_floor_grid_line_width = 0.0f;
     config.ambient_strength = 0.0f;
-    config.directional_light_x = 0.0f;
-    config.directional_light_y = 0.0f;
-    config.directional_light_z = 0.0f;
+    config.directional_light_dir = glm::vec3(0.0f);
     config.point_light_position_valid = false;
-    config.point_light_x = 0.0f;
-    config.point_light_y = 0.0f;
-    config.point_light_z = 0.0f;
+    config.point_light_position = glm::vec3(0.0f);
     config.point_light_radius = 0.0f;
     config.point_light_brightness = 0.0f;
     config.camera_state_valid = false;
-    config.camera_target_x = 0.0f;
-    config.camera_target_z = 0.0f;
+    config.camera_target = glm::vec2(0.0f);
     config.camera_yaw = 0.0f;
     config.camera_pitch = 0.0f;
     config.camera_orbit_radius = 0.0f;
@@ -239,8 +233,7 @@ void MegaCityHost::sync_camera_state_to_configs()
     const IsometricCameraState state = camera_->state();
     auto write_state = [&](MegaCityCodeConfig& config) {
         config.camera_state_valid = true;
-        config.camera_target_x = state.target.x;
-        config.camera_target_z = state.target.z;
+        config.camera_target = glm::vec2(state.target.x, state.target.z);
         config.camera_yaw = state.yaw;
         config.camera_pitch = state.pitch;
         config.camera_orbit_radius = state.orbit_radius;
@@ -413,7 +406,7 @@ void MegaCityHost::attach_3d_renderer(I3DRenderer& renderer)
 
     if (scene_pass_ && camera_ && world_)
     {
-        auto result = build_scene_snapshot(*camera_, *world_, renderer_config_, sign_label_atlas_);
+        auto result = build_scene_snapshot(*camera_, *world_, renderer_config_, sign_label_atlas_, tree_mesh_);
         world_span_ = result.world_span;
         scene_pass_->set_scene(std::move(result.snapshot));
         scene_dirty_ = false;
@@ -497,6 +490,7 @@ void MegaCityHost::rebuild_semantic_city()
     auto result = build_city(
         *world_, city_db_, sign_text_service_.get(),
         available_modules_, renderer_config_, sign_label_revision_);
+    tree_mesh_ = result.tree_mesh;
 
     // Apply city bounds.
     city_bounds_valid_ = result.city_bounds_valid;
@@ -513,9 +507,8 @@ void MegaCityHost::rebuild_semantic_city()
     {
         auto set_default_light = [&](MegaCityCodeConfig& config) {
             config.point_light_position_valid = true;
-            config.point_light_x = result.default_light_x;
-            config.point_light_y = result.default_light_y;
-            config.point_light_z = result.default_light_z;
+            config.point_light_position = glm::vec3(
+                result.default_light_x, result.default_light_y, result.default_light_z);
             config.point_light_radius = result.default_light_radius;
         };
         set_default_light(renderer_config_);
@@ -535,7 +528,7 @@ void MegaCityHost::rebuild_semantic_city()
             else
                 camera_->frame_world_bounds(city_min_x_, city_max_x_, city_min_z_, city_max_z_);
             camera_->apply_state(IsometricCameraState{
-                .target = { renderer_config_.camera_target_x, 0.0f, renderer_config_.camera_target_z },
+                .target = { renderer_config_.camera_target.x, 0.0f, renderer_config_.camera_target.y },
                 .yaw = renderer_config_.camera_yaw,
                 .pitch = renderer_config_.camera_pitch,
                 .orbit_radius = renderer_config_.camera_orbit_radius,
@@ -672,7 +665,7 @@ void MegaCityHost::pump()
 
     if (scene_dirty_ && scene_pass_ && camera_ && world_)
     {
-        auto result = build_scene_snapshot(*camera_, *world_, renderer_config_, sign_label_atlas_);
+        auto result = build_scene_snapshot(*camera_, *world_, renderer_config_, sign_label_atlas_, tree_mesh_);
         world_span_ = result.world_span;
         scene_pass_->set_scene(std::move(result.snapshot));
         scene_dirty_ = false;

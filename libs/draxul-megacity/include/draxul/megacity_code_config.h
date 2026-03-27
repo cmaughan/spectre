@@ -2,6 +2,7 @@
 
 #include <draxul/config_document.h>
 
+#include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 
 #include <cstdint>
@@ -36,8 +37,7 @@ enum class MegaCityAODebugView : uint8_t
 struct MegaCityCodeConfig
 {
     std::string selected_module_path;
-    float sign_text_hidden_px = 1.5f;
-    float sign_text_full_px = 8.0f;
+    glm::vec2 sign_text_px_range{ 1.5f, 8.0f }; // (hidden, full)
     float output_gamma = 1.0f;
     MegaCityAODebugView ao_debug_view = MegaCityAODebugView::FinalScene;
     bool ao_denoise = true;
@@ -55,29 +55,40 @@ struct MegaCityCodeConfig
     int max_spiral_rings = 4096;
 
     float footprint_base = 1.0f;
-    float footprint_min = 1.0f;
-    float footprint_max = 9.0f;
+    glm::vec2 footprint_range{ 1.0f, 9.0f }; // (min, max)
     float footprint_unclamped_scale = 0.15f;
 
     float height_base = 2.0f;
     float height_mass_weight = 1.35f;
     float height_count_weight = 0.45f;
-    float height_min = 2.0f;
-    float height_max = 12.0f;
+    glm::vec2 height_range{ 2.0f, 12.0f }; // (min, max)
     float height_unclamped_count_weight = 0.27f;
 
     float road_width_base = 0.6f;
     float road_width_scale = 0.85f;
-    float road_width_min = 0.6f;
-    float road_width_max = 3.0f;
+    glm::vec2 road_width_range{ 0.6f, 3.0f }; // (min, max)
     float sidewalk_width = 1.0f;
     float park_footprint = 6.0f;
     float park_height = 0.15f;
     float park_sidewalk_width = 1.0f;
     float park_road_width = 1.0f;
     float park_sign_max_depth_fraction = 0.33f; // max sign depth as fraction of park footprint
-    float central_park_area_scale = 2.0f; // 1..3 multiplier for central park footprint
-    float central_park_border_scale = 2.0f; // 1..3 multiplier for central park sidewalk and road
+    glm::vec2 central_park_scale{ 2.0f, 2.0f }; // (area, border) 1..3 multipliers
+    float central_park_tree_age_years = 32.0f;
+    int central_park_tree_seed = 7;
+    float central_park_tree_overall_scale = 1.0f;
+    int central_park_tree_radial_segments = 12;
+    int central_park_tree_max_branch_depth = 3;
+    int central_park_tree_child_branches_min = 2;
+    int central_park_tree_child_branches_max = 4;
+    float central_park_tree_branch_length_scale = 0.68f;
+    float central_park_tree_branch_radius_scale = 0.62f;
+    float central_park_tree_upward_bias = 0.45f;
+    float central_park_tree_outward_bias = 0.85f;
+    float central_park_tree_curvature = 0.18f;
+    float central_park_tree_bark_color_noise = 0.04f;
+    glm::vec3 central_park_tree_bark_root{ 0.32f, 0.23f, 0.16f };
+    glm::vec3 central_park_tree_bark_tip{ 0.58f, 0.45f, 0.33f };
 
     float sign_label_point_size = 18.0f;
     glm::vec3 module_sign_board_color{ 1.0f, 1.0f, 1.0f };
@@ -97,7 +108,6 @@ struct MegaCityCodeConfig
     float wall_sign_bottom_inset = 0.28f;
     int wall_sign_text_padding = 4;
     float road_sign_edge_inset = 0.06f;
-    float road_sign_side_inset = 0.12f;
     float minimum_road_sign_depth = 0.16f;
     float sidewalk_sign_edge_inset = 0.04f;
     float road_sign_lift = 0.006f;
@@ -113,19 +123,14 @@ struct MegaCityCodeConfig
     float world_floor_grid_line_width = 0.08f;
 
     float ambient_strength = 0.45f;
-    float directional_light_x = -0.5f;
-    float directional_light_y = -1.0f;
-    float directional_light_z = -0.3f;
+    glm::vec3 directional_light_dir{ -0.5f, -1.0f, -0.3f };
     bool point_light_position_valid = false;
-    float point_light_x = 0.0f;
-    float point_light_y = 0.0f;
-    float point_light_z = 0.0f;
+    glm::vec3 point_light_position{ 0.0f };
     float point_light_radius = 24.0f;
     float point_light_brightness = 1.0f;
 
     bool camera_state_valid = false;
-    float camera_target_x = 0.0f;
-    float camera_target_z = 0.0f;
+    glm::vec2 camera_target{ 0.0f };
     float camera_yaw = -2.35619449f;
     float camera_pitch = 0.72425002f;
     float camera_orbit_radius = 7.07106781f;

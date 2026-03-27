@@ -642,9 +642,11 @@ struct IsometricScenePass::State
     VkPipeline pipeline = VK_NULL_HANDLE;
     MeshBuffers cube_mesh;
     MeshBuffers floor_mesh;
+    MeshBuffers tree_mesh;
     MeshBuffers road_surface_mesh;
     MeshBuffers roof_sign_mesh;
     MeshBuffers wall_sign_mesh;
+    const MeshData* tree_mesh_source = nullptr;
     MeshData cached_grid_mesh;
     FloorGridSpec cached_grid_spec;
     bool has_cached_grid_mesh = false;
@@ -845,6 +847,11 @@ struct IsometricScenePass::State
             DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity scene: failed to upload floor mesh");
             return false;
         }
+        if (!upload_mesh(allocator, build_tree_mesh(), tree_mesh))
+        {
+            DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity scene: failed to upload tree mesh");
+            return false;
+        }
         if (!upload_mesh(allocator, build_road_surface_mesh(), road_surface_mesh))
         {
             DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity scene: failed to upload road surface mesh");
@@ -960,6 +967,26 @@ struct IsometricScenePass::State
 
         refresh_gbuffer_descriptors();
         refresh_prepass_descriptors();
+        return true;
+    }
+
+    bool ensure_tree_mesh(const std::shared_ptr<const MeshData>& tree_mesh_data)
+    {
+        if (!tree_mesh_data)
+            return true;
+        if (tree_mesh_source == tree_mesh_data.get() && tree_mesh.index_count > 0)
+            return true;
+
+        MeshBuffers replacement;
+        if (!upload_mesh(allocator, *tree_mesh_data, replacement))
+        {
+            DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity scene: failed to upload procedural tree mesh");
+            return false;
+        }
+
+        destroy_mesh(allocator, tree_mesh);
+        tree_mesh = std::move(replacement);
+        tree_mesh_source = tree_mesh_data.get();
         return true;
     }
 
@@ -1957,6 +1984,7 @@ struct IsometricScenePass::State
         {
             destroy_mesh(allocator, cube_mesh);
             destroy_mesh(allocator, floor_mesh);
+            destroy_mesh(allocator, tree_mesh);
             destroy_mesh(allocator, road_surface_mesh);
             destroy_mesh(allocator, roof_sign_mesh);
             destroy_mesh(allocator, wall_sign_mesh);
@@ -2054,6 +2082,8 @@ void IsometricScenePass::record_prepass(IRenderContext& ctx)
     // Ensure floor grid mesh
     if (!state_->ensure_floor_grid(scene_.floor_grid))
         return;
+    if (!state_->ensure_tree_mesh(scene_.tree_mesh))
+        return;
     MeshSlice grid_slice;
     if (state_->has_cached_grid_mesh
         && !stream_transient_mesh(vk_ctx->allocator(), state_->cached_grid_mesh,
@@ -2126,6 +2156,9 @@ void IsometricScenePass::record_prepass(IRenderContext& ctx)
             break;
         case MeshId::Cube:
             mesh = &state_->cube_mesh;
+            break;
+        case MeshId::Tree:
+            mesh = &state_->tree_mesh;
             break;
         case MeshId::RoadSurface:
             mesh = &state_->road_surface_mesh;
@@ -2235,6 +2268,8 @@ void IsometricScenePass::record(IRenderContext& ctx)
         return;
     if (!state_->ensure_road_materials(*vk_ctx, cmd))
         return;
+    if (!state_->ensure_tree_mesh(scene_.tree_mesh))
+        return;
     if (!state_->ensure_label_atlas(*vk_ctx, cmd, scene_.label_atlas))
         return;
     if (state_->has_cached_grid_mesh
@@ -2286,6 +2321,9 @@ void IsometricScenePass::record(IRenderContext& ctx)
             break;
         case MeshId::Cube:
             mesh = &state_->cube_mesh;
+            break;
+        case MeshId::Tree:
+            mesh = &state_->tree_mesh;
             break;
         case MeshId::RoadSurface:
             mesh = &state_->road_surface_mesh;

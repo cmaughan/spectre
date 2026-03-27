@@ -1,6 +1,7 @@
 #include "mesh_library.h"
 
 #include <draxul/primitive_meshes.h>
+#include <draxul/tree_generator.h>
 
 #include <array>
 
@@ -49,6 +50,20 @@ MeshData build_unit_cube_mesh()
 MeshData build_floor_box_mesh()
 {
     return build_unit_cube_mesh();
+}
+
+MeshData build_tree_mesh()
+{
+    DraxulTreeParams params = make_tree_params_from_age(40.0f);
+    params.seed = 7;
+    params.radial_segments = 12;
+    params.trunk_length = 7.0f;
+    params.trunk_base_radius = 0.55f;
+    params.trunk_tip_radius = 0.22f;
+    params.bark_color_root = { 0.18f, 0.12f, 0.08f };
+    params.bark_color_tip = { 0.42f, 0.31f, 0.21f };
+    params.bark_color_noise = 0.05f;
+    return generate_draxul_tree(params);
 }
 
 MeshData build_road_surface_mesh()

@@ -713,6 +713,16 @@ bool render_renderer_controls(MegacityRendererControls& controls)
             controls.committed_edit = true;
         }
     };
+    auto edit_vec2 = [&](const char* label, glm::vec2& value, float speed, float min_value, float max_value, const char* format) {
+        const bool item_changed = ImGui::DragFloat2(label, &value.x, speed, min_value, max_value, format);
+        changed |= item_changed;
+        note_commit();
+    };
+    auto edit_vec3 = [&](const char* label, glm::vec3& value, float speed, float min_value, float max_value, const char* format) {
+        const bool item_changed = ImGui::DragFloat3(label, &value.x, speed, min_value, max_value, format);
+        changed |= item_changed;
+        note_commit();
+    };
 
     if (ImGui::TreeNodeEx("##renderer_build", ImGuiTreeNodeFlags_SpanAvailWidth, "City Build"))
     {
@@ -775,34 +785,44 @@ bool render_renderer_controls(MegacityRendererControls& controls)
         edit_float("Placement Step", config.placement_step, 0.01f, 0.05f, 8.0f, "%.2f");
         edit_int("Max Spiral Rings", config.max_spiral_rings, 8, 8, 65536);
         edit_float("Footprint Base", config.footprint_base, 0.05f, 0.0f, 32.0f, "%.2f");
-        edit_float("Footprint Min", config.footprint_min, 0.05f, 0.0f, 32.0f, "%.2f");
-        edit_float("Footprint Max", config.footprint_max, 0.05f, 0.0f, 64.0f, "%.2f");
+        edit_vec2("Footprint Range", config.footprint_range, 0.05f, 0.0f, 64.0f, "%.2f");
         edit_float("Footprint Unclamped Scale", config.footprint_unclamped_scale, 0.01f, 0.0f, 4.0f, "%.2f");
         edit_float("Height Base", config.height_base, 0.05f, 0.0f, 32.0f, "%.2f");
         edit_float("Height Mass Weight", config.height_mass_weight, 0.01f, 0.0f, 8.0f, "%.2f");
         edit_float("Height Count Weight", config.height_count_weight, 0.01f, 0.0f, 8.0f, "%.2f");
-        edit_float("Height Min", config.height_min, 0.05f, 0.0f, 32.0f, "%.2f");
-        edit_float("Height Max", config.height_max, 0.05f, 0.0f, 64.0f, "%.2f");
+        edit_vec2("Height Range", config.height_range, 0.05f, 0.0f, 64.0f, "%.2f");
         edit_float("Height Unclamped Count Weight", config.height_unclamped_count_weight, 0.01f, 0.0f, 8.0f, "%.2f");
         edit_float("Road Width Base", config.road_width_base, 0.01f, 0.0f, 16.0f, "%.2f");
         edit_float("Road Width Scale", config.road_width_scale, 0.01f, 0.0f, 8.0f, "%.2f");
-        edit_float("Road Width Min", config.road_width_min, 0.01f, 0.0f, 16.0f, "%.2f");
-        edit_float("Road Width Max", config.road_width_max, 0.01f, 0.0f, 32.0f, "%.2f");
+        edit_vec2("Road Width Range", config.road_width_range, 0.01f, 0.0f, 32.0f, "%.2f");
         edit_float("Sidewalk Width", config.sidewalk_width, 0.01f, 0.0f, 16.0f, "%.2f");
         edit_float("Park Footprint", config.park_footprint, 0.5f, 0.0f, 32.0f, "%.1f");
         edit_float("Park Height", config.park_height, 0.01f, 0.0f, 2.0f, "%.2f");
         edit_float("Park Sidewalk Width", config.park_sidewalk_width, 0.01f, 0.0f, 16.0f, "%.2f");
         edit_float("Park Road Width", config.park_road_width, 0.01f, 0.0f, 16.0f, "%.2f");
         edit_float("Park Sign Max Depth", config.park_sign_max_depth_fraction, 0.01f, 0.05f, 1.0f, "%.2f");
-        edit_float("Central Park Area Scale", config.central_park_area_scale, 0.1f, 1.0f, 3.0f, "%.1f");
-        edit_float("Central Park Border Scale", config.central_park_border_scale, 0.1f, 1.0f, 3.0f, "%.1f");
+        edit_vec2("Central Park Scale", config.central_park_scale, 0.1f, 1.0f, 3.0f, "%.1f");
+        edit_float("Tree Age (Years)", config.central_park_tree_age_years, 0.5f, 0.5f, 200.0f, "%.1f");
+        edit_int("Tree Seed", config.central_park_tree_seed, 1, 0, 1 << 20);
+        edit_float("Tree Overall Scale", config.central_park_tree_overall_scale, 0.05f, 0.1f, 4.0f, "%.2f");
+        edit_int("Tree Radial Segments", config.central_park_tree_radial_segments, 1, 3, 32);
+        edit_int("Tree Max Branch Depth", config.central_park_tree_max_branch_depth, 1, 0, 6);
+        edit_int("Tree Child Branches Min", config.central_park_tree_child_branches_min, 1, 0, 8);
+        edit_int("Tree Child Branches Max", config.central_park_tree_child_branches_max, 1, 0, 12);
+        edit_float("Tree Branch Length Scale", config.central_park_tree_branch_length_scale, 0.01f, 0.1f, 1.0f, "%.2f");
+        edit_float("Tree Branch Radius Scale", config.central_park_tree_branch_radius_scale, 0.01f, 0.1f, 1.0f, "%.2f");
+        edit_float("Tree Upward Bias", config.central_park_tree_upward_bias, 0.01f, -1.0f, 2.0f, "%.2f");
+        edit_float("Tree Outward Bias", config.central_park_tree_outward_bias, 0.01f, 0.0f, 2.0f, "%.2f");
+        edit_float("Tree Curvature", config.central_park_tree_curvature, 0.01f, 0.0f, 1.0f, "%.2f");
+        edit_float("Tree Bark Noise", config.central_park_tree_bark_color_noise, 0.005f, 0.0f, 0.5f, "%.3f");
+        edit_color3("Tree Bark Root", config.central_park_tree_bark_root);
+        edit_color3("Tree Bark Tip", config.central_park_tree_bark_tip);
         ImGui::TreePop();
     }
 
     if (ImGui::TreeNodeEx("##renderer_signs", ImGuiTreeNodeFlags_SpanAvailWidth, "Signs"))
     {
-        edit_float("Sign Text Hidden <= px", config.sign_text_hidden_px, 0.1f, 0.0f, 64.0f, "%.1f");
-        edit_float("Sign Text Full >= px", config.sign_text_full_px, 0.1f, 0.0f, 64.0f, "%.1f");
+        edit_vec2("Sign Text px Range", config.sign_text_px_range, 0.1f, 0.0f, 64.0f, "%.1f");
         edit_float("Sign Label Point Size", config.sign_label_point_size, 0.25f, 1.0f, 72.0f, "%.1f");
         edit_color3("Module Sign Board Color", config.module_sign_board_color);
         edit_color3("Module Sign Text Color", config.module_sign_text_color);
@@ -839,7 +859,6 @@ bool render_renderer_controls(MegacityRendererControls& controls)
         edit_float("Wall Sign Top Inset", config.wall_sign_top_inset, 0.01f, 0.0f, 8.0f, "%.2f");
         edit_float("Wall Sign Bottom Inset", config.wall_sign_bottom_inset, 0.01f, 0.0f, 8.0f, "%.2f");
         edit_float("Road Sign Edge Inset", config.road_sign_edge_inset, 0.01f, 0.0f, 4.0f, "%.2f");
-        edit_float("Road Sign Side Inset", config.road_sign_side_inset, 0.01f, 0.0f, 4.0f, "%.2f");
         edit_float("Minimum Road Sign Depth", config.minimum_road_sign_depth, 0.01f, 0.01f, 8.0f, "%.2f");
         edit_float("Sidewalk Sign Edge Inset", config.sidewalk_sign_edge_inset, 0.01f, 0.0f, 4.0f, "%.2f");
         edit_float("Road Sign Lift", config.road_sign_lift, 0.001f, 0.0f, 1.0f, "%.3f");
@@ -863,26 +882,13 @@ bool render_renderer_controls(MegacityRendererControls& controls)
     if (ImGui::TreeNodeEx("##renderer_lighting", ImGuiTreeNodeFlags_SpanAvailWidth, "Lighting"))
     {
         edit_float("Ambient", config.ambient_strength, 0.01f, 0.0f, 4.0f, "%.2f");
-        edit_float("Directional Light X", config.directional_light_x, 0.01f, -4.0f, 4.0f, "%.2f");
-        edit_float("Directional Light Y", config.directional_light_y, 0.01f, -4.0f, 4.0f, "%.2f");
-        edit_float("Directional Light Z", config.directional_light_z, 0.01f, -4.0f, 4.0f, "%.2f");
-        const std::array<float, 4> previous_point_light = {
-            config.point_light_x,
-            config.point_light_y,
-            config.point_light_z,
-            config.point_light_radius,
-        };
-        edit_float("Point Light X", config.point_light_x, 0.05f, -1024.0f, 1024.0f, "%.2f");
-        edit_float("Point Light Y", config.point_light_y, 0.05f, -1024.0f, 1024.0f, "%.2f");
-        edit_float("Point Light Z", config.point_light_z, 0.05f, -1024.0f, 1024.0f, "%.2f");
+        edit_vec3("Directional Light", config.directional_light_dir, 0.01f, -4.0f, 4.0f, "%.2f");
+        const glm::vec3 previous_point_pos = config.point_light_position;
+        const float previous_point_radius = config.point_light_radius;
+        edit_vec3("Point Light Position", config.point_light_position, 0.05f, -1024.0f, 1024.0f, "%.2f");
         edit_float("Point Light Radius", config.point_light_radius, 0.05f, 0.1f, 2048.0f, "%.2f");
-        if (previous_point_light
-            != std::array<float, 4>{
-                config.point_light_x,
-                config.point_light_y,
-                config.point_light_z,
-                config.point_light_radius,
-            })
+        if (config.point_light_position != previous_point_pos
+            || config.point_light_radius != previous_point_radius)
         {
             config.point_light_position_valid = true;
         }

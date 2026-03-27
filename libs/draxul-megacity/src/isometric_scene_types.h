@@ -9,11 +9,15 @@
 namespace draxul
 {
 
+using SceneVertex = GeometryVertex;
+using MeshData = GeometryMesh;
+
 enum class MeshId : uint32_t
 {
     Grid,
     Floor,
     Cube,
+    Tree,
     RoadSurface,
     RoofSign,
     WallSign,
@@ -125,11 +129,9 @@ struct SceneSnapshot
     SceneCameraData camera;
     FloorGridSpec floor_grid;
     std::shared_ptr<const LabelAtlasData> label_atlas;
+    std::shared_ptr<const MeshData> tree_mesh;
     std::vector<SceneMaterial> materials;
     std::vector<SceneObject> objects;
 };
-
-using SceneVertex = GeometryVertex;
-using MeshData = GeometryMesh;
 
 } // namespace draxul

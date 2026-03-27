@@ -1,5 +1,7 @@
 #pragma once
 
+#include <draxul/geometry_mesh.h>
+
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -31,6 +33,7 @@ struct CityBuildResult
     float default_light_y = 0.0f;
     float default_light_z = 0.0f;
     float default_light_radius = 0.0f;
+    std::shared_ptr<const GeometryMesh> tree_mesh;
 };
 
 // Build (or rebuild) the semantic city into the given SceneWorld.

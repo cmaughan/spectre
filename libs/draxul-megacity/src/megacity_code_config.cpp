@@ -91,6 +91,12 @@ std::optional<float> get_float(const toml::table& table, const char* key)
     return std::nullopt;
 }
 
+void assign_vec2(const toml::table& table, const char* key, glm::vec2& target)
+{
+    if (auto parsed = toml_support::get_vec2(table, key); parsed.has_value())
+        target = *parsed;
+}
+
 void assign_vec3(const toml::table& table, const char* key, glm::vec3& target)
 {
     if (auto parsed = toml_support::get_vec3(table, key); parsed.has_value())
@@ -127,8 +133,7 @@ void apply_megacity_code_table(MegaCityCodeConfig& config, const toml::table& ta
 
     if (auto selected_module_path = toml_support::get_string(table, "selected_module_path"); selected_module_path.has_value())
         config.selected_module_path = *selected_module_path;
-    assign_float("sign_text_hidden_px", config.sign_text_hidden_px);
-    assign_float("sign_text_full_px", config.sign_text_full_px);
+    assign_vec2(table, "sign_text_px_range", config.sign_text_px_range);
     assign_float("output_gamma", config.output_gamma);
     if (auto debug_view = toml_support::get_string(table, "ao_debug_view"))
     {
@@ -154,29 +159,40 @@ void apply_megacity_code_table(MegaCityCodeConfig& config, const toml::table& ta
     assign_int("max_spiral_rings", config.max_spiral_rings);
 
     assign_float("footprint_base", config.footprint_base);
-    assign_float("footprint_min", config.footprint_min);
-    assign_float("footprint_max", config.footprint_max);
+    assign_vec2(table, "footprint_range", config.footprint_range);
     assign_float("footprint_unclamped_scale", config.footprint_unclamped_scale);
 
     assign_float("height_base", config.height_base);
     assign_float("height_mass_weight", config.height_mass_weight);
     assign_float("height_count_weight", config.height_count_weight);
-    assign_float("height_min", config.height_min);
-    assign_float("height_max", config.height_max);
+    assign_vec2(table, "height_range", config.height_range);
     assign_float("height_unclamped_count_weight", config.height_unclamped_count_weight);
 
     assign_float("road_width_base", config.road_width_base);
     assign_float("road_width_scale", config.road_width_scale);
-    assign_float("road_width_min", config.road_width_min);
-    assign_float("road_width_max", config.road_width_max);
+    assign_vec2(table, "road_width_range", config.road_width_range);
     assign_float("sidewalk_width", config.sidewalk_width);
     assign_float("park_footprint", config.park_footprint);
     assign_float("park_height", config.park_height);
     assign_float("park_sidewalk_width", config.park_sidewalk_width);
     assign_float("park_road_width", config.park_road_width);
     assign_float("park_sign_max_depth_fraction", config.park_sign_max_depth_fraction);
-    assign_float("central_park_area_scale", config.central_park_area_scale);
-    assign_float("central_park_border_scale", config.central_park_border_scale);
+    assign_vec2(table, "central_park_scale", config.central_park_scale);
+    assign_float("central_park_tree_age_years", config.central_park_tree_age_years);
+    assign_int("central_park_tree_seed", config.central_park_tree_seed);
+    assign_float("central_park_tree_overall_scale", config.central_park_tree_overall_scale);
+    assign_int("central_park_tree_radial_segments", config.central_park_tree_radial_segments);
+    assign_int("central_park_tree_max_branch_depth", config.central_park_tree_max_branch_depth);
+    assign_int("central_park_tree_child_branches_min", config.central_park_tree_child_branches_min);
+    assign_int("central_park_tree_child_branches_max", config.central_park_tree_child_branches_max);
+    assign_float("central_park_tree_branch_length_scale", config.central_park_tree_branch_length_scale);
+    assign_float("central_park_tree_branch_radius_scale", config.central_park_tree_branch_radius_scale);
+    assign_float("central_park_tree_upward_bias", config.central_park_tree_upward_bias);
+    assign_float("central_park_tree_outward_bias", config.central_park_tree_outward_bias);
+    assign_float("central_park_tree_curvature", config.central_park_tree_curvature);
+    assign_float("central_park_tree_bark_color_noise", config.central_park_tree_bark_color_noise);
+    assign_vec3(table, "central_park_tree_bark_root", config.central_park_tree_bark_root);
+    assign_vec3(table, "central_park_tree_bark_tip", config.central_park_tree_bark_tip);
 
     assign_float("sign_label_point_size", config.sign_label_point_size);
     assign_vec3(table, "module_sign_board_color", config.module_sign_board_color);
@@ -214,7 +230,6 @@ void apply_megacity_code_table(MegaCityCodeConfig& config, const toml::table& ta
     assign_float("wall_sign_bottom_inset", config.wall_sign_bottom_inset);
     assign_int("wall_sign_text_padding", config.wall_sign_text_padding);
     assign_float("road_sign_edge_inset", config.road_sign_edge_inset);
-    assign_float("road_sign_side_inset", config.road_sign_side_inset);
     assign_float("minimum_road_sign_depth", config.minimum_road_sign_depth);
     assign_float("sidewalk_sign_edge_inset", config.sidewalk_sign_edge_inset);
     assign_float("road_sign_lift", config.road_sign_lift);
@@ -230,18 +245,13 @@ void apply_megacity_code_table(MegaCityCodeConfig& config, const toml::table& ta
     assign_float("world_floor_grid_line_width", config.world_floor_grid_line_width);
 
     assign_float("ambient_strength", config.ambient_strength);
-    assign_float("directional_light_x", config.directional_light_x);
-    assign_float("directional_light_y", config.directional_light_y);
-    assign_float("directional_light_z", config.directional_light_z);
+    assign_vec3(table, "directional_light_dir", config.directional_light_dir);
     assign_bool("point_light_position_valid", config.point_light_position_valid);
-    assign_float("point_light_x", config.point_light_x);
-    assign_float("point_light_y", config.point_light_y);
-    assign_float("point_light_z", config.point_light_z);
+    assign_vec3(table, "point_light_position", config.point_light_position);
     assign_float("point_light_radius", config.point_light_radius);
     assign_float("point_light_brightness", config.point_light_brightness);
     assign_bool("camera_state_valid", config.camera_state_valid);
-    assign_float("camera_target_x", config.camera_target_x);
-    assign_float("camera_target_z", config.camera_target_z);
+    assign_vec2(table, "camera_target", config.camera_target);
     assign_float("camera_yaw", config.camera_yaw);
     assign_float("camera_pitch", config.camera_pitch);
     assign_float("camera_orbit_radius", config.camera_orbit_radius);
@@ -252,8 +262,7 @@ toml::table serialize_megacity_code_table(const MegaCityCodeConfig& config)
 {
     toml::table table;
     table.insert_or_assign("selected_module_path", config.selected_module_path);
-    table.insert_or_assign("sign_text_hidden_px", static_cast<double>(config.sign_text_hidden_px));
-    table.insert_or_assign("sign_text_full_px", static_cast<double>(config.sign_text_full_px));
+    toml_support::insert_vec2(table, "sign_text_px_range", config.sign_text_px_range);
     table.insert_or_assign("output_gamma", static_cast<double>(config.output_gamma));
     table.insert_or_assign("ao_debug_view", std::string(format_megacity_ao_debug_view(config.ao_debug_view)));
     table.insert_or_assign("ao_denoise", config.ao_denoise);
@@ -269,27 +278,38 @@ toml::table serialize_megacity_code_table(const MegaCityCodeConfig& config)
     table.insert_or_assign("placement_step", static_cast<double>(config.placement_step));
     table.insert_or_assign("max_spiral_rings", config.max_spiral_rings);
     table.insert_or_assign("footprint_base", static_cast<double>(config.footprint_base));
-    table.insert_or_assign("footprint_min", static_cast<double>(config.footprint_min));
-    table.insert_or_assign("footprint_max", static_cast<double>(config.footprint_max));
+    toml_support::insert_vec2(table, "footprint_range", config.footprint_range);
     table.insert_or_assign("footprint_unclamped_scale", static_cast<double>(config.footprint_unclamped_scale));
     table.insert_or_assign("height_base", static_cast<double>(config.height_base));
     table.insert_or_assign("height_mass_weight", static_cast<double>(config.height_mass_weight));
     table.insert_or_assign("height_count_weight", static_cast<double>(config.height_count_weight));
-    table.insert_or_assign("height_min", static_cast<double>(config.height_min));
-    table.insert_or_assign("height_max", static_cast<double>(config.height_max));
+    toml_support::insert_vec2(table, "height_range", config.height_range);
     table.insert_or_assign("height_unclamped_count_weight", static_cast<double>(config.height_unclamped_count_weight));
     table.insert_or_assign("road_width_base", static_cast<double>(config.road_width_base));
     table.insert_or_assign("road_width_scale", static_cast<double>(config.road_width_scale));
-    table.insert_or_assign("road_width_min", static_cast<double>(config.road_width_min));
-    table.insert_or_assign("road_width_max", static_cast<double>(config.road_width_max));
+    toml_support::insert_vec2(table, "road_width_range", config.road_width_range);
     table.insert_or_assign("sidewalk_width", static_cast<double>(config.sidewalk_width));
     table.insert_or_assign("park_footprint", static_cast<double>(config.park_footprint));
     table.insert_or_assign("park_height", static_cast<double>(config.park_height));
     table.insert_or_assign("park_sidewalk_width", static_cast<double>(config.park_sidewalk_width));
     table.insert_or_assign("park_road_width", static_cast<double>(config.park_road_width));
     table.insert_or_assign("park_sign_max_depth_fraction", static_cast<double>(config.park_sign_max_depth_fraction));
-    table.insert_or_assign("central_park_area_scale", static_cast<double>(config.central_park_area_scale));
-    table.insert_or_assign("central_park_border_scale", static_cast<double>(config.central_park_border_scale));
+    toml_support::insert_vec2(table, "central_park_scale", config.central_park_scale);
+    table.insert_or_assign("central_park_tree_age_years", static_cast<double>(config.central_park_tree_age_years));
+    table.insert_or_assign("central_park_tree_seed", config.central_park_tree_seed);
+    table.insert_or_assign("central_park_tree_overall_scale", static_cast<double>(config.central_park_tree_overall_scale));
+    table.insert_or_assign("central_park_tree_radial_segments", config.central_park_tree_radial_segments);
+    table.insert_or_assign("central_park_tree_max_branch_depth", config.central_park_tree_max_branch_depth);
+    table.insert_or_assign("central_park_tree_child_branches_min", config.central_park_tree_child_branches_min);
+    table.insert_or_assign("central_park_tree_child_branches_max", config.central_park_tree_child_branches_max);
+    table.insert_or_assign("central_park_tree_branch_length_scale", static_cast<double>(config.central_park_tree_branch_length_scale));
+    table.insert_or_assign("central_park_tree_branch_radius_scale", static_cast<double>(config.central_park_tree_branch_radius_scale));
+    table.insert_or_assign("central_park_tree_upward_bias", static_cast<double>(config.central_park_tree_upward_bias));
+    table.insert_or_assign("central_park_tree_outward_bias", static_cast<double>(config.central_park_tree_outward_bias));
+    table.insert_or_assign("central_park_tree_curvature", static_cast<double>(config.central_park_tree_curvature));
+    table.insert_or_assign("central_park_tree_bark_color_noise", static_cast<double>(config.central_park_tree_bark_color_noise));
+    table.insert_or_assign("central_park_tree_bark_root", toml_support::make_array(config.central_park_tree_bark_root));
+    table.insert_or_assign("central_park_tree_bark_tip", toml_support::make_array(config.central_park_tree_bark_tip));
     table.insert_or_assign("sign_label_point_size", static_cast<double>(config.sign_label_point_size));
     toml_support::insert_vec3(table, "module_sign_board_color", config.module_sign_board_color);
     toml_support::insert_vec3(table, "module_sign_text_color", config.module_sign_text_color);
@@ -308,7 +328,6 @@ toml::table serialize_megacity_code_table(const MegaCityCodeConfig& config)
     table.insert_or_assign("wall_sign_bottom_inset", static_cast<double>(config.wall_sign_bottom_inset));
     table.insert_or_assign("wall_sign_text_padding", config.wall_sign_text_padding);
     table.insert_or_assign("road_sign_edge_inset", static_cast<double>(config.road_sign_edge_inset));
-    table.insert_or_assign("road_sign_side_inset", static_cast<double>(config.road_sign_side_inset));
     table.insert_or_assign("minimum_road_sign_depth", static_cast<double>(config.minimum_road_sign_depth));
     table.insert_or_assign("sidewalk_sign_edge_inset", static_cast<double>(config.sidewalk_sign_edge_inset));
     table.insert_or_assign("road_sign_lift", static_cast<double>(config.road_sign_lift));
@@ -322,18 +341,13 @@ toml::table serialize_megacity_code_table(const MegaCityCodeConfig& config)
     table.insert_or_assign("world_floor_grid_tile_scale", static_cast<double>(config.world_floor_grid_tile_scale));
     table.insert_or_assign("world_floor_grid_line_width", static_cast<double>(config.world_floor_grid_line_width));
     table.insert_or_assign("ambient_strength", static_cast<double>(config.ambient_strength));
-    table.insert_or_assign("directional_light_x", static_cast<double>(config.directional_light_x));
-    table.insert_or_assign("directional_light_y", static_cast<double>(config.directional_light_y));
-    table.insert_or_assign("directional_light_z", static_cast<double>(config.directional_light_z));
+    toml_support::insert_vec3(table, "directional_light_dir", config.directional_light_dir);
     table.insert_or_assign("point_light_position_valid", config.point_light_position_valid);
-    table.insert_or_assign("point_light_x", static_cast<double>(config.point_light_x));
-    table.insert_or_assign("point_light_y", static_cast<double>(config.point_light_y));
-    table.insert_or_assign("point_light_z", static_cast<double>(config.point_light_z));
+    toml_support::insert_vec3(table, "point_light_position", config.point_light_position);
     table.insert_or_assign("point_light_radius", static_cast<double>(config.point_light_radius));
     table.insert_or_assign("point_light_brightness", static_cast<double>(config.point_light_brightness));
     table.insert_or_assign("camera_state_valid", config.camera_state_valid);
-    table.insert_or_assign("camera_target_x", static_cast<double>(config.camera_target_x));
-    table.insert_or_assign("camera_target_z", static_cast<double>(config.camera_target_z));
+    toml_support::insert_vec2(table, "camera_target", config.camera_target);
     table.insert_or_assign("camera_yaw", static_cast<double>(config.camera_yaw));
     table.insert_or_assign("camera_pitch", static_cast<double>(config.camera_pitch));
     table.insert_or_assign("camera_orbit_radius", static_cast<double>(config.camera_orbit_radius));

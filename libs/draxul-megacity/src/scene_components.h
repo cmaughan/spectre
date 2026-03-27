@@ -73,6 +73,7 @@ struct SignMetrics
 // Code-analysis metrics for trees (free functions).
 struct TreeMetrics
 {
+    float height = 1.0f;
     float canopy_radius = 0.5f;
 };
 

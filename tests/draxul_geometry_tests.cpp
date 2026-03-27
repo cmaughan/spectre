@@ -6,6 +6,7 @@
 #include <draxul/tree_generator.h>
 
 #include <glm/geometric.hpp>
+#include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 
 using namespace draxul;
@@ -67,6 +68,23 @@ TEST_CASE("tree generator is deterministic for a fixed seed", "[geometry]")
     CHECK(a.vertices[7].normal == b.vertices[7].normal);
     CHECK(a.vertices.back().color == b.vertices.back().color);
     CHECK(a.indices == b.indices);
+}
+
+TEST_CASE("tree generator emits branching canopy beyond the trunk radius", "[geometry]")
+{
+    DraxulTreeParams params = make_tree_params_from_age(24.0f);
+    params.seed = 11;
+    params.max_branch_depth = 3;
+    params.child_branches_min = 2;
+    params.child_branches_max = 4;
+
+    const GeometryMesh mesh = generate_draxul_tree(params);
+
+    float max_horizontal_radius = 0.0f;
+    for (const GeometryVertex& vertex : mesh.vertices)
+        max_horizontal_radius = std::max(max_horizontal_radius, glm::length(glm::vec2(vertex.position.x, vertex.position.z)));
+
+    CHECK(max_horizontal_radius > params.trunk_base_radius * params.overall_scale * 1.5f);
 }
 
 TEST_CASE("unit cube geometry uses the shared vertex format", "[geometry]")

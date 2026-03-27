@@ -11,8 +11,10 @@
 #include <draxul/log.h>
 #include <draxul/megacity_code_config.h>
 #include <draxul/text_service.h>
+#include <draxul/tree_generator.h>
 #include <filesystem>
 #include <glm/gtc/constants.hpp>
+#include <limits>
 #include <string>
 #include <string_view>
 
@@ -119,6 +121,49 @@ glm::vec4 module_building_layer_color(const glm::vec4& module_color, size_t laye
         return module_color;
     const glm::vec3 dark_band = glm::mix(glm::vec3(module_color), kCatppuccinSurface0, 0.28f);
     return glm::vec4(glm::clamp(dark_band, glm::vec3(0.0f), glm::vec3(1.0f)), module_color.a);
+}
+
+DraxulTreeParams make_central_park_tree_params(const MegaCityCodeConfig& config)
+{
+    DraxulTreeParams params = make_tree_params_from_age(config.central_park_tree_age_years);
+    params.seed = static_cast<uint64_t>(std::max(config.central_park_tree_seed, 0));
+    params.overall_scale *= std::max(config.central_park_tree_overall_scale, 0.1f);
+    params.radial_segments = std::max(config.central_park_tree_radial_segments, 3);
+    params.max_branch_depth = std::max(config.central_park_tree_max_branch_depth, 0);
+    params.child_branches_min = std::max(config.central_park_tree_child_branches_min, 0);
+    params.child_branches_max = std::max(config.central_park_tree_child_branches_max, params.child_branches_min);
+    params.branch_length_scale = std::clamp(config.central_park_tree_branch_length_scale, 0.1f, 1.0f);
+    params.branch_radius_scale = std::clamp(config.central_park_tree_branch_radius_scale, 0.1f, 1.0f);
+    params.upward_bias = config.central_park_tree_upward_bias;
+    params.outward_bias = std::max(config.central_park_tree_outward_bias, 0.0f);
+    params.curvature = std::clamp(config.central_park_tree_curvature, 0.0f, 1.0f);
+    params.bark_color_noise = std::clamp(config.central_park_tree_bark_color_noise, 0.0f, 0.5f);
+    params.bark_color_root = glm::clamp(config.central_park_tree_bark_root, glm::vec3(0.0f), glm::vec3(1.0f));
+    params.bark_color_tip = glm::clamp(config.central_park_tree_bark_tip, glm::vec3(0.0f), glm::vec3(1.0f));
+    return params;
+}
+
+TreeMetrics tree_metrics_from_mesh(const GeometryMesh& mesh)
+{
+    TreeMetrics metrics{};
+    if (mesh.vertices.empty())
+        return metrics;
+
+    float min_y = std::numeric_limits<float>::max();
+    float max_y = std::numeric_limits<float>::lowest();
+    float max_radius_sq = 0.0f;
+    for (const GeometryVertex& vertex : mesh.vertices)
+    {
+        min_y = std::min(min_y, vertex.position.y);
+        max_y = std::max(max_y, vertex.position.y);
+        const float radius_sq = vertex.position.x * vertex.position.x
+            + vertex.position.z * vertex.position.z;
+        max_radius_sq = std::max(max_radius_sq, radius_sq);
+    }
+
+    metrics.height = std::max(max_y - min_y, 0.5f);
+    metrics.canopy_radius = std::max(std::sqrt(max_radius_sq), 0.25f);
+    return metrics;
 }
 
 std::string module_display_name(std::string_view module_path)
@@ -528,6 +573,21 @@ CityBuildResult build_city(
 
     // Populate the ECS world.
     world.clear();
+    std::shared_ptr<const GeometryMesh> central_park_tree_mesh;
+    TreeMetrics central_park_tree_metrics;
+    for (const auto& module_layout : layout->modules)
+    {
+        if (module_layout.is_central_park && module_layout.park_footprint > 0.0f)
+        {
+            auto generated_tree = std::make_shared<GeometryMesh>(
+                generate_draxul_tree(make_central_park_tree_params(config)));
+            central_park_tree_metrics = tree_metrics_from_mesh(*generated_tree);
+            central_park_tree_mesh = std::move(generated_tree);
+            break;
+        }
+    }
+    result.tree_mesh = central_park_tree_mesh;
+
     const CitySurfaceBounds road_surface_bounds = compute_city_road_surface_bounds(*layout);
     if (road_surface_bounds.valid())
     {
@@ -569,6 +629,17 @@ CityBuildResult build_city(
                 park_color,
                 SourceSymbol{ "", module_layout.module_path },
                 MaterialId::FlatColor);
+
+            if (module_layout.is_central_park)
+            {
+                world.create_tree(
+                    module_layout.park_center.x,
+                    module_layout.park_center.y,
+                    building_base_elevation(config) + config.park_height,
+                    central_park_tree_metrics,
+                    glm::vec4(1.0f),
+                    SourceSymbol{ "", "CentralParkTree" });
+            }
 
             // Reuse the building sidewalk/road segment builders for the park.
             SemanticCityBuilding park_building;

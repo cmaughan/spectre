@@ -292,18 +292,18 @@ BuildingMetrics derive_building_metrics(const CityClassRecord& row, const MegaCi
     const bool clamp_metrics = config.clamp_semantic_metrics;
     const float step = std::max(config.placement_step, 0.01f);
     const float raw_footprint = clamp_metrics
-        ? std::clamp(config.footprint_base + std::sqrt(base), config.footprint_min, config.footprint_max)
+        ? std::clamp(config.footprint_base + std::sqrt(base), config.footprint_range.x, config.footprint_range.y)
         : config.footprint_base + base * config.footprint_unclamped_scale;
     const float footprint = std::max(step, snap_to_grid(raw_footprint, step));
     const float height = clamp_metrics
         ? std::clamp(
               config.height_base + config.height_mass_weight * std::log1p(mass)
                   + config.height_count_weight * std::sqrt(funcs),
-              config.height_min, config.height_max)
+              config.height_range.x, config.height_range.y)
         : config.height_base + config.height_multiplier * std::log1p(mass)
             + config.height_multiplier * config.height_unclamped_count_weight * std::log1p(funcs);
     const float raw_road_width = clamp_metrics
-        ? std::clamp(config.road_width_base + config.road_width_scale * std::log1p(road), config.road_width_min, config.road_width_max)
+        ? std::clamp(config.road_width_base + config.road_width_scale * std::log1p(road), config.road_width_range.x, config.road_width_range.y)
         : config.road_width_base + config.road_width_scale * std::log1p(road);
     const float road_width = std::max(step, snap_to_grid(raw_road_width, step));
     const float sidewalk_width = std::max(step, snap_to_grid(config.sidewalk_width, step));
@@ -634,8 +634,8 @@ SemanticMegacityLayout build_semantic_megacity_layout(
     if (candidates.size() > 1)
     {
         const float step = std::max(config.placement_step, 0.01f);
-        const float area_scale = std::clamp(config.central_park_area_scale, 1.0f, 3.0f);
-        const float border_scale = std::clamp(config.central_park_border_scale, 1.0f, 3.0f);
+        const float area_scale = std::clamp(config.central_park_scale.x, 1.0f, 3.0f);
+        const float border_scale = std::clamp(config.central_park_scale.y, 1.0f, 3.0f);
         const float park_fp = std::max(step, snap_to_grid(config.park_footprint * area_scale, step));
         const float park_sw = config.park_sidewalk_width * border_scale;
         const float park_rw = config.park_road_width * border_scale;

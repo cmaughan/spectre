@@ -22,6 +22,7 @@ SceneSnapshotResult build_scene_snapshot(
     const IsometricCamera& camera,
     const SceneWorld& world,
     const MegaCityCodeConfig& config,
-    const std::shared_ptr<SignLabelAtlas>& label_atlas);
+    const std::shared_ptr<SignLabelAtlas>& label_atlas,
+    const std::shared_ptr<const MeshData>& tree_mesh);
 
 } // namespace draxul

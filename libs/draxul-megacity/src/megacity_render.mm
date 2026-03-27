@@ -306,9 +306,11 @@ struct IsometricScenePass::State
     ObjCRef<id<MTLDepthStencilState>> depth_state;
     MeshBuffers cube_mesh;
     MeshBuffers floor_mesh;
+    MeshBuffers tree_mesh;
     MeshBuffers road_surface_mesh;
     MeshBuffers roof_sign_mesh;
     MeshBuffers wall_sign_mesh;
+    const MeshData* tree_mesh_source = nullptr;
     MeshData cached_grid_mesh;
     FloorGridSpec cached_grid_spec;
     bool has_cached_grid_mesh = false;
@@ -421,6 +423,11 @@ struct IsometricScenePass::State
             DRAXUL_LOG_ERROR(LogCategory::App, "MegaCity: failed to upload floor mesh");
             return false;
         }
+        if (!upload_mesh(device, build_tree_mesh(), tree_mesh))
+        {
+            DRAXUL_LOG_ERROR(LogCategory::App, "MegaCity: failed to upload tree mesh");
+            return false;
+        }
         if (!upload_mesh(device, build_road_surface_mesh(), road_surface_mesh))
         {
             DRAXUL_LOG_ERROR(LogCategory::App, "MegaCity: failed to upload road surface mesh");
@@ -481,6 +488,25 @@ struct IsometricScenePass::State
                 return false;
             }
         }
+        return true;
+    }
+
+    bool ensure_tree_mesh(id<MTLDevice> device, const std::shared_ptr<const MeshData>& tree_mesh_data)
+    {
+        if (!tree_mesh_data)
+            return true;
+        if (tree_mesh_source == tree_mesh_data.get() && tree_mesh.index_count > 0)
+            return true;
+
+        MeshBuffers replacement;
+        if (!upload_mesh(device, *tree_mesh_data, replacement))
+        {
+            DRAXUL_LOG_ERROR(LogCategory::App, "MegaCity: failed to upload procedural tree mesh");
+            return false;
+        }
+
+        tree_mesh = std::move(replacement);
+        tree_mesh_source = tree_mesh_data.get();
         return true;
     }
 
@@ -899,6 +925,9 @@ void IsometricScenePass::record_prepass(IRenderContext& ctx)
     auto& frame_resources = state_->frame_resources[frame_index];
     frame_resources.geometry_arena.reset();
 
+    if (!state_->ensure_tree_mesh(cmd_buf.device, scene_.tree_mesh))
+        return;
+
     MeshSlice grid_slice;
     if (state_->has_cached_grid_mesh
         && !stream_transient_mesh(cmd_buf.device, state_->cached_grid_mesh, frame_resources.geometry_arena, grid_slice))
@@ -990,6 +1019,9 @@ void IsometricScenePass::record_prepass(IRenderContext& ctx)
             break;
         case MeshId::Cube:
             mesh = &state_->cube_mesh;
+            break;
+        case MeshId::Tree:
+            mesh = &state_->tree_mesh;
             break;
         case MeshId::RoadSurface:
             mesh = &state_->road_surface_mesh;
@@ -1112,6 +1144,9 @@ void IsometricScenePass::record(IRenderContext& ctx)
     auto& frame_resources = state_->frame_resources[frame_index];
     frame_resources.geometry_arena.reset();
 
+    if (!state_->ensure_tree_mesh(cmd_buf.device, scene_.tree_mesh))
+        return;
+
     MeshSlice grid_slice;
     if (state_->has_cached_grid_mesh
         && !stream_transient_mesh(cmd_buf.device, state_->cached_grid_mesh, frame_resources.geometry_arena, grid_slice))
@@ -1213,6 +1248,9 @@ void IsometricScenePass::record(IRenderContext& ctx)
             break;
         case MeshId::Cube:
             mesh = &state_->cube_mesh;
+            break;
+        case MeshId::Tree:
+            mesh = &state_->tree_mesh;
             break;
         case MeshId::RoadSurface:
             mesh = &state_->road_surface_mesh;

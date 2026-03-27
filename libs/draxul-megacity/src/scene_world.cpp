@@ -55,14 +55,14 @@ entt::entity SceneWorld::create_building(float world_x, float world_z, float ele
     return entity;
 }
 
-entt::entity SceneWorld::create_tree(float world_x, float world_z,
+entt::entity SceneWorld::create_tree(float world_x, float world_z, float elevation,
     const TreeMetrics& metrics, const glm::vec4& color, SourceSymbol source)
 {
     const auto entity = registry_.create();
     registry_.emplace<WorldPosition>(entity, world_x, world_z);
-    registry_.emplace<Elevation>(entity, 0.0f);
+    registry_.emplace<Elevation>(entity, elevation);
     registry_.emplace<TreeMetrics>(entity, metrics);
-    registry_.emplace<Appearance>(entity, MeshId::Cube, MaterialId::FlatColor, color, glm::vec4(0.0f, 1.0f, 1.0f, 1.0f)); // TODO: tree mesh
+    registry_.emplace<Appearance>(entity, MeshId::Tree, MaterialId::FlatColor, color, glm::vec4(0.0f, 1.0f, 1.0f, 1.0f));
     if (!source.file.empty() || !source.name.empty())
         registry_.emplace<SourceSymbol>(entity, std::move(source));
     return entity;

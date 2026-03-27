@@ -95,23 +95,21 @@ SceneSnapshotResult build_scene_snapshot(
     const IsometricCamera& camera,
     const SceneWorld& world,
     const MegaCityCodeConfig& config,
-    const std::shared_ptr<SignLabelAtlas>& label_atlas)
+    const std::shared_ptr<SignLabelAtlas>& label_atlas,
+    const std::shared_ptr<const MeshData>& tree_mesh)
 {
     SceneSnapshotResult result;
     SceneSnapshot& scene = result.snapshot;
+    scene.tree_mesh = tree_mesh;
 
     scene.camera.view = camera.view_matrix();
     scene.camera.proj = camera.proj_matrix();
     scene.camera.inv_view_proj = glm::inverse(scene.camera.proj * scene.camera.view);
     scene.camera.camera_pos = glm::vec4(camera.position(), 1.0f);
-    scene.camera.light_dir = glm::normalize(glm::vec4(
-        config.directional_light_x,
-        config.directional_light_y,
-        config.directional_light_z,
-        0.0f));
+    scene.camera.light_dir = glm::normalize(glm::vec4(config.directional_light_dir, 0.0f));
     scene.camera.label_fade_px = glm::vec4(
-        config.sign_text_hidden_px,
-        config.sign_text_full_px,
+        config.sign_text_px_range.x,
+        config.sign_text_px_range.y,
         0.0f,
         0.0f);
     scene.camera.render_tuning = glm::vec4(
@@ -189,6 +187,11 @@ SceneSnapshotResult build_scene_snapshot(
             max_building_lot_margin = std::max(
                 max_building_lot_margin, bm->sidewalk_width + bm->road_width);
         }
+        else if (const auto* tm = reg.try_get<TreeMetrics>(entity))
+        {
+            extent_x = tm->canopy_radius * 2.0f;
+            extent_z = tm->canopy_radius * 2.0f;
+        }
         else if (const auto* rm = reg.try_get<RoadMetrics>(entity))
         {
             extent_x = rm->extent_x;
@@ -242,9 +245,7 @@ SceneSnapshotResult build_scene_snapshot(
     result.world_span = std::max(span, 1.0f);
     scene.camera.world_debug_bounds = glm::vec4(min_x, max_x, min_z, max_z);
     scene.camera.point_light_pos = glm::vec4(
-        config.point_light_x,
-        config.point_light_y,
-        config.point_light_z,
+        config.point_light_position,
         std::max(config.point_light_radius, 1.0f));
 
     return result;

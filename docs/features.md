@@ -1,4 +1,4 @@
-# Draxul Features
+#Draxul Features
 
 Quick reference of all user-facing features, configuration, CLI flags, build options, and CI infrastructure.
 
@@ -28,6 +28,7 @@ Pane splits use the platform default shell (Zsh on macOS, PowerShell on Windows)
 - **Frames in flight**: 2 with synchronization primitives
 - **Pixel format**: BGRA8 Unorm (Neovim sends pre-sRGB colors)
 - **MegaCity materials**: Textured asphalt road surfaces, paving-stone sidewalks, and experimental wood-sided building materials with albedo, normal, roughness, and material-AO maps, plus a depth/normal AO prepass and forward-lit AO debug/lighting controls
+- **MegaCity park dressing**: Central park now includes a procedurally generated `DraxulTree` mesh
 
 ---
 
@@ -79,63 +80,53 @@ Pane splits use the platform default shell (Zsh on macOS, PowerShell on Windows)
 
 ## Diagnostics Panel (ImGui)
 
-Toggle with F12. Shows:
-- Display DPI, cell size, grid dimensions, dirty cell count
-- Frame timing (current + average)
-- Atlas usage ratio and glyph count
-- Startup profiling step timings
-- MegaCity renderer controls, including module filtering (`All Modules` or a selected module), AO debug view (`Final Scene`, `Ambient Occlusion`, `Decoded Normals`, `World Position`), and AO denoise toggle
-- MegaCity sign styling controls, including separate module-sign and building-sign board/text colors
+Toggle with F12.Shows : -Display DPI, cell size, grid dimensions, dirty cell count - Frame timing(current + average) - Atlas usage ratio and glyph count - Startup profiling step timings - MegaCity renderer controls, including module filtering(`All Modules` or a selected module), AO debug view(`Final Scene`, `Ambient Occlusion`, `Decoded Normals`, `World Position`), and AO denoise toggle - MegaCity sign styling controls, including separate module - sign and building - sign board / text colors - MegaCity central - park tree controls, including age, seed, branch depth / count, curvature, and bark colors
 
----
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                --
+        -
 
-## Default Keybindings
+        ##Default Keybindings
 
-| Action | Default Binding |
-|--------|----------------|
-| `toggle_diagnostics` | `F12` |
-| `copy` | `Ctrl+Shift+C` |
-| `paste` | `Ctrl+Shift+V` |
-| `font_increase` | `Ctrl+=` |
-| `font_decrease` | `Ctrl+-` |
-| `font_reset` | `Ctrl+0` |
-| `split_vertical` | `Ctrl+S, Shift+\` |
-| `split_horizontal` | `Ctrl+S, -` |
-| `open_file_dialog` | (unbound) |
+    | Action | Default Binding | | -- -- -- --| -- -- -- -- -- -- -- --| | `toggle_diagnostics` | `F12` | | `copy` | `Ctrl + Shift + C` | | `paste` | `Ctrl + Shift + V` | | `font_increase` | `Ctrl +=` | | `font_decrease` | `Ctrl + -` | | `font_reset` | `Ctrl + 0` | | `split_vertical` | `Ctrl + S,
+    Shift +\` |
+    | `split_horizontal` | `Ctrl + S,
+    -` |
+    | `open_file_dialog` | (unbound) |
 
-Customizable in `config.toml` under `[keybindings]`. Chord syntax: `"prefix, key"`. Set to empty string to unbind.
+    Customizable in `config.toml` under `[keybindings]`.Chord syntax : `"prefix, key"`.Set to empty string to unbind.
 
----
+    -- -
 
-## Configuration (config.toml)
+    ##Configuration(config.toml)
 
-### Display
-| Key | Default | Range | Notes |
-|-----|---------|-------|-------|
-| `window_width` | 1280 | 800--8000 | |
-| `window_height` | 800 | 600--8000 | |
+        ## #Display
+    | Key | Default | Range | Notes |
+    | -- -- -| -- -- -- -- -| -- -- -- -| -- -- -- -|
+    | `window_width` | 1280 | 800 --8000 | |
+    | `window_height` | 800 | 600 --8000 | |
 
-### Font
-| Key | Default | Range | Notes |
-|-----|---------|-------|-------|
-| `font_size` | 11.0 | 6.0--72.0 | Points; 0.5pt step on increase/decrease |
-| `font_path` | (bundled) | | Primary font file path |
-| `bold_font_path` | (none) | | Bold variant |
-| `italic_font_path` | (none) | | Italic variant |
-| `bold_italic_font_path` | (none) | | Bold+italic variant |
-| `fallback_paths` | [] | | Array of fallback font paths |
-| `enable_ligatures` | true | | Programming ligature combining |
+    ## #Font
+    | Key | Default | Range | Notes |
+    | -- -- -| -- -- -- -- -| -- -- -- -| -- -- -- -|
+    | `font_size` | 11.0 | 6.0 --72.0 | Points;
+0.5pt step on increase / decrease |
+    | `font_path` | (bundled) | | Primary font file path |
+    | `bold_font_path` | (none) | | Bold variant |
+    | `italic_font_path` | (none) | | Italic variant |
+    | `bold_italic_font_path` | (none) | | Bold + italic variant |
+    | `fallback_paths` | [] | | Array of fallback font paths |
+    | `enable_ligatures` | true | | Programming ligature combining |
 
-### Rendering
-| Key | Default | Range | Notes |
-|-----|---------|-------|-------|
-| `atlas_size` | 2048 | 512--4096 | Must be power of 2 |
+    ## #Rendering
+    | Key | Default | Range | Notes |
+    | -- -- -| -- -- -- -- -| -- -- -- -| -- -- -- -|
+    | `atlas_size` | 2048 | 512 --4096 | Must be power of 2 |
 
-### Scrolling
-| Key | Default | Range | Notes |
-|-----|---------|-------|-------|
-| `smooth_scroll` | true | | Trackpad momentum accumulation |
-| `scroll_speed` | 1.0 | 0.1--10.0 | Multiplier; out-of-range logs WARN and resets to 1.0 |
+    ## #Scrolling
+    | Key | Default | Range | Notes |
+    | -- -- -| -- -- -- -- -| -- -- -- -| -- -- -- -|
+    | `smooth_scroll` | true | | Trackpad momentum accumulation |
+    | `scroll_speed` | 1.0 | 0.1 --10.0 | Multiplier; out-of-range logs WARN and resets to 1.0 |
 
 ### Terminal Colors (`[terminal]` section)
 | Key | Default | Notes |
