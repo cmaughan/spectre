@@ -204,6 +204,8 @@ struct CityGrid
         std::string source_qualified_name;
         std::string target_module_path;
         std::string target_qualified_name;
+        std::string field_name;
+        std::string field_type_name;
         glm::vec4 source_color{ 1.0f };
         glm::vec4 target_color{ 1.0f };
         std::vector<glm::vec2> world_points;

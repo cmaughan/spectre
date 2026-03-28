@@ -76,6 +76,31 @@ void IsometricCamera::frame_world_bounds(float min_x, float max_x, float min_z, 
     set_target({ (min_x + max_x) * 0.5f, 0.0f, (min_z + max_z) * 0.5f });
 }
 
+void IsometricCamera::reframe_world_bounds(float min_x, float max_x, float min_z, float max_z)
+{
+    if (min_x > max_x || min_z > max_z)
+    {
+        const float max_dim = kMinZoomWorldSpan;
+        min_ortho_half_height_ = kMinZoomWorldSpan * 0.5f;
+        max_ortho_half_height_ = std::max(min_ortho_half_height_, max_dim);
+        ortho_half_height_ = std::clamp(ortho_half_height_, min_ortho_half_height_, max_ortho_half_height_);
+        orbit_radius_ = std::sqrt(2.0f) * max_dim;
+        update_follow_offset();
+        position_ = target_ + follow_offset_;
+        return;
+    }
+
+    const float world_w = max_x - min_x;
+    const float world_h = max_z - min_z;
+    const float max_dim = std::max({ world_w, world_h, kMinZoomWorldSpan });
+    min_ortho_half_height_ = kMinZoomWorldSpan * 0.5f;
+    max_ortho_half_height_ = std::max(min_ortho_half_height_, max_dim);
+    ortho_half_height_ = std::clamp(ortho_half_height_, min_ortho_half_height_, max_ortho_half_height_);
+    orbit_radius_ = std::sqrt(2.0f) * max_dim;
+    update_follow_offset();
+    position_ = target_ + follow_offset_;
+}
+
 void IsometricCamera::set_target(const glm::vec3& target)
 {
     target_ = target;

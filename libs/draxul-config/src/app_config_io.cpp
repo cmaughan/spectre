@@ -161,7 +161,7 @@ void apply_gui_keybindings(AppConfig& config, const toml::table& keybindings)
         {
             if (remove_gui_keybinding(config.keybindings, action))
             {
-                DRAXUL_LOG_DEBUG(LogCategory::App,
+                DRAXUL_LOG_INFO(LogCategory::App,
                     "Keybinding '%s' removed by user config.", action.c_str());
             }
             continue;

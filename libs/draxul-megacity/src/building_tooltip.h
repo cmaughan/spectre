@@ -16,6 +16,16 @@ struct BuildingTooltipData
     int function_count = 0;
     int field_count = 0;
     std::string hovered_function;
+
+    // Route tooltip (when hovering a dependency connection).
+    std::string route_source;
+    std::string route_target;
+    std::string route_field_name;
+    std::string route_field_type;
+    [[nodiscard]] bool is_route() const
+    {
+        return !route_source.empty();
+    }
 };
 
 struct TooltipBitmap

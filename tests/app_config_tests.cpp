@@ -704,6 +704,7 @@ TEST_CASE("megacity config round-trips through config document", "[config][megac
     current.ao_bias = 0.08f;
     current.ao_power = 1.9f;
     current.ao_kernel_size = 24;
+    current.connected_hex_building_threshold = 14;
     current.flat_color_roughness = 0.58f;
     current.flat_color_metallic = 0.27f;
     current.central_park_tree_age_years = 48.0f;

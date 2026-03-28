@@ -105,6 +105,7 @@ struct SceneObject
     // Identity: links this object back to its ECS source for runtime queries (e.g. selection).
     std::string source_name;
     std::string source_module_path;
+    std::string source_file_path;
     std::string route_source_module_path;
     std::string route_source;
     std::string route_target_module_path;

@@ -144,6 +144,7 @@ private:
     bool continuous_refresh_enabled_ = false;
     std::string selected_building_name_;
     std::string selected_building_module_path_;
+    std::string selected_building_source_file_;
     bool hidden_hover_active_ = false;
     float hidden_hover_blend_ = 0.0f;
     std::chrono::steady_clock::time_point last_activity_time_ = std::chrono::steady_clock::now();
@@ -153,6 +154,7 @@ private:
     glm::ivec2 hover_mouse_pos_{ -1, -1 };
     std::chrono::steady_clock::time_point hover_start_time_;
     bool hover_tooltip_visible_ = false;
+    bool hover_shift_held_ = false;
     std::string hover_building_name_;
     uint64_t tooltip_revision_ = 0;
 

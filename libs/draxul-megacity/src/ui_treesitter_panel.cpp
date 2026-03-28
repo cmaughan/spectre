@@ -823,6 +823,7 @@ bool render_renderer_controls(MegacityRendererControls& controls)
             edit_float("Height Count Weight", config.height_count_weight, 0.01f, 0.0f, 8.0f, "%.2f");
             edit_vec2("Height Range", config.height_range, 0.05f, 0.0f, 64.0f, "%.2f");
             edit_float("Height Unclamped Count Weight", config.height_unclamped_count_weight, 0.01f, 0.0f, 8.0f, "%.2f");
+            edit_int("Hex Threshold", config.connected_hex_building_threshold, 1, 1, 64);
             edit_float("Flat Roughness", config.flat_color_roughness, 0.01f, 0.04f, 1.0f, "%.2f");
             edit_float("Flat Metallic", config.flat_color_metallic, 0.01f, 0.0f, 1.0f, "%.2f");
             edit_float("Road Width Base", config.road_width_base, 0.01f, 0.0f, 16.0f, "%.2f");

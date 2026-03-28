@@ -118,6 +118,21 @@ std::string building_identity_key(std::string_view module_path, std::string_view
     return key;
 }
 
+std::string exact_building_identity_key(
+    std::string_view source_file_path,
+    std::string_view module_path,
+    std::string_view qualified_name)
+{
+    std::string key;
+    key.reserve(source_file_path.size() + module_path.size() + qualified_name.size() + 2);
+    key.append(source_file_path);
+    key.push_back('|');
+    key.append(module_path);
+    key.push_back('|');
+    key.append(qualified_name);
+    return key;
+}
+
 } // namespace
 
 MegaCityHost::MegaCityHost()
@@ -460,8 +475,11 @@ void MegaCityHost::on_mouse_move(const MouseMoveEvent& event)
 
     // Reset hover tooltip whenever the mouse moves.
     const bool had_tooltip = hover_tooltip_visible_;
+    const bool shift_held = (event.mod & kModShift) != 0;
     hover_mouse_pos_ = event.pos;
-    hover_start_time_ = std::chrono::steady_clock::now();
+    hover_shift_held_ = shift_held;
+    if (!shift_held)
+        hover_start_time_ = std::chrono::steady_clock::now();
     hover_tooltip_visible_ = false;
     hover_building_name_.clear();
     if (had_tooltip && scene_pass_)
@@ -469,6 +487,9 @@ void MegaCityHost::on_mouse_move(const MouseMoveEvent& event)
         scene_pass_->scene().tooltip.visible = false;
         mark_scene_dirty();
     }
+    // When shift is held, request a frame so pump() can show tooltip immediately.
+    if (shift_held && callbacks_)
+        callbacks_->request_frame();
 
     if (input_->on_mouse_move(event, *camera_))
     {
@@ -775,9 +796,9 @@ void MegaCityHost::rebuild_semantic_city()
             });
         }
         else if (!city_bounds_valid_)
-            camera_->frame_world_bounds(-2.5f, 2.5f, -2.5f, 2.5f);
+            camera_->reframe_world_bounds(-2.5f, 2.5f, -2.5f, 2.5f);
         else
-            camera_->frame_world_bounds(city_min_x_, city_max_x_, city_min_z_, city_max_z_);
+            camera_->reframe_world_bounds(city_min_x_, city_max_x_, city_min_z_, city_max_z_);
     }
     restore_camera_after_initial_build_ = false;
     sync_camera_state_to_configs();
@@ -944,17 +965,45 @@ void MegaCityHost::pump()
         apply_selection_opacity();
     }
 
-    // Hover tooltip: show after mouse is still for >1s over a building.
+    // Hover tooltip: show after mouse is still for >1s over a building,
+    // or immediately when shift is held.
     if (!hover_tooltip_visible_ && hover_mouse_pos_.x >= 0
-        && camera_ && semantic_model_ && scene_pass_ && tooltip_text_service_)
+        && camera_ && semantic_model_ && semantic_layout_ && scene_pass_ && tooltip_text_service_)
     {
         const auto hover_elapsed = std::chrono::duration<float>(now - hover_start_time_).count();
-        if (hover_elapsed >= 1.0f)
+        const bool tooltip_ready = hover_shift_held_ || hover_elapsed >= 1.0f;
+        if (tooltip_ready)
         {
             const glm::ivec2 local_pos = hover_mouse_pos_ - viewport_.pixel_pos;
             if (local_pos.x >= 0 && local_pos.y >= 0 && local_pos.x < pixel_w_ && local_pos.y < pixel_h_)
             {
-                auto hit = pick_building(local_pos, pixel_w_, pixel_h_, *camera_, *semantic_model_);
+                // Helper to position and display a tooltip bitmap at the cursor.
+                const auto show_tooltip_bitmap = [&](TooltipBitmap& bitmap) {
+                    if (!bitmap.valid())
+                        return;
+                    ++tooltip_revision_;
+                    auto& tooltip = scene_pass_->scene().tooltip;
+                    tooltip.visible = true;
+                    const int offset_x = 16;
+                    const int offset_y = 16;
+                    int tx = hover_mouse_pos_.x + offset_x;
+                    int ty = hover_mouse_pos_.y + offset_y;
+                    if (tx + bitmap.width > viewport_.pixel_pos.x + pixel_w_)
+                        tx = hover_mouse_pos_.x - bitmap.width - offset_x;
+                    if (ty + bitmap.height > viewport_.pixel_pos.y + pixel_h_)
+                        ty = hover_mouse_pos_.y - bitmap.height - offset_y;
+                    tooltip.screen_pos = glm::vec2(
+                        static_cast<float>(tx), static_cast<float>(ty));
+                    tooltip.width = bitmap.width;
+                    tooltip.height = bitmap.height;
+                    tooltip.rgba = std::move(bitmap.rgba);
+                    tooltip.revision = tooltip_revision_;
+                    hover_tooltip_visible_ = true;
+                    if (callbacks_)
+                        callbacks_->request_frame();
+                };
+
+                auto hit = pick_building(local_pos, pixel_w_, pixel_h_, *camera_, *semantic_layout_);
                 if (hit)
                 {
                     // Look up full building data.
@@ -964,7 +1013,8 @@ void MegaCityHost::pump()
                             continue;
                         for (const auto& bldg : mod.buildings)
                         {
-                            if (bldg.qualified_name != hit->qualified_name)
+                            if (bldg.qualified_name != hit->qualified_name
+                                || bldg.source_file_path != hit->source_file_path)
                                 continue;
 
                             BuildingTooltipData tooltip_data;
@@ -990,34 +1040,77 @@ void MegaCityHost::pump()
                             }
 
                             auto bitmap = rasterize_tooltip(*tooltip_text_service_, tooltip_data);
-                            if (bitmap.valid())
-                            {
-                                ++tooltip_revision_;
-                                auto& tooltip = scene_pass_->scene().tooltip;
-                                tooltip.visible = true;
-                                // Position tooltip offset from cursor, clamped to viewport.
-                                const int offset_x = 16;
-                                const int offset_y = 16;
-                                int tx = hover_mouse_pos_.x + offset_x;
-                                int ty = hover_mouse_pos_.y + offset_y;
-                                if (tx + bitmap.width > viewport_.pixel_pos.x + pixel_w_)
-                                    tx = hover_mouse_pos_.x - bitmap.width - offset_x;
-                                if (ty + bitmap.height > viewport_.pixel_pos.y + pixel_h_)
-                                    ty = hover_mouse_pos_.y - bitmap.height - offset_y;
-                                tooltip.screen_pos = glm::vec2(
-                                    static_cast<float>(tx), static_cast<float>(ty));
-                                tooltip.width = bitmap.width;
-                                tooltip.height = bitmap.height;
-                                tooltip.rgba = std::move(bitmap.rgba);
-                                tooltip.revision = tooltip_revision_;
-                                hover_tooltip_visible_ = true;
-                                hover_building_name_ = hit->qualified_name;
-                                if (callbacks_)
-                                    callbacks_->request_frame();
-                            }
+                            hover_building_name_ = hit->qualified_name;
+                            show_tooltip_bitmap(bitmap);
                             break;
                         }
                         break;
+                    }
+                }
+                else if (hover_shift_held_)
+                {
+                    // No building hit — try picking a route segment.
+                    std::shared_ptr<const CityGrid> grid;
+                    {
+                        std::lock_guard<std::mutex> lock(grid_mutex_);
+                        grid = city_grid_;
+                    }
+                    if (grid && !grid->routes.empty())
+                    {
+                        // Unproject mouse to XZ ground plane (Y=0).
+                        const float ndc_x = 2.0f * static_cast<float>(local_pos.x) / static_cast<float>(pixel_w_) - 1.0f;
+                        const float ndc_y = 1.0f - 2.0f * static_cast<float>(local_pos.y) / static_cast<float>(pixel_h_);
+                        const glm::mat4 inv_vp = glm::inverse(camera_->proj_matrix() * camera_->view_matrix());
+                        glm::vec4 near_h = inv_vp * glm::vec4(ndc_x, ndc_y, 0.0f, 1.0f);
+                        glm::vec4 far_h = inv_vp * glm::vec4(ndc_x, ndc_y, 1.0f, 1.0f);
+                        near_h /= near_h.w;
+                        far_h /= far_h.w;
+                        const glm::vec3 ray_origin(near_h);
+                        const glm::vec3 ray_dir = glm::normalize(glm::vec3(far_h) - glm::vec3(near_h));
+
+                        // Intersect ray with Y=0 plane.
+                        if (std::abs(ray_dir.y) > 1e-6f)
+                        {
+                            const float t = -ray_origin.y / ray_dir.y;
+                            const glm::vec2 ground_pos(ray_origin.x + t * ray_dir.x, ray_origin.z + t * ray_dir.z);
+
+                            // Find the nearest route segment.
+                            float best_dist_sq = std::numeric_limits<float>::max();
+                            const CityGrid::RoutePolyline* best_route = nullptr;
+                            constexpr float kMaxPickDist = 1.0f;
+
+                            for (const auto& route : grid->routes)
+                            {
+                                for (size_t i = 1; i < route.world_points.size(); ++i)
+                                {
+                                    const glm::vec2 a = route.world_points[i - 1];
+                                    const glm::vec2 b = route.world_points[i];
+                                    const glm::vec2 ab = b - a;
+                                    const float seg_len_sq = glm::dot(ab, ab);
+                                    float proj_t = 0.0f;
+                                    if (seg_len_sq > 1e-8f)
+                                        proj_t = std::clamp(glm::dot(ground_pos - a, ab) / seg_len_sq, 0.0f, 1.0f);
+                                    const glm::vec2 closest = a + proj_t * ab;
+                                    const float dist_sq = glm::dot(ground_pos - closest, ground_pos - closest);
+                                    if (dist_sq < best_dist_sq)
+                                    {
+                                        best_dist_sq = dist_sq;
+                                        best_route = &route;
+                                    }
+                                }
+                            }
+
+                            if (best_route && best_dist_sq <= kMaxPickDist * kMaxPickDist)
+                            {
+                                BuildingTooltipData tooltip_data;
+                                tooltip_data.route_source = best_route->source_qualified_name;
+                                tooltip_data.route_target = best_route->target_qualified_name;
+                                tooltip_data.route_field_name = best_route->field_name;
+                                tooltip_data.route_field_type = best_route->field_type_name;
+                                auto bitmap = rasterize_tooltip(*tooltip_text_service_, tooltip_data);
+                                show_tooltip_bitmap(bitmap);
+                            }
+                        }
                     }
                 }
             }
@@ -1100,7 +1193,7 @@ HostDebugState MegaCityHost::debug_state() const
 
 void MegaCityHost::handle_click(const glm::ivec2& screen_pos)
 {
-    if (!camera_ || !semantic_model_ || !scene_pass_)
+    if (!camera_ || !semantic_model_ || !semantic_layout_ || !scene_pass_)
         return;
 
     // Convert window-space click to viewport-local coordinates.
@@ -1111,11 +1204,12 @@ void MegaCityHost::handle_click(const glm::ivec2& screen_pos)
     DRAXUL_LOG_DEBUG(LogCategory::App, "Click at (%d,%d) viewport-local (%d,%d) viewport %dx%d",
         screen_pos.x, screen_pos.y, local_pos.x, local_pos.y, pixel_w_, pixel_h_);
 
-    auto hit = pick_building(local_pos, pixel_w_, pixel_h_, *camera_, *semantic_model_);
+    auto hit = pick_building(local_pos, pixel_w_, pixel_h_, *camera_, *semantic_layout_);
     if (hit)
     {
         if (hit->qualified_name == selected_building_name_
-            && hit->module_path == selected_building_module_path_)
+            && hit->module_path == selected_building_module_path_
+            && hit->source_file_path == selected_building_source_file_)
         {
             clear_selection();
             return;
@@ -1123,6 +1217,7 @@ void MegaCityHost::handle_click(const glm::ivec2& screen_pos)
         clear_active_routes(false);
         selected_building_name_ = hit->qualified_name;
         selected_building_module_path_ = hit->module_path;
+        selected_building_source_file_ = hit->source_file_path;
         DRAXUL_LOG_DEBUG(LogCategory::App, "Selected building: %s (%s)",
             selected_building_name_.c_str(),
             selected_building_module_path_.c_str());
@@ -1164,6 +1259,11 @@ void MegaCityHost::apply_selection_opacity()
         return;
 
     const std::string selected_identity
+        = exact_building_identity_key(
+            selected_building_source_file_,
+            selected_building_module_path_,
+            selected_building_name_);
+    const std::string selected_loose_identity
         = building_identity_key(selected_building_module_path_, selected_building_name_);
     std::unordered_set<std::string> connected;
     for (const auto& dep : semantic_model_->dependencies)
@@ -1172,9 +1272,9 @@ void MegaCityHost::apply_selection_opacity()
             = building_identity_key(dep.source_module_path, dep.source_qualified_name);
         const std::string target_identity
             = building_identity_key(dep.target_module_path, dep.target_qualified_name);
-        if (source_identity == selected_identity)
+        if (source_identity == selected_loose_identity)
             connected.insert(target_identity);
-        else if (target_identity == selected_identity)
+        else if (target_identity == selected_loose_identity)
             connected.insert(source_identity);
     }
 
@@ -1188,12 +1288,21 @@ void MegaCityHost::apply_selection_opacity()
     {
         const std::string object_identity = obj.source_name.empty()
             ? std::string()
+            : exact_building_identity_key(obj.source_file_path, obj.source_module_path, obj.source_name);
+        const std::string object_loose_identity = obj.source_name.empty()
+            ? std::string()
             : building_identity_key(obj.source_module_path, obj.source_name);
         const bool is_selected = !object_identity.empty() && object_identity == selected_identity;
-        const bool is_connected = !object_identity.empty() && connected.count(object_identity) > 0;
+        // A same-name building in a different file (e.g. two FakeGlyph) shares the same
+        // loose identity as the selected building. Don't treat it as connected — it's a
+        // different object that happens to have the same qualified name.
+        const bool is_same_name_different_file = !is_selected
+            && !object_loose_identity.empty() && object_loose_identity == selected_loose_identity;
+        const bool is_connected = !is_same_name_different_file
+            && !object_loose_identity.empty() && connected.count(object_loose_identity) > 0;
         const bool is_selected_route = !obj.route_source.empty()
-            && (building_identity_key(obj.route_source_module_path, obj.route_source) == selected_identity
-                || building_identity_key(obj.route_target_module_path, obj.route_target) == selected_identity);
+            && (building_identity_key(obj.route_source_module_path, obj.route_source) == selected_loose_identity
+                || building_identity_key(obj.route_target_module_path, obj.route_target) == selected_loose_identity);
 
         float alpha = obj.mesh == MeshId::RoadSurface
             ? renderer_config_.selection_hidden_road_alpha
@@ -1221,6 +1330,7 @@ void MegaCityHost::clear_selection()
 
     selected_building_name_.clear();
     selected_building_module_path_.clear();
+    selected_building_source_file_.clear();
     hidden_hover_active_ = false;
     hidden_hover_blend_ = 0.0f;
 

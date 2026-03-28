@@ -350,6 +350,8 @@ struct RoutePair
     const SemanticCityBuilding* target = nullptr;
     std::string source_qualified_name;
     std::string target_qualified_name;
+    std::string field_name;
+    std::string field_type_name;
 };
 
 struct RouteEndpointRequest
@@ -480,6 +482,8 @@ std::vector<RoutePair> collect_route_pairs(
             target_it->second,
             dep.source_qualified_name,
             dep.target_qualified_name,
+            dep.field_name,
+            dep.field_type_name,
         });
     }
 
@@ -933,6 +937,8 @@ std::vector<CityGrid::RoutePolyline> build_city_routes_from_grid(
             pair.source_qualified_name,
             pair.target->module_path,
             pair.target_qualified_name,
+            pair.field_name,
+            pair.field_type_name,
             kOutgoingRouteColor,
             kIncomingRouteColor,
             std::move(world_points),

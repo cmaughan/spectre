@@ -39,7 +39,7 @@ struct CityBuildResult
     std::shared_ptr<const GeometryMesh> tree_leaf_mesh;
 };
 
-[[nodiscard]] int procedural_building_side_count(int incident_connection_count);
+[[nodiscard]] int procedural_building_side_count(int incident_connection_count, int connected_hex_building_threshold);
 
 void emit_route_entities(
     SceneWorld& world,

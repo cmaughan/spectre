@@ -28,6 +28,7 @@ public:
     void set_viewport(int pixel_w, int pixel_h);
     void look_at_world_center(float world_w, float world_h);
     void frame_world_bounds(float min_x, float max_x, float min_z, float max_z);
+    void reframe_world_bounds(float min_x, float max_x, float min_z, float max_z);
     void set_target(const glm::vec3& target);
     void translate_target(float dx, float dz);
     void orbit_target(float radians);

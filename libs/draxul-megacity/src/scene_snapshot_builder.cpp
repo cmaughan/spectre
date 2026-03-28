@@ -311,6 +311,7 @@ SceneSnapshotResult build_scene_snapshot(
         {
             obj.source_name = sym->name;
             obj.source_module_path = sym->module_path;
+            obj.source_file_path = sym->file;
         }
         if (const auto* link = reg.try_get<RouteLink>(entity))
         {

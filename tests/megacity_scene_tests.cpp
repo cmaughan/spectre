@@ -4,6 +4,7 @@
 
 #include "city_builder.h"
 #include "city_helpers.h"
+#include "city_picking.h"
 #include "isometric_camera.h"
 #include "isometric_scene_pass.h"
 #include "mesh_library.h"
@@ -237,12 +238,55 @@ TEST_CASE("megacity scene snapshot carries custom building meshes", "[megacity]"
     CHECK(result.snapshot.custom_meshes[0].get() == custom_mesh.get());
 }
 
+TEST_CASE("megacity picking distinguishes duplicate names in the same module by source file", "[megacity]")
+{
+    SemanticMegacityLayout layout;
+    SemanticCityModuleLayout module;
+    module.module_path = "tests";
+
+    SemanticCityBuilding left;
+    left.module_path = module.module_path;
+    left.qualified_name = "FakeGlyphAtlas";
+    left.display_name = "FakeGlyphAtlas";
+    left.source_file_path = "tests/font_size_tests.cpp";
+    left.metrics = BuildingMetrics{
+        .footprint = 2.0f,
+        .height = 4.0f,
+        .sidewalk_width = 0.5f,
+        .road_width = 1.0f,
+    };
+    left.center = glm::vec2(-4.0f, 0.0f);
+
+    SemanticCityBuilding right = left;
+    right.source_file_path = "tests/grid_rendering_pipeline_tests.cpp";
+    right.center = glm::vec2(4.0f, 0.0f);
+
+    module.buildings = { left, right };
+    layout.modules.push_back(module);
+
+    IsometricCamera camera;
+    camera.set_viewport(800, 600);
+    camera.frame_world_bounds(-8.0f, 8.0f, -4.0f, 4.0f);
+
+    const SceneSnapshot scene = snapshot_from_camera(camera);
+    const glm::vec2 right_ndc = ndc_of_point(scene, glm::vec3(right.center.x, right.metrics.height * 0.5f, right.center.y));
+    const glm::ivec2 screen_pos(
+        static_cast<int>(std::lround((right_ndc.x * 0.5f + 0.5f) * 800.0f)),
+        static_cast<int>(std::lround((1.0f - (right_ndc.y * 0.5f + 0.5f)) * 600.0f)));
+
+    const auto picked = pick_building(screen_pos, 800, 600, camera, layout);
+    REQUIRE(picked.has_value());
+    CHECK(picked->qualified_name == "FakeGlyphAtlas");
+    CHECK(picked->module_path == "tests");
+    CHECK(picked->source_file_path == "tests/grid_rendering_pipeline_tests.cpp");
+}
+
 TEST_CASE("procedural building side count becomes hex for heavily connected buildings", "[megacity]")
 {
-    CHECK(procedural_building_side_count(0) == 4);
-    CHECK(procedural_building_side_count(5) == 4);
-    CHECK(procedural_building_side_count(6) == 6);
-    CHECK(procedural_building_side_count(12) == 6);
+    CHECK(procedural_building_side_count(0, 12) == 4);
+    CHECK(procedural_building_side_count(11, 12) == 4);
+    CHECK(procedural_building_side_count(12, 12) == 6);
+    CHECK(procedural_building_side_count(9, 9) == 6);
 }
 
 TEST_CASE("route segment world transform follows its intended direction", "[megacity]")
@@ -993,6 +1037,8 @@ TEST_CASE("route render segments preserve independent route geometry", "[megacit
         "Alpha",
         "libs/example",
         "Target",
+        {},
+        {},
         glm::vec4(0.20f, 0.88f, 0.30f, 1.0f),
         glm::vec4(0.92f, 0.22f, 0.18f, 1.0f),
         {
@@ -1008,6 +1054,8 @@ TEST_CASE("route render segments preserve independent route geometry", "[megacit
         "Beta",
         "libs/example",
         "Target",
+        {},
+        {},
         glm::vec4(0.20f, 0.88f, 0.30f, 1.0f),
         glm::vec4(0.92f, 0.22f, 0.18f, 1.0f),
         {

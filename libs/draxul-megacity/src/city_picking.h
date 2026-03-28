@@ -8,12 +8,13 @@ namespace draxul
 {
 
 class IsometricCamera;
-struct SemanticMegacityModel;
+struct SemanticMegacityLayout;
 
 struct PickResult
 {
     std::string qualified_name;
     std::string module_path;
+    std::string source_file_path;
     glm::vec2 building_center{ 0.0f };
     float hit_y = 0.0f;
 };
@@ -24,6 +25,6 @@ std::optional<PickResult> pick_building(
     const glm::ivec2& screen_pos,
     int viewport_width, int viewport_height,
     const IsometricCamera& camera,
-    const SemanticMegacityModel& model);
+    const SemanticMegacityLayout& layout);
 
 } // namespace draxul

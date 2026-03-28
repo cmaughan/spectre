@@ -638,9 +638,10 @@ SignMetrics make_sign_metrics(const SignPlacementSpec& placement, const SignAtla
 
 } // namespace
 
-int procedural_building_side_count(int incident_connection_count)
+int procedural_building_side_count(int incident_connection_count, int connected_hex_building_threshold)
 {
-    return incident_connection_count >= kHexBuildingIncidentConnectionThreshold ? 6 : 4;
+    const int hex_threshold = std::max(connected_hex_building_threshold, 1);
+    return incident_connection_count >= hex_threshold ? 6 : 4;
 }
 
 CityBuildResult build_city(
@@ -916,7 +917,9 @@ CityBuildResult build_city(
                 building_connection_key(building.module_path, building.qualified_name));
             const int incident_connection_count
                 = count_it != building_connection_counts.end() ? count_it->second : 0;
-            const int building_side_count = procedural_building_side_count(incident_connection_count);
+            const int building_side_count = procedural_building_side_count(
+                incident_connection_count,
+                config.connected_hex_building_threshold);
             world.create_building(
                 building.center.x,
                 building.center.y,
@@ -1074,6 +1077,23 @@ void emit_route_entities(
                                       kRoadSurfaceTextureLift + config.road_surface_height,
                                       config.sidewalk_surface_lift + config.sidewalk_surface_height)
         + kDependencyRouteLift;
+
+    // Assign per-side layer indices so each building side's routes stack from the bottom.
+    // Key: source building name + departure side → next layer index.
+    std::unordered_map<std::string, int> side_layer_counters;
+    const auto side_key = [](const CityGrid::RoutePolyline& route) -> std::string {
+        if (route.world_points.size() < 2)
+            return {};
+        const glm::vec2 edge = route.world_points.front();
+        const glm::vec2 road = route.world_points[1];
+        const glm::vec2 dir = road - edge;
+        // Classify departure direction into N/S/E/W.
+        char side = std::abs(dir.x) > std::abs(dir.y)
+            ? (dir.x > 0.0f ? 'E' : 'W')
+            : (dir.y > 0.0f ? 'N' : 'S');
+        return route.source_qualified_name + '#' + side;
+    };
+
     for (size_t route_index = 0; route_index < routes.size(); ++route_index)
     {
         const auto& route = routes[route_index];
@@ -1086,8 +1106,9 @@ void emit_route_entities(
         if (total_length <= 1e-4f)
             continue;
 
+        const int side_layer = side_layer_counters[side_key(route)]++;
         const float layered_route_elevation
-            = route_elevation + static_cast<float>(route_index) * std::max(config.dependency_route_layer_step, 0.0f);
+            = route_elevation + static_cast<float>(side_layer) * std::max(config.dependency_route_layer_step, 0.0f);
         float traversed_length = 0.0f;
         for (size_t point_index = 1; point_index < route.world_points.size(); ++point_index)
         {
