@@ -8,7 +8,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DELAY=15000
-SIZE="1280x720"
+SIZE="2560x1440"
 NO_UI="--no-ui"
 PUSH=false
 
