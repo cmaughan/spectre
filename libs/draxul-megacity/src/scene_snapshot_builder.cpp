@@ -15,7 +15,7 @@ namespace draxul
 namespace
 {
 
-SceneMaterial build_scene_material(const Appearance& appearance)
+SceneMaterial build_scene_material(const Appearance& appearance, const MegaCityCodeConfig& config)
 {
     SceneMaterial material;
     switch (appearance.material)
@@ -52,12 +52,17 @@ SceneMaterial build_scene_material(const Appearance& appearance)
             appearance.material_info.y,
             appearance.material_info.z,
             appearance.material_info.w,
-            0.0f);
+            1.0f);
         material.texture_indices = glm::uvec4(
             static_cast<uint32_t>(SceneTextureId::WoodAlbedo),
             static_cast<uint32_t>(SceneTextureId::WoodNormal),
             static_cast<uint32_t>(SceneTextureId::WoodRoughness),
             static_cast<uint32_t>(SceneTextureId::WoodAo));
+        material.metadata = glm::uvec4(
+            0u,
+            static_cast<uint32_t>(SceneTextureId::WoodMetalness),
+            0u,
+            0u);
         break;
     case MaterialId::LeafCards:
         material.shading_model = MaterialShadingModel::LeafCutoutPbr;
@@ -91,6 +96,8 @@ SceneMaterial build_scene_material(const Appearance& appearance)
             static_cast<uint32_t>(SceneTextureId::BarkAo));
         break;
     case MaterialId::FlatColor:
+        material.scalar_params.w = glm::clamp(appearance.material_info.x * config.flat_color_metallic, 0.0f, 1.0f);
+        break;
     default:
         break;
     }
@@ -105,9 +112,9 @@ bool same_scene_material(const SceneMaterial& lhs, const SceneMaterial& rhs)
         && lhs.metadata == rhs.metadata;
 }
 
-uint32_t find_or_append_material(SceneSnapshot& scene, const Appearance& appearance)
+uint32_t find_or_append_material(SceneSnapshot& scene, const Appearance& appearance, const MegaCityCodeConfig& config)
 {
-    const SceneMaterial candidate = build_scene_material(appearance);
+    const SceneMaterial candidate = build_scene_material(appearance, config);
     for (uint32_t index = 0; index < scene.materials.size(); ++index)
     {
         if (same_scene_material(scene.materials[index], candidate))
@@ -214,7 +221,7 @@ SceneSnapshotResult build_scene_snapshot(
     {
         SceneObject obj;
         obj.mesh = appearance.mesh;
-        obj.material_index = find_or_append_material(scene, appearance);
+        obj.material_index = find_or_append_material(scene, appearance, config);
         obj.double_sided = appearance.double_sided;
         const glm::vec3 world_pos{ pos.x, elev.value, pos.z };
         float extent_x = 1.0f;

@@ -11,6 +11,7 @@
 #include "ui_treesitter_panel.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <draxul/log.h>
 #include <draxul/megacity_host.h>
@@ -420,6 +421,18 @@ void MegaCityHost::on_key(const KeyEvent& event)
         return;
     }
 
+    if ((event.scancode == SDL_SCANCODE_SPACE || event.keycode == SDLK_SPACE)
+        && !selected_building_name_.empty())
+    {
+        if (hidden_hover_active_ != event.pressed)
+        {
+            hidden_hover_active_ = event.pressed;
+            if (callbacks_)
+                callbacks_->request_frame();
+        }
+        return;
+    }
+
     if (input_->on_key(event))
     {
         last_pump_time_ = std::chrono::steady_clock::now();
@@ -431,8 +444,6 @@ void MegaCityHost::on_mouse_move(const MouseMoveEvent& event)
 {
     if (!camera_)
         return;
-
-    update_hovered_building(event.pos);
 
     if (input_->on_mouse_move(event, *camera_))
     {
@@ -837,6 +848,10 @@ void MegaCityHost::pump()
             callbacks_->request_frame();
     }
 
+    bool selection_alpha_changed = false;
+    if (!selected_building_name_.empty())
+        selection_alpha_changed = update_hidden_hover_blend(dt, now);
+
     last_pump_time_ = now;
 
     if (!city_db_reconciled_ && city_db_.is_open())
@@ -894,6 +909,13 @@ void MegaCityHost::pump()
             apply_selection_opacity();
         scene_dirty_ = false;
     }
+    else if (selection_alpha_changed)
+    {
+        apply_selection_opacity();
+    }
+
+    if (!continuous_refresh_enabled_ && selection_alpha_changed && callbacks_)
+        callbacks_->request_frame();
     if (running_ && continuous_refresh_enabled_ && callbacks_)
         callbacks_->request_frame();
 }
@@ -902,7 +924,8 @@ std::optional<std::chrono::steady_clock::time_point> MegaCityHost::next_deadline
 {
     if (!running_)
         return std::nullopt;
-    if (!continuous_refresh_enabled_ && !input_->movement_active() && !input_->drag_smoothing_active())
+    if (!continuous_refresh_enabled_ && !input_->movement_active() && !input_->drag_smoothing_active()
+        && hidden_hover_blend_ <= 1e-3f)
         return std::nullopt;
     if (input_->drag_smoothing_active())
         return std::chrono::steady_clock::now() + kDragSmoothingTick;
@@ -993,40 +1016,27 @@ void MegaCityHost::handle_click(const glm::ivec2& screen_pos)
     }
 }
 
-void MegaCityHost::update_hovered_building(const glm::ivec2& screen_pos)
+bool MegaCityHost::update_hidden_hover_blend(float dt, std::chrono::steady_clock::time_point now)
 {
-    std::string next_hovered_name;
-    std::string next_hovered_module_path;
-
-    if (!selected_building_name_.empty() && camera_ && semantic_model_ && scene_pass_)
+    (void)now;
+    if (selected_building_name_.empty())
     {
-        const glm::ivec2 local_pos = screen_pos - viewport_.pixel_pos;
-        if (local_pos.x >= 0 && local_pos.y >= 0 && local_pos.x < pixel_w_ && local_pos.y < pixel_h_)
-        {
-            if (auto hit = pick_building(local_pos, pixel_w_, pixel_h_, *camera_, *semantic_model_))
-            {
-                next_hovered_name = hit->qualified_name;
-                next_hovered_module_path = hit->module_path;
-            }
-        }
+        const bool changed = hidden_hover_blend_ != 0.0f;
+        hidden_hover_blend_ = 0.0f;
+        return changed;
     }
 
-    if (next_hovered_name == selected_building_name_
-        && next_hovered_module_path == selected_building_module_path_)
-    {
-        next_hovered_name.clear();
-        next_hovered_module_path.clear();
-    }
+    const float target_blend = hidden_hover_active_ ? 1.0f : 0.0f;
+    const float duration_seconds = target_blend > hidden_hover_blend_
+        ? std::max(renderer_config_.selection_hidden_hover_raise_seconds, 1e-3f)
+        : std::max(renderer_config_.selection_hidden_hover_fall_seconds, 1e-3f);
+    const float step = std::clamp(dt / duration_seconds, 0.0f, 1.0f);
+    const float previous_blend = hidden_hover_blend_;
+    hidden_hover_blend_ += (target_blend - hidden_hover_blend_) * step;
+    if (std::abs(hidden_hover_blend_ - target_blend) <= 1e-3f)
+        hidden_hover_blend_ = target_blend;
 
-    if (next_hovered_name == hovered_building_name_
-        && next_hovered_module_path == hovered_building_module_path_)
-        return;
-
-    hovered_building_name_ = std::move(next_hovered_name);
-    hovered_building_module_path_ = std::move(next_hovered_module_path);
-
-    if (!selected_building_name_.empty())
-        apply_selection_opacity();
+    return std::abs(hidden_hover_blend_ - previous_blend) > 1e-5f;
 }
 
 void MegaCityHost::apply_selection_opacity()
@@ -1036,8 +1046,6 @@ void MegaCityHost::apply_selection_opacity()
 
     const std::string selected_identity
         = building_identity_key(selected_building_module_path_, selected_building_name_);
-    const std::string hovered_identity
-        = building_identity_key(hovered_building_module_path_, hovered_building_name_);
     std::unordered_set<std::string> connected;
     for (const auto& dep : semantic_model_->dependencies)
     {
@@ -1052,6 +1060,11 @@ void MegaCityHost::apply_selection_opacity()
     }
 
     SceneSnapshot& scene = scene_pass_->scene();
+    const float hidden_building_alpha = std::clamp(
+        renderer_config_.selection_hidden_alpha
+            + (renderer_config_.selection_hidden_hover_alpha - renderer_config_.selection_hidden_alpha)
+                * hidden_hover_blend_,
+        0.0f, 1.0f);
     for (auto& obj : scene.objects)
     {
         const std::string object_identity = obj.source_name.empty()
@@ -1059,7 +1072,6 @@ void MegaCityHost::apply_selection_opacity()
             : building_identity_key(obj.source_module_path, obj.source_name);
         const bool is_selected = !object_identity.empty() && object_identity == selected_identity;
         const bool is_connected = !object_identity.empty() && connected.count(object_identity) > 0;
-        const bool is_hovered_hidden = !object_identity.empty() && object_identity == hovered_identity && !is_connected;
         const bool is_selected_route = !obj.route_source.empty()
             && (building_identity_key(obj.route_source_module_path, obj.route_source) == selected_identity
                 || building_identity_key(obj.route_target_module_path, obj.route_target) == selected_identity);
@@ -1067,8 +1079,8 @@ void MegaCityHost::apply_selection_opacity()
         float alpha = obj.mesh == MeshId::RoadSurface
             ? renderer_config_.selection_hidden_road_alpha
             : renderer_config_.selection_hidden_alpha;
-        if (is_hovered_hidden)
-            alpha = renderer_config_.selection_hidden_hover_alpha;
+        if (!object_identity.empty() && !is_selected && !is_connected && obj.mesh != MeshId::RoadSurface)
+            alpha = hidden_building_alpha;
         if (is_connected)
             alpha = renderer_config_.selection_dependency_alpha;
         if (is_selected || is_selected_route)
@@ -1090,8 +1102,8 @@ void MegaCityHost::clear_selection()
 
     selected_building_name_.clear();
     selected_building_module_path_.clear();
-    hovered_building_name_.clear();
-    hovered_building_module_path_.clear();
+    hidden_hover_active_ = false;
+    hidden_hover_blend_ = 0.0f;
 
     if (scene_pass_)
     {

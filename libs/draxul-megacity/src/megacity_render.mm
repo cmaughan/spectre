@@ -296,6 +296,11 @@ struct GBufferTargets
     ObjCRef<id<MTLTexture>> ao_raw; // RGBA8Unorm — raw ambient occlusion before denoise
     ObjCRef<id<MTLTexture>> ao; // RGBA8Unorm — R ambient occlusion, GBA reserved
     ObjCRef<id<MTLTexture>> depth; // Depth32Float — hardware depth
+    ObjCRef<id<MTLTexture>> scene_color_msaa; // RGBA16Float MSAA scene color
+    ObjCRef<id<MTLTexture>> scene_depth_msaa; // Depth32Float MSAA scene depth
+    ObjCRef<id<MTLTexture>> scene_hdr; // RGBA16Float resolved HDR scene
+    ObjCRef<id<MTLTexture>> scene_final_srgb; // BGRA8Unorm_sRGB encoded scene
+    ObjCRef<id<MTLTexture>> scene_final_unorm; // BGRA8Unorm alias view for present/debug
     int width = 0;
     int height = 0;
 };
@@ -304,6 +309,8 @@ struct IsometricScenePass::State
 {
     ObjCRef<id<MTLRenderPipelineState>> pipeline;
     ObjCRef<id<MTLRenderPipelineState>> debug_pipeline;
+    ObjCRef<id<MTLRenderPipelineState>> post_pipeline;
+    ObjCRef<id<MTLRenderPipelineState>> present_pipeline;
     ObjCRef<id<MTLDepthStencilState>> depth_state;
     ObjCRef<id<MTLDepthStencilState>> depth_state_no_write;
     MeshBuffers cube_mesh;
@@ -338,11 +345,14 @@ struct IsometricScenePass::State
     std::vector<GBufferTargets> gbuffer_targets; // per frame
     bool gbuffer_initialized = false;
     uint32_t last_prepass_frame = 0;
+    NSUInteger scene_sample_count = 4;
 
     bool init(id<MTLDevice> device, int grid_width, int grid_height, float tile_size)
     {
         if (initialized)
-            return pipeline.get() != nil && depth_state.get() != nil;
+            return pipeline.get() != nil && debug_pipeline.get() != nil
+                && post_pipeline.get() != nil && present_pipeline.get() != nil
+                && depth_state.get() != nil;
 
         initialized = true;
         NSError* error = nil;
@@ -396,7 +406,7 @@ struct IsometricScenePass::State
         desc.vertexFunction = vert_fn;
         desc.fragmentFunction = frag_fn;
         desc.vertexDescriptor = vertex_desc;
-        desc.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
+        desc.colorAttachments[0].pixelFormat = MTLPixelFormatRGBA16Float;
         desc.colorAttachments[0].blendingEnabled = YES;
         desc.colorAttachments[0].rgbBlendOperation = MTLBlendOperationAdd;
         desc.colorAttachments[0].alphaBlendOperation = MTLBlendOperationAdd;
@@ -405,6 +415,7 @@ struct IsometricScenePass::State
         desc.colorAttachments[0].sourceAlphaBlendFactor = MTLBlendFactorOne;
         desc.colorAttachments[0].destinationAlphaBlendFactor = MTLBlendFactorZero;
         desc.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
+        desc.rasterSampleCount = scene_sample_count;
 
         id<MTLRenderPipelineState> pipeline_state = [device newRenderPipelineStateWithDescriptor:desc error:&error];
         if (!pipeline_state)
@@ -433,6 +444,48 @@ struct IsometricScenePass::State
         {
             DRAXUL_LOG_ERROR(LogCategory::App, "MegaCity: debug_fragment not found in shader library");
         }
+
+        id<MTLFunction> fullscreen_vert_fn = [library newFunctionWithName:@"fullscreen_vertex"];
+        id<MTLFunction> post_frag_fn = [library newFunctionWithName:@"scene_post_fragment"];
+        id<MTLFunction> present_frag_fn = [library newFunctionWithName:@"scene_present_fragment"];
+        if (!fullscreen_vert_fn || !post_frag_fn || !present_frag_fn)
+        {
+            DRAXUL_LOG_ERROR(LogCategory::App,
+                "MegaCity: fullscreen/post/present shader functions not found in scene library");
+            return false;
+        }
+
+        MTLRenderPipelineDescriptor* post_desc = [[MTLRenderPipelineDescriptor alloc] init];
+        post_desc.vertexFunction = fullscreen_vert_fn;
+        post_desc.fragmentFunction = post_frag_fn;
+        post_desc.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm_sRGB;
+
+        id<MTLRenderPipelineState> post_pipeline_state = [device newRenderPipelineStateWithDescriptor:post_desc
+                                                                                                error:&error];
+        if (!post_pipeline_state)
+        {
+            DRAXUL_LOG_ERROR(LogCategory::App,
+                "MegaCity: failed to create scene post pipeline: %s",
+                error ? [[error localizedDescription] UTF8String] : "unknown");
+            return false;
+        }
+        post_pipeline.reset(post_pipeline_state);
+
+        MTLRenderPipelineDescriptor* present_desc = [[MTLRenderPipelineDescriptor alloc] init];
+        present_desc.vertexFunction = fullscreen_vert_fn;
+        present_desc.fragmentFunction = present_frag_fn;
+        present_desc.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
+
+        id<MTLRenderPipelineState> present_pipeline_state = [device newRenderPipelineStateWithDescriptor:present_desc
+                                                                                                   error:&error];
+        if (!present_pipeline_state)
+        {
+            DRAXUL_LOG_ERROR(LogCategory::App,
+                "MegaCity: failed to create scene present pipeline: %s",
+                error ? [[error localizedDescription] UTF8String] : "unknown");
+            return false;
+        }
+        present_pipeline.reset(present_pipeline_state);
 
         MTLDepthStencilDescriptor* depth_desc = [[MTLDepthStencilDescriptor alloc] init];
         depth_desc.depthCompareFunction = MTLCompareFunctionLessEqual;
@@ -746,6 +799,8 @@ struct IsometricScenePass::State
             make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm, wood_images.normal));
         material_textures[static_cast<size_t>(SceneTextureId::WoodRoughness)].reset(
             make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm, wood_images.roughness));
+        material_textures[static_cast<size_t>(SceneTextureId::WoodMetalness)].reset(
+            make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm, wood_images.metalness));
         material_textures[static_cast<size_t>(SceneTextureId::WoodAo)].reset(
             make_texture(cmd_buf, MTLPixelFormatRGBA8Unorm, wood_images.ao));
         material_textures[static_cast<size_t>(SceneTextureId::BarkAlbedo)].reset(
@@ -966,16 +1021,63 @@ struct IsometricScenePass::State
             depth_desc.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
             depth_desc.storageMode = MTLStorageModePrivate;
 
+            MTLTextureDescriptor* scene_msaa_desc = [MTLTextureDescriptor
+                texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA16Float
+                                             width:static_cast<NSUInteger>(width)
+                                            height:static_cast<NSUInteger>(height)
+                                         mipmapped:NO];
+            scene_msaa_desc.textureType = MTLTextureType2DMultisample;
+            scene_msaa_desc.sampleCount = scene_sample_count;
+            scene_msaa_desc.usage = MTLTextureUsageRenderTarget;
+            scene_msaa_desc.storageMode = MTLStorageModePrivate;
+
+            MTLTextureDescriptor* scene_depth_desc = [MTLTextureDescriptor
+                texture2DDescriptorWithPixelFormat:MTLPixelFormatDepth32Float
+                                             width:static_cast<NSUInteger>(width)
+                                            height:static_cast<NSUInteger>(height)
+                                         mipmapped:NO];
+            scene_depth_desc.textureType = MTLTextureType2DMultisample;
+            scene_depth_desc.sampleCount = scene_sample_count;
+            scene_depth_desc.usage = MTLTextureUsageRenderTarget;
+            scene_depth_desc.storageMode = MTLStorageModePrivate;
+
+            MTLTextureDescriptor* scene_hdr_desc = [MTLTextureDescriptor
+                texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA16Float
+                                             width:static_cast<NSUInteger>(width)
+                                            height:static_cast<NSUInteger>(height)
+                                         mipmapped:NO];
+            scene_hdr_desc.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
+            scene_hdr_desc.storageMode = MTLStorageModePrivate;
+
+            MTLTextureDescriptor* scene_final_desc = [MTLTextureDescriptor
+                texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm_sRGB
+                                             width:static_cast<NSUInteger>(width)
+                                            height:static_cast<NSUInteger>(height)
+                                         mipmapped:NO];
+            scene_final_desc.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
+            scene_final_desc.storageMode = MTLStorageModePrivate;
+
             targets.normal.reset([device newTextureWithDescriptor:rgba8_desc]);
             targets.ao_raw.reset([device newTextureWithDescriptor:rgba8_desc]);
             targets.ao.reset([device newTextureWithDescriptor:rgba8_desc]);
             targets.depth.reset([device newTextureWithDescriptor:depth_desc]);
+            targets.scene_color_msaa.reset([device newTextureWithDescriptor:scene_msaa_desc]);
+            targets.scene_depth_msaa.reset([device newTextureWithDescriptor:scene_depth_desc]);
+            targets.scene_hdr.reset([device newTextureWithDescriptor:scene_hdr_desc]);
+            targets.scene_final_srgb.reset([device newTextureWithDescriptor:scene_final_desc]);
+            if (targets.scene_final_srgb)
+            {
+                targets.scene_final_unorm.reset(
+                    [targets.scene_final_srgb.get() newTextureViewWithPixelFormat:MTLPixelFormatBGRA8Unorm]);
+            }
             targets.width = width;
             targets.height = height;
 
-            if (!targets.normal || !targets.ao_raw || !targets.ao || !targets.depth)
+            if (!targets.normal || !targets.ao_raw || !targets.ao || !targets.depth
+                || !targets.scene_color_msaa || !targets.scene_depth_msaa
+                || !targets.scene_hdr || !targets.scene_final_srgb || !targets.scene_final_unorm)
             {
-                DRAXUL_LOG_ERROR(LogCategory::App, "MegaCity: failed to create GBuffer textures");
+                DRAXUL_LOG_ERROR(LogCategory::App, "MegaCity: failed to create GBuffer/scene textures");
                 gbuffer_targets.clear();
                 return false;
             }
@@ -1015,6 +1117,8 @@ void IsometricScenePass::record_prepass(IRenderContext& ctx)
     if (!state_->ensure_gbuffer_targets(cmd_buf.device, frame_count, vw, vh))
         return;
     if (!state_->ensure_road_materials(cmd_buf))
+        return;
+    if (!state_->ensure_label_atlas(cmd_buf.device, scene_.label_atlas))
         return;
     if (!state_->ensure_floor_grid(cmd_buf.device, scene_.floor_grid))
         return;
@@ -1082,8 +1186,16 @@ void IsometricScenePass::record_prepass(IRenderContext& ctx)
     frame.point_light_pos = simd_make_float4(
         scene_.camera.point_light_pos.x, scene_.camera.point_light_pos.y,
         scene_.camera.point_light_pos.z, scene_.camera.point_light_pos.w);
-    frame.label_fade_px = simd_make_float4(0.0f, 0.0f, 0.0f, 0.0f);
-    frame.render_tuning = simd_make_float4(1.0f, 0.0f, 0.0f, 0.0f);
+    frame.label_fade_px = simd_make_float4(
+        scene_.camera.label_fade_px.x,
+        scene_.camera.label_fade_px.y,
+        scene_.camera.label_fade_px.z,
+        scene_.camera.label_fade_px.w);
+    frame.render_tuning = simd_make_float4(
+        scene_.camera.render_tuning.x,
+        scene_.camera.render_tuning.y,
+        scene_.camera.render_tuning.z,
+        scene_.camera.render_tuning.w);
     frame.screen_params = simd_make_float4(0.0f, 0.0f, 1.0f / std::max(vw, 1), 1.0f / std::max(vh, 1));
     frame.ao_params = simd_make_float4(
         scene_.camera.ao_settings.x,
@@ -1231,136 +1343,50 @@ void IsometricScenePass::record_prepass(IRenderContext& ctx)
     [blurEncoder setFragmentSamplerState:state_->gbuffer_point_sampler.get() atIndex:0];
     [blurEncoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
     [blurEncoder endEncoding];
-}
 
-void IsometricScenePass::record(IRenderContext& ctx)
-{
-    id<MTLCommandBuffer> cmd_buf = (__bridge id<MTLCommandBuffer>)ctx.native_command_buffer();
-    id<MTLRenderCommandEncoder> encoder = (__bridge id<MTLRenderCommandEncoder>)ctx.native_render_encoder();
-    if (!cmd_buf || !encoder)
-        return;
+    MTLRenderPassDescriptor* sceneDesc = [MTLRenderPassDescriptor renderPassDescriptor];
+    sceneDesc.colorAttachments[0].texture = gbuffer.scene_color_msaa.get();
+    sceneDesc.colorAttachments[0].resolveTexture = gbuffer.scene_hdr.get();
+    sceneDesc.colorAttachments[0].loadAction = MTLLoadActionClear;
+    sceneDesc.colorAttachments[0].storeAction = MTLStoreActionMultisampleResolve;
+    sceneDesc.colorAttachments[0].clearColor = MTLClearColorMake(0.0, 0.0, 0.0, 0.0);
+    sceneDesc.depthAttachment.texture = gbuffer.scene_depth_msaa.get();
+    sceneDesc.depthAttachment.loadAction = MTLLoadActionClear;
+    sceneDesc.depthAttachment.storeAction = MTLStoreActionDontCare;
+    sceneDesc.depthAttachment.clearDepth = 1.0;
 
-    const uint32_t frame_count = std::max(1u, ctx.buffered_frame_count());
-    if (!state_->init(cmd_buf.device, grid_width_, grid_height_, tile_size_))
-        return;
-    if (!state_->init_gbuffer(cmd_buf.device))
-        return;
-    if (!state_->ensure_frame_resources(cmd_buf.device, frame_count))
-        return;
-    if (!state_->ensure_gbuffer_targets(cmd_buf.device, frame_count, ctx.viewport_w(), ctx.viewport_h()))
-        return;
-    if (!state_->ensure_floor_grid(cmd_buf.device, scene_.floor_grid))
-        return;
-    if (!state_->ensure_label_atlas(cmd_buf.device, scene_.label_atlas))
+    id<MTLRenderCommandEncoder> sceneEncoder = [cmd_buf renderCommandEncoderWithDescriptor:sceneDesc];
+    if (!sceneEncoder)
         return;
 
-    const uint32_t frame_index = ctx.frame_index() % static_cast<uint32_t>(state_->frame_resources.size());
-    auto& frame_resources = state_->frame_resources[frame_index];
-    frame_resources.geometry_arena.reset();
+    [sceneEncoder setViewport:viewport];
+    [sceneEncoder setScissorRect:scissor];
 
-    if (!state_->ensure_tree_mesh(cmd_buf.device, scene_.tree_bark_mesh, scene_.tree_leaf_mesh)
-        || !state_->ensure_custom_meshes(cmd_buf.device, scene_.custom_meshes))
-        return;
-
-    MeshSlice grid_slice;
-    if (state_->has_cached_grid_mesh
-        && !stream_transient_mesh(cmd_buf.device, state_->cached_grid_mesh, frame_resources.geometry_arena, grid_slice))
-    {
-        return;
-    }
-
-    MTLViewport viewport;
-    viewport.originX = ctx.viewport_x();
-    viewport.originY = ctx.viewport_y();
-    viewport.width = ctx.viewport_w();
-    viewport.height = ctx.viewport_h();
-    viewport.znear = 0.0;
-    viewport.zfar = 1.0;
-    [encoder setViewport:viewport];
-
-    MTLScissorRect scissor;
-    scissor.x = static_cast<NSUInteger>(std::max(0, ctx.viewport_x()));
-    scissor.y = static_cast<NSUInteger>(std::max(0, ctx.viewport_y()));
-    scissor.width = static_cast<NSUInteger>(std::max(0, ctx.viewport_w()));
-    scissor.height = static_cast<NSUInteger>(std::max(0, ctx.viewport_h()));
-    [encoder setScissorRect:scissor];
-
-    FrameUniforms frame;
-    frame.view = to_simd_matrix(scene_.camera.view);
-    frame.proj = to_simd_matrix(scene_.camera.proj);
-    frame.inv_view_proj = to_simd_matrix(scene_.camera.inv_view_proj);
-    frame.camera_pos = simd_make_float4(
-        scene_.camera.camera_pos.x,
-        scene_.camera.camera_pos.y,
-        scene_.camera.camera_pos.z,
-        scene_.camera.camera_pos.w);
-    frame.light_dir = simd_make_float4(
-        scene_.camera.light_dir.x,
-        scene_.camera.light_dir.y,
-        scene_.camera.light_dir.z,
-        scene_.camera.light_dir.w);
-    frame.point_light_pos = simd_make_float4(
-        scene_.camera.point_light_pos.x,
-        scene_.camera.point_light_pos.y,
-        scene_.camera.point_light_pos.z,
-        scene_.camera.point_light_pos.w);
-    frame.label_fade_px = simd_make_float4(
-        scene_.camera.label_fade_px.x,
-        scene_.camera.label_fade_px.y,
-        scene_.camera.label_fade_px.z,
-        scene_.camera.label_fade_px.w);
-    frame.render_tuning = simd_make_float4(
-        scene_.camera.render_tuning.x,
-        scene_.camera.render_tuning.y,
-        scene_.camera.render_tuning.z,
-        scene_.camera.render_tuning.w);
-    frame.screen_params = simd_make_float4(
-        static_cast<float>(ctx.viewport_x()),
-        static_cast<float>(ctx.viewport_y()),
-        1.0f / std::max(ctx.viewport_w(), 1),
-        1.0f / std::max(ctx.viewport_h(), 1));
-    frame.ao_params = simd_make_float4(
-        scene_.camera.ao_settings.x,
-        compute_ao_radius_pixels(scene_.camera.proj, scene_.camera.ao_settings.x, ctx.viewport_h()),
-        scene_.camera.ao_settings.y,
-        scene_.camera.ao_settings.z);
-    frame.debug_view = simd_make_float4(
-        scene_.camera.debug_view.x,
-        scene_.camera.debug_view.y,
-        scene_.camera.debug_view.z,
-        scene_.camera.debug_view.w);
-    frame.world_debug_bounds = simd_make_float4(
-        scene_.camera.world_debug_bounds.x,
-        scene_.camera.world_debug_bounds.y,
-        scene_.camera.world_debug_bounds.z,
-        scene_.camera.world_debug_bounds.w);
-    std::memcpy([frame_resources.frame_uniforms.get() contents], &frame, sizeof(frame));
     const MaterialUniforms material_uniforms = build_material_uniforms(scene_);
     std::memcpy([frame_resources.material_uniforms.get() contents], &material_uniforms, sizeof(material_uniforms));
 
     const int debug_mode = static_cast<int>(scene_.camera.debug_view.x + 0.5f);
     const bool use_debug = debug_mode > 0 && state_->debug_pipeline.get() != nil;
-    [encoder setRenderPipelineState:use_debug ? state_->debug_pipeline.get() : state_->pipeline.get()];
-    [encoder setDepthStencilState:state_->depth_state.get()];
-    [encoder setFrontFacingWinding:MTLWindingCounterClockwise];
+    [sceneEncoder setRenderPipelineState:use_debug ? state_->debug_pipeline.get() : state_->pipeline.get()];
+    [sceneEncoder setDepthStencilState:state_->depth_state.get()];
+    [sceneEncoder setFrontFacingWinding:MTLWindingCounterClockwise];
     const bool wireframe = scene_.camera.debug_view.w > 0.5f;
-    [encoder setTriangleFillMode:wireframe ? MTLTriangleFillModeLines : MTLTriangleFillModeFill];
-    [encoder setVertexBuffer:frame_resources.frame_uniforms.get() offset:0 atIndex:1];
-    [encoder setFragmentBuffer:frame_resources.frame_uniforms.get() offset:0 atIndex:1];
-    [encoder setFragmentBuffer:frame_resources.material_uniforms.get() offset:0 atIndex:3];
-    [encoder setFragmentTexture:state_->label_atlas_texture.get() atIndex:0];
-    // For raw AO debug (mode 1), bind the pre-denoise AO texture
+    [sceneEncoder setTriangleFillMode:wireframe ? MTLTriangleFillModeLines : MTLTriangleFillModeFill];
+    [sceneEncoder setVertexBuffer:frame_resources.frame_uniforms.get() offset:0 atIndex:1];
+    [sceneEncoder setFragmentBuffer:frame_resources.frame_uniforms.get() offset:0 atIndex:1];
+    [sceneEncoder setFragmentBuffer:frame_resources.material_uniforms.get() offset:0 atIndex:3];
+    [sceneEncoder setFragmentTexture:state_->label_atlas_texture.get() atIndex:0];
     id<MTLTexture> ao_texture = (debug_mode == 1)
-        ? state_->gbuffer_targets[frame_index].ao_raw.get()
-        : state_->gbuffer_targets[frame_index].ao.get();
-    [encoder setFragmentTexture:ao_texture atIndex:1];
+        ? gbuffer.ao_raw.get()
+        : gbuffer.ao.get();
+    [sceneEncoder setFragmentTexture:ao_texture atIndex:1];
     for (NSUInteger texture_index = 0; texture_index < state_->material_textures.size(); ++texture_index)
-        [encoder setFragmentTexture:state_->material_textures[texture_index].get() atIndex:2 + texture_index];
-    [encoder setFragmentSamplerState:state_->label_sampler.get() atIndex:0];
-    [encoder setFragmentSamplerState:state_->gbuffer_sampler.get() atIndex:1];
-    [encoder setFragmentSamplerState:state_->material_sampler.get() atIndex:2];
+        [sceneEncoder setFragmentTexture:state_->material_textures[texture_index].get() atIndex:2 + texture_index];
+    [sceneEncoder setFragmentSamplerState:state_->label_sampler.get() atIndex:0];
+    [sceneEncoder setFragmentSamplerState:state_->gbuffer_sampler.get() atIndex:1];
+    [sceneEncoder setFragmentSamplerState:state_->material_sampler.get() atIndex:2];
 
-    auto draw_object = [&](const SceneObject& obj) {
+    auto draw_scene_object = [&](const SceneObject& obj) {
         const MeshBuffers* mesh = nullptr;
         switch (obj.mesh)
         {
@@ -1406,29 +1432,27 @@ void IsometricScenePass::record(IRenderContext& ctx)
             0.0f,
             0.0f);
 
-        [encoder setCullMode:obj.double_sided ? MTLCullModeNone : MTLCullModeBack];
-        [encoder setVertexBuffer:mesh->vertex_buffer.get() offset:0 atIndex:0];
-        [encoder setVertexBytes:&object length:sizeof(object) atIndex:2];
-        [encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle
-                            indexCount:mesh->index_count
-                             indexType:MTLIndexTypeUInt16
-                           indexBuffer:mesh->index_buffer.get()
-                     indexBufferOffset:0];
+        [sceneEncoder setCullMode:obj.double_sided ? MTLCullModeNone : MTLCullModeBack];
+        [sceneEncoder setVertexBuffer:mesh->vertex_buffer.get() offset:0 atIndex:0];
+        [sceneEncoder setVertexBytes:&object length:sizeof(object) atIndex:2];
+        [sceneEncoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle
+                                 indexCount:mesh->index_count
+                                  indexType:MTLIndexTypeUInt16
+                                indexBuffer:mesh->index_buffer.get()
+                          indexBufferOffset:0];
     };
 
-    // Pass 1: opaque objects (depth write ON)
     const uint32_t opaque_count = std::min(scene_.opaque_count,
         static_cast<uint32_t>(scene_.objects.size()));
     for (uint32_t i = 0; i < opaque_count; ++i)
-        draw_object(scene_.objects[i]);
+        draw_scene_object(scene_.objects[i]);
 
-    // Pass 2: transparent objects (depth write OFF, back-to-front)
     if (opaque_count < scene_.objects.size())
     {
-        [encoder setDepthStencilState:state_->depth_state_no_write.get()];
+        [sceneEncoder setDepthStencilState:state_->depth_state_no_write.get()];
         for (uint32_t i = opaque_count; i < scene_.objects.size(); ++i)
-            draw_object(scene_.objects[i]);
-        [encoder setDepthStencilState:state_->depth_state.get()];
+            draw_scene_object(scene_.objects[i]);
+        [sceneEncoder setDepthStencilState:state_->depth_state.get()];
     }
 
     if (grid_slice.index_count > 0)
@@ -1444,17 +1468,76 @@ void IsometricScenePass::record(IRenderContext& ctx)
         object.uv_rect = simd_make_float4(0.0f, 0.0f, 1.0f, 1.0f);
         object.label_metrics = simd_make_float4(0.0f, 0.0f, 0.0f, 0.0f);
 
-        [encoder setVertexBuffer:grid_slice.vertex_buffer offset:grid_slice.vertex_offset atIndex:0];
-        [encoder setVertexBytes:&object length:sizeof(object) atIndex:2];
-        [encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle
-                            indexCount:grid_slice.index_count
-                             indexType:MTLIndexTypeUInt16
-                           indexBuffer:grid_slice.index_buffer
-                     indexBufferOffset:grid_slice.index_offset];
+        [sceneEncoder setVertexBuffer:grid_slice.vertex_buffer offset:grid_slice.vertex_offset atIndex:0];
+        [sceneEncoder setVertexBytes:&object length:sizeof(object) atIndex:2];
+        [sceneEncoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle
+                                 indexCount:grid_slice.index_count
+                                  indexType:MTLIndexTypeUInt16
+                                indexBuffer:grid_slice.index_buffer
+                          indexBufferOffset:grid_slice.index_offset];
     }
 
     if (wireframe)
-        [encoder setTriangleFillMode:MTLTriangleFillModeFill];
+        [sceneEncoder setTriangleFillMode:MTLTriangleFillModeFill];
+    [sceneEncoder endEncoding];
+
+    MTLRenderPassDescriptor* postDesc = [MTLRenderPassDescriptor renderPassDescriptor];
+    postDesc.colorAttachments[0].texture = gbuffer.scene_final_srgb.get();
+    postDesc.colorAttachments[0].loadAction = MTLLoadActionDontCare;
+    postDesc.colorAttachments[0].storeAction = MTLStoreActionStore;
+
+    id<MTLRenderCommandEncoder> postEncoder = [cmd_buf renderCommandEncoderWithDescriptor:postDesc];
+    if (!postEncoder)
+        return;
+
+    [postEncoder setViewport:viewport];
+    [postEncoder setScissorRect:scissor];
+    [postEncoder setRenderPipelineState:state_->post_pipeline.get()];
+    [postEncoder setCullMode:MTLCullModeNone];
+    [postEncoder setFragmentBuffer:frame_resources.frame_uniforms.get() offset:0 atIndex:0];
+    [postEncoder setFragmentTexture:gbuffer.scene_hdr.get() atIndex:0];
+    [postEncoder setFragmentSamplerState:state_->gbuffer_sampler.get() atIndex:0];
+    [postEncoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+    [postEncoder endEncoding];
+}
+
+void IsometricScenePass::record(IRenderContext& ctx)
+{
+    id<MTLCommandBuffer> cmd_buf = (__bridge id<MTLCommandBuffer>)ctx.native_command_buffer();
+    id<MTLRenderCommandEncoder> encoder = (__bridge id<MTLRenderCommandEncoder>)ctx.native_render_encoder();
+    if (!cmd_buf || !encoder)
+        return;
+
+    const uint32_t frame_count = std::max(1u, ctx.buffered_frame_count());
+    if (!state_->init(cmd_buf.device, grid_width_, grid_height_, tile_size_))
+        return;
+    if (!state_->ensure_gbuffer_targets(cmd_buf.device, frame_count, ctx.viewport_w(), ctx.viewport_h()))
+        return;
+    const uint32_t frame_index = ctx.frame_index() % static_cast<uint32_t>(state_->gbuffer_targets.size());
+    auto& gbuffer = state_->gbuffer_targets[frame_index];
+    if (!gbuffer.scene_final_unorm)
+        return;
+
+    MTLViewport viewport;
+    viewport.originX = ctx.viewport_x();
+    viewport.originY = ctx.viewport_y();
+    viewport.width = ctx.viewport_w();
+    viewport.height = ctx.viewport_h();
+    viewport.znear = 0.0;
+    viewport.zfar = 1.0;
+    [encoder setViewport:viewport];
+
+    MTLScissorRect scissor;
+    scissor.x = static_cast<NSUInteger>(std::max(0, ctx.viewport_x()));
+    scissor.y = static_cast<NSUInteger>(std::max(0, ctx.viewport_y()));
+    scissor.width = static_cast<NSUInteger>(std::max(0, ctx.viewport_w()));
+    scissor.height = static_cast<NSUInteger>(std::max(0, ctx.viewport_h()));
+    [encoder setScissorRect:scissor];
+    [encoder setRenderPipelineState:state_->present_pipeline.get()];
+    [encoder setCullMode:MTLCullModeNone];
+    [encoder setFragmentTexture:gbuffer.scene_final_unorm.get() atIndex:0];
+    [encoder setFragmentSamplerState:state_->gbuffer_sampler.get() atIndex:0];
+    [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
 }
 
 void IsometricScenePass::render_gbuffer_debug_ui()
@@ -1464,7 +1547,7 @@ void IsometricScenePass::render_gbuffer_debug_ui()
 
     const uint32_t fi = state_->last_prepass_frame % static_cast<uint32_t>(state_->gbuffer_targets.size());
     auto& t = state_->gbuffer_targets[fi];
-    if (!t.normal || !t.ao_raw || !t.ao || !t.depth)
+    if (!t.normal || !t.ao_raw || !t.ao || !t.depth || !t.scene_hdr || !t.scene_final_unorm)
         return;
 
     if (!ImGui::Begin("GBuffer Debug"))
@@ -1500,6 +1583,14 @@ void IsometricScenePass::render_gbuffer_debug_ui()
         ImGui::TableNextColumn();
         ImGui::Text("Ambient Occlusion");
         ImGui::Image((__bridge void*)t.ao.get(), size);
+
+        ImGui::TableNextColumn();
+        ImGui::Text("Scene HDR");
+        ImGui::Image((__bridge void*)t.scene_hdr.get(), size);
+
+        ImGui::TableNextColumn();
+        ImGui::Text("Scene Final");
+        ImGui::Image((__bridge void*)t.scene_final_unorm.get(), size);
 
         ImGui::EndTable();
     }

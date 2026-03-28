@@ -88,7 +88,7 @@ private:
     void mark_scene_dirty();
     void mark_world_rebuild_pending();
     void handle_click(const glm::ivec2& screen_pos);
-    void update_hovered_building(const glm::ivec2& screen_pos);
+    bool update_hidden_hover_blend(float dt, std::chrono::steady_clock::time_point now);
     void apply_selection_opacity();
     void clear_selection();
     void route_worker_loop();
@@ -143,8 +143,8 @@ private:
     bool continuous_refresh_enabled_ = false;
     std::string selected_building_name_;
     std::string selected_building_module_path_;
-    std::string hovered_building_name_;
-    std::string hovered_building_module_path_;
+    bool hidden_hover_active_ = false;
+    float hidden_hover_blend_ = 0.0f;
     std::chrono::steady_clock::time_point last_activity_time_ = std::chrono::steady_clock::now();
     std::chrono::steady_clock::time_point last_pump_time_ = std::chrono::steady_clock::now();
 

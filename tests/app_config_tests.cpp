@@ -694,6 +694,8 @@ TEST_CASE("megacity config round-trips through config document", "[config][megac
     current.selection_dependency_alpha = 0.68f;
     current.selection_hidden_alpha = 0.22f;
     current.selection_hidden_hover_alpha = 0.46f;
+    current.selection_hidden_hover_raise_seconds = 0.65f;
+    current.selection_hidden_hover_fall_seconds = 1.4f;
     current.selection_hidden_road_alpha = 0.88f;
     current.debug_view = MegaCityDebugView::Normals;
     current.ao_denoise = false;
@@ -701,6 +703,7 @@ TEST_CASE("megacity config round-trips through config document", "[config][megac
     current.ao_bias = 0.08f;
     current.ao_power = 1.9f;
     current.ao_kernel_size = 24;
+    current.flat_color_metallic = 0.27f;
     current.central_park_tree_age_years = 48.0f;
     current.central_park_tree_seed = 101;
     current.central_park_tree_overall_scale = 1.35f;

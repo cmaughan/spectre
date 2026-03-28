@@ -39,6 +39,8 @@ enum class MegaCityDebugView : uint8_t
     Tangents,
     UV,
     Depth,
+    Bitangents,
+    TbnPacked,
 };
 
 struct MegaCityCodeConfig
@@ -62,6 +64,8 @@ struct MegaCityCodeConfig
     float selection_dependency_alpha = 0.7f;
     float selection_hidden_alpha = 0.15f;
     float selection_hidden_hover_alpha = 0.45f;
+    float selection_hidden_hover_raise_seconds = 0.5f;
+    float selection_hidden_hover_fall_seconds = 1.0f;
     float selection_hidden_road_alpha = 1.0f;
 
     float placement_step = 0.5f;
@@ -76,6 +80,7 @@ struct MegaCityCodeConfig
     float height_count_weight = 0.45f;
     glm::vec2 height_range{ 2.0f, 12.0f }; // (min, max)
     float height_unclamped_count_weight = 0.27f;
+    float flat_color_metallic = 0.0f;
 
     float road_width_base = 0.6f;
     float road_width_scale = 0.85f;

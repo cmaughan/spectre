@@ -30,7 +30,7 @@ layout(set = 0, binding = 1) uniform MaterialUniforms
 material_table;
 layout(set = 0, binding = 2) uniform sampler2D sign_atlas;
 layout(set = 0, binding = 3) uniform sampler2D ao_buffer;
-layout(set = 0, binding = 4) uniform sampler2D material_textures[24];
+layout(set = 0, binding = 4) uniform sampler2D material_textures[25];
 
 layout(location = 0) in vec3 in_normal_ws;
 layout(location = 1) in vec3 in_base_color;
@@ -56,6 +56,8 @@ layout(location = 0) out vec4 out_frag_color;
 // 8 = Tangents
 // 9 = UV
 // 10 = Depth
+// 11 = Bitangents
+// 12 = TBN Packed
 
 const uint kShadingFlatColor = 0u;
 const uint kShadingTexturedTintedPbr = 1u;
@@ -124,8 +126,9 @@ void main()
         tangent_normal.xy *= normal_strength;
         tangent_normal = normalize(tangent_normal);
         normal_ws = normalize(tbn * tangent_normal);
-        albedo = in_base_color;
+        albedo = sample_material_texture(material.texture_indices.x, material_uv).rgb * in_base_color;
         roughness = clamp(sample_material_texture(material.texture_indices.z, material_uv).r, 0.04, 1.0);
+        metallic = clamp(material.scalar_params.w * sample_material_texture(material.metadata.y, material_uv).r, 0.0, 1.0);
     }
     else if (material.metadata.x == kShadingLeafCutoutPbr)
     {
@@ -178,13 +181,7 @@ void main()
     else if (mode == 8)
     {
         vec3 tangent = normalize(in_tangent_ws.xyz);
-        vec3 bitangent = normalize(cross(normal_ws, tangent) * in_tangent_ws.w);
         result = tangent * 0.5 + 0.5;
-        // Encode: R = tangent, G = bitangent direction, B = normal
-        result = vec3(
-            tangent.x * 0.5 + 0.5,
-            bitangent.y * 0.5 + 0.5,
-            normal_ws.z * 0.5 + 0.5);
     }
     else if (mode == 9)
     {
@@ -194,6 +191,21 @@ void main()
     {
         float linear_depth = gl_FragCoord.z;
         result = vec3(linear_depth);
+    }
+    else if (mode == 11)
+    {
+        vec3 tangent = normalize(in_tangent_ws.xyz);
+        vec3 bitangent = normalize(cross(normal_ws, tangent) * in_tangent_ws.w);
+        result = bitangent * 0.5 + 0.5;
+    }
+    else if (mode == 12)
+    {
+        vec3 tangent = normalize(in_tangent_ws.xyz);
+        vec3 bitangent = normalize(cross(normal_ws, tangent) * in_tangent_ws.w);
+        result = vec3(
+            tangent.x * 0.5 + 0.5,
+            bitangent.y * 0.5 + 0.5,
+            normal_ws.z * 0.5 + 0.5);
     }
 
     out_frag_color = vec4(result, in_opacity);

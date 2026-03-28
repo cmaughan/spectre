@@ -42,7 +42,7 @@ void SceneWorld::clear_route_segments()
 
 entt::entity SceneWorld::create_building(float world_x, float world_z, float elevation,
     const BuildingMetrics& metrics, const glm::vec4& color, SourceSymbol source,
-    MaterialId material, std::shared_ptr<const GeometryMesh> custom_mesh)
+    MaterialId material, std::shared_ptr<const GeometryMesh> custom_mesh, float flat_metallic)
 {
     const auto entity = registry_.create();
     registry_.emplace<WorldPosition>(entity, world_x, world_z);
@@ -66,7 +66,7 @@ entt::entity SceneWorld::create_building(float world_x, float world_z, float ele
     else
     {
         registry_.emplace<Appearance>(
-            entity, mesh_id, material, false, color, glm::vec4(0.0f, 1.0f, 1.0f, 1.0f));
+            entity, mesh_id, material, false, color, glm::vec4(flat_metallic, 1.0f, 1.0f, 1.0f));
     }
     if (custom_mesh)
         registry_.emplace<CustomMeshRef>(entity, std::move(custom_mesh));

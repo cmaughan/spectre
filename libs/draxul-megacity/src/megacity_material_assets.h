@@ -35,8 +35,24 @@ struct TexturedMaterialImages
 
 using AsphaltRoadMaterialImages = TexturedMaterialImages;
 using PavingSidewalkMaterialImages = TexturedMaterialImages;
-using WoodBuildingMaterialImages = TexturedMaterialImages;
 using BarkTreeMaterialImages = TexturedMaterialImages;
+
+struct VertexTintPbrMaterialImages
+{
+    LoadedTextureImage albedo;
+    LoadedTextureImage normal;
+    LoadedTextureImage roughness;
+    LoadedTextureImage ao;
+    LoadedTextureImage metalness;
+
+    [[nodiscard]] bool valid() const
+    {
+        return albedo.valid() && normal.valid() && roughness.valid()
+            && ao.valid() && metalness.valid();
+    }
+};
+
+using WoodBuildingMaterialImages = VertexTintPbrMaterialImages;
 
 struct LeafAtlasMaterialImages
 {

@@ -30,7 +30,7 @@ layout(set = 0, binding = 1) uniform MaterialUniforms
 material_table;
 layout(set = 0, binding = 2) uniform sampler2D sign_atlas;
 layout(set = 0, binding = 3) uniform sampler2D ao_buffer;
-layout(set = 0, binding = 4) uniform sampler2D material_textures[24];
+layout(set = 0, binding = 4) uniform sampler2D material_textures[25];
 
 layout(location = 0) in vec3 in_normal_ws;
 layout(location = 1) in vec3 in_base_color;
@@ -125,9 +125,10 @@ void main()
         tangent_normal = normalize(tangent_normal);
 
         normal_ws = normalize(tbn * tangent_normal);
-        albedo = in_base_color;
+        albedo = sample_material_texture(material.texture_indices.x, material_uv).rgb * in_base_color;
         roughness = clamp(sample_material_texture(material.texture_indices.z, material_uv).r, 0.04, 1.0);
         material_ao = mix(1.0, sample_material_texture(material.texture_indices.w, material_uv).r, ao_strength);
+        metallic = clamp(material.scalar_params.w * sample_material_texture(material.metadata.y, material_uv).r, 0.0, 1.0);
     }
     else if (material.metadata.x == kShadingLeafCutoutPbr)
     {
@@ -224,7 +225,5 @@ void main()
         shaded = mix(shaded, label.rgb, label_alpha);
     }
 
-    float output_gamma = max(frame.render_tuning.x, 1.0);
-    vec3 encoded = pow(max(shaded, vec3(0.0)), vec3(1.0 / output_gamma));
-    out_frag_color = vec4(encoded, in_opacity);
+    out_frag_color = vec4(max(shaded, vec3(0.0)), in_opacity);
 }

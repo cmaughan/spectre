@@ -24,7 +24,8 @@ public:
     entt::entity create_building(float world_x, float world_z, float elevation,
         const BuildingMetrics& metrics, const glm::vec4& color, SourceSymbol source = {},
         MaterialId material = MaterialId::WoodBuilding,
-        std::shared_ptr<const GeometryMesh> custom_mesh = nullptr);
+        std::shared_ptr<const GeometryMesh> custom_mesh = nullptr,
+        float flat_metallic = 0.0f);
 
     // Create a bark tree entity at the given world-space center position.
     entt::entity create_tree_bark(float world_x, float world_z, float elevation,

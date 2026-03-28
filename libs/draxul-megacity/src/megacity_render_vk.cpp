@@ -129,6 +129,7 @@ struct FrameResources
     Buffer material_uniforms;
     TransientGeometryArena geometry_arena;
     VkDescriptorSet descriptor_set = VK_NULL_HANDLE;
+    VkDescriptorSet post_descriptor_set = VK_NULL_HANDLE;
     VkDescriptorSet prepass_descriptor_set = VK_NULL_HANDLE;
 };
 
@@ -150,15 +151,36 @@ struct GBufferTargets
     VmaAllocation depth_alloc = VK_NULL_HANDLE;
     VkImageView depth_view = VK_NULL_HANDLE;
 
+    VkImage scene_color_msaa_image = VK_NULL_HANDLE; // RGBA16Float MSAA scene color
+    VmaAllocation scene_color_msaa_alloc = VK_NULL_HANDLE;
+    VkImageView scene_color_msaa_view = VK_NULL_HANDLE;
+
+    VkImage scene_depth_msaa_image = VK_NULL_HANDLE; // D32Float MSAA scene depth
+    VmaAllocation scene_depth_msaa_alloc = VK_NULL_HANDLE;
+    VkImageView scene_depth_msaa_view = VK_NULL_HANDLE;
+
+    VkImage scene_hdr_image = VK_NULL_HANDLE; // RGBA16Float resolved HDR scene
+    VmaAllocation scene_hdr_alloc = VK_NULL_HANDLE;
+    VkImageView scene_hdr_view = VK_NULL_HANDLE;
+
+    VkImage scene_final_image = VK_NULL_HANDLE; // BGRA8 sRGB encoded scene
+    VmaAllocation scene_final_alloc = VK_NULL_HANDLE;
+    VkImageView scene_final_srgb_view = VK_NULL_HANDLE;
+    VkImageView scene_final_unorm_view = VK_NULL_HANDLE;
+
     VkFramebuffer framebuffer = VK_NULL_HANDLE;
     VkFramebuffer ao_raw_framebuffer = VK_NULL_HANDLE;
     VkFramebuffer ao_framebuffer = VK_NULL_HANDLE;
+    VkFramebuffer scene_framebuffer = VK_NULL_HANDLE;
+    VkFramebuffer scene_post_framebuffer = VK_NULL_HANDLE;
 
     // ImGui debug visualization descriptor sets (lazily registered)
     VkDescriptorSet imgui_normal_ds = VK_NULL_HANDLE;
     VkDescriptorSet imgui_ao_raw_ds = VK_NULL_HANDLE;
     VkDescriptorSet imgui_ao_ds = VK_NULL_HANDLE;
     VkDescriptorSet imgui_depth_ds = VK_NULL_HANDLE;
+    VkDescriptorSet imgui_scene_hdr_ds = VK_NULL_HANDLE;
+    VkDescriptorSet imgui_scene_final_ds = VK_NULL_HANDLE;
 
     int width = 0;
     int height = 0;
@@ -439,6 +461,69 @@ bool create_label_image(VkPhysicalDevice physical_device, VkDevice device, VmaAl
         image);
 }
 
+VkSampleCountFlagBits choose_scene_sample_count(VkPhysicalDevice physical_device)
+{
+    VkPhysicalDeviceProperties properties{};
+    vkGetPhysicalDeviceProperties(physical_device, &properties);
+    const VkSampleCountFlags counts = properties.limits.framebufferColorSampleCounts & properties.limits.framebufferDepthSampleCounts;
+    if ((counts & VK_SAMPLE_COUNT_4_BIT) != 0)
+        return VK_SAMPLE_COUNT_4_BIT;
+    return VK_SAMPLE_COUNT_1_BIT;
+}
+
+bool create_attachment_image(VkDevice device, VmaAllocator allocator, int width, int height,
+    VkFormat format, VkImageUsageFlags usage, VkImageAspectFlags aspect_mask,
+    VkSampleCountFlagBits samples, VkImage& image, VmaAllocation& allocation, VkImageView& view,
+    VkImageCreateFlags flags = 0)
+{
+    VkImageCreateInfo image_ci = { VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
+    image_ci.flags = flags;
+    image_ci.imageType = VK_IMAGE_TYPE_2D;
+    image_ci.format = format;
+    image_ci.extent = {
+        static_cast<uint32_t>(width),
+        static_cast<uint32_t>(height),
+        1u
+    };
+    image_ci.mipLevels = 1;
+    image_ci.arrayLayers = 1;
+    image_ci.samples = samples;
+    image_ci.tiling = VK_IMAGE_TILING_OPTIMAL;
+    image_ci.usage = usage;
+    image_ci.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    image_ci.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    VmaAllocationCreateInfo alloc_ci = {};
+    alloc_ci.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+    if (vmaCreateImage(allocator, &image_ci, &alloc_ci, &image, &allocation, nullptr) != VK_SUCCESS)
+        return false;
+
+    VkImageViewCreateInfo view_ci = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
+    view_ci.image = image;
+    view_ci.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    view_ci.format = format;
+    view_ci.subresourceRange.aspectMask = aspect_mask;
+    view_ci.subresourceRange.levelCount = 1;
+    view_ci.subresourceRange.layerCount = 1;
+    if (vkCreateImageView(device, &view_ci, nullptr, &view) != VK_SUCCESS)
+        return false;
+
+    return true;
+}
+
+bool create_attachment_view(VkDevice device, VkImage image, VkFormat format, VkImageAspectFlags aspect_mask,
+    VkImageView& view)
+{
+    VkImageViewCreateInfo view_ci = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
+    view_ci.image = image;
+    view_ci.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    view_ci.format = format;
+    view_ci.subresourceRange.aspectMask = aspect_mask;
+    view_ci.subresourceRange.levelCount = 1;
+    view_ci.subresourceRange.layerCount = 1;
+    return vkCreateImageView(device, &view_ci, nullptr, &view) == VK_SUCCESS;
+}
+
 void transition_image(VkCommandBuffer cmd, VkImage image, VkImageLayout old_layout, VkImageLayout new_layout,
     uint32_t base_mip_level = 0, uint32_t level_count = 1)
 {
@@ -636,6 +721,9 @@ struct IsometricScenePass::State
     VkDescriptorSetLayout descriptor_set_layout = VK_NULL_HANDLE;
     VkDescriptorPool descriptor_pool = VK_NULL_HANDLE;
     VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
+    VkDescriptorSetLayout post_descriptor_set_layout = VK_NULL_HANDLE;
+    VkDescriptorPool post_descriptor_pool = VK_NULL_HANDLE;
+    VkPipelineLayout post_pipeline_layout = VK_NULL_HANDLE;
     VkDescriptorSetLayout prepass_descriptor_set_layout = VK_NULL_HANDLE;
     VkDescriptorPool prepass_descriptor_pool = VK_NULL_HANDLE;
     VkPipelineLayout prepass_pipeline_layout = VK_NULL_HANDLE;
@@ -643,6 +731,8 @@ struct IsometricScenePass::State
     VkPipeline debug_pipeline = VK_NULL_HANDLE;
     VkPipeline wireframe_pipeline = VK_NULL_HANDLE;
     VkPipeline debug_wireframe_pipeline = VK_NULL_HANDLE;
+    VkPipeline post_pipeline = VK_NULL_HANDLE;
+    VkPipeline present_pipeline = VK_NULL_HANDLE;
     MeshBuffers cube_mesh;
     MeshBuffers floor_mesh;
     MeshBuffers tree_bark_mesh;
@@ -671,12 +761,15 @@ struct IsometricScenePass::State
     VkRenderPass ao_render_pass = VK_NULL_HANDLE;
     VkPipeline ao_pipeline = VK_NULL_HANDLE;
     VkPipeline ao_blur_pipeline = VK_NULL_HANDLE;
+    VkRenderPass scene_render_pass = VK_NULL_HANDLE;
+    VkRenderPass scene_post_render_pass = VK_NULL_HANDLE;
     VkSampler gbuffer_sampler = VK_NULL_HANDLE;
     VkSampler gbuffer_point_sampler = VK_NULL_HANDLE;
     std::array<ImageResource, kSceneMaterialTextureCount> material_textures;
     std::vector<GBufferTargets> gbuffer_targets;
     bool gbuffer_initialized = false;
     uint32_t last_prepass_frame = 0;
+    VkSampleCountFlagBits scene_sample_count = VK_SAMPLE_COUNT_1_BIT;
 
     bool create_device_resources(uint32_t frame_count)
     {
@@ -738,6 +831,30 @@ struct IsometricScenePass::State
             return false;
         }
 
+        VkDescriptorSetLayoutBinding post_bindings[3] = {};
+        post_bindings[0].binding = 0;
+        post_bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        post_bindings[0].descriptorCount = 1;
+        post_bindings[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        post_bindings[1].binding = 1;
+        post_bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        post_bindings[1].descriptorCount = 1;
+        post_bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        post_bindings[2].binding = 2;
+        post_bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        post_bindings[2].descriptorCount = 1;
+        post_bindings[2].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+        VkDescriptorSetLayoutCreateInfo post_layout_ci = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
+        post_layout_ci.bindingCount = 3;
+        post_layout_ci.pBindings = post_bindings;
+        if (vkCreateDescriptorSetLayout(device, &post_layout_ci, nullptr, &post_descriptor_set_layout)
+            != VK_SUCCESS)
+        {
+            DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity scene: failed to create post descriptor set layout");
+            return false;
+        }
+
         VkDescriptorPoolSize pool_sizes[2] = {};
         pool_sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         pool_sizes[0].descriptorCount = frame_count * 2;
@@ -770,6 +887,22 @@ struct IsometricScenePass::State
             return false;
         }
 
+        VkDescriptorPoolSize post_pool_sizes[2] = {};
+        post_pool_sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        post_pool_sizes[0].descriptorCount = frame_count;
+        post_pool_sizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        post_pool_sizes[1].descriptorCount = frame_count * 2;
+
+        VkDescriptorPoolCreateInfo post_pool_ci = { VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO };
+        post_pool_ci.maxSets = frame_count;
+        post_pool_ci.poolSizeCount = 2;
+        post_pool_ci.pPoolSizes = post_pool_sizes;
+        if (vkCreateDescriptorPool(device, &post_pool_ci, nullptr, &post_descriptor_pool) != VK_SUCCESS)
+        {
+            DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity scene: failed to create post descriptor pool");
+            return false;
+        }
+
         frame_resources.assign(frame_count, {});
         std::vector<VkDescriptorSetLayout> layouts(frame_count, descriptor_set_layout);
         std::vector<VkDescriptorSet> descriptor_sets(frame_count, VK_NULL_HANDLE);
@@ -795,10 +928,23 @@ struct IsometricScenePass::State
             return false;
         }
 
+        std::vector<VkDescriptorSetLayout> post_layouts(frame_count, post_descriptor_set_layout);
+        std::vector<VkDescriptorSet> post_descriptor_sets(frame_count, VK_NULL_HANDLE);
+        VkDescriptorSetAllocateInfo post_alloc_info = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO };
+        post_alloc_info.descriptorPool = post_descriptor_pool;
+        post_alloc_info.descriptorSetCount = frame_count;
+        post_alloc_info.pSetLayouts = post_layouts.data();
+        if (vkAllocateDescriptorSets(device, &post_alloc_info, post_descriptor_sets.data()) != VK_SUCCESS)
+        {
+            DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity scene: failed to allocate post descriptor set");
+            return false;
+        }
+
         for (uint32_t i = 0; i < frame_count; ++i)
         {
             auto& frame = frame_resources[i];
             frame.descriptor_set = descriptor_sets[i];
+            frame.post_descriptor_set = post_descriptor_sets[i];
             frame.prepass_descriptor_set = prepass_descriptor_sets[i];
 
             if (!create_mapped_buffer(allocator, sizeof(FrameUniforms),
@@ -835,14 +981,21 @@ struct IsometricScenePass::State
             material_write.pBufferInfo = &material_buffer_info;
             VkWriteDescriptorSet prepass_write = write;
             prepass_write.dstSet = frame.prepass_descriptor_set;
-            VkWriteDescriptorSet writes[3] = { write, material_write, prepass_write };
-            vkUpdateDescriptorSets(device, 3, writes, 0, nullptr);
+            VkWriteDescriptorSet post_write = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
+            post_write.dstSet = frame.post_descriptor_set;
+            post_write.dstBinding = 0;
+            post_write.descriptorCount = 1;
+            post_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            post_write.pBufferInfo = &buffer_info;
+            VkWriteDescriptorSet writes[4] = { write, material_write, prepass_write, post_write };
+            vkUpdateDescriptorSets(device, 4, writes, 0, nullptr);
         }
 
         buffered_frame_count = frame_count;
         refresh_label_descriptors();
         refresh_gbuffer_descriptors();
         refresh_prepass_descriptors();
+        refresh_post_descriptors();
 
         if (!upload_mesh(allocator, build_unit_cube_mesh(), cube_mesh))
         {
@@ -955,6 +1108,7 @@ struct IsometricScenePass::State
             { SceneTextureId::WoodAlbedo, &wood_images.albedo, VK_FORMAT_R8G8B8A8_SRGB },
             { SceneTextureId::WoodNormal, &wood_images.normal, VK_FORMAT_R8G8B8A8_UNORM },
             { SceneTextureId::WoodRoughness, &wood_images.roughness, VK_FORMAT_R8G8B8A8_UNORM },
+            { SceneTextureId::WoodMetalness, &wood_images.metalness, VK_FORMAT_R8G8B8A8_UNORM },
             { SceneTextureId::WoodAo, &wood_images.ao, VK_FORMAT_R8G8B8A8_UNORM },
             { SceneTextureId::BarkAlbedo, &bark_images.albedo, VK_FORMAT_R8G8B8A8_SRGB },
             { SceneTextureId::BarkNormal, &bark_images.normal, VK_FORMAT_R8G8B8A8_UNORM },
@@ -1202,6 +1356,51 @@ struct IsometricScenePass::State
         }
     }
 
+    void refresh_post_descriptors()
+    {
+        if (gbuffer_sampler == VK_NULL_HANDLE || gbuffer_targets.empty())
+            return;
+
+        for (size_t i = 0; i < frame_resources.size() && i < gbuffer_targets.size(); ++i)
+        {
+            const auto& gbuffer = gbuffer_targets[i];
+            auto& frame = frame_resources[i];
+            if (frame.post_descriptor_set == VK_NULL_HANDLE
+                || gbuffer.scene_hdr_view == VK_NULL_HANDLE
+                || gbuffer.scene_final_unorm_view == VK_NULL_HANDLE)
+            {
+                continue;
+            }
+
+            VkDescriptorImageInfo hdr_info = {};
+            hdr_info.sampler = gbuffer_sampler;
+            hdr_info.imageView = gbuffer.scene_hdr_view;
+            hdr_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+            VkDescriptorImageInfo final_info = {};
+            final_info.sampler = gbuffer_sampler;
+            final_info.imageView = gbuffer.scene_final_unorm_view;
+            final_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+            VkWriteDescriptorSet writes[2] = {};
+            writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[0].dstSet = frame.post_descriptor_set;
+            writes[0].dstBinding = 1;
+            writes[0].descriptorCount = 1;
+            writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            writes[0].pImageInfo = &hdr_info;
+
+            writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[1].dstSet = frame.post_descriptor_set;
+            writes[1].dstBinding = 2;
+            writes[1].descriptorCount = 1;
+            writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            writes[1].pImageInfo = &final_info;
+
+            vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
+        }
+    }
+
     bool ensure_label_atlas(const VkRenderContext& ctx, VkCommandBuffer cmd,
         const std::shared_ptr<const LabelAtlasData>& atlas)
     {
@@ -1281,6 +1480,17 @@ struct IsometricScenePass::State
             return false;
         }
 
+        VkPipelineLayoutCreateInfo post_layout_ci = { VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
+        post_layout_ci.setLayoutCount = 1;
+        post_layout_ci.pSetLayouts = &post_descriptor_set_layout;
+        if (vkCreatePipelineLayout(device, &post_layout_ci, nullptr, &post_pipeline_layout) != VK_SUCCESS)
+        {
+            DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity scene: failed to create post pipeline layout");
+            vkDestroyShaderModule(device, vert, nullptr);
+            vkDestroyShaderModule(device, frag, nullptr);
+            return false;
+        }
+
         VkPipelineShaderStageCreateInfo stages[2] = {};
         stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
         stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
@@ -1342,7 +1552,7 @@ struct IsometricScenePass::State
         raster.lineWidth = 1.0f;
 
         VkPipelineMultisampleStateCreateInfo multisample = { VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO };
-        multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+        multisample.rasterizationSamples = scene_sample_count;
 
         VkPipelineDepthStencilStateCreateInfo depth = { VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO };
         depth.depthTestEnable = VK_TRUE;
@@ -1374,7 +1584,7 @@ struct IsometricScenePass::State
         pipeline_ci.pColorBlendState = &blend;
         pipeline_ci.pDynamicState = &dynamic;
         pipeline_ci.layout = pipeline_layout;
-        pipeline_ci.renderPass = render_pass;
+        pipeline_ci.renderPass = scene_render_pass;
         pipeline_ci.subpass = 0;
 
         const VkResult result = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipeline_ci, nullptr, &pipeline);
@@ -1385,6 +1595,113 @@ struct IsometricScenePass::State
             DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity scene: failed to create graphics pipeline");
             return false;
         }
+
+        auto post_vert = load_shader(device, (shader_dir / "megacity_post.vert.spv").string());
+        auto post_frag = load_shader(device, (shader_dir / "megacity_post.frag.spv").string());
+        auto present_frag = load_shader(device, (shader_dir / "megacity_present.frag.spv").string());
+        if (!post_vert || !post_frag || !present_frag)
+        {
+            if (post_vert)
+                vkDestroyShaderModule(device, post_vert, nullptr);
+            if (post_frag)
+                vkDestroyShaderModule(device, post_frag, nullptr);
+            if (present_frag)
+                vkDestroyShaderModule(device, present_frag, nullptr);
+            DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity: failed to load post/present shaders");
+            return false;
+        }
+
+        VkPipelineShaderStageCreateInfo post_stages[2] = {};
+        post_stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        post_stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+        post_stages[0].module = post_vert;
+        post_stages[0].pName = "main";
+        post_stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        post_stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+        post_stages[1].module = post_frag;
+        post_stages[1].pName = "main";
+
+        VkPipelineVertexInputStateCreateInfo post_vertex_input = {
+            VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO
+        };
+        VkPipelineInputAssemblyStateCreateInfo post_input_assembly = {
+            VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO
+        };
+        post_input_assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+        VkPipelineViewportStateCreateInfo post_viewport_state = {
+            VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO
+        };
+        post_viewport_state.viewportCount = 1;
+        post_viewport_state.scissorCount = 1;
+
+        VkPipelineRasterizationStateCreateInfo post_raster = {
+            VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO
+        };
+        post_raster.polygonMode = VK_POLYGON_MODE_FILL;
+        post_raster.cullMode = VK_CULL_MODE_NONE;
+        post_raster.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+        post_raster.lineWidth = 1.0f;
+
+        VkPipelineMultisampleStateCreateInfo post_multisample = {
+            VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO
+        };
+        post_multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+        VkPipelineColorBlendAttachmentState post_blend_attachment = {};
+        post_blend_attachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT
+            | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+        VkPipelineColorBlendStateCreateInfo post_blend = {
+            VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO
+        };
+        post_blend.attachmentCount = 1;
+        post_blend.pAttachments = &post_blend_attachment;
+
+        VkPipelineDynamicStateCreateInfo post_dynamic = {
+            VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO
+        };
+        post_dynamic.dynamicStateCount = 2;
+        post_dynamic.pDynamicStates = dynamic_states;
+
+        VkGraphicsPipelineCreateInfo post_pipeline_ci = { VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO };
+        post_pipeline_ci.stageCount = 2;
+        post_pipeline_ci.pStages = post_stages;
+        post_pipeline_ci.pVertexInputState = &post_vertex_input;
+        post_pipeline_ci.pInputAssemblyState = &post_input_assembly;
+        post_pipeline_ci.pViewportState = &post_viewport_state;
+        post_pipeline_ci.pRasterizationState = &post_raster;
+        post_pipeline_ci.pMultisampleState = &post_multisample;
+        post_pipeline_ci.pColorBlendState = &post_blend;
+        post_pipeline_ci.pDynamicState = &post_dynamic;
+        post_pipeline_ci.layout = post_pipeline_layout;
+        post_pipeline_ci.renderPass = scene_post_render_pass;
+        post_pipeline_ci.subpass = 0;
+        if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &post_pipeline_ci, nullptr, &post_pipeline)
+            != VK_SUCCESS)
+        {
+            vkDestroyShaderModule(device, post_vert, nullptr);
+            vkDestroyShaderModule(device, post_frag, nullptr);
+            vkDestroyShaderModule(device, present_frag, nullptr);
+            DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity: failed to create post pipeline");
+            return false;
+        }
+
+        post_stages[1].module = present_frag;
+        post_pipeline_ci.pStages = post_stages;
+        post_pipeline_ci.renderPass = render_pass;
+        if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &post_pipeline_ci, nullptr, &present_pipeline)
+            != VK_SUCCESS)
+        {
+            vkDestroyShaderModule(device, post_vert, nullptr);
+            vkDestroyShaderModule(device, post_frag, nullptr);
+            vkDestroyShaderModule(device, present_frag, nullptr);
+            DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity: failed to create present pipeline");
+            return false;
+        }
+
+        vkDestroyShaderModule(device, post_vert, nullptr);
+        vkDestroyShaderModule(device, post_frag, nullptr);
+        vkDestroyShaderModule(device, present_frag, nullptr);
 
         // Create debug pipeline (same layout, same vertex shader, different fragment shader)
         auto debug_frag = load_shader(device, (shader_dir / "megacity_debug.frag.spv").string());
@@ -1467,14 +1784,16 @@ struct IsometricScenePass::State
             && buffered_frame_count == frame_count)
             return true;
 
+        destroy_gbuffer();
         destroy();
         physical_device = ctx.physical_device();
         device = ctx.device();
         allocator = ctx.allocator();
         render_pass = ctx.render_pass();
         buffered_frame_count = frame_count;
+        scene_sample_count = choose_scene_sample_count(physical_device);
 
-        return create_device_resources(frame_count) && create_pipeline();
+        return create_device_resources(frame_count) && init_gbuffer() && create_pipeline();
     }
 
     void destroy_gbuffer_targets()
@@ -1489,12 +1808,20 @@ struct IsometricScenePass::State
                 ImGui_ImplVulkan_RemoveTexture(t.imgui_ao_ds);
             if (t.imgui_depth_ds != VK_NULL_HANDLE)
                 ImGui_ImplVulkan_RemoveTexture(t.imgui_depth_ds);
+            if (t.imgui_scene_hdr_ds != VK_NULL_HANDLE)
+                ImGui_ImplVulkan_RemoveTexture(t.imgui_scene_hdr_ds);
+            if (t.imgui_scene_final_ds != VK_NULL_HANDLE)
+                ImGui_ImplVulkan_RemoveTexture(t.imgui_scene_final_ds);
             if (t.framebuffer != VK_NULL_HANDLE)
                 vkDestroyFramebuffer(device, t.framebuffer, nullptr);
             if (t.ao_raw_framebuffer != VK_NULL_HANDLE)
                 vkDestroyFramebuffer(device, t.ao_raw_framebuffer, nullptr);
             if (t.ao_framebuffer != VK_NULL_HANDLE)
                 vkDestroyFramebuffer(device, t.ao_framebuffer, nullptr);
+            if (t.scene_framebuffer != VK_NULL_HANDLE)
+                vkDestroyFramebuffer(device, t.scene_framebuffer, nullptr);
+            if (t.scene_post_framebuffer != VK_NULL_HANDLE)
+                vkDestroyFramebuffer(device, t.scene_post_framebuffer, nullptr);
             if (t.normal_view != VK_NULL_HANDLE)
                 vkDestroyImageView(device, t.normal_view, nullptr);
             if (t.normal_image != VK_NULL_HANDLE)
@@ -1511,6 +1838,24 @@ struct IsometricScenePass::State
                 vkDestroyImageView(device, t.depth_view, nullptr);
             if (t.depth_image != VK_NULL_HANDLE)
                 vmaDestroyImage(allocator, t.depth_image, t.depth_alloc);
+            if (t.scene_color_msaa_view != VK_NULL_HANDLE)
+                vkDestroyImageView(device, t.scene_color_msaa_view, nullptr);
+            if (t.scene_color_msaa_image != VK_NULL_HANDLE)
+                vmaDestroyImage(allocator, t.scene_color_msaa_image, t.scene_color_msaa_alloc);
+            if (t.scene_depth_msaa_view != VK_NULL_HANDLE)
+                vkDestroyImageView(device, t.scene_depth_msaa_view, nullptr);
+            if (t.scene_depth_msaa_image != VK_NULL_HANDLE)
+                vmaDestroyImage(allocator, t.scene_depth_msaa_image, t.scene_depth_msaa_alloc);
+            if (t.scene_hdr_view != VK_NULL_HANDLE)
+                vkDestroyImageView(device, t.scene_hdr_view, nullptr);
+            if (t.scene_hdr_image != VK_NULL_HANDLE)
+                vmaDestroyImage(allocator, t.scene_hdr_image, t.scene_hdr_alloc);
+            if (t.scene_final_srgb_view != VK_NULL_HANDLE)
+                vkDestroyImageView(device, t.scene_final_srgb_view, nullptr);
+            if (t.scene_final_unorm_view != VK_NULL_HANDLE)
+                vkDestroyImageView(device, t.scene_final_unorm_view, nullptr);
+            if (t.scene_final_image != VK_NULL_HANDLE)
+                vmaDestroyImage(allocator, t.scene_final_image, t.scene_final_alloc);
         }
         gbuffer_targets.clear();
     }
@@ -1530,6 +1875,10 @@ struct IsometricScenePass::State
             vkDestroyPipeline(device, ao_blur_pipeline, nullptr);
         if (ao_render_pass != VK_NULL_HANDLE)
             vkDestroyRenderPass(device, ao_render_pass, nullptr);
+        if (scene_post_render_pass != VK_NULL_HANDLE)
+            vkDestroyRenderPass(device, scene_post_render_pass, nullptr);
+        if (scene_render_pass != VK_NULL_HANDLE)
+            vkDestroyRenderPass(device, scene_render_pass, nullptr);
         if (gbuffer_pipeline != VK_NULL_HANDLE)
             vkDestroyPipeline(device, gbuffer_pipeline, nullptr);
         if (gbuffer_render_pass != VK_NULL_HANDLE)
@@ -1539,6 +1888,8 @@ struct IsometricScenePass::State
         ao_pipeline = VK_NULL_HANDLE;
         ao_blur_pipeline = VK_NULL_HANDLE;
         ao_render_pass = VK_NULL_HANDLE;
+        scene_post_render_pass = VK_NULL_HANDLE;
+        scene_render_pass = VK_NULL_HANDLE;
         gbuffer_pipeline = VK_NULL_HANDLE;
         gbuffer_render_pass = VK_NULL_HANDLE;
         gbuffer_initialized = false;
@@ -1550,6 +1901,8 @@ struct IsometricScenePass::State
             return gbuffer_pipeline != VK_NULL_HANDLE
                 && ao_pipeline != VK_NULL_HANDLE
                 && ao_blur_pipeline != VK_NULL_HANDLE
+                && scene_render_pass != VK_NULL_HANDLE
+                && scene_post_render_pass != VK_NULL_HANDLE
                 && gbuffer_sampler != VK_NULL_HANDLE
                 && gbuffer_point_sampler != VK_NULL_HANDLE;
         gbuffer_initialized = true;
@@ -1841,6 +2194,128 @@ struct IsometricScenePass::State
             return false;
         }
 
+        VkAttachmentDescription scene_attachments[3] = {};
+        scene_attachments[0].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+        scene_attachments[0].samples = scene_sample_count;
+        scene_attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        scene_attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        scene_attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        scene_attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        scene_attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        scene_attachments[0].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+        scene_attachments[1].format = VK_FORMAT_D32_SFLOAT;
+        scene_attachments[1].samples = scene_sample_count;
+        scene_attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        scene_attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        scene_attachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        scene_attachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        scene_attachments[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        scene_attachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+        scene_attachments[2].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+        scene_attachments[2].samples = VK_SAMPLE_COUNT_1_BIT;
+        scene_attachments[2].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        scene_attachments[2].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        scene_attachments[2].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        scene_attachments[2].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        scene_attachments[2].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        scene_attachments[2].finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+        VkAttachmentReference scene_color_ref = {};
+        scene_color_ref.attachment = 0;
+        scene_color_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        VkAttachmentReference scene_depth_ref = {};
+        scene_depth_ref.attachment = 1;
+        scene_depth_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        VkAttachmentReference scene_resolve_ref = {};
+        scene_resolve_ref.attachment = 2;
+        scene_resolve_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+        VkSubpassDescription scene_subpass = {};
+        scene_subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        scene_subpass.colorAttachmentCount = 1;
+        scene_subpass.pColorAttachments = &scene_color_ref;
+        scene_subpass.pDepthStencilAttachment = &scene_depth_ref;
+        scene_subpass.pResolveAttachments = &scene_resolve_ref;
+
+        VkSubpassDependency scene_deps[2] = {};
+        scene_deps[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+        scene_deps[0].dstSubpass = 0;
+        scene_deps[0].srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+        scene_deps[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
+            | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+        scene_deps[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+            | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+        scene_deps[1].srcSubpass = 0;
+        scene_deps[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+        scene_deps[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
+            | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+        scene_deps[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+        scene_deps[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        scene_deps[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+        VkRenderPassCreateInfo scene_rp_ci = { VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO };
+        scene_rp_ci.attachmentCount = 3;
+        scene_rp_ci.pAttachments = scene_attachments;
+        scene_rp_ci.subpassCount = 1;
+        scene_rp_ci.pSubpasses = &scene_subpass;
+        scene_rp_ci.dependencyCount = 2;
+        scene_rp_ci.pDependencies = scene_deps;
+        if (vkCreateRenderPass(device, &scene_rp_ci, nullptr, &scene_render_pass) != VK_SUCCESS)
+        {
+            DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity: failed to create scene render pass");
+            return false;
+        }
+
+        VkAttachmentDescription scene_post_attachment = {};
+        scene_post_attachment.format = VK_FORMAT_B8G8R8A8_SRGB;
+        scene_post_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+        scene_post_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        scene_post_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        scene_post_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        scene_post_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        scene_post_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        scene_post_attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+        VkAttachmentReference scene_post_color_ref = {};
+        scene_post_color_ref.attachment = 0;
+        scene_post_color_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+        VkSubpassDescription scene_post_subpass = {};
+        scene_post_subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        scene_post_subpass.colorAttachmentCount = 1;
+        scene_post_subpass.pColorAttachments = &scene_post_color_ref;
+
+        VkSubpassDependency scene_post_deps[2] = {};
+        scene_post_deps[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+        scene_post_deps[0].dstSubpass = 0;
+        scene_post_deps[0].srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+        scene_post_deps[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        scene_post_deps[0].srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        scene_post_deps[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+        scene_post_deps[1].srcSubpass = 0;
+        scene_post_deps[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+        scene_post_deps[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        scene_post_deps[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+        scene_post_deps[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        scene_post_deps[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+        VkRenderPassCreateInfo scene_post_rp_ci = { VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO };
+        scene_post_rp_ci.attachmentCount = 1;
+        scene_post_rp_ci.pAttachments = &scene_post_attachment;
+        scene_post_rp_ci.subpassCount = 1;
+        scene_post_rp_ci.pSubpasses = &scene_post_subpass;
+        scene_post_rp_ci.dependencyCount = 2;
+        scene_post_rp_ci.pDependencies = scene_post_deps;
+        if (vkCreateRenderPass(device, &scene_post_rp_ci, nullptr, &scene_post_render_pass) != VK_SUCCESS)
+        {
+            DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity: failed to create scene post render pass");
+            return false;
+        }
+
         auto ao_vert = load_shader(device, (shader_dir / "megacity_ao.vert.spv").string());
         auto ao_frag = load_shader(device, (shader_dir / "megacity_ao.frag.spv").string());
         auto ao_blur_frag = load_shader(device, (shader_dir / "megacity_ao_blur.frag.spv").string());
@@ -1972,96 +2447,113 @@ struct IsometricScenePass::State
         destroy_gbuffer_targets();
         gbuffer_targets.resize(frame_count);
 
-        VmaAllocationCreateInfo alloc_ci = {};
-        alloc_ci.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
-
         for (auto& t : gbuffer_targets)
         {
-            // Normal image (RGBA8Unorm — RG octahedral normal, BA reserved)
-            VkImageCreateInfo img_ci = { VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
-            img_ci.imageType = VK_IMAGE_TYPE_2D;
-            img_ci.format = VK_FORMAT_R8G8B8A8_UNORM;
-            img_ci.extent = { static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1 };
-            img_ci.mipLevels = 1;
-            img_ci.arrayLayers = 1;
-            img_ci.samples = VK_SAMPLE_COUNT_1_BIT;
-            img_ci.tiling = VK_IMAGE_TILING_OPTIMAL;
-            img_ci.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-            img_ci.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-
-            if (vmaCreateImage(allocator, &img_ci, &alloc_ci,
-                    &t.normal_image, &t.normal_alloc, nullptr)
-                != VK_SUCCESS)
+            if (!create_attachment_image(
+                    device,
+                    allocator,
+                    width,
+                    height,
+                    VK_FORMAT_R8G8B8A8_UNORM,
+                    VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                    VK_IMAGE_ASPECT_COLOR_BIT,
+                    VK_SAMPLE_COUNT_1_BIT,
+                    t.normal_image,
+                    t.normal_alloc,
+                    t.normal_view)
+                || !create_attachment_image(
+                    device,
+                    allocator,
+                    width,
+                    height,
+                    VK_FORMAT_R8G8B8A8_UNORM,
+                    VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                    VK_IMAGE_ASPECT_COLOR_BIT,
+                    VK_SAMPLE_COUNT_1_BIT,
+                    t.ao_raw_image,
+                    t.ao_raw_alloc,
+                    t.ao_raw_view)
+                || !create_attachment_image(
+                    device,
+                    allocator,
+                    width,
+                    height,
+                    VK_FORMAT_R8G8B8A8_UNORM,
+                    VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                    VK_IMAGE_ASPECT_COLOR_BIT,
+                    VK_SAMPLE_COUNT_1_BIT,
+                    t.ao_image,
+                    t.ao_alloc,
+                    t.ao_view)
+                || !create_attachment_image(
+                    device,
+                    allocator,
+                    width,
+                    height,
+                    VK_FORMAT_D32_SFLOAT,
+                    VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                    VK_IMAGE_ASPECT_DEPTH_BIT,
+                    VK_SAMPLE_COUNT_1_BIT,
+                    t.depth_image,
+                    t.depth_alloc,
+                    t.depth_view)
+                || !create_attachment_image(
+                    device,
+                    allocator,
+                    width,
+                    height,
+                    VK_FORMAT_R16G16B16A16_SFLOAT,
+                    VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+                    VK_IMAGE_ASPECT_COLOR_BIT,
+                    scene_sample_count,
+                    t.scene_color_msaa_image,
+                    t.scene_color_msaa_alloc,
+                    t.scene_color_msaa_view)
+                || !create_attachment_image(
+                    device,
+                    allocator,
+                    width,
+                    height,
+                    VK_FORMAT_D32_SFLOAT,
+                    VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                    VK_IMAGE_ASPECT_DEPTH_BIT,
+                    scene_sample_count,
+                    t.scene_depth_msaa_image,
+                    t.scene_depth_msaa_alloc,
+                    t.scene_depth_msaa_view)
+                || !create_attachment_image(
+                    device,
+                    allocator,
+                    width,
+                    height,
+                    VK_FORMAT_R16G16B16A16_SFLOAT,
+                    VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                    VK_IMAGE_ASPECT_COLOR_BIT,
+                    VK_SAMPLE_COUNT_1_BIT,
+                    t.scene_hdr_image,
+                    t.scene_hdr_alloc,
+                    t.scene_hdr_view)
+                || !create_attachment_image(
+                    device,
+                    allocator,
+                    width,
+                    height,
+                    VK_FORMAT_B8G8R8A8_SRGB,
+                    VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                    VK_IMAGE_ASPECT_COLOR_BIT,
+                    VK_SAMPLE_COUNT_1_BIT,
+                    t.scene_final_image,
+                    t.scene_final_alloc,
+                    t.scene_final_srgb_view,
+                    VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT)
+                || !create_attachment_view(
+                    device,
+                    t.scene_final_image,
+                    VK_FORMAT_B8G8R8A8_UNORM,
+                    VK_IMAGE_ASPECT_COLOR_BIT,
+                    t.scene_final_unorm_view))
             {
-                DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity: failed to create GBuffer normal image");
-                destroy_gbuffer_targets();
-                return false;
-            }
-
-            VkImageViewCreateInfo view_ci = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
-            view_ci.image = t.normal_image;
-            view_ci.viewType = VK_IMAGE_VIEW_TYPE_2D;
-            view_ci.format = VK_FORMAT_R8G8B8A8_UNORM;
-            view_ci.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-            view_ci.subresourceRange.levelCount = 1;
-            view_ci.subresourceRange.layerCount = 1;
-            if (vkCreateImageView(device, &view_ci, nullptr, &t.normal_view) != VK_SUCCESS)
-            {
-                destroy_gbuffer_targets();
-                return false;
-            }
-
-            // Raw AO image (RGBA8Unorm — R ambient occlusion before denoise)
-            if (vmaCreateImage(allocator, &img_ci, &alloc_ci,
-                    &t.ao_raw_image, &t.ao_raw_alloc, nullptr)
-                != VK_SUCCESS)
-            {
-                DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity: failed to create raw AO image");
-                destroy_gbuffer_targets();
-                return false;
-            }
-
-            view_ci.image = t.ao_raw_image;
-            if (vkCreateImageView(device, &view_ci, nullptr, &t.ao_raw_view) != VK_SUCCESS)
-            {
-                destroy_gbuffer_targets();
-                return false;
-            }
-
-            // AO image (RGBA8Unorm — R ambient occlusion, GBA reserved)
-            if (vmaCreateImage(allocator, &img_ci, &alloc_ci,
-                    &t.ao_image, &t.ao_alloc, nullptr)
-                != VK_SUCCESS)
-            {
-                DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity: failed to create GBuffer AO image");
-                destroy_gbuffer_targets();
-                return false;
-            }
-
-            view_ci.image = t.ao_image;
-            if (vkCreateImageView(device, &view_ci, nullptr, &t.ao_view) != VK_SUCCESS)
-            {
-                destroy_gbuffer_targets();
-                return false;
-            }
-
-            // Depth image (D32Float)
-            img_ci.format = VK_FORMAT_D32_SFLOAT;
-            img_ci.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-            if (vmaCreateImage(allocator, &img_ci, &alloc_ci,
-                    &t.depth_image, &t.depth_alloc, nullptr)
-                != VK_SUCCESS)
-            {
-                DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity: failed to create GBuffer depth image");
-                destroy_gbuffer_targets();
-                return false;
-            }
-
-            view_ci.image = t.depth_image;
-            view_ci.format = VK_FORMAT_D32_SFLOAT;
-            view_ci.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-            if (vkCreateImageView(device, &view_ci, nullptr, &t.depth_view) != VK_SUCCESS)
-            {
+                DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity: failed to create offscreen scene targets");
                 destroy_gbuffer_targets();
                 return false;
             }
@@ -2107,11 +2599,46 @@ struct IsometricScenePass::State
                 return false;
             }
 
+            VkImageView scene_fb_views[] = {
+                t.scene_color_msaa_view,
+                t.scene_depth_msaa_view,
+                t.scene_hdr_view
+            };
+            VkFramebufferCreateInfo scene_fb_ci = { VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO };
+            scene_fb_ci.renderPass = scene_render_pass;
+            scene_fb_ci.attachmentCount = 3;
+            scene_fb_ci.pAttachments = scene_fb_views;
+            scene_fb_ci.width = static_cast<uint32_t>(width);
+            scene_fb_ci.height = static_cast<uint32_t>(height);
+            scene_fb_ci.layers = 1;
+            if (vkCreateFramebuffer(device, &scene_fb_ci, nullptr, &t.scene_framebuffer) != VK_SUCCESS)
+            {
+                DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity: failed to create scene framebuffer");
+                destroy_gbuffer_targets();
+                return false;
+            }
+
+            VkImageView scene_post_views[] = { t.scene_final_srgb_view };
+            VkFramebufferCreateInfo scene_post_fb_ci = { VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO };
+            scene_post_fb_ci.renderPass = scene_post_render_pass;
+            scene_post_fb_ci.attachmentCount = 1;
+            scene_post_fb_ci.pAttachments = scene_post_views;
+            scene_post_fb_ci.width = static_cast<uint32_t>(width);
+            scene_post_fb_ci.height = static_cast<uint32_t>(height);
+            scene_post_fb_ci.layers = 1;
+            if (vkCreateFramebuffer(device, &scene_post_fb_ci, nullptr, &t.scene_post_framebuffer) != VK_SUCCESS)
+            {
+                DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity: failed to create scene post framebuffer");
+                destroy_gbuffer_targets();
+                return false;
+            }
+
             t.width = width;
             t.height = height;
         }
         refresh_gbuffer_descriptors();
         refresh_prepass_descriptors();
+        refresh_post_descriptors();
         return true;
     }
 
@@ -2147,16 +2674,26 @@ struct IsometricScenePass::State
             vkDestroyPipeline(device, wireframe_pipeline, nullptr);
         if (debug_pipeline != VK_NULL_HANDLE)
             vkDestroyPipeline(device, debug_pipeline, nullptr);
+        if (present_pipeline != VK_NULL_HANDLE)
+            vkDestroyPipeline(device, present_pipeline, nullptr);
+        if (post_pipeline != VK_NULL_HANDLE)
+            vkDestroyPipeline(device, post_pipeline, nullptr);
         if (pipeline != VK_NULL_HANDLE)
             vkDestroyPipeline(device, pipeline, nullptr);
+        if (post_pipeline_layout != VK_NULL_HANDLE)
+            vkDestroyPipelineLayout(device, post_pipeline_layout, nullptr);
         if (pipeline_layout != VK_NULL_HANDLE)
             vkDestroyPipelineLayout(device, pipeline_layout, nullptr);
         if (prepass_pipeline_layout != VK_NULL_HANDLE)
             vkDestroyPipelineLayout(device, prepass_pipeline_layout, nullptr);
+        if (post_descriptor_pool != VK_NULL_HANDLE)
+            vkDestroyDescriptorPool(device, post_descriptor_pool, nullptr);
         if (descriptor_pool != VK_NULL_HANDLE)
             vkDestroyDescriptorPool(device, descriptor_pool, nullptr);
         if (prepass_descriptor_pool != VK_NULL_HANDLE)
             vkDestroyDescriptorPool(device, prepass_descriptor_pool, nullptr);
+        if (post_descriptor_set_layout != VK_NULL_HANDLE)
+            vkDestroyDescriptorSetLayout(device, post_descriptor_set_layout, nullptr);
         if (descriptor_set_layout != VK_NULL_HANDLE)
             vkDestroyDescriptorSetLayout(device, descriptor_set_layout, nullptr);
         if (prepass_descriptor_set_layout != VK_NULL_HANDLE)
@@ -2165,6 +2702,9 @@ struct IsometricScenePass::State
         device = VK_NULL_HANDLE;
         allocator = VK_NULL_HANDLE;
         render_pass = VK_NULL_HANDLE;
+        post_descriptor_set_layout = VK_NULL_HANDLE;
+        post_descriptor_pool = VK_NULL_HANDLE;
+        post_pipeline_layout = VK_NULL_HANDLE;
         descriptor_set_layout = VK_NULL_HANDLE;
         descriptor_pool = VK_NULL_HANDLE;
         pipeline_layout = VK_NULL_HANDLE;
@@ -2172,6 +2712,8 @@ struct IsometricScenePass::State
         prepass_descriptor_pool = VK_NULL_HANDLE;
         prepass_pipeline_layout = VK_NULL_HANDLE;
         pipeline = VK_NULL_HANDLE;
+        post_pipeline = VK_NULL_HANDLE;
+        present_pipeline = VK_NULL_HANDLE;
         frame_resources.clear();
         buffered_frame_count = 1;
         cached_grid_mesh = {};
@@ -2224,6 +2766,11 @@ void IsometricScenePass::record_prepass(IRenderContext& ctx)
     auto& gbuffer = state_->gbuffer_targets[frame_index];
     auto& frame_res = state_->frame_resources[frame_index];
     frame_res.geometry_arena.reset();
+
+    if (!state_->ensure_road_materials(*vk_ctx, cmd))
+        return;
+    if (!state_->ensure_label_atlas(*vk_ctx, cmd, scene_.label_atlas))
+        return;
 
     // Ensure floor grid mesh
     if (!state_->ensure_floor_grid(scene_.floor_grid))
@@ -2399,69 +2946,41 @@ void IsometricScenePass::record_prepass(IRenderContext& ctx)
         0, 1, &frame_res.prepass_descriptor_set, 0, nullptr);
     vkCmdDraw(cmd, 3, 1, 0, 0);
     vkCmdEndRenderPass(cmd);
-}
 
-void IsometricScenePass::record(IRenderContext& ctx)
-{
-    auto* vk_ctx = static_cast<VkRenderContext*>(&ctx);
-    auto cmd = static_cast<VkCommandBuffer>(ctx.native_command_buffer());
-    if (!cmd)
+    if (gbuffer.scene_framebuffer == VK_NULL_HANDLE || gbuffer.scene_post_framebuffer == VK_NULL_HANDLE)
         return;
-
-    const uint32_t frame_index = vk_ctx->frame_index();
-    if (!state_->ensure(*vk_ctx))
-        return;
-    if (frame_index >= state_->frame_resources.size())
-        return;
-
-    auto& frame_resources = state_->frame_resources[frame_index];
-    frame_resources.geometry_arena.reset();
-
-    MeshSlice grid_slice;
-    if (!state_->ensure_floor_grid(scene_.floor_grid))
-        return;
-    if (!state_->ensure_road_materials(*vk_ctx, cmd))
-        return;
-    if (!state_->ensure_tree_mesh(scene_.tree_bark_mesh, scene_.tree_leaf_mesh)
-        || !state_->ensure_custom_meshes(scene_.custom_meshes))
-        return;
-    if (!state_->ensure_label_atlas(*vk_ctx, cmd, scene_.label_atlas))
-        return;
-    if (state_->has_cached_grid_mesh
-        && !stream_transient_mesh(vk_ctx->allocator(), state_->cached_grid_mesh,
-            frame_resources.geometry_arena, grid_slice))
-    {
-        return;
-    }
-
-    FrameUniforms frame;
-    frame.view = scene_.camera.view;
-    frame.proj = make_vulkan_projection(scene_.camera.proj);
-    frame.inv_view_proj = glm::inverse(frame.proj * frame.view);
-    frame.camera_pos = scene_.camera.camera_pos;
-    frame.light_dir = scene_.camera.light_dir;
-    frame.point_light_pos = scene_.camera.point_light_pos;
-    frame.label_fade_px = scene_.camera.label_fade_px;
-    frame.render_tuning = scene_.camera.render_tuning;
-    frame.screen_params = glm::vec4(
-        static_cast<float>(ctx.viewport_x()),
-        static_cast<float>(ctx.viewport_y()),
-        1.0f / std::max(ctx.viewport_w(), 1),
-        1.0f / std::max(ctx.viewport_h(), 1));
-    frame.ao_params = glm::vec4(
-        scene_.camera.ao_settings.x,
-        compute_ao_radius_pixels(scene_.camera.proj, scene_.camera.ao_settings.x, ctx.viewport_h()),
-        scene_.camera.ao_settings.y,
-        scene_.camera.ao_settings.z);
-    frame.debug_view = scene_.camera.debug_view;
-    frame.world_debug_bounds = scene_.camera.world_debug_bounds;
-    std::memcpy(frame_resources.frame_uniforms.mapped, &frame, sizeof(frame));
-    vmaFlushAllocation(vk_ctx->allocator(), frame_resources.frame_uniforms.allocation, 0, sizeof(frame));
-    const MaterialUniforms material_uniforms = build_material_uniforms(scene_);
-    std::memcpy(frame_resources.material_uniforms.mapped, &material_uniforms, sizeof(material_uniforms));
-    vmaFlushAllocation(vk_ctx->allocator(), frame_resources.material_uniforms.allocation, 0, sizeof(material_uniforms));
 
     const int debug_mode = static_cast<int>(scene_.camera.debug_view.x + 0.5f);
+    if (debug_mode == 1 && gbuffer.ao_raw_view != VK_NULL_HANDLE)
+    {
+        VkDescriptorImageInfo raw_ao_info = {};
+        raw_ao_info.sampler = state_->gbuffer_sampler;
+        raw_ao_info.imageView = gbuffer.ao_raw_view;
+        raw_ao_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        VkWriteDescriptorSet write = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
+        write.dstSet = frame_res.descriptor_set;
+        write.dstBinding = 3;
+        write.descriptorCount = 1;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        write.pImageInfo = &raw_ao_info;
+        vkUpdateDescriptorSets(vk_ctx->device(), 1, &write, 0, nullptr);
+    }
+
+    VkClearValue scene_clears[3] = {};
+    scene_clears[0].color = { { 0.0f, 0.0f, 0.0f, 0.0f } };
+    scene_clears[1].depthStencil = { 1.0f, 0u };
+    scene_clears[2].color = { { 0.0f, 0.0f, 0.0f, 0.0f } };
+
+    VkRenderPassBeginInfo scene_rpbi = { VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO };
+    scene_rpbi.renderPass = state_->scene_render_pass;
+    scene_rpbi.framebuffer = gbuffer.scene_framebuffer;
+    scene_rpbi.renderArea.extent = { static_cast<uint32_t>(vw), static_cast<uint32_t>(vh) };
+    scene_rpbi.clearValueCount = 3;
+    scene_rpbi.pClearValues = scene_clears;
+    vkCmdBeginRenderPass(cmd, &scene_rpbi, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdSetViewport(cmd, 0, 1, &viewport);
+    vkCmdSetScissor(cmd, 0, 1, &scissor);
+
     const bool use_debug = debug_mode > 0 && state_->debug_pipeline != VK_NULL_HANDLE;
     const bool use_wireframe = scene_.camera.debug_view.w > 0.5f;
     VkPipeline bound_pipeline = state_->pipeline;
@@ -2472,29 +2991,10 @@ void IsometricScenePass::record(IRenderContext& ctx)
     else if (use_wireframe && state_->wireframe_pipeline != VK_NULL_HANDLE)
         bound_pipeline = state_->wireframe_pipeline;
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, bound_pipeline);
-    // For raw AO debug (mode 1), temporarily rebind the raw AO texture to the descriptor
-    if (debug_mode == 1 && frame_index < state_->gbuffer_targets.size())
-    {
-        const auto& gbuffer = state_->gbuffer_targets[frame_index];
-        if (gbuffer.ao_raw_view != VK_NULL_HANDLE)
-        {
-            VkDescriptorImageInfo raw_ao_info = {};
-            raw_ao_info.sampler = state_->gbuffer_sampler;
-            raw_ao_info.imageView = gbuffer.ao_raw_view;
-            raw_ao_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            VkWriteDescriptorSet write = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
-            write.dstSet = frame_resources.descriptor_set;
-            write.dstBinding = 3;
-            write.descriptorCount = 1;
-            write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            write.pImageInfo = &raw_ao_info;
-            vkUpdateDescriptorSets(vk_ctx->device(), 1, &write, 0, nullptr);
-        }
-    }
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, state_->pipeline_layout,
-        0, 1, &frame_resources.descriptor_set, 0, nullptr);
+        0, 1, &frame_res.descriptor_set, 0, nullptr);
 
-    const MeshBuffers* last_mesh = nullptr;
+    const MeshBuffers* last_scene_mesh = nullptr;
     for (const SceneObject& obj : scene_.objects)
     {
         const MeshBuffers* mesh = nullptr;
@@ -2531,13 +3031,13 @@ void IsometricScenePass::record(IRenderContext& ctx)
         if (!mesh || mesh->index_count == 0)
             continue;
 
-        if (mesh != last_mesh)
+        if (mesh != last_scene_mesh)
         {
             VkBuffer vertex_buffer = mesh->vertices.buffer;
             VkDeviceSize vertex_offset = 0;
             vkCmdBindVertexBuffers(cmd, 0, 1, &vertex_buffer, &vertex_offset);
             vkCmdBindIndexBuffer(cmd, mesh->indices.buffer, 0, VK_INDEX_TYPE_UINT16);
-            last_mesh = mesh;
+            last_scene_mesh = mesh;
         }
 
         ObjectPushConstants push;
@@ -2567,25 +3067,81 @@ void IsometricScenePass::record(IRenderContext& ctx)
         vkCmdDrawIndexed(cmd, grid_slice.index_count, 1, 0, 0, 0);
     }
 
-    // Restore denoised AO binding if we switched to raw for debug
-    if (debug_mode == 1 && frame_index < state_->gbuffer_targets.size())
+    vkCmdEndRenderPass(cmd);
+
+    VkClearValue scene_post_clear = {};
+    scene_post_clear.color = { { 0.0f, 0.0f, 0.0f, 0.0f } };
+
+    VkRenderPassBeginInfo scene_post_rpbi = { VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO };
+    scene_post_rpbi.renderPass = state_->scene_post_render_pass;
+    scene_post_rpbi.framebuffer = gbuffer.scene_post_framebuffer;
+    scene_post_rpbi.renderArea.extent = { static_cast<uint32_t>(vw), static_cast<uint32_t>(vh) };
+    scene_post_rpbi.clearValueCount = 1;
+    scene_post_rpbi.pClearValues = &scene_post_clear;
+    vkCmdBeginRenderPass(cmd, &scene_post_rpbi, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdSetViewport(cmd, 0, 1, &viewport);
+    vkCmdSetScissor(cmd, 0, 1, &scissor);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, state_->post_pipeline);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, state_->post_pipeline_layout,
+        0, 1, &frame_res.post_descriptor_set, 0, nullptr);
+    vkCmdDraw(cmd, 3, 1, 0, 0);
+    vkCmdEndRenderPass(cmd);
+
+    if (debug_mode == 1 && gbuffer.ao_view != VK_NULL_HANDLE)
     {
-        const auto& gbuffer = state_->gbuffer_targets[frame_index];
-        if (gbuffer.ao_view != VK_NULL_HANDLE)
-        {
-            VkDescriptorImageInfo ao_info = {};
-            ao_info.sampler = state_->gbuffer_sampler;
-            ao_info.imageView = gbuffer.ao_view;
-            ao_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            VkWriteDescriptorSet write = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
-            write.dstSet = frame_resources.descriptor_set;
-            write.dstBinding = 3;
-            write.descriptorCount = 1;
-            write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            write.pImageInfo = &ao_info;
-            vkUpdateDescriptorSets(vk_ctx->device(), 1, &write, 0, nullptr);
-        }
+        VkDescriptorImageInfo ao_info = {};
+        ao_info.sampler = state_->gbuffer_sampler;
+        ao_info.imageView = gbuffer.ao_view;
+        ao_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        VkWriteDescriptorSet write = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
+        write.dstSet = frame_res.descriptor_set;
+        write.dstBinding = 3;
+        write.descriptorCount = 1;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        write.pImageInfo = &ao_info;
+        vkUpdateDescriptorSets(vk_ctx->device(), 1, &write, 0, nullptr);
     }
+}
+
+void IsometricScenePass::record(IRenderContext& ctx)
+{
+    auto* vk_ctx = static_cast<VkRenderContext*>(&ctx);
+    auto cmd = static_cast<VkCommandBuffer>(ctx.native_command_buffer());
+    if (!cmd)
+        return;
+
+    const uint32_t frame_index = vk_ctx->frame_index();
+    if (!state_->ensure(*vk_ctx))
+        return;
+    if (!state_->ensure_gbuffer_targets(std::max(1u, vk_ctx->buffered_frame_count()), ctx.viewport_w(), ctx.viewport_h()))
+        return;
+    if (frame_index >= state_->frame_resources.size() || frame_index >= state_->gbuffer_targets.size())
+        return;
+    const auto& gbuffer = state_->gbuffer_targets[frame_index];
+    auto& frame_resources = state_->frame_resources[frame_index];
+    if (gbuffer.scene_final_unorm_view == VK_NULL_HANDLE)
+        return;
+
+    VkViewport viewport = {};
+    viewport.x = static_cast<float>(ctx.viewport_x());
+    viewport.y = static_cast<float>(ctx.viewport_y());
+    viewport.width = static_cast<float>(ctx.viewport_w());
+    viewport.height = static_cast<float>(ctx.viewport_h());
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(cmd, 0, 1, &viewport);
+
+    VkRect2D scissor = {};
+    scissor.offset = { ctx.viewport_x(), ctx.viewport_y() };
+    scissor.extent = {
+        static_cast<uint32_t>(std::max(ctx.viewport_w(), 0)),
+        static_cast<uint32_t>(std::max(ctx.viewport_h(), 0))
+    };
+    vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, state_->present_pipeline);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, state_->post_pipeline_layout,
+        0, 1, &frame_resources.post_descriptor_set, 0, nullptr);
+    vkCmdDraw(cmd, 3, 1, 0, 0);
 }
 
 void IsometricScenePass::render_gbuffer_debug_ui()
@@ -2618,6 +3174,16 @@ void IsometricScenePass::render_gbuffer_debug_ui()
     {
         t.imgui_depth_ds = ImGui_ImplVulkan_AddTexture(
             state_->gbuffer_sampler, t.depth_view, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+    }
+    if (t.imgui_scene_hdr_ds == VK_NULL_HANDLE && t.scene_hdr_view != VK_NULL_HANDLE)
+    {
+        t.imgui_scene_hdr_ds = ImGui_ImplVulkan_AddTexture(
+            state_->gbuffer_sampler, t.scene_hdr_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    }
+    if (t.imgui_scene_final_ds == VK_NULL_HANDLE && t.scene_final_unorm_view != VK_NULL_HANDLE)
+    {
+        t.imgui_scene_final_ds = ImGui_ImplVulkan_AddTexture(
+            state_->gbuffer_sampler, t.scene_final_unorm_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     }
 
     if (!ImGui::Begin("GBuffer Debug"))
@@ -2653,6 +3219,16 @@ void IsometricScenePass::render_gbuffer_debug_ui()
         ImGui::TableNextColumn();
         ImGui::Text("Ambient Occlusion");
         ImGui::Image(static_cast<ImTextureID>(t.imgui_ao_ds), size);
+
+        ImGui::TableNextColumn();
+        ImGui::Text("Scene HDR");
+        if (t.imgui_scene_hdr_ds != VK_NULL_HANDLE)
+            ImGui::Image(static_cast<ImTextureID>(t.imgui_scene_hdr_ds), size);
+
+        ImGui::TableNextColumn();
+        ImGui::Text("Scene Final");
+        if (t.imgui_scene_final_ds != VK_NULL_HANDLE)
+            ImGui::Image(static_cast<ImTextureID>(t.imgui_scene_final_ds), size);
 
         ImGui::EndTable();
     }

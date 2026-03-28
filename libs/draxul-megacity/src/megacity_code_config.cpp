@@ -74,6 +74,10 @@ std::optional<MegaCityDebugView> parse_megacity_debug_view(std::string_view valu
         return MegaCityDebugView::UV;
     if (value == "depth")
         return MegaCityDebugView::Depth;
+    if (value == "bitangents")
+        return MegaCityDebugView::Bitangents;
+    if (value == "tbn_packed")
+        return MegaCityDebugView::TbnPacked;
     return std::nullopt;
 }
 
@@ -103,6 +107,10 @@ std::string_view format_megacity_debug_view(MegaCityDebugView value)
         return "uv";
     case MegaCityDebugView::Depth:
         return "depth";
+    case MegaCityDebugView::Bitangents:
+        return "bitangents";
+    case MegaCityDebugView::TbnPacked:
+        return "tbn_packed";
     }
     return "final_scene";
 }
@@ -188,6 +196,8 @@ void apply_megacity_code_table(MegaCityCodeConfig& config, const toml::table& ta
     assign_float("selection_dependency_alpha", config.selection_dependency_alpha);
     assign_float("selection_hidden_alpha", config.selection_hidden_alpha);
     assign_float("selection_hidden_hover_alpha", config.selection_hidden_hover_alpha);
+    assign_float("selection_hidden_hover_raise_seconds", config.selection_hidden_hover_raise_seconds);
+    assign_float("selection_hidden_hover_fall_seconds", config.selection_hidden_hover_fall_seconds);
     assign_float("selection_hidden_road_alpha", config.selection_hidden_road_alpha);
 
     assign_float("placement_step", config.placement_step);
@@ -202,6 +212,7 @@ void apply_megacity_code_table(MegaCityCodeConfig& config, const toml::table& ta
     assign_float("height_count_weight", config.height_count_weight);
     assign_vec2(table, "height_range", config.height_range);
     assign_float("height_unclamped_count_weight", config.height_unclamped_count_weight);
+    assign_float("flat_color_metallic", config.flat_color_metallic);
 
     assign_float("road_width_base", config.road_width_base);
     assign_float("road_width_scale", config.road_width_scale);
@@ -326,6 +337,10 @@ toml::table serialize_megacity_code_table(const MegaCityCodeConfig& config)
     table.insert_or_assign("selection_dependency_alpha", static_cast<double>(config.selection_dependency_alpha));
     table.insert_or_assign("selection_hidden_alpha", static_cast<double>(config.selection_hidden_alpha));
     table.insert_or_assign("selection_hidden_hover_alpha", static_cast<double>(config.selection_hidden_hover_alpha));
+    table.insert_or_assign("selection_hidden_hover_raise_seconds",
+        static_cast<double>(config.selection_hidden_hover_raise_seconds));
+    table.insert_or_assign("selection_hidden_hover_fall_seconds",
+        static_cast<double>(config.selection_hidden_hover_fall_seconds));
     table.insert_or_assign("selection_hidden_road_alpha", static_cast<double>(config.selection_hidden_road_alpha));
     table.insert_or_assign("placement_step", static_cast<double>(config.placement_step));
     table.insert_or_assign("max_spiral_rings", config.max_spiral_rings);
@@ -337,6 +352,7 @@ toml::table serialize_megacity_code_table(const MegaCityCodeConfig& config)
     table.insert_or_assign("height_count_weight", static_cast<double>(config.height_count_weight));
     toml_support::insert_vec2(table, "height_range", config.height_range);
     table.insert_or_assign("height_unclamped_count_weight", static_cast<double>(config.height_unclamped_count_weight));
+    table.insert_or_assign("flat_color_metallic", static_cast<double>(config.flat_color_metallic));
     table.insert_or_assign("road_width_base", static_cast<double>(config.road_width_base));
     table.insert_or_assign("road_width_scale", static_cast<double>(config.road_width_scale));
     toml_support::insert_vec2(table, "road_width_range", config.road_width_range);

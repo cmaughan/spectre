@@ -33,8 +33,8 @@ constexpr float kModuleSurfaceHeight = 0.018f;
 constexpr float kModuleSurfaceLift = 0.003f;
 constexpr float kModuleSurfaceBorderWidthScale = 0.5f;
 constexpr float kModuleSurfaceBorderWidthMin = 0.2f;
-constexpr float kDependencyRouteWidthScale = 0.18f;
-constexpr float kDependencyRouteMinWidth = 0.09f;
+constexpr float kDependencyRouteWidthScale = 0.27f;
+constexpr float kDependencyRouteMinWidth = 0.135f;
 constexpr float kDependencyRouteHeight = 0.045f;
 constexpr float kDependencyRouteLift = 0.01f;
 constexpr int kHexBuildingIncidentConnectionThreshold = 6;
@@ -806,7 +806,8 @@ CityBuildResult build_city(
                 build_procedural_building_mesh(
                     building,
                     module_color,
-                    building_side_count));
+                    building_side_count),
+                1.0f);
 
             if (sign_label_atlas)
             {
@@ -827,14 +828,15 @@ CityBuildResult build_city(
                             building.center.y,
                             building_base_elevation(config) + building.metrics.height,
                             cap_metrics,
-                            module_color,
+                            glm::vec4(1.0f),
                             SourceSymbol{ building.source_file_path, building.qualified_name, building.module_path },
                             MaterialId::FlatColor,
                             build_procedural_building_cap_mesh(
                                 building,
                                 module_color,
                                 building_side_count,
-                                cap_height));
+                                cap_height),
+                            1.0f);
                     }
 
                     const float total_height = building_base_elevation(config) + building.metrics.height + cap_height;

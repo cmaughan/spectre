@@ -801,6 +801,8 @@ bool render_renderer_controls(MegacityRendererControls& controls)
             edit_float("Dependency Alpha", config.selection_dependency_alpha, 0.01f, 0.0f, 1.0f, "%.2f");
             edit_float("Hidden Alpha", config.selection_hidden_alpha, 0.01f, 0.0f, 1.0f, "%.2f");
             edit_float("Hover Hidden Alpha", config.selection_hidden_hover_alpha, 0.01f, 0.0f, 1.0f, "%.2f");
+            edit_float("Hover Raise Seconds", config.selection_hidden_hover_raise_seconds, 0.05f, 0.05f, 5.0f, "%.2f");
+            edit_float("Hover Fall Seconds", config.selection_hidden_hover_fall_seconds, 0.05f, 0.05f, 5.0f, "%.2f");
             edit_float("Road Hidden Alpha", config.selection_hidden_road_alpha, 0.01f, 0.0f, 1.0f, "%.2f");
             ImGui::TreePop();
         }
@@ -816,6 +818,7 @@ bool render_renderer_controls(MegacityRendererControls& controls)
             edit_float("Height Count Weight", config.height_count_weight, 0.01f, 0.0f, 8.0f, "%.2f");
             edit_vec2("Height Range", config.height_range, 0.05f, 0.0f, 64.0f, "%.2f");
             edit_float("Height Unclamped Count Weight", config.height_unclamped_count_weight, 0.01f, 0.0f, 8.0f, "%.2f");
+            edit_float("Flat Metallic", config.flat_color_metallic, 0.01f, 0.0f, 1.0f, "%.2f");
             edit_float("Road Width Base", config.road_width_base, 0.01f, 0.0f, 16.0f, "%.2f");
             edit_float("Road Width Scale", config.road_width_scale, 0.01f, 0.0f, 8.0f, "%.2f");
             edit_vec2("Road Width Range", config.road_width_range, 0.01f, 0.0f, 32.0f, "%.2f");
@@ -1004,7 +1007,7 @@ bool render_renderer_controls(MegacityRendererControls& controls)
 
     // -- Debug View --------------------------------------------------------
     {
-        static constexpr std::array<const char*, 11> kDebugViewLabels = {
+        static constexpr std::array<const char*, 13> kDebugViewLabels = {
             "Final Scene",
             "Ambient Occlusion",
             "AO Denoised",
@@ -1016,11 +1019,13 @@ bool render_renderer_controls(MegacityRendererControls& controls)
             "Tangents",
             "UV",
             "Depth",
+            "Bitangents",
+            "TBN Packed",
         };
         int debug_view = static_cast<int>(config.debug_view);
         if (ImGui::Combo("Debug View", &debug_view, kDebugViewLabels.data(), static_cast<int>(kDebugViewLabels.size())))
         {
-            config.debug_view = static_cast<MegaCityDebugView>(std::clamp(debug_view, 0, 10));
+            config.debug_view = static_cast<MegaCityDebugView>(std::clamp(debug_view, 0, 12));
             changed = true;
             controls.committed_edit = true;
         }

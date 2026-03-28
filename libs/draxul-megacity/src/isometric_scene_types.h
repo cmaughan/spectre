@@ -59,19 +59,20 @@ enum class SceneTextureId : uint32_t
     WoodAlbedo = 11,
     WoodNormal = 12,
     WoodRoughness = 13,
-    WoodAo = 14,
-    LeafAlbedo = 15,
-    LeafNormal = 16,
-    LeafRoughness = 17,
-    LeafOpacity = 18,
-    LeafScattering = 19,
-    BarkAlbedo = 20,
-    BarkNormal = 21,
-    BarkRoughness = 22,
-    BarkAo = 23,
+    WoodMetalness = 14,
+    WoodAo = 15,
+    LeafAlbedo = 16,
+    LeafNormal = 17,
+    LeafRoughness = 18,
+    LeafOpacity = 19,
+    LeafScattering = 20,
+    BarkAlbedo = 21,
+    BarkNormal = 22,
+    BarkRoughness = 23,
+    BarkAo = 24,
 };
 
-constexpr uint32_t kSceneMaterialTextureCount = 24;
+constexpr uint32_t kSceneMaterialTextureCount = 25;
 constexpr uint32_t kMaxSceneMaterials = 64;
 
 struct LabelAtlasData

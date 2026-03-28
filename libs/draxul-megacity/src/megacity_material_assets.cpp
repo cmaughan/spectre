@@ -35,6 +35,15 @@ LoadedTextureImage load_rgba8_image(const std::filesystem::path& path)
     return image;
 }
 
+LoadedTextureImage make_solid_rgba8(uint8_t r, uint8_t g, uint8_t b, uint8_t a)
+{
+    LoadedTextureImage image;
+    image.width = 1;
+    image.height = 1;
+    image.rgba = { r, g, b, a };
+    return image;
+}
+
 } // namespace
 
 std::filesystem::path resolve_megacity_asset_path(const std::filesystem::path& relative_path)
@@ -75,10 +84,11 @@ PavingSidewalkMaterialImages load_paving_sidewalk_material_images()
 WoodBuildingMaterialImages load_wood_building_material_images()
 {
     WoodBuildingMaterialImages images;
-    images.albedo = load_rgba8_image(resolve_megacity_asset_path("textures/WoodSiding005_1K-JPG_Color.jpg"));
-    images.normal = load_rgba8_image(resolve_megacity_asset_path("textures/WoodSiding005_1K-JPG_NormalGL.jpg"));
-    images.roughness = load_rgba8_image(resolve_megacity_asset_path("textures/WoodSiding005_1K-JPG_Roughness.jpg"));
-    images.ao = load_rgba8_image(resolve_megacity_asset_path("textures/WoodSiding005_1K-JPG_AmbientOcclusion.jpg"));
+    images.albedo = load_rgba8_image(resolve_megacity_asset_path("textures/Bricks060_1K-JPG_Color.jpg"));
+    images.normal = load_rgba8_image(resolve_megacity_asset_path("textures/Bricks060_1K-JPG_NormalGL.jpg"));
+    images.roughness = load_rgba8_image(resolve_megacity_asset_path("textures/Bricks060_1K-JPG_Roughness.jpg"));
+    images.ao = load_rgba8_image(resolve_megacity_asset_path("textures/Bricks060_1K-JPG_AmbientOcclusion.jpg"));
+    images.metalness = make_solid_rgba8(0, 0, 0, 255);
     return images;
 }
 
