@@ -15,9 +15,11 @@
 #include "support/fake_window.h"
 #include "support/test_host_callbacks.h"
 #include <SDL3/SDL.h>
+#include <algorithm>
 #include <draxul/building_generator.h>
 #include <draxul/megacity_host.h>
 #include <draxul/text_service.h>
+#include <filesystem>
 #include <numbers>
 #include <thread>
 
@@ -87,6 +89,22 @@ TestLotRect test_building_lot(const SemanticCityBuilding& building)
 bool test_lots_overlap(const TestLotRect& a, const TestLotRect& b)
 {
     return a.min_x < b.max_x && a.max_x > b.min_x && a.min_z < b.max_z && a.max_z > b.min_z;
+}
+
+std::filesystem::path bundled_font_path()
+{
+    return std::filesystem::path(DRAXUL_PROJECT_ROOT) / "fonts" / "JetBrainsMonoNerdFont-Regular.ttf";
+}
+
+bool init_text_service(TextService& text_service)
+{
+    const std::filesystem::path font_path = bundled_font_path();
+    if (!std::filesystem::exists(font_path))
+        return false;
+
+    TextServiceConfig config;
+    config.font_path = font_path.string();
+    return text_service.initialize(config, TextService::DEFAULT_POINT_SIZE, 96.0f);
 }
 
 } // namespace
@@ -188,6 +206,160 @@ TEST_CASE("megacity world creates module surface entities", "[megacity]")
     CHECK(metrics.extent_z == Catch::Approx(14.0f));
     CHECK(metrics.height == Catch::Approx(0.018f));
     CHECK(elevation.value == Catch::Approx(0.05f));
+}
+
+TEST_CASE("megacity module signs are placed on module border strips", "[megacity]")
+{
+    TextService text_service;
+    if (!init_text_service(text_service))
+        SKIP("bundled font not found");
+
+    const auto db_path = std::filesystem::path(DRAXUL_PROJECT_ROOT)
+        / "build"
+        / "test-artifacts"
+        / ("draxul-megacity-module-signs-"
+            + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count())
+            + ".sqlite3");
+    std::filesystem::create_directories(db_path.parent_path());
+    std::filesystem::remove(db_path);
+
+    CodebaseSnapshot snapshot;
+    snapshot.complete = true;
+    snapshot.scan_time = std::chrono::steady_clock::now();
+
+    ParsedFile file;
+    file.path = "src/example.cpp";
+    file.symbols.push_back(SymbolRecord{
+        SymbolKind::Class,
+        "Tower",
+        "",
+        false,
+        1,
+        24,
+        1,
+        {},
+        {
+            { "count_", "int", {} },
+        },
+    });
+    snapshot.files.push_back(file);
+
+    CityDatabase city_db;
+    INFO(city_db.last_error());
+    REQUIRE(city_db.open(db_path));
+    REQUIRE(city_db.reconcile_snapshot(snapshot));
+
+    SceneWorld world;
+    MegaCityCodeConfig config;
+    uint64_t sign_label_revision = 1;
+    const std::vector<std::string> modules = city_db.list_modules();
+    REQUIRE(modules.size() == 1);
+
+    CityBuildResult build = build_city(
+        world,
+        city_db,
+        &text_service,
+        modules,
+        config,
+        sign_label_revision);
+
+    REQUIRE(build.layout);
+    const auto module_it = std::find_if(
+        build.layout->modules.begin(),
+        build.layout->modules.end(),
+        [](const SemanticCityModuleLayout& module) { return module.module_path == "src"; });
+    REQUIRE(module_it != build.layout->modules.end());
+    const SemanticCityModuleLayout& module_layout = *module_it;
+    const float extent_x = module_layout.max_x - module_layout.min_x;
+    const float extent_z = module_layout.max_z - module_layout.min_z;
+    REQUIRE(extent_x > 0.0f);
+    REQUIRE(extent_z > 0.0f);
+
+    std::vector<glm::vec2> horizontal_border_centers;
+    auto border_view = world.registry().view<const ModuleSurfaceMetrics, const WorldPosition, const SourceSymbol>();
+    for (const entt::entity entity : border_view)
+    {
+        const auto& metrics = border_view.get<const ModuleSurfaceMetrics>(entity);
+        const auto& position = border_view.get<const WorldPosition>(entity);
+        const auto& source = border_view.get<const SourceSymbol>(entity);
+        if (source.module_path != module_layout.module_path || source.name != module_layout.module_path)
+            continue;
+        if (metrics.extent_x <= metrics.extent_z)
+            continue;
+        horizontal_border_centers.emplace_back(position.x, position.z);
+    }
+    REQUIRE(horizontal_border_centers.size() == 2);
+
+    std::vector<glm::vec2> sign_centers;
+    std::vector<float> sign_widths;
+    std::vector<float> sign_heights;
+    std::vector<float> sign_depths;
+    std::vector<glm::vec4> sign_colors;
+    auto sign_view = world.registry().view<const SignMetrics, const WorldPosition, const SourceSymbol, const Appearance>();
+    for (const entt::entity entity : sign_view)
+    {
+        const auto& metrics = sign_view.get<const SignMetrics>(entity);
+        const auto& position = sign_view.get<const WorldPosition>(entity);
+        const auto& source = sign_view.get<const SourceSymbol>(entity);
+        const auto& appearance = sign_view.get<const Appearance>(entity);
+        if (source.file.empty()
+            && source.module_path == module_layout.module_path
+            && source.name == module_layout.module_path)
+        {
+            sign_centers.emplace_back(position.x, position.z);
+            sign_widths.push_back(metrics.width);
+            sign_heights.push_back(metrics.height);
+            sign_depths.push_back(metrics.depth);
+            sign_colors.push_back(appearance.color);
+        }
+    }
+    REQUIRE(sign_centers.size() == 2);
+    REQUIRE(sign_widths.size() == 2);
+    REQUIRE(sign_heights.size() == 2);
+    REQUIRE(sign_depths.size() == 2);
+    REQUIRE(sign_colors.size() == 2);
+
+    for (size_t index = 0; index < sign_centers.size(); ++index)
+    {
+        const glm::vec2& sign_center = sign_centers[index];
+        const bool matches_border = std::any_of(
+            horizontal_border_centers.begin(),
+            horizontal_border_centers.end(),
+            [&](const glm::vec2& border_center) {
+                return border_center.x == Catch::Approx(sign_center.x).margin(1e-4f);
+            });
+        CHECK(matches_border);
+        const float expected_north_z = module_layout.max_z - sign_depths[index] * 0.5f;
+        const float expected_south_z = module_layout.min_z + sign_depths[index] * 0.5f;
+        const bool matches_inset_edge
+            = sign_center.y == Catch::Approx(expected_north_z).margin(1e-4f)
+            || sign_center.y == Catch::Approx(expected_south_z).margin(1e-4f);
+        CHECK(matches_inset_edge);
+    }
+
+    for (const float sign_width : sign_widths)
+        CHECK(sign_width == Catch::Approx(module_layout.park_footprint).margin(1e-4f));
+    for (const float sign_depth : sign_depths)
+        CHECK(sign_depth == Catch::Approx(config.roof_sign_thickness * 0.5f).margin(1e-4f));
+    for (size_t index = 0; index < sign_heights.size(); ++index)
+        CHECK(sign_heights[index] > sign_depths[index]);
+    const glm::vec4 expected_sign_color = glm::vec4(
+        glm::clamp(
+            glm::mix(glm::vec3(module_building_color(module_layout.module_path)), kCatppuccinSurface0, 0.45f),
+            glm::vec3(0.0f),
+            glm::vec3(1.0f)),
+        module_building_color(module_layout.module_path).a);
+    for (const glm::vec4& sign_color : sign_colors)
+    {
+        CHECK(sign_color.r == Catch::Approx(expected_sign_color.r).margin(1e-4f));
+        CHECK(sign_color.g == Catch::Approx(expected_sign_color.g).margin(1e-4f));
+        CHECK(sign_color.b == Catch::Approx(expected_sign_color.b).margin(1e-4f));
+        CHECK(sign_color.a == Catch::Approx(expected_sign_color.a).margin(1e-4f));
+    }
+
+    text_service.shutdown();
+    city_db.close();
+    std::filesystem::remove(db_path);
 }
 
 TEST_CASE("megacity scene snapshot carries custom building meshes", "[megacity]")
@@ -990,6 +1162,7 @@ TEST_CASE("city routes dependencies through visible road space between buildings
         layout,
         model,
         grid,
+        config,
         target.source_file_path,
         target.module_path,
         target.qualified_name);
@@ -1106,6 +1279,7 @@ TEST_CASE("selection routes allocate distinct target ports", "[megacity]")
         layout,
         model,
         grid,
+        config,
         target.source_file_path,
         target.module_path,
         target.qualified_name);
@@ -1240,6 +1414,7 @@ TEST_CASE("selection routes distinguish duplicate names in the same module by so
         layout,
         model,
         grid,
+        config,
         left.source_file_path,
         left.module_path,
         left.qualified_name);
@@ -1249,6 +1424,7 @@ TEST_CASE("selection routes distinguish duplicate names in the same module by so
         layout,
         model,
         grid,
+        config,
         right.source_file_path,
         right.module_path,
         right.qualified_name);

@@ -26,6 +26,8 @@ namespace
 
 constexpr glm::vec4 kOutgoingRouteColor{ 0.20f, 0.88f, 0.30f, 1.0f };
 constexpr glm::vec4 kIncomingRouteColor{ 0.92f, 0.22f, 0.18f, 1.0f };
+constexpr float kModuleSurfaceBorderWidthScale = 0.5f;
+constexpr float kModuleSurfaceBorderWidthMin = 0.2f;
 
 float snap_to_grid(float value, float grid_step)
 {
@@ -375,6 +377,8 @@ struct RouteObstacle
     float max_z = 0.0f;
 };
 
+constexpr float kModuleSignObstaclePadding = 0.08f;
+
 struct VisibilityGraph
 {
     CitySurfaceBounds bounds;
@@ -685,10 +689,10 @@ bool segment_intersects_obstacle_interior(const glm::vec2& a, const glm::vec2& b
     return point_strictly_inside_obstacle(sample, obstacle);
 }
 
-std::vector<RouteObstacle> build_route_obstacles(const SemanticMegacityLayout& layout)
+std::vector<RouteObstacle> build_route_obstacles(const SemanticMegacityLayout& layout, const MegaCityCodeConfig& config)
 {
     std::vector<RouteObstacle> obstacles;
-    obstacles.reserve(layout.building_count() + layout.modules.size());
+    obstacles.reserve(layout.building_count() + layout.modules.size() * 3);
 
     for (const auto& module_layout : layout.modules)
     {
@@ -712,6 +716,19 @@ std::vector<RouteObstacle> build_route_obstacles(const SemanticMegacityLayout& l
                 module_layout.park_center.y - half_extent,
                 module_layout.park_center.y + half_extent,
             });
+        }
+
+        if (!module_layout.is_central_park && !module_layout.buildings.empty())
+        {
+            for (const ModuleBoundarySignPlacement& sign : build_module_boundary_sign_placements(module_layout, config))
+            {
+                obstacles.push_back({
+                    sign.center.x - sign.width * 0.5f - kModuleSignObstaclePadding,
+                    sign.center.x + sign.width * 0.5f + kModuleSignObstaclePadding,
+                    sign.center.y - sign.depth * 0.5f - kModuleSignObstaclePadding,
+                    sign.center.y + sign.depth * 0.5f + kModuleSignObstaclePadding,
+                });
+            }
         }
     }
 
@@ -910,6 +927,7 @@ bool find_visibility_path(
 
 std::vector<CityGrid::RoutePolyline> build_city_routes_from_grid(
     const SemanticMegacityLayout& layout, const SemanticMegacityModel& model, const CityGrid& grid,
+    const MegaCityCodeConfig& config,
     std::string_view focus_source_file_path,
     std::string_view focus_module_path,
     std::string_view focus_qualified_name)
@@ -923,7 +941,7 @@ std::vector<CityGrid::RoutePolyline> build_city_routes_from_grid(
         focus_qualified_name);
     const std::vector<AssignedRoutePorts> assigned_ports = assign_route_ports(route_pairs, grid);
     const CitySurfaceBounds road_bounds = compute_city_road_surface_bounds(layout);
-    const VisibilityGraph visibility_graph = build_visibility_graph(road_bounds, build_route_obstacles(layout));
+    const VisibilityGraph visibility_graph = build_visibility_graph(road_bounds, build_route_obstacles(layout, config));
 
     std::vector<std::optional<CityGrid::RoutePolyline>> route_results(route_pairs.size());
     const auto solve_route = [&](size_t route_index) {
@@ -1100,6 +1118,46 @@ std::array<RoadSegmentPlacement, 4> build_road_segments(const SemanticCityBuildi
             { road_width, inner_span },
         },
     };
+}
+
+float compute_module_border_width(const SemanticCityModuleLayout& module_layout, const MegaCityCodeConfig& config)
+{
+    const float extent_x = module_layout.max_x - module_layout.min_x;
+    const float extent_z = module_layout.max_z - module_layout.min_z;
+    if (extent_x <= 1e-4f || extent_z <= 1e-4f)
+        return 0.0f;
+
+    return std::min(
+        std::min(extent_x, extent_z) * 0.5f,
+        std::max(config.placement_step * kModuleSurfaceBorderWidthScale, kModuleSurfaceBorderWidthMin));
+}
+
+std::array<ModuleBoundarySignPlacement, 2> build_module_boundary_sign_placements(
+    const SemanticCityModuleLayout& module_layout, const MegaCityCodeConfig& config)
+{
+    ModuleBoundarySignPlacement south;
+    ModuleBoundarySignPlacement north;
+
+    const float extent_x = module_layout.max_x - module_layout.min_x;
+    const float border_width = compute_module_border_width(module_layout, config);
+    const float usable_width = std::max(0.35f, extent_x - 2.0f * border_width);
+    const float sign_width = module_layout.park_footprint > 0.0f
+        ? std::max(0.35f, std::min(module_layout.park_footprint, usable_width))
+        : usable_width;
+    const float sign_depth = config.roof_sign_thickness * 0.5f;
+    const float center_x = (module_layout.min_x + module_layout.max_x) * 0.5f;
+
+    south.center = { center_x, module_layout.min_z + sign_depth * 0.5f };
+    south.width = sign_width;
+    south.depth = sign_depth;
+    south.yaw_radians = std::numbers::pi_v<float>;
+
+    north.center = { center_x, module_layout.max_z - sign_depth * 0.5f };
+    north.width = sign_width;
+    north.depth = sign_depth;
+    north.yaw_radians = 0.0f;
+
+    return { south, north };
 }
 
 CitySurfaceBounds compute_city_road_surface_bounds(const SemanticMegacityLayout& layout)
@@ -1612,11 +1670,12 @@ std::vector<CityGrid::RoutePolyline> build_city_routes(
     const SemanticMegacityLayout& layout, const SemanticMegacityModel& model, const MegaCityCodeConfig& config)
 {
     const CityGrid routing_grid = build_city_grid(layout, config);
-    return build_city_routes_from_grid(layout, model, routing_grid, {}, {}, {});
+    return build_city_routes_from_grid(layout, model, routing_grid, config, {}, {}, {});
 }
 
 std::vector<CityGrid::RoutePolyline> build_city_routes_for_selection(
     const SemanticMegacityLayout& layout, const SemanticMegacityModel& model, const CityGrid& grid,
+    const MegaCityCodeConfig& config,
     std::string_view focus_source_file_path,
     std::string_view focus_module_path,
     std::string_view focus_qualified_name)
@@ -1627,6 +1686,7 @@ std::vector<CityGrid::RoutePolyline> build_city_routes_for_selection(
         layout,
         model,
         grid,
+        config,
         focus_source_file_path,
         focus_module_path,
         focus_qualified_name);

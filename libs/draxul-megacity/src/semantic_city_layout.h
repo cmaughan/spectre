@@ -121,6 +121,14 @@ struct RoadSegmentPlacement
     glm::vec2 extent{ 1.0f };
 };
 
+struct ModuleBoundarySignPlacement
+{
+    glm::vec2 center{ 0.0f };
+    float width = 1.0f;
+    float depth = 0.025f;
+    float yaw_radians = 0.0f;
+};
+
 struct CitySurfaceBounds
 {
     float min_x = 0.0f;
@@ -185,6 +193,10 @@ struct SemanticMegacityLayout
     const SemanticCityBuilding& building);
 [[nodiscard]] std::array<RoadSegmentPlacement, 4> build_road_segments(
     const SemanticCityBuilding& building);
+[[nodiscard]] float compute_module_border_width(
+    const SemanticCityModuleLayout& module_layout, const MegaCityCodeConfig& config);
+[[nodiscard]] std::array<ModuleBoundarySignPlacement, 2> build_module_boundary_sign_placements(
+    const SemanticCityModuleLayout& module_layout, const MegaCityCodeConfig& config);
 [[nodiscard]] CitySurfaceBounds compute_city_road_surface_bounds(
     const SemanticMegacityLayout& layout);
 [[nodiscard]] SemanticCityLayout build_semantic_city_layout(
@@ -257,6 +269,7 @@ inline constexpr uint8_t kCityGridPark = 4;
     const SemanticMegacityLayout& layout, const SemanticMegacityModel& model, const MegaCityCodeConfig& config);
 [[nodiscard]] std::vector<CityGrid::RoutePolyline> build_city_routes_for_selection(
     const SemanticMegacityLayout& layout, const SemanticMegacityModel& model, const CityGrid& grid,
+    const MegaCityCodeConfig& config,
     std::string_view focus_source_file_path,
     std::string_view focus_module_path,
     std::string_view focus_qualified_name);

@@ -239,6 +239,11 @@ SceneSnapshotResult build_scene_snapshot(
 
         if (const auto* bm = reg.try_get<BuildingMetrics>(entity))
         {
+            if (const auto* sym = reg.try_get<SourceSymbol>(entity);
+                sym && sym->file.empty() && !sym->module_path.empty() && sym->name == sym->module_path)
+            {
+                obj.role = SceneObject::Role::ModulePark;
+            }
             extent_x = bm->footprint;
             extent_z = bm->footprint;
             if (obj.mesh != MeshId::Custom)
@@ -260,6 +265,11 @@ SceneSnapshotResult build_scene_snapshot(
         }
         else if (const auto* rm = reg.try_get<RoadMetrics>(entity))
         {
+            if (const auto* sym = reg.try_get<SourceSymbol>(entity);
+                sym && sym->file.empty() && !sym->module_path.empty() && sym->name == sym->module_path)
+            {
+                obj.role = SceneObject::Role::ModulePark;
+            }
             extent_x = rm->extent_x;
             extent_z = rm->extent_z;
             obj.uv_rect = glm::vec4(0.0f, 0.0f, rm->extent_x, rm->extent_z);
@@ -284,6 +294,7 @@ SceneSnapshotResult build_scene_snapshot(
         }
         else if (const auto* module_surface = reg.try_get<ModuleSurfaceMetrics>(entity))
         {
+            obj.role = SceneObject::Role::ModuleOutline;
             extent_x = module_surface->extent_x;
             extent_z = module_surface->extent_z;
             transform = glm::translate(transform, glm::vec3(0.0f, module_surface->height * 0.5f, 0.0f));
@@ -291,6 +302,11 @@ SceneSnapshotResult build_scene_snapshot(
         }
         else if (const auto* sm = reg.try_get<SignMetrics>(entity))
         {
+            if (const auto* sym = reg.try_get<SourceSymbol>(entity);
+                sym && sym->file.empty() && !sym->module_path.empty() && sym->name == sym->module_path)
+            {
+                obj.role = SceneObject::Role::ModuleLabel;
+            }
             const bool quarter_turn = std::abs(std::sin(sm->yaw_radians)) > 0.70710678f;
             extent_x = quarter_turn ? sm->depth : sm->width;
             extent_z = quarter_turn ? sm->width : sm->depth;

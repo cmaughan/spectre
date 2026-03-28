@@ -159,9 +159,8 @@ std::unordered_set<std::string> connected_building_identities(
 
 bool is_module_context_object(const SceneObject& obj)
 {
-    return obj.source_file_path.empty()
-        && !obj.source_module_path.empty()
-        && obj.source_name == obj.source_module_path;
+    return obj.role == SceneObject::Role::ModuleOutline
+        || obj.role == SceneObject::Role::ModuleLabel;
 }
 
 } // namespace
@@ -327,6 +326,7 @@ void MegaCityHost::route_worker_loop()
                 *request.layout,
                 *request.model,
                 *request.grid,
+                renderer_config_,
                 request.focus_source_file_path,
                 request.focus_module_path,
                 request.focus_qualified_name);

@@ -93,10 +93,19 @@ struct LabelAtlasData
 
 struct SceneObject
 {
+    enum class Role : uint32_t
+    {
+        None = 0,
+        ModuleOutline = 1,
+        ModulePark = 2,
+        ModuleLabel = 3,
+    };
+
     MeshId mesh = MeshId::Cube;
     uint32_t custom_mesh_index = UINT32_MAX;
     uint32_t material_index = 0;
     bool double_sided = false;
+    Role role = Role::None;
     glm::mat4 world{ 1.0f };
     glm::vec4 color{ 1.0f };
     glm::vec4 uv_rect{ 0.0f, 0.0f, 1.0f, 1.0f };

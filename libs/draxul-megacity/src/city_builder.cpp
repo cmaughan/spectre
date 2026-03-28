@@ -31,8 +31,6 @@ constexpr float kRoadSurfaceTextureLift = 0.002f;
 constexpr float kRoadMaterialUvScale = 0.28f;
 constexpr float kModuleSurfaceHeight = 0.018f;
 constexpr float kModuleSurfaceLift = 0.003f;
-constexpr float kModuleSurfaceBorderWidthScale = 0.5f;
-constexpr float kModuleSurfaceBorderWidthMin = 0.2f;
 constexpr float kDependencyRouteWidthScale = 0.27f;
 constexpr float kDependencyRouteMinWidth = 0.135f;
 constexpr float kDependencyRouteHeight = 0.045f;
@@ -74,6 +72,13 @@ glm::vec4 module_sign_board_color(const MegaCityCodeConfig& config)
 glm::vec4 building_sign_board_color(const MegaCityCodeConfig& config)
 {
     return color_with_alpha(config.building_sign_board_color);
+}
+
+glm::vec4 dark_module_sign_board_color(std::string_view module_path)
+{
+    const glm::vec4 module_color = module_building_color(module_path);
+    const glm::vec3 darkened = glm::mix(glm::vec3(module_color), kCatppuccinSurface0, 0.45f);
+    return glm::vec4(glm::clamp(darkened, glm::vec3(0.0f), glm::vec3(1.0f)), module_color.a);
 }
 
 uint8_t color_channel_to_byte(float value)
@@ -548,48 +553,42 @@ SignPlacementSpec place_module_road_sign(
     return placement;
 }
 
-// Returns two signs for a park: [0] on the south edge facing north, [1] on the north edge facing south.
-// Text on each side faces outward so it's readable from either direction.
-std::array<SignPlacementSpec, 2> place_module_park_signs(
-    glm::vec2 park_center, float park_footprint, std::string_view text, const TextService* text_service,
+// Returns two signs for a module: [0] on the south border facing south, [1] on the north border facing north.
+// The label sits on the module outline rather than over the park.
+std::array<SignPlacementSpec, 2> place_module_boundary_signs(
+    const SemanticCityModuleLayout& module_layout, std::string_view text, const TextService* text_service,
     const MegaCityCodeConfig& config)
 {
-    SignPlacementSpec base;
+    const std::array<ModuleBoundarySignPlacement, 2> placements
+        = build_module_boundary_sign_placements(module_layout, config);
 
-    float sign_width = park_footprint;
-    float sign_depth = sign_width * 0.25f;
+    float sign_height = placements[0].width * 0.25f;
     if (text_service && !text.empty())
     {
         const int cw = std::max(text_service->metrics().cell_width, 1);
         const int ch = std::max(text_service->metrics().cell_height, 1);
         const float aspect = static_cast<float>(ch) / static_cast<float>(cw);
-        const float char_width = sign_width / std::max(static_cast<float>(text.size()), 1.0f);
-        sign_depth = char_width * aspect + 2.0f * config.road_sign_edge_inset;
+        const float char_width = placements[0].width / std::max(static_cast<float>(text.size()), 1.0f);
+        sign_height = char_width * aspect + 2.0f * config.road_sign_edge_inset;
     }
-    base.width = std::max(0.35f, sign_width);
-    base.height = config.roof_sign_thickness;
-    base.depth = std::clamp(
-        sign_depth, config.minimum_road_sign_depth, park_footprint * config.park_sign_max_depth_fraction);
-    base.mesh = MeshId::RoofSign;
+    sign_height = std::max(0.24f, sign_height);
 
-    const float half = park_footprint * 0.5f;
-
-    // South edge, facing south (yaw = π) — readable approaching from the south
-    SignPlacementSpec south = base;
-    south.center = { park_center.x, park_center.y - half + base.depth * 0.5f };
-    south.yaw_radians = glm::pi<float>();
-
-    // North edge, facing north (yaw = 0) — readable approaching from the north
-    SignPlacementSpec north = base;
-    north.center = { park_center.x, park_center.y + half - base.depth * 0.5f };
-    north.yaw_radians = 0.0f;
-
-    return { south, north };
+    std::array<SignPlacementSpec, 2> signs;
+    for (size_t index = 0; index < placements.size(); ++index)
+    {
+        signs[index].center = placements[index].center;
+        signs[index].width = placements[index].width;
+        signs[index].height = sign_height;
+        signs[index].depth = placements[index].depth;
+        signs[index].yaw_radians = placements[index].yaw_radians;
+        signs[index].mesh = MeshId::WallSign;
+    }
+    return signs;
 }
 
 SignLabelRequest make_sign_request(
     std::string key, std::string_view text, const SignPlacementSpec& placement,
-    const TextService* text_service, const MegaCityCodeConfig& config)
+    const TextService* text_service, const MegaCityCodeConfig& config, bool building_sign)
 {
     int pixel_width;
     int pixel_height;
@@ -607,7 +606,6 @@ SignLabelRequest make_sign_request(
         pixel_height = 16;
     }
 
-    const bool building_sign = placement.mesh == MeshId::WallSign;
     const glm::vec3& text_color = building_sign ? config.building_sign_text_color : config.module_sign_text_color;
     return SignLabelRequest{
         .key = std::move(key),
@@ -712,18 +710,25 @@ CityBuildResult build_city(
         {
             const std::string& text = building.display_name.empty() ? building.qualified_name : building.display_name;
             const auto signs = place_building_signs(building, text, text_service, config);
-            sign_requests.push_back(make_sign_request(building_sign_key(building), text, signs[0], text_service, config));
+            sign_requests.push_back(make_sign_request(building_sign_key(building), text, signs[0], text_service, config, true));
         }
 
-        if (module_layout.park_footprint > 0.0f)
+        const float extent_x = module_layout.max_x - module_layout.min_x;
+        const float extent_z = module_layout.max_z - module_layout.min_z;
+        if (!module_layout.is_central_park
+            && !module_layout.buildings.empty()
+            && extent_x > 1e-4f
+            && extent_z > 1e-4f)
         {
             const std::string name = module_display_name(module_layout.module_path);
-            const auto park_signs = place_module_park_signs(
-                module_layout.park_center, module_layout.park_footprint,
-                name, text_service, config);
+            const auto boundary_signs = place_module_boundary_signs(
+                module_layout,
+                name,
+                text_service,
+                config);
             // Both signs share the same atlas entry (same text/key).
             auto request = make_sign_request(
-                module_sign_key(module_layout.module_path), name, park_signs[0], text_service, config);
+                module_sign_key(module_layout.module_path), name, boundary_signs[0], text_service, config, false);
             request.text_r = 255;
             request.text_g = 255;
             request.text_b = 255;
@@ -815,9 +820,7 @@ CityBuildResult build_city(
         if (extent_x <= 1e-4f || extent_z <= 1e-4f)
             continue;
 
-        const float border_width = std::min(
-            std::min(extent_x, extent_z) * 0.5f,
-            std::max(config.placement_step * kModuleSurfaceBorderWidthScale, kModuleSurfaceBorderWidthMin));
+        const float border_width = compute_module_border_width(module_layout, config);
         if (border_width <= 1e-4f)
             continue;
 
@@ -1013,30 +1016,40 @@ CityBuildResult build_city(
             }
         }
 
-        if (sign_label_atlas && module_layout.park_footprint > 0.0f)
+        const float extent_x = module_layout.max_x - module_layout.min_x;
+        const float extent_z = module_layout.max_z - module_layout.min_z;
+        if (sign_label_atlas
+            && !module_layout.is_central_park
+            && !module_layout.buildings.empty()
+            && extent_x > 1e-4f
+            && extent_z > 1e-4f)
         {
             const auto it = sign_label_atlas->entries.find(module_sign_key(module_layout.module_path));
             if (it != sign_label_atlas->entries.end())
             {
                 const std::string name = module_display_name(module_layout.module_path);
-                const auto park_signs = place_module_park_signs(
-                    module_layout.park_center, module_layout.park_footprint,
-                    name, text_service, config);
+                const auto boundary_signs = place_module_boundary_signs(
+                    module_layout,
+                    name,
+                    text_service,
+                    config);
 
-                // Place both signs (south and north edges) so text is readable from either side.
-                for (const SignPlacementSpec& park_sign : park_signs)
+                // Place both signs on the module border so the label sits on the outline itself.
+                for (const SignPlacementSpec& boundary_sign : boundary_signs)
                 {
-                    const SignMetrics sign = make_sign_metrics(park_sign, it->second);
+                    const SignMetrics sign = make_sign_metrics(boundary_sign, it->second);
+                    const float module_surface_elevation
+                        = kRoadSurfaceTextureLift + config.road_surface_height + kModuleSurfaceLift;
                     world.create_sign(
-                        park_sign.center.x,
-                        park_sign.center.y,
-                        building_base_elevation(config)
-                            + config.park_height
+                        boundary_sign.center.x,
+                        boundary_sign.center.y,
+                        module_surface_elevation
+                            + kModuleSurfaceHeight
                             + sign.height * 0.5f
                             + config.road_sign_lift,
                         sign,
-                        park_sign.mesh,
-                        module_sign_board_color(config),
+                        boundary_sign.mesh,
+                        dark_module_sign_board_color(module_layout.module_path),
                         SourceSymbol{ "", module_layout.module_path, module_layout.module_path });
                 }
             }
