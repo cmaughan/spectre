@@ -22,6 +22,7 @@ Pane splits use the platform default shell (Zsh on macOS, PowerShell on Windows)
 ## Rendering
 
 - **Backends**: Vulkan (Windows), Metal (macOS)
+- **Renderer target layout**: Public `draxul-renderer` API stays stable while the build internally splits shared renderer core and platform backend implementation targets
 - **Architecture**: Two-pass instanced draw -- background quads then alpha-blended foreground glyphs
 - **Glyph atlas**: Configurable size (default 2048x2048 RGBA8), shelf-packed, incremental upload
 - **Buffer**: Host-visible/shared memory, direct writes, no staging. 112 bytes per cell
