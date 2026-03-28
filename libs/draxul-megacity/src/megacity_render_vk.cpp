@@ -746,14 +746,17 @@ bool generate_mipmaps(VkCommandBuffer cmd, const ImageResource& target)
 }
 
 bool upload_rgba_texture(VmaAllocator allocator, VkCommandBuffer cmd, Buffer& staging,
-    const LoadedTextureImage& image, ImageResource& target)
+    size_t staging_offset, const LoadedTextureImage& image, ImageResource& target)
 {
     const size_t bytes = static_cast<size_t>(image.width) * static_cast<size_t>(image.height) * 4;
-    if (!ensure_mapped_buffer_capacity(allocator, bytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, staging, bytes))
+    const size_t required_bytes = staging_offset + bytes;
+    if (!ensure_mapped_buffer_capacity(
+            allocator, required_bytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, staging, required_bytes))
         return false;
 
-    std::memcpy(staging.mapped, image.rgba.data(), bytes);
-    vmaFlushAllocation(allocator, staging.allocation, 0, bytes);
+    auto* staging_bytes = static_cast<std::byte*>(staging.mapped);
+    std::memcpy(staging_bytes + staging_offset, image.rgba.data(), bytes);
+    vmaFlushAllocation(allocator, staging.allocation, staging_offset, bytes);
 
     transition_image(
         cmd,
@@ -763,6 +766,7 @@ bool upload_rgba_texture(VmaAllocator allocator, VkCommandBuffer cmd, Buffer& st
         0,
         target.mip_levels);
     VkBufferImageCopy copy = {};
+    copy.bufferOffset = staging_offset;
     copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     copy.imageSubresource.mipLevel = 0;
     copy.imageSubresource.layerCount = 1;
@@ -1248,21 +1252,25 @@ struct IsometricScenePass::State
             { SceneTextureId::LeafScattering, &leaf_images.scattering, VK_FORMAT_R8G8B8A8_UNORM },
         } };
 
-        size_t max_upload_bytes = 0;
-        for (const TextureLoadSpec& spec : load_specs)
+        std::array<size_t, kSceneMaterialTextureCount> upload_offsets{};
+        size_t total_upload_bytes = 0;
+        for (size_t spec_index = 0; spec_index < load_specs.size(); ++spec_index)
         {
-            max_upload_bytes = std::max(max_upload_bytes,
-                static_cast<size_t>(spec.image->width) * static_cast<size_t>(spec.image->height) * 4);
+            const TextureLoadSpec& spec = load_specs[spec_index];
+            upload_offsets[spec_index] = total_upload_bytes;
+            total_upload_bytes += static_cast<size_t>(spec.image->width) * static_cast<size_t>(spec.image->height) * 4;
+            total_upload_bytes = (total_upload_bytes + 3u) & ~size_t(3u);
         }
         if (!ensure_mapped_buffer_capacity(
-                allocator, max_upload_bytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, material_staging, max_upload_bytes))
+                allocator, total_upload_bytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, material_staging, total_upload_bytes))
         {
             DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity: failed to reserve material staging buffer");
             return false;
         }
 
-        for (const TextureLoadSpec& spec : load_specs)
+        for (size_t spec_index = 0; spec_index < load_specs.size(); ++spec_index)
         {
+            const TextureLoadSpec& spec = load_specs[spec_index];
             ImageResource& texture = material_textures[static_cast<size_t>(spec.id)];
             if (!create_sampled_image(
                     ctx.physical_device(),
@@ -1274,7 +1282,8 @@ struct IsometricScenePass::State
                     VK_SAMPLER_ADDRESS_MODE_REPEAT,
                     true,
                     texture)
-                || !upload_rgba_texture(allocator, cmd, material_staging, *spec.image, texture))
+                || !upload_rgba_texture(
+                    allocator, cmd, material_staging, upload_offsets[spec_index], *spec.image, texture))
             {
                 DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity: failed to create or upload material texture");
                 for (auto& cleanup : material_textures)
