@@ -26,4 +26,8 @@ SceneSnapshotResult build_scene_snapshot(
     const std::shared_ptr<const MeshData>& tree_bark_mesh,
     const std::shared_ptr<const MeshData>& tree_leaf_mesh);
 
+// Re-sort objects in an existing snapshot: opaque first, then transparent back-to-front.
+// Call after modifying SceneObject::color.a in-place (e.g. selection opacity changes).
+void sort_scene_objects(SceneSnapshot& scene);
+
 } // namespace draxul

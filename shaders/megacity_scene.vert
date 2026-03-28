@@ -1,6 +1,7 @@
 #version 450
 
-layout(set = 0, binding = 0) uniform FrameUniforms {
+layout(set = 0, binding = 0) uniform FrameUniforms
+{
     mat4 view;
     mat4 proj;
     mat4 inv_view_proj;
@@ -13,15 +14,18 @@ layout(set = 0, binding = 0) uniform FrameUniforms {
     vec4 ao_params;
     vec4 debug_view;
     vec4 world_debug_bounds;
-} frame;
+}
+frame;
 
-layout(push_constant) uniform ObjectUniforms {
+layout(push_constant) uniform ObjectUniforms
+{
     mat4 world;
     vec4 color;
     uvec4 material_data;
     vec4 uv_rect;
     vec4 label_metrics;
-} object_data;
+}
+object_data;
 
 layout(location = 0) in vec3 in_position;
 layout(location = 1) in vec3 in_normal;
@@ -39,12 +43,14 @@ layout(location = 5) out vec2 out_label_ink_pixel_size;
 layout(location = 6) flat out uint out_material_index;
 layout(location = 7) out vec2 out_material_uv;
 layout(location = 8) out vec4 out_tangent_ws;
+layout(location = 9) out float out_opacity;
 
 void main()
 {
     vec4 world_position = object_data.world * vec4(in_position, 1.0);
     out_normal_ws = normalize(mat3(object_data.world) * in_normal);
     out_base_color = in_color * object_data.color.rgb;
+    out_opacity = object_data.color.w;
     out_world_position = world_position.xyz;
     out_atlas_uv = mix(object_data.uv_rect.xy, object_data.uv_rect.zw, in_uv);
     out_material_uv = in_uv * object_data.uv_rect.zw;

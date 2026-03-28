@@ -17,6 +17,7 @@
 #include <limits>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 
 namespace draxul
 {
@@ -29,6 +30,8 @@ constexpr float kRoadSurfaceTextureLift = 0.002f;
 constexpr float kRoadMaterialUvScale = 0.28f;
 constexpr float kModuleSurfaceHeight = 0.018f;
 constexpr float kModuleSurfaceLift = 0.003f;
+constexpr float kModuleSurfaceBorderWidthScale = 0.5f;
+constexpr float kModuleSurfaceBorderWidthMin = 0.2f;
 constexpr float kDependencyRouteWidthScale = 0.18f;
 constexpr float kDependencyRouteMinWidth = 0.09f;
 constexpr float kDependencyRouteHeight = 0.045f;
@@ -599,15 +602,43 @@ CityBuildResult build_city(
         if (extent_x <= 1e-4f || extent_z <= 1e-4f)
             continue;
 
+        const float border_width = std::min(
+            std::min(extent_x, extent_z) * 0.5f,
+            std::max(config.placement_step * kModuleSurfaceBorderWidthScale, kModuleSurfaceBorderWidthMin));
+        if (border_width <= 1e-4f)
+            continue;
+
+        const glm::vec4 module_color = module_building_color(module_layout.module_path);
+        const float center_x = (module_layout.min_x + module_layout.max_x) * 0.5f;
+        const float center_z = (module_layout.min_z + module_layout.max_z) * 0.5f;
+        const float inner_extent_z = std::max(extent_z - 2.0f * border_width, border_width);
+
         world.create_module_surface(
-            (module_layout.min_x + module_layout.max_x) * 0.5f,
-            (module_layout.min_z + module_layout.max_z) * 0.5f,
-            ModuleSurfaceMetrics{
-                extent_x,
-                extent_z,
-                kModuleSurfaceHeight,
-            },
-            module_building_color(module_layout.module_path),
+            center_x,
+            module_layout.max_z - border_width * 0.5f,
+            ModuleSurfaceMetrics{ extent_x, border_width, kModuleSurfaceHeight },
+            module_color,
+            SourceSymbol{ "", module_layout.module_path },
+            module_surface_elevation);
+        world.create_module_surface(
+            center_x,
+            module_layout.min_z + border_width * 0.5f,
+            ModuleSurfaceMetrics{ extent_x, border_width, kModuleSurfaceHeight },
+            module_color,
+            SourceSymbol{ "", module_layout.module_path },
+            module_surface_elevation);
+        world.create_module_surface(
+            module_layout.min_x + border_width * 0.5f,
+            center_z,
+            ModuleSurfaceMetrics{ border_width, inner_extent_z, kModuleSurfaceHeight },
+            module_color,
+            SourceSymbol{ "", module_layout.module_path },
+            module_surface_elevation);
+        world.create_module_surface(
+            module_layout.max_x - border_width * 0.5f,
+            center_z,
+            ModuleSurfaceMetrics{ border_width, inner_extent_z, kModuleSurfaceHeight },
+            module_color,
             SourceSymbol{ "", module_layout.module_path },
             module_surface_elevation);
     }
@@ -642,7 +673,8 @@ CityBuildResult build_city(
             },
             segment.color,
             SourceSymbol{},
-            route_elevation);
+            route_elevation,
+            RouteLink{ segment.source_qualified_name, segment.target_qualified_name });
     }
 
     for (const auto& module_layout : layout->modules)
@@ -829,6 +861,24 @@ CityBuildResult build_city(
         "CityBuilder: built semantic megacity with %zu modules and %zu buildings",
         layout->modules.size(),
         layout->building_count());
+
+    // Sync building centers from layout back into the semantic model.
+    // The layout applies module placement offsets that the model doesn't have,
+    // and picking/selection queries use the model's building centers.
+    {
+        std::unordered_map<std::string, glm::vec2> layout_centers;
+        for (const auto& module_layout : layout->modules)
+            for (const auto& building : module_layout.buildings)
+                layout_centers[building.qualified_name] = building.center;
+
+        for (auto& module : semantic_model->modules)
+            for (auto& building : module.buildings)
+            {
+                auto it = layout_centers.find(building.qualified_name);
+                if (it != layout_centers.end())
+                    building.center = it->second;
+            }
+    }
 
     result.semantic_model = std::move(semantic_model);
     result.sign_label_atlas = std::move(sign_label_atlas);

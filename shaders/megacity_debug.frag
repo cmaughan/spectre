@@ -41,6 +41,7 @@ layout(location = 5) in vec2 in_label_ink_pixel_size;
 layout(location = 6) flat in uint in_material_index;
 layout(location = 7) in vec2 in_material_uv;
 layout(location = 8) in vec4 in_tangent_ws;
+layout(location = 9) in float in_opacity;
 layout(location = 0) out vec4 out_frag_color;
 
 // Debug view mode indices (matches MegaCityDebugView enum):
@@ -195,5 +196,5 @@ void main()
         result = vec3(linear_depth);
     }
 
-    out_frag_color = vec4(result, 1.0);
+    out_frag_color = vec4(result, in_opacity);
 }

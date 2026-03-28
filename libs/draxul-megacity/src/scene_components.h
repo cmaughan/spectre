@@ -99,4 +99,11 @@ struct SourceSymbol
     std::string name;
 };
 
+// Links a route segment entity to the buildings it connects.
+struct RouteLink
+{
+    std::string source_qualified_name;
+    std::string target_qualified_name;
+};
+
 } // namespace draxul

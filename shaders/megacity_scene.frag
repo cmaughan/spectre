@@ -41,6 +41,7 @@ layout(location = 5) in vec2 in_label_ink_pixel_size;
 layout(location = 6) flat in uint in_material_index;
 layout(location = 7) in vec2 in_material_uv;
 layout(location = 8) in vec4 in_tangent_ws;
+layout(location = 9) in float in_opacity;
 layout(location = 0) out vec4 out_frag_color;
 
 const float kPi = 3.14159265359;
@@ -225,5 +226,5 @@ void main()
 
     float output_gamma = max(frame.render_tuning.x, 1.0);
     vec3 encoded = pow(max(shaded, vec3(0.0)), vec3(1.0 / output_gamma));
-    out_frag_color = vec4(encoded, 1.0);
+    out_frag_color = vec4(encoded, in_opacity);
 }

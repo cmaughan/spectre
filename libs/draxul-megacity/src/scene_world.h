@@ -42,7 +42,8 @@ public:
 
     // Create a thin dependency route segment at the given world-space center position.
     entt::entity create_route_segment(float world_x, float world_z, const RouteSegmentMetrics& metrics,
-        const glm::vec4& color, SourceSymbol source = {}, float elevation = 0.0f);
+        const glm::vec4& color, SourceSymbol source = {}, float elevation = 0.0f,
+        RouteLink route_link = {});
 
     // Create a thin colored surface spanning a module's extents.
     entt::entity create_module_surface(float world_x, float world_z, const ModuleSurfaceMetrics& metrics,

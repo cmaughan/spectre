@@ -96,6 +96,11 @@ struct SceneObject
     glm::vec4 color{ 1.0f };
     glm::vec4 uv_rect{ 0.0f, 0.0f, 1.0f, 1.0f };
     glm::vec2 label_ink_pixel_size{ 0.0f };
+
+    // Identity: links this object back to its ECS source for runtime queries (e.g. selection).
+    std::string source_name;
+    std::string route_source;
+    std::string route_target;
 };
 
 struct SceneMaterial
@@ -148,6 +153,7 @@ struct SceneSnapshot
     std::shared_ptr<const MeshData> tree_leaf_mesh;
     std::vector<SceneMaterial> materials;
     std::vector<SceneObject> objects;
+    uint32_t opaque_count = 0;
 };
 
 } // namespace draxul

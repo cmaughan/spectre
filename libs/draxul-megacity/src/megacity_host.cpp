@@ -1,5 +1,6 @@
 #include "city_builder.h"
 #include "city_input_state.h"
+#include "city_picking.h"
 #include "isometric_camera.h"
 #include "isometric_scene_pass.h"
 #include "scene_snapshot_builder.h"
@@ -15,6 +16,7 @@
 #include <draxul/text_service.h>
 #include <filesystem>
 #include <imgui.h>
+#include <unordered_set>
 
 #ifndef DRAXUL_REPO_ROOT
 #define DRAXUL_REPO_ROOT "."
@@ -270,6 +272,15 @@ void MegaCityHost::on_key(const KeyEvent& event)
         return;
     }
 
+    // Escape clears building selection
+    if (event.pressed
+        && (event.scancode == SDL_SCANCODE_ESCAPE || event.keycode == SDLK_ESCAPE)
+        && !selected_building_name_.empty())
+    {
+        clear_selection();
+        return;
+    }
+
     if (input_->on_key(event))
     {
         last_pump_time_ = std::chrono::steady_clock::now();
@@ -293,6 +304,8 @@ void MegaCityHost::on_mouse_move(const MouseMoveEvent& event)
 void MegaCityHost::on_mouse_button(const MouseButtonEvent& event)
 {
     input_->on_mouse_button(event);
+    if (!event.pressed && callbacks_)
+        callbacks_->request_frame();
 }
 
 void MegaCityHost::on_mouse_wheel(const MouseWheelEvent& /*event*/)
@@ -416,6 +429,8 @@ void MegaCityHost::attach_3d_renderer(I3DRenderer& renderer)
             tree_leaf_mesh_);
         world_span_ = result.world_span;
         scene_pass_->set_scene(std::move(result.snapshot));
+        if (!selected_building_name_.empty())
+            apply_selection_opacity();
         scene_dirty_ = false;
     }
     if (callbacks_)
@@ -632,6 +647,9 @@ void MegaCityHost::pump()
 
         if (input_->apply_drag_smoothing(dt, *camera_))
             camera_changed = true;
+
+        if (auto click = input_->consume_click())
+            handle_click(*click);
     }
 
     if (camera_changed)
@@ -683,6 +701,8 @@ void MegaCityHost::pump()
             tree_leaf_mesh_);
         world_span_ = result.world_span;
         scene_pass_->set_scene(std::move(result.snapshot));
+        if (!selected_building_name_.empty())
+            apply_selection_opacity();
         scene_dirty_ = false;
     }
     if (running_ && continuous_refresh_enabled_ && callbacks_)
@@ -745,6 +765,95 @@ HostDebugState MegaCityHost::debug_state() const
     s.grid_rows = 0;
     s.dirty_cells = scene_dirty_ ? 1u : 0u;
     return s;
+}
+
+void MegaCityHost::handle_click(const glm::ivec2& screen_pos)
+{
+    if (!camera_ || !semantic_model_ || !scene_pass_)
+        return;
+
+    // Convert window-space click to viewport-local coordinates.
+    const glm::ivec2 local_pos = screen_pos - viewport_.pixel_pos;
+    if (local_pos.x < 0 || local_pos.y < 0 || local_pos.x >= pixel_w_ || local_pos.y >= pixel_h_)
+        return;
+
+    DRAXUL_LOG_DEBUG(LogCategory::App, "Click at (%d,%d) viewport-local (%d,%d) viewport %dx%d",
+        screen_pos.x, screen_pos.y, local_pos.x, local_pos.y, pixel_w_, pixel_h_);
+
+    auto hit = pick_building(local_pos, pixel_w_, pixel_h_, *camera_, *semantic_model_);
+    if (hit)
+    {
+        if (hit->qualified_name == selected_building_name_)
+        {
+            clear_selection();
+            return;
+        }
+        selected_building_name_ = hit->qualified_name;
+        DRAXUL_LOG_DEBUG(LogCategory::App, "Selected building: %s", selected_building_name_.c_str());
+        apply_selection_opacity();
+    }
+    else
+    {
+        clear_selection();
+    }
+}
+
+void MegaCityHost::apply_selection_opacity()
+{
+    if (!scene_pass_ || !semantic_model_ || selected_building_name_.empty())
+        return;
+
+    // Build the set of highlighted qualified names: selected + connected buildings.
+    std::unordered_set<std::string> highlighted;
+    highlighted.insert(selected_building_name_);
+    for (const auto& dep : semantic_model_->dependencies)
+    {
+        if (dep.source_qualified_name == selected_building_name_)
+            highlighted.insert(dep.target_qualified_name);
+        else if (dep.target_qualified_name == selected_building_name_)
+            highlighted.insert(dep.source_qualified_name);
+    }
+
+    SceneSnapshot& scene = scene_pass_->scene();
+    for (auto& obj : scene.objects)
+    {
+        bool is_highlighted = false;
+
+        // Check building identity
+        if (!obj.source_name.empty() && highlighted.count(obj.source_name))
+            is_highlighted = true;
+
+        // Check route link
+        if (!obj.route_source.empty()
+            && (highlighted.count(obj.route_source) || highlighted.count(obj.route_target)))
+            is_highlighted = true;
+
+        obj.color.a = is_highlighted ? 1.0f : 0.15f;
+    }
+
+    sort_scene_objects(scene);
+
+    if (callbacks_)
+        callbacks_->request_frame();
+}
+
+void MegaCityHost::clear_selection()
+{
+    if (selected_building_name_.empty())
+        return;
+
+    selected_building_name_.clear();
+
+    if (scene_pass_)
+    {
+        SceneSnapshot& scene = scene_pass_->scene();
+        for (auto& obj : scene.objects)
+            obj.color.a = 1.0f;
+        sort_scene_objects(scene);
+    }
+
+    if (callbacks_)
+        callbacks_->request_frame();
 }
 
 std::unique_ptr<IHost> create_megacity_host()

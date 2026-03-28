@@ -85,6 +85,9 @@ public:
 private:
     void mark_scene_dirty();
     void mark_world_rebuild_pending();
+    void handle_click(const glm::ivec2& screen_pos);
+    void apply_selection_opacity();
+    void clear_selection();
     void refresh_available_modules();
     void rebuild_semantic_city();
     void launch_grid_build(const SemanticMegacityLayout& layout, const SemanticMegacityModel& model);
@@ -130,6 +133,7 @@ private:
     bool show_ui_panels_ = true;
     std::string imgui_ini_path_;
     bool continuous_refresh_enabled_ = false;
+    std::string selected_building_name_;
     std::chrono::steady_clock::time_point last_activity_time_ = std::chrono::steady_clock::now();
     std::chrono::steady_clock::time_point last_pump_time_ = std::chrono::steady_clock::now();
 

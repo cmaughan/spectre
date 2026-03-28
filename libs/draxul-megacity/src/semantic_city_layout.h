@@ -210,6 +210,8 @@ struct CityGrid
         glm::vec2 a{ 0.0f };
         glm::vec2 b{ 0.0f };
         glm::vec4 color{ 1.0f };
+        std::string source_qualified_name;
+        std::string target_qualified_name;
     };
 
     std::vector<uint8_t> cells; // row-major: cells[row * cols + col]

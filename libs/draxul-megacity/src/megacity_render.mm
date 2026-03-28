@@ -305,6 +305,7 @@ struct IsometricScenePass::State
     ObjCRef<id<MTLRenderPipelineState>> pipeline;
     ObjCRef<id<MTLRenderPipelineState>> debug_pipeline;
     ObjCRef<id<MTLDepthStencilState>> depth_state;
+    ObjCRef<id<MTLDepthStencilState>> depth_state_no_write;
     MeshBuffers cube_mesh;
     MeshBuffers floor_mesh;
     MeshBuffers tree_bark_mesh;
@@ -394,6 +395,13 @@ struct IsometricScenePass::State
         desc.fragmentFunction = frag_fn;
         desc.vertexDescriptor = vertex_desc;
         desc.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
+        desc.colorAttachments[0].blendingEnabled = YES;
+        desc.colorAttachments[0].rgbBlendOperation = MTLBlendOperationAdd;
+        desc.colorAttachments[0].alphaBlendOperation = MTLBlendOperationAdd;
+        desc.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorSourceAlpha;
+        desc.colorAttachments[0].destinationRGBBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+        desc.colorAttachments[0].sourceAlphaBlendFactor = MTLBlendFactorOne;
+        desc.colorAttachments[0].destinationAlphaBlendFactor = MTLBlendFactorZero;
         desc.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
 
         id<MTLRenderPipelineState> pipeline_state = [device newRenderPipelineStateWithDescriptor:desc error:&error];
@@ -433,6 +441,9 @@ struct IsometricScenePass::State
             DRAXUL_LOG_ERROR(LogCategory::App, "MegaCity: failed to create depth state");
             return false;
         }
+
+        depth_desc.depthWriteEnabled = NO;
+        depth_state_no_write.reset([device newDepthStencilStateWithDescriptor:depth_desc]);
 
         if (!upload_mesh(device, build_unit_cube_mesh(), cube_mesh))
         {
@@ -1071,9 +1082,12 @@ void IsometricScenePass::record_prepass(IRenderContext& ctx)
         [encoder setFragmentTexture:state_->material_textures[texture_index].get() atIndex:2 + texture_index];
     [encoder setFragmentSamplerState:state_->material_sampler.get() atIndex:2];
 
-    // Draw scene objects
-    for (const SceneObject& obj : scene_.objects)
+    // Draw scene objects (GBuffer: opaque only)
+    const uint32_t gbuffer_opaque_count = std::min(scene_.opaque_count,
+        static_cast<uint32_t>(scene_.objects.size()));
+    for (uint32_t gi = 0; gi < gbuffer_opaque_count; ++gi)
     {
+        const SceneObject& obj = scene_.objects[gi];
         const MeshBuffers* mesh = nullptr;
         switch (obj.mesh)
         {
@@ -1312,8 +1326,7 @@ void IsometricScenePass::record(IRenderContext& ctx)
     [encoder setFragmentSamplerState:state_->gbuffer_sampler.get() atIndex:1];
     [encoder setFragmentSamplerState:state_->material_sampler.get() atIndex:2];
 
-    for (const SceneObject& obj : scene_.objects)
-    {
+    auto draw_object = [&](const SceneObject& obj) {
         const MeshBuffers* mesh = nullptr;
         switch (obj.mesh)
         {
@@ -1339,10 +1352,10 @@ void IsometricScenePass::record(IRenderContext& ctx)
             mesh = &state_->wall_sign_mesh;
             break;
         case MeshId::Grid:
-            continue;
+            return;
         }
         if (!mesh || mesh->index_count == 0)
-            continue;
+            return;
 
         ObjectUniforms object;
         object.world = to_simd_matrix(obj.world);
@@ -1363,6 +1376,21 @@ void IsometricScenePass::record(IRenderContext& ctx)
                              indexType:MTLIndexTypeUInt16
                            indexBuffer:mesh->index_buffer.get()
                      indexBufferOffset:0];
+    };
+
+    // Pass 1: opaque objects (depth write ON)
+    const uint32_t opaque_count = std::min(scene_.opaque_count,
+        static_cast<uint32_t>(scene_.objects.size()));
+    for (uint32_t i = 0; i < opaque_count; ++i)
+        draw_object(scene_.objects[i]);
+
+    // Pass 2: transparent objects (depth write OFF, back-to-front)
+    if (opaque_count < scene_.objects.size())
+    {
+        [encoder setDepthStencilState:state_->depth_state_no_write.get()];
+        for (uint32_t i = opaque_count; i < scene_.objects.size(); ++i)
+            draw_object(scene_.objects[i]);
+        [encoder setDepthStencilState:state_->depth_state.get()];
     }
 
     if (grid_slice.index_count > 0)

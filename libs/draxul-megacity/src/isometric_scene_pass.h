@@ -42,6 +42,10 @@ public:
     {
         return scene_;
     }
+    SceneSnapshot& scene()
+    {
+        return scene_;
+    }
 
     struct State;
 

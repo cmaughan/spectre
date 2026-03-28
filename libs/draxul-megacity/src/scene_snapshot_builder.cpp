@@ -274,7 +274,16 @@ SceneSnapshotResult build_scene_snapshot(
 
         obj.world = transform;
         obj.color = appearance.color;
-        scene.objects.push_back(obj);
+
+        if (const auto* sym = reg.try_get<SourceSymbol>(entity))
+            obj.source_name = sym->name;
+        if (const auto* link = reg.try_get<RouteLink>(entity))
+        {
+            obj.route_source = link->source_qualified_name;
+            obj.route_target = link->target_qualified_name;
+        }
+
+        scene.objects.push_back(std::move(obj));
 
         min_x = std::min(min_x, pos.x - extent_x * 0.5f);
         max_x = std::max(max_x, pos.x + extent_x * 0.5f);
@@ -297,7 +306,29 @@ SceneSnapshotResult build_scene_snapshot(
         config.point_light_position,
         std::max(config.point_light_radius, 1.0f));
 
+    sort_scene_objects(scene);
+
     return result;
+}
+
+void sort_scene_objects(SceneSnapshot& scene)
+{
+    const glm::vec3 cam_pos(scene.camera.camera_pos);
+
+    // Partition: opaque objects first, then transparent.
+    auto partition_it = std::stable_partition(
+        scene.objects.begin(), scene.objects.end(),
+        [](const SceneObject& obj) { return obj.color.a >= 1.0f; });
+
+    scene.opaque_count = static_cast<uint32_t>(std::distance(scene.objects.begin(), partition_it));
+
+    // Sort transparent objects back-to-front by distance from camera.
+    std::sort(partition_it, scene.objects.end(),
+        [&cam_pos](const SceneObject& a, const SceneObject& b) {
+            const glm::vec3 ca(a.world[3]);
+            const glm::vec3 cb(b.world[3]);
+            return glm::dot(ca - cam_pos, ca - cam_pos) > glm::dot(cb - cam_pos, cb - cam_pos);
+        });
 }
 
 } // namespace draxul

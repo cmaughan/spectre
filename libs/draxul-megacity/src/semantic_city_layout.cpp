@@ -1205,7 +1205,7 @@ std::vector<CityGrid::RouteRenderSegment> build_city_route_render_segments(
             const glm::vec2 delta = b - a;
             if (glm::length(delta) <= 1e-4f)
                 continue;
-            segments.push_back({ a, b, route.color });
+            segments.push_back({ a, b, route.color, route.source_qualified_name, route.target_qualified_name });
         }
     }
 

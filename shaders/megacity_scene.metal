@@ -61,6 +61,7 @@ struct VertexOut
     uint material_index;
     float2 material_uv;
     float4 tangent_ws;
+    float opacity;
 };
 
 vertex VertexOut scene_vertex(VertexIn in [[stage_in]],
@@ -72,6 +73,7 @@ vertex VertexOut scene_vertex(VertexIn in [[stage_in]],
     out.position = frame.proj * frame.view * world_position;
     out.normal_ws = normalize(float3x3(object.world[0].xyz, object.world[1].xyz, object.world[2].xyz) * in.normal);
     out.base_color = in.color * object.color.rgb;
+    out.opacity = object.color.w;
     out.world_position = world_position.xyz;
     out.atlas_uv = mix(object.uv_rect.xy, object.uv_rect.zw, in.uv);
     out.tex_blend = in.tex_blend;
@@ -286,7 +288,7 @@ fragment float4 scene_fragment(
 
     const float output_gamma = max(frame.render_tuning.x, 1.0f);
     const float3 encoded = pow(max(shaded, float3(0.0f)), float3(1.0f / output_gamma));
-    return float4(encoded, 1.0f);
+    return float4(encoded, in.opacity);
 }
 
 float3 world_position_false_color(constant FrameUniforms& frame, float3 world_pos)
@@ -431,5 +433,5 @@ fragment float4 debug_fragment(
         result = float3(in.position.z);
     }
 
-    return float4(result, 1.0f);
+    return float4(result, in.opacity);
 }

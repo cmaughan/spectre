@@ -154,8 +154,19 @@ void CityInputState::on_mouse_button(const MouseButtonEvent& event)
     if (event.button != SDL_BUTTON_LEFT)
         return;
 
-    dragging_scene_ = event.pressed;
-    last_drag_pos_ = event.pos;
+    if (event.pressed)
+    {
+        dragging_scene_ = true;
+        last_drag_pos_ = event.pos;
+        press_pos_ = event.pos;
+        was_dragged_ = false;
+    }
+    else
+    {
+        dragging_scene_ = false;
+        if (!was_dragged_)
+            pending_click_ = event.pos;
+    }
 }
 
 bool CityInputState::on_mouse_move(const MouseMoveEvent& event, IsometricCamera& camera)
@@ -179,6 +190,11 @@ bool CityInputState::on_mouse_move(const MouseMoveEvent& event, IsometricCamera&
     last_drag_pos_ = event.pos;
     if (glm::dot(pixel_delta, pixel_delta) <= 0.0f)
         return false;
+
+    // Mark as drag once movement exceeds threshold
+    const glm::ivec2 total_delta = event.pos - press_pos_;
+    if (std::abs(total_delta.x) > 4 || std::abs(total_delta.y) > 4)
+        was_dragged_ = true;
 
     if ((event.mod & kModAlt) != 0)
     {
@@ -269,6 +285,13 @@ bool CityInputState::apply_drag_smoothing(float dt, IsometricCamera& camera)
     }
 
     return changed;
+}
+
+std::optional<glm::ivec2> CityInputState::consume_click()
+{
+    auto click = pending_click_;
+    pending_click_.reset();
+    return click;
 }
 
 } // namespace draxul
