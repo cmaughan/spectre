@@ -25,3 +25,4 @@ plans/.obsidian/cache
 .DS_Store
 draxul.log
 .a
+logs/**

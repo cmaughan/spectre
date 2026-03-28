@@ -70,6 +70,7 @@ struct Buffer
     VmaAllocation allocation = VK_NULL_HANDLE;
     void* mapped = nullptr;
     size_t size = 0;
+    bool mapped_by_vma_api = false;
 };
 
 struct MeshBuffers
@@ -252,6 +253,8 @@ float compute_ao_radius_pixels(const glm::mat4& proj, float radius_world, int vi
 
 void destroy_buffer(VmaAllocator allocator, Buffer& buffer)
 {
+    if (buffer.mapped_by_vma_api && buffer.allocation != VK_NULL_HANDLE)
+        vmaUnmapMemory(allocator, buffer.allocation);
     if (buffer.buffer != VK_NULL_HANDLE)
         vmaDestroyBuffer(allocator, buffer.buffer, buffer.allocation);
     buffer = {};
@@ -265,7 +268,7 @@ bool create_mapped_buffer(VmaAllocator allocator, size_t size, VkBufferUsageFlag
     buf_ci.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
     VmaAllocationCreateInfo alloc_ci = {};
-    alloc_ci.usage = VMA_MEMORY_USAGE_AUTO;
+    alloc_ci.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
     alloc_ci.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
     VmaAllocationInfo alloc_info = {};
@@ -273,6 +276,20 @@ bool create_mapped_buffer(VmaAllocator allocator, size_t size, VkBufferUsageFlag
         return false;
 
     buffer.mapped = alloc_info.pMappedData;
+    if (!buffer.mapped)
+    {
+        if (vmaMapMemory(allocator, buffer.allocation, &buffer.mapped) != VK_SUCCESS || !buffer.mapped)
+        {
+            vmaDestroyBuffer(allocator, buffer.buffer, buffer.allocation);
+            buffer = {};
+            DRAXUL_LOG_ERROR(LogCategory::Renderer,
+                "MegaCity scene: failed to map CPU-visible Vulkan buffer (size=%zu, usage=0x%x)",
+                size,
+                static_cast<unsigned>(usage));
+            return false;
+        }
+        buffer.mapped_by_vma_api = true;
+    }
     buffer.size = size;
     return true;
 }
@@ -832,6 +849,7 @@ struct IsometricScenePass::State
     ImageResource label_atlas;
     Buffer label_staging;
     Buffer material_staging;
+    Buffer tooltip_staging;
     VkImageLayout label_atlas_layout = VK_IMAGE_LAYOUT_UNDEFINED;
     uint64_t label_atlas_revision = 0;
     std::vector<FrameResources> frame_resources;
@@ -1230,6 +1248,19 @@ struct IsometricScenePass::State
             { SceneTextureId::LeafScattering, &leaf_images.scattering, VK_FORMAT_R8G8B8A8_UNORM },
         } };
 
+        size_t max_upload_bytes = 0;
+        for (const TextureLoadSpec& spec : load_specs)
+        {
+            max_upload_bytes = std::max(max_upload_bytes,
+                static_cast<size_t>(spec.image->width) * static_cast<size_t>(spec.image->height) * 4);
+        }
+        if (!ensure_mapped_buffer_capacity(
+                allocator, max_upload_bytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, material_staging, max_upload_bytes))
+        {
+            DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity: failed to reserve material staging buffer");
+            return false;
+        }
+
         for (const TextureLoadSpec& spec : load_specs)
         {
             ImageResource& texture = material_textures[static_cast<size_t>(spec.id)];
@@ -1607,6 +1638,320 @@ struct IsometricScenePass::State
         return true;
     }
 
+    void destroy_present_resources()
+    {
+        tooltip_image.sampler = VK_NULL_HANDLE;
+        if (tooltip_sampler != VK_NULL_HANDLE)
+            vkDestroySampler(device, tooltip_sampler, nullptr);
+        destroy_image(device, allocator, tooltip_image);
+        destroy_buffer(allocator, tooltip_staging);
+        if (tooltip_pipeline != VK_NULL_HANDLE)
+            vkDestroyPipeline(device, tooltip_pipeline, nullptr);
+        if (tooltip_pipeline_layout != VK_NULL_HANDLE)
+            vkDestroyPipelineLayout(device, tooltip_pipeline_layout, nullptr);
+        if (tooltip_descriptor_pool != VK_NULL_HANDLE)
+            vkDestroyDescriptorPool(device, tooltip_descriptor_pool, nullptr);
+        if (tooltip_descriptor_set_layout != VK_NULL_HANDLE)
+            vkDestroyDescriptorSetLayout(device, tooltip_descriptor_set_layout, nullptr);
+        if (present_pipeline != VK_NULL_HANDLE)
+            vkDestroyPipeline(device, present_pipeline, nullptr);
+
+        tooltip_pipeline = VK_NULL_HANDLE;
+        tooltip_pipeline_layout = VK_NULL_HANDLE;
+        tooltip_descriptor_pool = VK_NULL_HANDLE;
+        tooltip_descriptor_set_layout = VK_NULL_HANDLE;
+        tooltip_descriptor_set = VK_NULL_HANDLE;
+        tooltip_sampler = VK_NULL_HANDLE;
+        tooltip_image_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+        tooltip_texture_revision = 0;
+        tooltip_initialized = false;
+        present_pipeline = VK_NULL_HANDLE;
+    }
+
+    bool create_present_resources()
+    {
+        if (render_pass == VK_NULL_HANDLE || present_pipeline != VK_NULL_HANDLE)
+            return true;
+
+        const auto shader_dir = bundled_asset_path("shaders");
+        auto present_vert = load_shader(device, (shader_dir / "megacity_post.vert.spv").string());
+        auto present_frag = load_shader(device, (shader_dir / "megacity_present.frag.spv").string());
+        if (!present_vert || !present_frag)
+        {
+            if (present_vert)
+                vkDestroyShaderModule(device, present_vert, nullptr);
+            if (present_frag)
+                vkDestroyShaderModule(device, present_frag, nullptr);
+            DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity: failed to load present shaders");
+            return false;
+        }
+
+        VkPipelineShaderStageCreateInfo present_stages[2] = {};
+        present_stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        present_stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+        present_stages[0].module = present_vert;
+        present_stages[0].pName = "main";
+        present_stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        present_stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+        present_stages[1].module = present_frag;
+        present_stages[1].pName = "main";
+
+        VkPipelineVertexInputStateCreateInfo present_vertex_input = {
+            VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO
+        };
+        VkPipelineInputAssemblyStateCreateInfo present_input_assembly = {
+            VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO
+        };
+        present_input_assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+        VkPipelineViewportStateCreateInfo present_viewport_state = {
+            VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO
+        };
+        present_viewport_state.viewportCount = 1;
+        present_viewport_state.scissorCount = 1;
+
+        VkPipelineRasterizationStateCreateInfo present_raster = {
+            VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO
+        };
+        present_raster.polygonMode = VK_POLYGON_MODE_FILL;
+        present_raster.cullMode = VK_CULL_MODE_NONE;
+        present_raster.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+        present_raster.lineWidth = 1.0f;
+
+        VkPipelineMultisampleStateCreateInfo present_multisample = {
+            VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO
+        };
+        present_multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+        VkPipelineDepthStencilStateCreateInfo present_depth = {
+            VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO
+        };
+        present_depth.depthTestEnable = VK_FALSE;
+        present_depth.depthWriteEnable = VK_FALSE;
+        present_depth.depthCompareOp = VK_COMPARE_OP_ALWAYS;
+
+        VkPipelineColorBlendAttachmentState present_blend_attachment = {};
+        present_blend_attachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT
+            | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+        VkPipelineColorBlendStateCreateInfo present_blend = {
+            VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO
+        };
+        present_blend.attachmentCount = 1;
+        present_blend.pAttachments = &present_blend_attachment;
+
+        VkDynamicState present_dynamic_states[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+        VkPipelineDynamicStateCreateInfo present_dynamic = {
+            VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO
+        };
+        present_dynamic.dynamicStateCount = 2;
+        present_dynamic.pDynamicStates = present_dynamic_states;
+
+        VkGraphicsPipelineCreateInfo present_ci = { VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO };
+        present_ci.stageCount = 2;
+        present_ci.pStages = present_stages;
+        present_ci.pVertexInputState = &present_vertex_input;
+        present_ci.pInputAssemblyState = &present_input_assembly;
+        present_ci.pViewportState = &present_viewport_state;
+        present_ci.pRasterizationState = &present_raster;
+        present_ci.pMultisampleState = &present_multisample;
+        present_ci.pDepthStencilState = &present_depth;
+        present_ci.pColorBlendState = &present_blend;
+        present_ci.pDynamicState = &present_dynamic;
+        present_ci.layout = post_pipeline_layout;
+        present_ci.renderPass = render_pass;
+        present_ci.subpass = 0;
+
+        const VkResult present_result = vkCreateGraphicsPipelines(
+            device, VK_NULL_HANDLE, 1, &present_ci, nullptr, &present_pipeline);
+        vkDestroyShaderModule(device, present_vert, nullptr);
+        vkDestroyShaderModule(device, present_frag, nullptr);
+        if (present_result != VK_SUCCESS)
+        {
+            DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity: failed to create present pipeline");
+            return false;
+        }
+
+        auto tooltip_vert = load_shader(device, (shader_dir / "megacity_tooltip.vert.spv").string());
+        auto tooltip_frag = load_shader(device, (shader_dir / "megacity_tooltip.frag.spv").string());
+        if (!tooltip_vert || !tooltip_frag)
+        {
+            if (tooltip_vert)
+                vkDestroyShaderModule(device, tooltip_vert, nullptr);
+            if (tooltip_frag)
+                vkDestroyShaderModule(device, tooltip_frag, nullptr);
+            DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity: failed to load tooltip shaders");
+            return true;
+        }
+
+        VkDescriptorSetLayoutBinding tooltip_binding = {};
+        tooltip_binding.binding = 0;
+        tooltip_binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        tooltip_binding.descriptorCount = 1;
+        tooltip_binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+        VkDescriptorSetLayoutCreateInfo tooltip_layout_ci = {
+            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO
+        };
+        tooltip_layout_ci.bindingCount = 1;
+        tooltip_layout_ci.pBindings = &tooltip_binding;
+        if (vkCreateDescriptorSetLayout(device, &tooltip_layout_ci, nullptr, &tooltip_descriptor_set_layout)
+            != VK_SUCCESS)
+        {
+            vkDestroyShaderModule(device, tooltip_vert, nullptr);
+            vkDestroyShaderModule(device, tooltip_frag, nullptr);
+            DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity: failed to create tooltip descriptor set layout");
+            return true;
+        }
+
+        VkDescriptorPoolSize tooltip_pool_size = {};
+        tooltip_pool_size.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        tooltip_pool_size.descriptorCount = 1;
+
+        VkDescriptorPoolCreateInfo tooltip_pool_ci = { VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO };
+        tooltip_pool_ci.maxSets = 1;
+        tooltip_pool_ci.poolSizeCount = 1;
+        tooltip_pool_ci.pPoolSizes = &tooltip_pool_size;
+        if (vkCreateDescriptorPool(device, &tooltip_pool_ci, nullptr, &tooltip_descriptor_pool) != VK_SUCCESS)
+        {
+            vkDestroyShaderModule(device, tooltip_vert, nullptr);
+            vkDestroyShaderModule(device, tooltip_frag, nullptr);
+            DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity: failed to create tooltip descriptor pool");
+            return true;
+        }
+
+        VkDescriptorSetAllocateInfo tooltip_alloc = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO };
+        tooltip_alloc.descriptorPool = tooltip_descriptor_pool;
+        tooltip_alloc.descriptorSetCount = 1;
+        tooltip_alloc.pSetLayouts = &tooltip_descriptor_set_layout;
+        if (vkAllocateDescriptorSets(device, &tooltip_alloc, &tooltip_descriptor_set) != VK_SUCCESS)
+        {
+            vkDestroyShaderModule(device, tooltip_vert, nullptr);
+            vkDestroyShaderModule(device, tooltip_frag, nullptr);
+            DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity: failed to allocate tooltip descriptor set");
+            return true;
+        }
+
+        VkPushConstantRange tooltip_push = {};
+        tooltip_push.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        tooltip_push.offset = 0;
+        tooltip_push.size = sizeof(float) * 8;
+
+        VkPipelineLayoutCreateInfo tooltip_pl_ci = { VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
+        tooltip_pl_ci.setLayoutCount = 1;
+        tooltip_pl_ci.pSetLayouts = &tooltip_descriptor_set_layout;
+        tooltip_pl_ci.pushConstantRangeCount = 1;
+        tooltip_pl_ci.pPushConstantRanges = &tooltip_push;
+        if (vkCreatePipelineLayout(device, &tooltip_pl_ci, nullptr, &tooltip_pipeline_layout) != VK_SUCCESS)
+        {
+            vkDestroyShaderModule(device, tooltip_vert, nullptr);
+            vkDestroyShaderModule(device, tooltip_frag, nullptr);
+            DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity: failed to create tooltip pipeline layout");
+            return true;
+        }
+
+        VkPipelineShaderStageCreateInfo tooltip_stages[2] = {};
+        tooltip_stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        tooltip_stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+        tooltip_stages[0].module = tooltip_vert;
+        tooltip_stages[0].pName = "main";
+        tooltip_stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        tooltip_stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+        tooltip_stages[1].module = tooltip_frag;
+        tooltip_stages[1].pName = "main";
+
+        VkPipelineVertexInputStateCreateInfo tooltip_vi = {
+            VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO
+        };
+        VkPipelineInputAssemblyStateCreateInfo tooltip_ia = {
+            VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO
+        };
+        tooltip_ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+        VkPipelineViewportStateCreateInfo tooltip_vp = {
+            VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO
+        };
+        tooltip_vp.viewportCount = 1;
+        tooltip_vp.scissorCount = 1;
+
+        VkPipelineRasterizationStateCreateInfo tooltip_raster = {
+            VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO
+        };
+        tooltip_raster.polygonMode = VK_POLYGON_MODE_FILL;
+        tooltip_raster.cullMode = VK_CULL_MODE_NONE;
+        tooltip_raster.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+        tooltip_raster.lineWidth = 1.0f;
+
+        VkPipelineMultisampleStateCreateInfo tooltip_ms = {
+            VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO
+        };
+        tooltip_ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+        VkPipelineDepthStencilStateCreateInfo tooltip_depth = {
+            VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO
+        };
+        tooltip_depth.depthTestEnable = VK_FALSE;
+        tooltip_depth.depthWriteEnable = VK_FALSE;
+        tooltip_depth.depthCompareOp = VK_COMPARE_OP_ALWAYS;
+
+        VkPipelineColorBlendAttachmentState tooltip_blend_att = {};
+        tooltip_blend_att.blendEnable = VK_TRUE;
+        tooltip_blend_att.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        tooltip_blend_att.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        tooltip_blend_att.colorBlendOp = VK_BLEND_OP_ADD;
+        tooltip_blend_att.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+        tooltip_blend_att.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        tooltip_blend_att.alphaBlendOp = VK_BLEND_OP_ADD;
+        tooltip_blend_att.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT
+            | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+
+        VkPipelineColorBlendStateCreateInfo tooltip_blend = {
+            VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO
+        };
+        tooltip_blend.attachmentCount = 1;
+        tooltip_blend.pAttachments = &tooltip_blend_att;
+
+        VkPipelineDynamicStateCreateInfo tooltip_dyn = {
+            VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO
+        };
+        tooltip_dyn.dynamicStateCount = 2;
+        tooltip_dyn.pDynamicStates = present_dynamic_states;
+
+        VkGraphicsPipelineCreateInfo tooltip_ci = { VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO };
+        tooltip_ci.stageCount = 2;
+        tooltip_ci.pStages = tooltip_stages;
+        tooltip_ci.pVertexInputState = &tooltip_vi;
+        tooltip_ci.pInputAssemblyState = &tooltip_ia;
+        tooltip_ci.pViewportState = &tooltip_vp;
+        tooltip_ci.pRasterizationState = &tooltip_raster;
+        tooltip_ci.pMultisampleState = &tooltip_ms;
+        tooltip_ci.pDepthStencilState = &tooltip_depth;
+        tooltip_ci.pColorBlendState = &tooltip_blend;
+        tooltip_ci.pDynamicState = &tooltip_dyn;
+        tooltip_ci.layout = tooltip_pipeline_layout;
+        tooltip_ci.renderPass = render_pass;
+        tooltip_ci.subpass = 0;
+
+        if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &tooltip_ci, nullptr, &tooltip_pipeline)
+            != VK_SUCCESS)
+        {
+            DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity: failed to create tooltip pipeline");
+        }
+
+        VkSamplerCreateInfo tooltip_sampler_ci = { VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO };
+        tooltip_sampler_ci.magFilter = VK_FILTER_NEAREST;
+        tooltip_sampler_ci.minFilter = VK_FILTER_NEAREST;
+        tooltip_sampler_ci.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        tooltip_sampler_ci.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        tooltip_sampler_ci.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        if (vkCreateSampler(device, &tooltip_sampler_ci, nullptr, &tooltip_sampler) != VK_SUCCESS)
+            DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity: failed to create tooltip sampler");
+
+        tooltip_initialized = true;
+        vkDestroyShaderModule(device, tooltip_vert, nullptr);
+        vkDestroyShaderModule(device, tooltip_frag, nullptr);
+        return true;
+    }
+
     bool create_pipeline()
     {
         const auto shader_dir = bundled_asset_path("shaders");
@@ -1626,17 +1971,20 @@ struct IsometricScenePass::State
         push_range.offset = 0;
         push_range.size = sizeof(ObjectPushConstants);
 
-        VkPipelineLayoutCreateInfo layout_ci = { VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
-        layout_ci.setLayoutCount = 1;
-        layout_ci.pSetLayouts = &descriptor_set_layout;
-        layout_ci.pushConstantRangeCount = 1;
-        layout_ci.pPushConstantRanges = &push_range;
-        if (vkCreatePipelineLayout(device, &layout_ci, nullptr, &pipeline_layout) != VK_SUCCESS)
+        if (pipeline_layout == VK_NULL_HANDLE)
         {
-            DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity scene: failed to create pipeline layout");
-            vkDestroyShaderModule(device, vert, nullptr);
-            vkDestroyShaderModule(device, frag, nullptr);
-            return false;
+            VkPipelineLayoutCreateInfo layout_ci = { VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
+            layout_ci.setLayoutCount = 1;
+            layout_ci.pSetLayouts = &descriptor_set_layout;
+            layout_ci.pushConstantRangeCount = 1;
+            layout_ci.pPushConstantRanges = &push_range;
+            if (vkCreatePipelineLayout(device, &layout_ci, nullptr, &pipeline_layout) != VK_SUCCESS)
+            {
+                DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity scene: failed to create pipeline layout");
+                vkDestroyShaderModule(device, vert, nullptr);
+                vkDestroyShaderModule(device, frag, nullptr);
+                return false;
+            }
         }
 
         VkPipelineLayoutCreateInfo post_layout_ci = { VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
@@ -1757,16 +2105,13 @@ struct IsometricScenePass::State
 
         auto post_vert = load_shader(device, (shader_dir / "megacity_post.vert.spv").string());
         auto post_frag = load_shader(device, (shader_dir / "megacity_post.frag.spv").string());
-        auto present_frag = load_shader(device, (shader_dir / "megacity_present.frag.spv").string());
-        if (!post_vert || !post_frag || !present_frag)
+        if (!post_vert || !post_frag)
         {
             if (post_vert)
                 vkDestroyShaderModule(device, post_vert, nullptr);
             if (post_frag)
                 vkDestroyShaderModule(device, post_frag, nullptr);
-            if (present_frag)
-                vkDestroyShaderModule(device, present_frag, nullptr);
-            DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity: failed to load post/present shaders");
+            DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity: failed to load post shaders");
             return false;
         }
 
@@ -1840,27 +2185,12 @@ struct IsometricScenePass::State
         {
             vkDestroyShaderModule(device, post_vert, nullptr);
             vkDestroyShaderModule(device, post_frag, nullptr);
-            vkDestroyShaderModule(device, present_frag, nullptr);
             DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity: failed to create post pipeline");
-            return false;
-        }
-
-        post_stages[1].module = present_frag;
-        post_pipeline_ci.pStages = post_stages;
-        post_pipeline_ci.renderPass = render_pass;
-        if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &post_pipeline_ci, nullptr, &present_pipeline)
-            != VK_SUCCESS)
-        {
-            vkDestroyShaderModule(device, post_vert, nullptr);
-            vkDestroyShaderModule(device, post_frag, nullptr);
-            vkDestroyShaderModule(device, present_frag, nullptr);
-            DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity: failed to create present pipeline");
             return false;
         }
 
         vkDestroyShaderModule(device, post_vert, nullptr);
         vkDestroyShaderModule(device, post_frag, nullptr);
-        vkDestroyShaderModule(device, present_frag, nullptr);
 
         // Create debug pipeline (same layout, same vertex shader, different fragment shader)
         auto debug_frag = load_shader(device, (shader_dir / "megacity_debug.frag.spv").string());
@@ -1932,161 +2262,6 @@ struct IsometricScenePass::State
                 vkDestroyShaderModule(device, wf_debug_frag, nullptr);
         }
 
-        // Tooltip overlay pipeline.
-        {
-            auto tooltip_vert = load_shader(device, (shader_dir / "megacity_tooltip.vert.spv").string());
-            auto tooltip_frag = load_shader(device, (shader_dir / "megacity_tooltip.frag.spv").string());
-            if (tooltip_vert && tooltip_frag)
-            {
-                // Descriptor set layout: 1 combined image sampler.
-                VkDescriptorSetLayoutBinding tooltip_binding = {};
-                tooltip_binding.binding = 0;
-                tooltip_binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-                tooltip_binding.descriptorCount = 1;
-                tooltip_binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-                VkDescriptorSetLayoutCreateInfo tooltip_layout_ci = {
-                    VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO
-                };
-                tooltip_layout_ci.bindingCount = 1;
-                tooltip_layout_ci.pBindings = &tooltip_binding;
-                vkCreateDescriptorSetLayout(device, &tooltip_layout_ci, nullptr, &tooltip_descriptor_set_layout);
-
-                // Descriptor pool: 1 set, 1 combined image sampler.
-                VkDescriptorPoolSize tooltip_pool_size = {};
-                tooltip_pool_size.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-                tooltip_pool_size.descriptorCount = 1;
-
-                VkDescriptorPoolCreateInfo tooltip_pool_ci = { VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO };
-                tooltip_pool_ci.maxSets = 1;
-                tooltip_pool_ci.poolSizeCount = 1;
-                tooltip_pool_ci.pPoolSizes = &tooltip_pool_size;
-                vkCreateDescriptorPool(device, &tooltip_pool_ci, nullptr, &tooltip_descriptor_pool);
-
-                // Allocate descriptor set.
-                VkDescriptorSetAllocateInfo tooltip_alloc = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO };
-                tooltip_alloc.descriptorPool = tooltip_descriptor_pool;
-                tooltip_alloc.descriptorSetCount = 1;
-                tooltip_alloc.pSetLayouts = &tooltip_descriptor_set_layout;
-                vkAllocateDescriptorSets(device, &tooltip_alloc, &tooltip_descriptor_set);
-
-                // Pipeline layout: push constant for rect + viewport.
-                VkPushConstantRange tooltip_push = {};
-                tooltip_push.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-                tooltip_push.offset = 0;
-                tooltip_push.size = sizeof(float) * 8; // 2x vec4
-
-                VkPipelineLayoutCreateInfo tooltip_pl_ci = { VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
-                tooltip_pl_ci.setLayoutCount = 1;
-                tooltip_pl_ci.pSetLayouts = &tooltip_descriptor_set_layout;
-                tooltip_pl_ci.pushConstantRangeCount = 1;
-                tooltip_pl_ci.pPushConstantRanges = &tooltip_push;
-                vkCreatePipelineLayout(device, &tooltip_pl_ci, nullptr, &tooltip_pipeline_layout);
-
-                // Graphics pipeline.
-                VkPipelineShaderStageCreateInfo tooltip_stages[2] = {};
-                tooltip_stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-                tooltip_stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
-                tooltip_stages[0].module = tooltip_vert;
-                tooltip_stages[0].pName = "main";
-                tooltip_stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-                tooltip_stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-                tooltip_stages[1].module = tooltip_frag;
-                tooltip_stages[1].pName = "main";
-
-                VkPipelineVertexInputStateCreateInfo tooltip_vi = {
-                    VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO
-                };
-                VkPipelineInputAssemblyStateCreateInfo tooltip_ia = {
-                    VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO
-                };
-                tooltip_ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-
-                VkPipelineViewportStateCreateInfo tooltip_vp = {
-                    VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO
-                };
-                tooltip_vp.viewportCount = 1;
-                tooltip_vp.scissorCount = 1;
-
-                VkPipelineRasterizationStateCreateInfo tooltip_raster = {
-                    VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO
-                };
-                tooltip_raster.polygonMode = VK_POLYGON_MODE_FILL;
-                tooltip_raster.cullMode = VK_CULL_MODE_NONE;
-                tooltip_raster.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-                tooltip_raster.lineWidth = 1.0f;
-
-                VkPipelineMultisampleStateCreateInfo tooltip_ms = {
-                    VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO
-                };
-                tooltip_ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-
-                VkPipelineColorBlendAttachmentState tooltip_blend_att = {};
-                tooltip_blend_att.blendEnable = VK_TRUE;
-                tooltip_blend_att.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-                tooltip_blend_att.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-                tooltip_blend_att.colorBlendOp = VK_BLEND_OP_ADD;
-                tooltip_blend_att.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-                tooltip_blend_att.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-                tooltip_blend_att.alphaBlendOp = VK_BLEND_OP_ADD;
-                tooltip_blend_att.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT
-                    | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-
-                VkPipelineColorBlendStateCreateInfo tooltip_blend = {
-                    VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO
-                };
-                tooltip_blend.attachmentCount = 1;
-                tooltip_blend.pAttachments = &tooltip_blend_att;
-
-                VkPipelineDynamicStateCreateInfo tooltip_dyn = {
-                    VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO
-                };
-                tooltip_dyn.dynamicStateCount = 2;
-                tooltip_dyn.pDynamicStates = dynamic_states;
-
-                VkGraphicsPipelineCreateInfo tooltip_ci = { VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO };
-                tooltip_ci.stageCount = 2;
-                tooltip_ci.pStages = tooltip_stages;
-                tooltip_ci.pVertexInputState = &tooltip_vi;
-                tooltip_ci.pInputAssemblyState = &tooltip_ia;
-                tooltip_ci.pViewportState = &tooltip_vp;
-                tooltip_ci.pRasterizationState = &tooltip_raster;
-                tooltip_ci.pMultisampleState = &tooltip_ms;
-                tooltip_ci.pColorBlendState = &tooltip_blend;
-                tooltip_ci.pDynamicState = &tooltip_dyn;
-                tooltip_ci.layout = tooltip_pipeline_layout;
-                tooltip_ci.renderPass = render_pass;
-                tooltip_ci.subpass = 0;
-
-                if (vkCreateGraphicsPipelines(
-                        device, VK_NULL_HANDLE, 1, &tooltip_ci, nullptr, &tooltip_pipeline)
-                    != VK_SUCCESS)
-                {
-                    DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity: failed to create tooltip pipeline");
-                }
-
-                // Tooltip sampler (nearest for pixel-precise text).
-                VkSamplerCreateInfo tooltip_sampler_ci = { VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO };
-                tooltip_sampler_ci.magFilter = VK_FILTER_NEAREST;
-                tooltip_sampler_ci.minFilter = VK_FILTER_NEAREST;
-                tooltip_sampler_ci.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-                tooltip_sampler_ci.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-                tooltip_sampler_ci.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-                vkCreateSampler(device, &tooltip_sampler_ci, nullptr, &tooltip_sampler);
-
-                tooltip_initialized = true;
-            }
-            else
-            {
-                DRAXUL_LOG_ERROR(LogCategory::Renderer,
-                    "MegaCity: failed to load tooltip shaders (non-fatal)");
-            }
-            if (tooltip_vert)
-                vkDestroyShaderModule(device, tooltip_vert, nullptr);
-            if (tooltip_frag)
-                vkDestroyShaderModule(device, tooltip_frag, nullptr);
-        }
-
         return true;
     }
 
@@ -2118,12 +2293,11 @@ struct IsometricScenePass::State
 
         // Upload RGBA data via staging buffer.
         const size_t bytes = static_cast<size_t>(tooltip.width) * tooltip.height * 4;
-        Buffer staging{};
-        if (!create_mapped_buffer(allocator, bytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, staging))
+        if (!ensure_mapped_buffer_capacity(allocator, bytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, tooltip_staging, bytes))
             return false;
 
-        std::memcpy(staging.mapped, tooltip.rgba.data(), bytes);
-        vmaFlushAllocation(allocator, staging.allocation, 0, bytes);
+        std::memcpy(tooltip_staging.mapped, tooltip.rgba.data(), bytes);
+        vmaFlushAllocation(allocator, tooltip_staging.allocation, 0, bytes);
 
         transition_image(cmd, tooltip_image.image, tooltip_image_layout,
             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
@@ -2134,7 +2308,7 @@ struct IsometricScenePass::State
             static_cast<uint32_t>(tooltip.width),
             static_cast<uint32_t>(tooltip.height), 1
         };
-        vkCmdCopyBufferToImage(cmd, staging.buffer, tooltip_image.image,
+        vkCmdCopyBufferToImage(cmd, tooltip_staging.buffer, tooltip_image.image,
             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
         transition_image(cmd, tooltip_image.image,
             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
@@ -2155,28 +2329,39 @@ struct IsometricScenePass::State
         write.pImageInfo = &img_info;
         vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
 
-        destroy_buffer(allocator, staging);
         return true;
     }
 
     bool ensure(const VkRenderContext& ctx)
     {
         const uint32_t frame_count = std::max(1u, ctx.buffered_frame_count());
-        if (pipeline != VK_NULL_HANDLE
-            && render_pass == ctx.render_pass()
-            && buffered_frame_count == frame_count)
-            return true;
+        const bool base_resources_ready = pipeline != VK_NULL_HANDLE
+            && physical_device == ctx.physical_device()
+            && device == ctx.device()
+            && allocator == ctx.allocator()
+            && buffered_frame_count == frame_count;
+        if (!base_resources_ready)
+        {
+            destroy_gbuffer();
+            destroy();
+            physical_device = ctx.physical_device();
+            device = ctx.device();
+            allocator = ctx.allocator();
+            render_pass = VK_NULL_HANDLE;
+            buffered_frame_count = frame_count;
+            scene_sample_count = choose_scene_sample_count(physical_device);
 
-        destroy_gbuffer();
-        destroy();
-        physical_device = ctx.physical_device();
-        device = ctx.device();
-        allocator = ctx.allocator();
-        render_pass = ctx.render_pass();
-        buffered_frame_count = frame_count;
-        scene_sample_count = choose_scene_sample_count(physical_device);
+            if (!(create_device_resources(frame_count) && init_gbuffer() && create_pipeline()))
+                return false;
+        }
 
-        return create_device_resources(frame_count) && init_gbuffer() && create_pipeline();
+        if (ctx.render_pass() != VK_NULL_HANDLE && render_pass != ctx.render_pass())
+        {
+            destroy_present_resources();
+            render_pass = ctx.render_pass();
+        }
+
+        return create_present_resources();
     }
 
     void destroy_gbuffer_targets()
@@ -2751,6 +2936,25 @@ struct IsometricScenePass::State
         vkDestroyShaderModule(device, point_shadow_vert, nullptr);
         vkDestroyShaderModule(device, point_shadow_frag, nullptr);
 
+        if (pipeline_layout == VK_NULL_HANDLE)
+        {
+            VkPushConstantRange scene_push_range = {};
+            scene_push_range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+            scene_push_range.offset = 0;
+            scene_push_range.size = sizeof(ObjectPushConstants);
+
+            VkPipelineLayoutCreateInfo scene_layout_ci = { VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
+            scene_layout_ci.setLayoutCount = 1;
+            scene_layout_ci.pSetLayouts = &descriptor_set_layout;
+            scene_layout_ci.pushConstantRangeCount = 1;
+            scene_layout_ci.pPushConstantRanges = &scene_push_range;
+            if (vkCreatePipelineLayout(device, &scene_layout_ci, nullptr, &pipeline_layout) != VK_SUCCESS)
+            {
+                DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity scene: failed to create GBuffer pipeline layout");
+                return false;
+            }
+        }
+
         VkGraphicsPipelineCreateInfo pipeline_ci = { VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO };
         pipeline_ci.stageCount = 2;
         pipeline_ci.pStages = stages;
@@ -2807,7 +3011,7 @@ struct IsometricScenePass::State
         ao_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         ao_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
         ao_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        ao_attachment.initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        ao_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         ao_attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
         VkAttachmentReference ao_color_ref = {};
@@ -3404,19 +3608,7 @@ struct IsometricScenePass::State
                 destroy_buffer(allocator, frame.material_uniforms);
             }
         }
-        // Tooltip resources (null out shared sampler before destroy_image to avoid double-free).
-        tooltip_image.sampler = VK_NULL_HANDLE;
-        if (tooltip_sampler != VK_NULL_HANDLE)
-            vkDestroySampler(device, tooltip_sampler, nullptr);
-        destroy_image(device, allocator, tooltip_image);
-        if (tooltip_pipeline != VK_NULL_HANDLE)
-            vkDestroyPipeline(device, tooltip_pipeline, nullptr);
-        if (tooltip_pipeline_layout != VK_NULL_HANDLE)
-            vkDestroyPipelineLayout(device, tooltip_pipeline_layout, nullptr);
-        if (tooltip_descriptor_pool != VK_NULL_HANDLE)
-            vkDestroyDescriptorPool(device, tooltip_descriptor_pool, nullptr);
-        if (tooltip_descriptor_set_layout != VK_NULL_HANDLE)
-            vkDestroyDescriptorSetLayout(device, tooltip_descriptor_set_layout, nullptr);
+        destroy_present_resources();
 
         if (debug_wireframe_pipeline != VK_NULL_HANDLE)
             vkDestroyPipeline(device, debug_wireframe_pipeline, nullptr);
@@ -3424,8 +3616,6 @@ struct IsometricScenePass::State
             vkDestroyPipeline(device, wireframe_pipeline, nullptr);
         if (debug_pipeline != VK_NULL_HANDLE)
             vkDestroyPipeline(device, debug_pipeline, nullptr);
-        if (present_pipeline != VK_NULL_HANDLE)
-            vkDestroyPipeline(device, present_pipeline, nullptr);
         if (post_pipeline != VK_NULL_HANDLE)
             vkDestroyPipeline(device, post_pipeline, nullptr);
         if (pipeline != VK_NULL_HANDLE)

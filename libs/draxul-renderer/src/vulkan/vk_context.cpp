@@ -13,6 +13,49 @@ namespace draxul
 namespace
 {
 
+LogLevel log_level_for_vulkan_severity(VkDebugUtilsMessageSeverityFlagBitsEXT severity)
+{
+    switch (severity)
+    {
+    case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
+        return LogLevel::Error;
+    case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:
+        return LogLevel::Warn;
+    case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:
+        return LogLevel::Info;
+    case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
+    default:
+        return LogLevel::Debug;
+    }
+}
+
+VKAPI_ATTR VkBool32 VKAPI_CALL vulkan_log_callback(
+    VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
+    VkDebugUtilsMessageTypeFlagsEXT message_type,
+    const VkDebugUtilsMessengerCallbackDataEXT* callback_data,
+    void* /*user_data*/)
+{
+    const char* severity_text = vkb::to_string_message_severity(message_severity);
+    const char* type_text = vkb::to_string_message_type(message_type);
+    const char* message_id_name = callback_data && callback_data->pMessageIdName
+        ? callback_data->pMessageIdName
+        : "unknown";
+    const int32_t message_id_number = callback_data ? callback_data->messageIdNumber : 0;
+    const char* message_text = callback_data && callback_data->pMessage
+        ? callback_data->pMessage
+        : "(no validation message)";
+
+    log_printf(log_level_for_vulkan_severity(message_severity),
+        LogCategory::Renderer,
+        "Vulkan validation [%s:%s] %s (%d): %s",
+        severity_text,
+        type_text,
+        message_id_name,
+        message_id_number,
+        message_text);
+    return VK_FALSE;
+}
+
 const char* present_mode_name(VkPresentModeKHR mode)
 {
     switch (mode)
@@ -61,7 +104,7 @@ bool VkContext::initialize(SDL_Window* window)
                         .require_api_version(1, 2, 0)
 #ifndef NDEBUG
                         .request_validation_layers()
-                        .use_default_debug_messenger()
+                        .set_debug_callback(vulkan_log_callback)
 #endif
                         .build();
 
@@ -95,6 +138,11 @@ bool VkContext::initialize(SDL_Window* window)
 
     auto vkb_phys = phys_ret.value();
     physical_device_ = vkb_phys.physical_device;
+
+    VkPhysicalDeviceFeatures supported_features{};
+    vkGetPhysicalDeviceFeatures(physical_device_, &supported_features);
+    vkb_phys.features.samplerAnisotropy = supported_features.samplerAnisotropy;
+    vkb_phys.features.fillModeNonSolid = supported_features.fillModeNonSolid;
 
     vkb::DeviceBuilder device_builder(vkb_phys);
     auto dev_ret = device_builder.build();

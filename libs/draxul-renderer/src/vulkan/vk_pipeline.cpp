@@ -142,6 +142,12 @@ bool VkPipelineManager::initialize(VkDevice device, VkRenderPass render_pass, co
     raster.lineWidth = 1.0f;
     VkPipelineMultisampleStateCreateInfo multisample = { VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO };
     multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    VkPipelineDepthStencilStateCreateInfo depth = { VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO };
+    depth.depthTestEnable = VK_FALSE;
+    depth.depthWriteEnable = VK_FALSE;
+    depth.depthCompareOp = VK_COMPARE_OP_ALWAYS;
+    depth.depthBoundsTestEnable = VK_FALSE;
+    depth.stencilTestEnable = VK_FALSE;
     VkDynamicState dynamic_states[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
     VkPipelineDynamicStateCreateInfo dynamic_state = { VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO };
     dynamic_state.dynamicStateCount = 2;
@@ -174,6 +180,7 @@ bool VkPipelineManager::initialize(VkDevice device, VkRenderPass render_pass, co
         pi.pViewportState = &viewport_state;
         pi.pRasterizationState = &raster;
         pi.pMultisampleState = &multisample;
+        pi.pDepthStencilState = &depth;
         pi.pColorBlendState = &blend;
         pi.pDynamicState = &dynamic_state;
         pi.layout = pending.bg_layout_;
@@ -220,6 +227,7 @@ bool VkPipelineManager::initialize(VkDevice device, VkRenderPass render_pass, co
         pi.pViewportState = &viewport_state;
         pi.pRasterizationState = &raster;
         pi.pMultisampleState = &multisample;
+        pi.pDepthStencilState = &depth;
         pi.pColorBlendState = &blend;
         pi.pDynamicState = &dynamic_state;
         pi.layout = pending.fg_layout_;
