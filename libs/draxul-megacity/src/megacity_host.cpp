@@ -157,6 +157,13 @@ std::unordered_set<std::string> connected_building_identities(
     return connected;
 }
 
+bool is_module_context_object(const SceneObject& obj)
+{
+    return obj.source_file_path.empty()
+        && !obj.source_module_path.empty()
+        && obj.source_name == obj.source_module_path;
+}
+
 } // namespace
 
 MegaCityHost::MegaCityHost()
@@ -1348,8 +1355,21 @@ void MegaCityHost::apply_selection_opacity()
         selected_building_source_file_,
         selected_building_module_path_,
         selected_building_name_);
-
     SceneSnapshot& scene = scene_pass_->scene();
+    std::unordered_set<std::string> visible_modules;
+    visible_modules.emplace(selected_building_module_path_);
+    for (const auto& obj : scene.objects)
+    {
+        const std::string object_identity = obj.source_name.empty()
+            ? std::string()
+            : exact_building_identity_key(obj.source_file_path, obj.source_module_path, obj.source_name);
+        if ((!object_identity.empty() && object_identity == selected_identity)
+            || (!object_identity.empty() && connected.count(object_identity) > 0))
+        {
+            visible_modules.emplace(obj.source_module_path);
+        }
+    }
+
     const float hidden_building_alpha = std::clamp(
         renderer_config_.selection_hidden_alpha
             + (renderer_config_.selection_hidden_hover_alpha - renderer_config_.selection_hidden_alpha)
@@ -1362,6 +1382,8 @@ void MegaCityHost::apply_selection_opacity()
             : exact_building_identity_key(obj.source_file_path, obj.source_module_path, obj.source_name);
         const bool is_selected = !object_identity.empty() && object_identity == selected_identity;
         const bool is_connected = !object_identity.empty() && connected.count(object_identity) > 0;
+        const bool is_module_context = is_module_context_object(obj)
+            && visible_modules.count(obj.source_module_path) > 0;
         const bool is_selected_route = !obj.route_source.empty()
             && (exact_building_identity_key(
                     obj.route_source_file_path,
@@ -1377,9 +1399,13 @@ void MegaCityHost::apply_selection_opacity()
         float alpha = obj.mesh == MeshId::RoadSurface
             ? renderer_config_.selection_hidden_road_alpha
             : renderer_config_.selection_hidden_alpha;
-        if (!object_identity.empty() && !is_selected && !is_connected && obj.mesh != MeshId::RoadSurface)
+        if (!is_selected
+            && !is_connected
+            && !is_module_context
+            && !is_selected_route
+            && obj.mesh != MeshId::RoadSurface)
             alpha = hidden_building_alpha;
-        if (is_connected)
+        if (is_connected || is_module_context)
             alpha = renderer_config_.selection_dependency_alpha;
         if (is_selected || is_selected_route)
             alpha = 1.0f;
