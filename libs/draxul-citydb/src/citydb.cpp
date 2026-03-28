@@ -1280,7 +1280,7 @@ std::vector<CityDependencyRecord> CityDatabase::list_class_dependencies_in_modul
     {
         Statement stmt(impl_->db.get(),
             "SELECT src.display_name, src.module_path, dep.field_name, dep.field_type_name, "
-            "dst.display_name, dst.module_path "
+            "dst.display_name, dst.module_path, src.source_file_path, dst.source_file_path "
             "FROM city_entity_dependencies dep "
             "JOIN city_entities src ON src.entity_id = dep.source_entity_id "
             "JOIN city_entities dst ON dst.entity_id = dep.target_entity_id "
@@ -1300,6 +1300,8 @@ std::vector<CityDependencyRecord> CityDatabase::list_class_dependencies_in_modul
             row.field_type_name = read_text(3);
             row.target_qualified_name = read_text(4);
             row.target_module_path = read_text(5);
+            row.source_file_path = read_text(6);
+            row.target_file_path = read_text(7);
             rows.push_back(std::move(row));
         }
     }

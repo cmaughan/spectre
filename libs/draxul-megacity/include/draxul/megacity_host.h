@@ -92,7 +92,10 @@ private:
     void apply_selection_opacity();
     void clear_selection();
     void route_worker_loop();
-    void request_routes_for_focus(std::string focus_module_path, std::string focus_qualified_name);
+    void request_routes_for_focus(
+        std::string focus_source_file_path,
+        std::string focus_module_path,
+        std::string focus_qualified_name);
     void consume_completed_routes();
     void clear_active_routes(bool request_frame = true);
     void refresh_available_modules();
@@ -167,6 +170,7 @@ private:
     struct RouteBuildRequest
     {
         uint64_t generation = 0;
+        std::string focus_source_file_path;
         std::string focus_module_path;
         std::string focus_qualified_name;
         std::shared_ptr<const SemanticMegacityLayout> layout;

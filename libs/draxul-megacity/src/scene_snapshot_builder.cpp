@@ -315,8 +315,10 @@ SceneSnapshotResult build_scene_snapshot(
         }
         if (const auto* link = reg.try_get<RouteLink>(entity))
         {
+            obj.route_source_file_path = link->source_file_path;
             obj.route_source_module_path = link->source_module_path;
             obj.route_source = link->source_qualified_name;
+            obj.route_target_file_path = link->target_file_path;
             obj.route_target_module_path = link->target_module_path;
             obj.route_target = link->target_qualified_name;
         }

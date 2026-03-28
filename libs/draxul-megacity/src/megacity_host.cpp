@@ -296,7 +296,9 @@ void MegaCityHost::route_worker_loop()
                 *request.layout,
                 *request.model,
                 *request.grid,
-                building_identity_key(request.focus_module_path, request.focus_qualified_name));
+                request.focus_source_file_path,
+                request.focus_module_path,
+                request.focus_qualified_name);
         }
 
         {
@@ -311,7 +313,10 @@ void MegaCityHost::route_worker_loop()
     }
 }
 
-void MegaCityHost::request_routes_for_focus(std::string focus_module_path, std::string focus_qualified_name)
+void MegaCityHost::request_routes_for_focus(
+    std::string focus_source_file_path,
+    std::string focus_module_path,
+    std::string focus_qualified_name)
 {
     if (focus_qualified_name.empty() || !semantic_layout_ || !semantic_model_)
         return;
@@ -328,6 +333,7 @@ void MegaCityHost::request_routes_for_focus(std::string focus_module_path, std::
         std::lock_guard<std::mutex> lock(route_mutex_);
         pending_route_request_ = RouteBuildRequest{
             ++route_request_generation_,
+            std::move(focus_source_file_path),
             std::move(focus_module_path),
             std::move(focus_qualified_name),
             semantic_layout_,
@@ -942,7 +948,10 @@ void MegaCityHost::pump()
             grid = city_grid_;
         }
         if (grid && grid->routes.empty() && !route_build_in_progress_.load())
-            request_routes_for_focus(selected_building_module_path_, selected_building_name_);
+            request_routes_for_focus(
+                selected_building_source_file_,
+                selected_building_module_path_,
+                selected_building_name_);
     }
 
     if (scene_dirty_ && scene_pass_ && camera_ && world_)
@@ -1222,7 +1231,10 @@ void MegaCityHost::handle_click(const glm::ivec2& screen_pos)
             selected_building_name_.c_str(),
             selected_building_module_path_.c_str());
         apply_selection_opacity();
-        request_routes_for_focus(selected_building_module_path_, selected_building_name_);
+        request_routes_for_focus(
+            selected_building_source_file_,
+            selected_building_module_path_,
+            selected_building_name_);
     }
     else
     {
@@ -1263,18 +1275,16 @@ void MegaCityHost::apply_selection_opacity()
             selected_building_source_file_,
             selected_building_module_path_,
             selected_building_name_);
-    const std::string selected_loose_identity
-        = building_identity_key(selected_building_module_path_, selected_building_name_);
     std::unordered_set<std::string> connected;
     for (const auto& dep : semantic_model_->dependencies)
     {
         const std::string source_identity
-            = building_identity_key(dep.source_module_path, dep.source_qualified_name);
+            = exact_building_identity_key(dep.source_file_path, dep.source_module_path, dep.source_qualified_name);
         const std::string target_identity
-            = building_identity_key(dep.target_module_path, dep.target_qualified_name);
-        if (source_identity == selected_loose_identity)
+            = exact_building_identity_key(dep.target_file_path, dep.target_module_path, dep.target_qualified_name);
+        if (source_identity == selected_identity)
             connected.insert(target_identity);
-        else if (target_identity == selected_loose_identity)
+        else if (target_identity == selected_identity)
             connected.insert(source_identity);
     }
 
@@ -1289,20 +1299,19 @@ void MegaCityHost::apply_selection_opacity()
         const std::string object_identity = obj.source_name.empty()
             ? std::string()
             : exact_building_identity_key(obj.source_file_path, obj.source_module_path, obj.source_name);
-        const std::string object_loose_identity = obj.source_name.empty()
-            ? std::string()
-            : building_identity_key(obj.source_module_path, obj.source_name);
         const bool is_selected = !object_identity.empty() && object_identity == selected_identity;
-        // A same-name building in a different file (e.g. two FakeGlyph) shares the same
-        // loose identity as the selected building. Don't treat it as connected — it's a
-        // different object that happens to have the same qualified name.
-        const bool is_same_name_different_file = !is_selected
-            && !object_loose_identity.empty() && object_loose_identity == selected_loose_identity;
-        const bool is_connected = !is_same_name_different_file
-            && !object_loose_identity.empty() && connected.count(object_loose_identity) > 0;
+        const bool is_connected = !object_identity.empty() && connected.count(object_identity) > 0;
         const bool is_selected_route = !obj.route_source.empty()
-            && (building_identity_key(obj.route_source_module_path, obj.route_source) == selected_loose_identity
-                || building_identity_key(obj.route_target_module_path, obj.route_target) == selected_loose_identity);
+            && (exact_building_identity_key(
+                    obj.route_source_file_path,
+                    obj.route_source_module_path,
+                    obj.route_source)
+                    == selected_identity
+                || exact_building_identity_key(
+                       obj.route_target_file_path,
+                       obj.route_target_module_path,
+                       obj.route_target)
+                    == selected_identity);
 
         float alpha = obj.mesh == MeshId::RoadSurface
             ? renderer_config_.selection_hidden_road_alpha

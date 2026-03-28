@@ -109,8 +109,10 @@ struct CustomMeshRef
 // Links a route segment entity to the buildings it connects.
 struct RouteLink
 {
+    std::string source_file_path;
     std::string source_module_path;
     std::string source_qualified_name;
+    std::string target_file_path;
     std::string target_module_path;
     std::string target_qualified_name;
 };

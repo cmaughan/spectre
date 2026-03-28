@@ -901,6 +901,7 @@ TEST_CASE("city routes dependencies through visible road space between buildings
     SemanticCityBuilding source;
     source.module_path = "libs/example";
     source.qualified_name = "Source";
+    source.source_file_path = "libs/example/source.h";
     source.center = { 0.0f, 0.0f };
     source.metrics = {
         .footprint = 4.0f,
@@ -911,6 +912,7 @@ TEST_CASE("city routes dependencies through visible road space between buildings
 
     SemanticCityBuilding target = source;
     target.qualified_name = "Target";
+    target.source_file_path = "libs/example/target.h";
     target.center = { 8.0f, 8.0f };
 
     module_layout.buildings = { source, target };
@@ -929,12 +931,20 @@ TEST_CASE("city routes dependencies through visible road space between buildings
         "Target",
         "libs/example",
         "Target",
+        source.source_file_path,
+        target.source_file_path,
     });
 
     MegaCityCodeConfig config;
     config.placement_step = 0.5f;
     const CityGrid grid = build_city_grid(layout, config);
-    const auto routes = build_city_routes_for_selection(layout, model, grid, "Target");
+    const auto routes = build_city_routes_for_selection(
+        layout,
+        model,
+        grid,
+        target.source_file_path,
+        target.module_path,
+        target.qualified_name);
 
     REQUIRE(routes.size() == 1);
     const auto& route = routes[0];
@@ -975,22 +985,26 @@ TEST_CASE("selection routes allocate distinct target ports", "[megacity]")
     target.module_path = "libs/example";
     target.qualified_name = "Target";
     target.display_name = "Target";
+    target.source_file_path = "libs/example/target.h";
     target.center = { 8.0f, 0.0f };
     target.metrics = { 4.0f, 6.0f, 1.0f, 1.0f };
 
     SemanticCityBuilding west = target;
     west.qualified_name = "West";
     west.display_name = "West";
+    west.source_file_path = "libs/example/west.h";
     west.center = { 0.0f, 0.0f };
 
     SemanticCityBuilding north = target;
     north.qualified_name = "North";
     north.display_name = "North";
+    north.source_file_path = "libs/example/north.h";
     north.center = { 8.0f, 8.0f };
 
     SemanticCityBuilding east = target;
     east.qualified_name = "East";
     east.display_name = "East";
+    east.source_file_path = "libs/example/east.h";
     east.center = { 16.0f, 0.0f };
 
     SemanticCityModuleLayout module_layout;
@@ -1006,14 +1020,47 @@ TEST_CASE("selection routes allocate distinct target ports", "[megacity]")
 
     SemanticMegacityModel model;
     model.modules.push_back({ module_layout.module_path, 0, 0.5f, {}, module_layout.buildings });
-    model.dependencies.push_back({ "libs/example", "West", "target_", "Target", "libs/example", "Target" });
-    model.dependencies.push_back({ "libs/example", "North", "target_", "Target", "libs/example", "Target" });
-    model.dependencies.push_back({ "libs/example", "East", "target_", "Target", "libs/example", "Target" });
+    model.dependencies.push_back({
+        "libs/example",
+        "West",
+        "target_",
+        "Target",
+        "libs/example",
+        "Target",
+        west.source_file_path,
+        target.source_file_path,
+    });
+    model.dependencies.push_back({
+        "libs/example",
+        "North",
+        "target_",
+        "Target",
+        "libs/example",
+        "Target",
+        north.source_file_path,
+        target.source_file_path,
+    });
+    model.dependencies.push_back({
+        "libs/example",
+        "East",
+        "target_",
+        "Target",
+        "libs/example",
+        "Target",
+        east.source_file_path,
+        target.source_file_path,
+    });
 
     MegaCityCodeConfig config;
     config.placement_step = 0.5f;
     const CityGrid grid = build_city_grid(layout, config);
-    const auto routes = build_city_routes_for_selection(layout, model, grid, "Target");
+    const auto routes = build_city_routes_for_selection(
+        layout,
+        model,
+        grid,
+        target.source_file_path,
+        target.module_path,
+        target.qualified_name);
 
     REQUIRE(routes.size() == 3);
     REQUIRE(routes[0].world_points.size() >= 2);
@@ -1033,8 +1080,10 @@ TEST_CASE("route render segments preserve independent route geometry", "[megacit
 {
     std::vector<CityGrid::RoutePolyline> routes;
     routes.push_back({
+        "libs/example/alpha.h",
         "libs/example",
         "Alpha",
+        "libs/example/target.h",
         "libs/example",
         "Target",
         {},
@@ -1050,8 +1099,10 @@ TEST_CASE("route render segments preserve independent route geometry", "[megacit
         },
     });
     routes.push_back({
+        "libs/example/beta.h",
         "libs/example",
         "Beta",
+        "libs/example/target.h",
         "libs/example",
         "Target",
         {},
@@ -1087,6 +1138,76 @@ TEST_CASE("route render segments preserve independent route geometry", "[megacit
     CHECK(found_centerline_gradient_segment);
     CHECK(found_greenish_segment);
     CHECK(found_reddish_segment);
+}
+
+TEST_CASE("selection routes distinguish duplicate names in the same module by source file", "[megacity]")
+{
+    SemanticCityBuilding left;
+    left.module_path = "tests";
+    left.qualified_name = "FakeGlyphAtlas";
+    left.display_name = "FakeGlyphAtlas";
+    left.source_file_path = "tests/font_size_tests.cpp";
+    left.center = { -4.0f, 0.0f };
+    left.metrics = { 2.5f, 4.0f, 1.0f, 1.0f };
+
+    SemanticCityBuilding right = left;
+    right.source_file_path = "tests/grid_rendering_pipeline_tests.cpp";
+    right.center = { 4.0f, 0.0f };
+
+    SemanticCityBuilding target = left;
+    target.qualified_name = "IGlyphAtlas";
+    target.display_name = "IGlyphAtlas";
+    target.source_file_path = "libs/draxul-font/include/draxul/iglyph_atlas.h";
+    target.center = { 0.0f, 8.0f };
+
+    SemanticCityModuleLayout module_layout;
+    module_layout.module_path = "tests";
+    module_layout.buildings = { left, right, target };
+
+    SemanticMegacityLayout layout;
+    layout.modules.push_back(module_layout);
+    layout.min_x = -8.0f;
+    layout.max_x = 8.0f;
+    layout.min_z = -4.0f;
+    layout.max_z = 12.0f;
+
+    SemanticMegacityModel model;
+    model.modules.push_back({ module_layout.module_path, 0, 0.5f, {}, module_layout.buildings });
+    model.dependencies.push_back({
+        right.module_path,
+        right.qualified_name,
+        "impl_",
+        target.qualified_name,
+        target.module_path,
+        target.qualified_name,
+        right.source_file_path,
+        target.source_file_path,
+    });
+
+    MegaCityCodeConfig config;
+    config.placement_step = 0.5f;
+    const CityGrid grid = build_city_grid(layout, config);
+
+    const auto left_routes = build_city_routes_for_selection(
+        layout,
+        model,
+        grid,
+        left.source_file_path,
+        left.module_path,
+        left.qualified_name);
+    CHECK(left_routes.empty());
+
+    const auto right_routes = build_city_routes_for_selection(
+        layout,
+        model,
+        grid,
+        right.source_file_path,
+        right.module_path,
+        right.qualified_name);
+    REQUIRE(right_routes.size() == 1);
+    CHECK(right_routes[0].source_file_path == right.source_file_path);
+    CHECK(right_routes[0].source_qualified_name == right.qualified_name);
+    CHECK(right_routes[0].target_file_path == target.source_file_path);
 }
 
 TEST_CASE("roof sign mesh textures only the top face", "[megacity]")

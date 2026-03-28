@@ -45,6 +45,8 @@ struct CityDependencyRecord
     std::string field_type_name;
     std::string target_qualified_name;
     std::string target_module_path;
+    std::string source_file_path;
+    std::string target_file_path;
 };
 
 struct CodebaseHealthMetrics

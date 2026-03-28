@@ -45,6 +45,8 @@ struct SemanticCityDependency
     std::string field_type_name;
     std::string target_module_path;
     std::string target_qualified_name;
+    std::string source_file_path;
+    std::string target_file_path;
 };
 
 struct SemanticCityModuleModel
@@ -200,8 +202,10 @@ struct CityGrid
 {
     struct RoutePolyline
     {
+        std::string source_file_path;
         std::string source_module_path;
         std::string source_qualified_name;
+        std::string target_file_path;
         std::string target_module_path;
         std::string target_qualified_name;
         std::string field_name;
@@ -253,6 +257,8 @@ inline constexpr uint8_t kCityGridPark = 4;
     const SemanticMegacityLayout& layout, const SemanticMegacityModel& model, const MegaCityCodeConfig& config);
 [[nodiscard]] std::vector<CityGrid::RoutePolyline> build_city_routes_for_selection(
     const SemanticMegacityLayout& layout, const SemanticMegacityModel& model, const CityGrid& grid,
+    std::string_view focus_source_file_path,
+    std::string_view focus_module_path,
     std::string_view focus_qualified_name);
 [[nodiscard]] std::vector<CityGrid::RouteRenderSegment> build_city_route_render_segments(
     const std::vector<CityGrid::RoutePolyline>& routes, float lane_spacing);

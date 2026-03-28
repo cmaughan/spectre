@@ -302,9 +302,12 @@ bool try_place_candidate(
     return true;
 }
 
-std::string building_key(std::string_view module_path, std::string_view qualified_name)
+std::string building_key(
+    std::string_view source_file_path,
+    std::string_view module_path,
+    std::string_view qualified_name)
 {
-    return std::string(module_path) + "|" + std::string(qualified_name);
+    return std::string(source_file_path) + "|" + std::string(module_path) + "|" + std::string(qualified_name);
 }
 
 int grid_index(const CityGrid& grid, int col, int row)
@@ -446,26 +449,33 @@ std::optional<BuildingRoutePort> make_building_route_port(
 }
 
 std::vector<RoutePair> collect_route_pairs(
-    const SemanticMegacityLayout& layout, const SemanticMegacityModel& model, std::string_view focus_qualified_name)
+    const SemanticMegacityLayout& layout,
+    const SemanticMegacityModel& model,
+    std::string_view focus_source_file_path,
+    std::string_view focus_module_path,
+    std::string_view focus_qualified_name)
 {
     std::unordered_map<std::string, const SemanticCityBuilding*> buildings_by_key;
     for (const auto& module_layout : layout.modules)
     {
         for (const auto& building : module_layout.buildings)
-            buildings_by_key.emplace(building_key(building.module_path, building.qualified_name), &building);
+            buildings_by_key.emplace(
+                building_key(building.source_file_path, building.module_path, building.qualified_name),
+                &building);
     }
 
+    const std::string focus_key = focus_qualified_name.empty()
+        ? std::string()
+        : building_key(focus_source_file_path, focus_module_path, focus_qualified_name);
     std::vector<RoutePair> route_pairs;
     route_pairs.reserve(model.dependencies.size());
     for (const auto& dep : model.dependencies)
     {
-        const std::string source_key = building_key(dep.source_module_path, dep.source_qualified_name);
-        const std::string target_key = building_key(dep.target_module_path, dep.target_qualified_name);
-        if (!focus_qualified_name.empty()
-            && dep.source_qualified_name != focus_qualified_name
-            && dep.target_qualified_name != focus_qualified_name
-            && source_key != focus_qualified_name
-            && target_key != focus_qualified_name)
+        const std::string source_key = building_key(
+            dep.source_file_path, dep.source_module_path, dep.source_qualified_name);
+        const std::string target_key = building_key(
+            dep.target_file_path, dep.target_module_path, dep.target_qualified_name);
+        if (!focus_key.empty() && source_key != focus_key && target_key != focus_key)
         {
             continue;
         }
@@ -511,22 +521,28 @@ std::vector<AssignedRoutePorts> assign_route_ports(
         const PortSide source_side = side_towards(*route.source, *route.target);
         const PortSide target_side = side_towards(*route.target, *route.source);
 
-        groups[route_port_group_key(building_key(route.source->module_path, route.source->qualified_name), source_side)].push_back({
-            route_index,
-            true,
-            route.source,
-            route.target,
-            source_side,
-            side_sort_key(source_side, *route.target),
-        });
-        groups[route_port_group_key(building_key(route.target->module_path, route.target->qualified_name), target_side)].push_back({
-            route_index,
-            false,
-            route.target,
-            route.source,
-            target_side,
-            side_sort_key(target_side, *route.source),
-        });
+        groups[route_port_group_key(
+                   building_key(route.source->source_file_path, route.source->module_path, route.source->qualified_name),
+                   source_side)]
+            .push_back({
+                route_index,
+                true,
+                route.source,
+                route.target,
+                source_side,
+                side_sort_key(source_side, *route.target),
+            });
+        groups[route_port_group_key(
+                   building_key(route.target->source_file_path, route.target->module_path, route.target->qualified_name),
+                   target_side)]
+            .push_back({
+                route_index,
+                false,
+                route.target,
+                route.source,
+                target_side,
+                side_sort_key(target_side, *route.source),
+            });
     }
 
     std::vector<AssignedRoutePorts> assignments(route_pairs.size());
@@ -894,10 +910,17 @@ bool find_visibility_path(
 
 std::vector<CityGrid::RoutePolyline> build_city_routes_from_grid(
     const SemanticMegacityLayout& layout, const SemanticMegacityModel& model, const CityGrid& grid,
+    std::string_view focus_source_file_path,
+    std::string_view focus_module_path,
     std::string_view focus_qualified_name)
 {
     (void)grid;
-    const std::vector<RoutePair> route_pairs = collect_route_pairs(layout, model, focus_qualified_name);
+    const std::vector<RoutePair> route_pairs = collect_route_pairs(
+        layout,
+        model,
+        focus_source_file_path,
+        focus_module_path,
+        focus_qualified_name);
     const std::vector<AssignedRoutePorts> assigned_ports = assign_route_ports(route_pairs, grid);
     const CitySurfaceBounds road_bounds = compute_city_road_surface_bounds(layout);
     const VisibilityGraph visibility_graph = build_visibility_graph(road_bounds, build_route_obstacles(layout));
@@ -933,8 +956,10 @@ std::vector<CityGrid::RoutePolyline> build_city_routes_from_grid(
 
         simplify_polyline(world_points);
         route_results[route_index] = CityGrid::RoutePolyline{
+            pair.source->source_file_path,
             pair.source->module_path,
             pair.source_qualified_name,
+            pair.target->source_file_path,
             pair.target->module_path,
             pair.target_qualified_name,
             pair.field_name,
@@ -1189,6 +1214,8 @@ SemanticMegacityModel build_semantic_megacity_model(
                 dep.field_type_name,
                 dep.target_module_path,
                 dep.target_qualified_name,
+                dep.source_file_path,
+                dep.target_file_path,
             });
         }
     }
@@ -1585,16 +1612,24 @@ std::vector<CityGrid::RoutePolyline> build_city_routes(
     const SemanticMegacityLayout& layout, const SemanticMegacityModel& model, const MegaCityCodeConfig& config)
 {
     const CityGrid routing_grid = build_city_grid(layout, config);
-    return build_city_routes_from_grid(layout, model, routing_grid, {});
+    return build_city_routes_from_grid(layout, model, routing_grid, {}, {}, {});
 }
 
 std::vector<CityGrid::RoutePolyline> build_city_routes_for_selection(
     const SemanticMegacityLayout& layout, const SemanticMegacityModel& model, const CityGrid& grid,
+    std::string_view focus_source_file_path,
+    std::string_view focus_module_path,
     std::string_view focus_qualified_name)
 {
     if (focus_qualified_name.empty())
         return {};
-    return build_city_routes_from_grid(layout, model, grid, focus_qualified_name);
+    return build_city_routes_from_grid(
+        layout,
+        model,
+        grid,
+        focus_source_file_path,
+        focus_module_path,
+        focus_qualified_name);
 }
 
 std::vector<CityGrid::RouteRenderSegment> build_city_route_render_segments(

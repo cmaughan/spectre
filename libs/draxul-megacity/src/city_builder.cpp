@@ -283,10 +283,15 @@ void build_point_shadow_debug_scene(
     }
 }
 
-std::string building_connection_key(std::string_view module_path, std::string_view qualified_name)
+std::string building_connection_key(
+    std::string_view source_file_path,
+    std::string_view module_path,
+    std::string_view qualified_name)
 {
     std::string key;
-    key.reserve(module_path.size() + qualified_name.size() + 1);
+    key.reserve(source_file_path.size() + module_path.size() + qualified_name.size() + 2);
+    key.append(source_file_path);
+    key.push_back('\n');
     key.append(module_path);
     key.push_back('\n');
     key.append(qualified_name);
@@ -300,9 +305,11 @@ std::unordered_map<std::string, int> build_incident_connection_counts(const Sema
     for (const SemanticCityDependency& dependency : model.dependencies)
     {
         ++connection_counts[building_connection_key(
+            dependency.source_file_path,
             dependency.source_module_path,
             dependency.source_qualified_name)];
         ++connection_counts[building_connection_key(
+            dependency.target_file_path,
             dependency.target_module_path,
             dependency.target_qualified_name)];
     }
@@ -914,7 +921,7 @@ CityBuildResult build_city(
         for (const auto& building : module_layout.buildings)
         {
             const auto count_it = building_connection_counts.find(
-                building_connection_key(building.module_path, building.qualified_name));
+                building_connection_key(building.source_file_path, building.module_path, building.qualified_name));
             const int incident_connection_count
                 = count_it != building_connection_counts.end() ? count_it->second : 0;
             const int building_side_count = procedural_building_side_count(
@@ -1048,12 +1055,18 @@ CityBuildResult build_city(
         std::unordered_map<std::string, glm::vec2> layout_centers;
         for (const auto& module_layout : layout->modules)
             for (const auto& building : module_layout.buildings)
-                layout_centers[building_connection_key(building.module_path, building.qualified_name)] = building.center;
+                layout_centers[building_connection_key(
+                    building.source_file_path,
+                    building.module_path,
+                    building.qualified_name)] = building.center;
 
         for (auto& module : semantic_model->modules)
             for (auto& building : module.buildings)
             {
-                auto it = layout_centers.find(building_connection_key(building.module_path, building.qualified_name));
+                auto it = layout_centers.find(building_connection_key(
+                    building.source_file_path,
+                    building.module_path,
+                    building.qualified_name));
                 if (it != layout_centers.end())
                     building.center = it->second;
             }
@@ -1091,7 +1104,7 @@ void emit_route_entities(
         char side = std::abs(dir.x) > std::abs(dir.y)
             ? (dir.x > 0.0f ? 'E' : 'W')
             : (dir.y > 0.0f ? 'N' : 'S');
-        return route.source_qualified_name + '#' + side;
+        return route.source_file_path + "#" + route.source_module_path + "#" + route.source_qualified_name + '#' + side;
     };
 
     for (size_t route_index = 0; route_index < routes.size(); ++route_index)
@@ -1136,8 +1149,10 @@ void emit_route_entities(
                 SourceSymbol{},
                 layered_route_elevation,
                 RouteLink{
+                    route.source_file_path,
                     route.source_module_path,
                     route.source_qualified_name,
+                    route.target_file_path,
                     route.target_module_path,
                     route.target_qualified_name,
                 });
