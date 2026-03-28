@@ -1,8 +1,8 @@
+#include "support/scoped_env_var.h"
 #include "support/test_support.h"
 
 #include <catch2/catch_all.hpp>
 #include <chrono>
-#include <cstdlib>
 #include <draxul/log.h>
 #include <draxul/nvim.h>
 #include <filesystem>
@@ -14,53 +14,6 @@ using namespace draxul::tests;
 
 namespace
 {
-
-class ScopedEnvVar
-{
-public:
-    ScopedEnvVar(const char* name, const char* value)
-        : name_(name)
-    {
-        const char* existing = std::getenv(name_);
-        if (existing)
-        {
-            had_original_ = true;
-            original_ = existing;
-        }
-        set(value);
-    }
-
-    ~ScopedEnvVar()
-    {
-        if (had_original_)
-            set(original_.c_str());
-        else
-            clear();
-    }
-
-private:
-    void set(const char* value)
-    {
-#ifdef _WIN32
-        _putenv_s(name_, value);
-#else
-        setenv(name_, value, 1);
-#endif
-    }
-
-    void clear()
-    {
-#ifdef _WIN32
-        _putenv_s(name_, "");
-#else
-        unsetenv(name_);
-#endif
-    }
-
-    const char* name_;
-    bool had_original_ = false;
-    std::string original_;
-};
 
 std::string helper_path()
 {

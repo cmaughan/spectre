@@ -12,14 +12,14 @@ using namespace draxul;
 namespace
 {
 
-struct CorpusEntry
+struct FontFallbackCorpusEntry
 {
     const char* script;
     std::string text; // UTF-8 encoded sample codepoint(s)
 };
 
 // UTF-8 encoded codepoints for each script block (1-3 representative codepoints each)
-const CorpusEntry k_corpus[] = {
+const FontFallbackCorpusEntry k_corpus[] = {
     { "Latin", "A" }, // U+0041
     { "Greek", "\xCE\x91" }, // U+0391 GREEK CAPITAL LETTER ALPHA
     { "Cyrillic", "\xD0\x90" }, // U+0410 CYRILLIC CAPITAL LETTER A
@@ -163,7 +163,7 @@ TEST_CASE("font fallback corpus: TextService initializes and all script blocks r
 
     // At minimum Latin, Greek, Cyrillic, Math symbols, and Box Drawing must resolve
     // because those are covered by the primary font (JetBrainsMonoNerdFont).
-    const CorpusEntry* required[] = {
+    const FontFallbackCorpusEntry* required[] = {
         &k_corpus[0], // Latin
         &k_corpus[1], // Greek
         &k_corpus[2], // Cyrillic

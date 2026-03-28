@@ -1,137 +1,15 @@
-#include "support/fake_renderer.h"
-#include "support/fake_window.h"
 #include "support/test_host_callbacks.h"
 #include "support/test_support.h"
-
-#include <draxul/terminal_host_base.h>
-
-#include <draxul/host.h>
-#include <draxul/renderer.h>
-#include <draxul/text_service.h>
-#include <draxul/window.h>
+#include "support/test_terminal_host_fixture.h"
+#include "support/test_vt_terminal_host.h"
 
 #include <catch2/catch_all.hpp>
 
-#include <filesystem>
 #include <string>
-#include <vector>
 
 using namespace draxul;
 using namespace draxul::tests;
-
-// ---------------------------------------------------------------------------
-// TestTerminalHost — exposes consume_output() as feed() for unit tests.
-// ---------------------------------------------------------------------------
-
-class TestTerminalHost final : public TerminalHostBase
-{
-public:
-    // Feed raw VT bytes into the parser.
-    void feed(std::string_view bytes)
-    {
-        consume_output(bytes);
-    }
-
-    // Grid inspection helpers.
-    std::string cell_text(int col, int row)
-    {
-        return std::string(grid().get_cell(col, row).text.view());
-    }
-    uint16_t cell_hl(int col, int row)
-    {
-        return grid().get_cell(col, row).hl_attr_id;
-    }
-
-    int col() const
-    {
-        return cursor_col();
-    }
-    int row() const
-    {
-        return cursor_row();
-    }
-    int scroll_top() const
-    {
-        return vt_state().scroll_top;
-    }
-    int scroll_bottom() const
-    {
-        return vt_state().scroll_bottom;
-    }
-
-    std::string written; // bytes sent back to the "process"
-
-    int cols_ = 20;
-    int rows_ = 5;
-
-protected:
-    std::string_view host_name() const override
-    {
-        return "test";
-    }
-
-    bool initialize_host() override
-    {
-        highlights().set_default_fg({ 1.0f, 1.0f, 1.0f, 1.0f });
-        highlights().set_default_bg({ 0.0f, 0.0f, 0.0f, 1.0f });
-        apply_grid_size(cols_, rows_);
-        reset_terminal_state();
-        set_content_ready(true);
-        return true;
-    }
-
-    bool do_process_write(std::string_view text) override
-    {
-        written += text;
-        return true;
-    }
-    std::vector<std::string> do_process_drain() override
-    {
-        return {};
-    }
-    bool do_process_resize(int, int) override
-    {
-        return true;
-    }
-    bool do_process_is_running() const override
-    {
-        return true;
-    }
-    void do_process_shutdown() override {}
-};
-
-// ---------------------------------------------------------------------------
-// Setup helper
-// ---------------------------------------------------------------------------
-
-struct TermSetup
-{
-    FakeWindow window;
-    FakeTermRenderer renderer;
-    TextService text_service;
-    TestTerminalHost host;
-    TestHostCallbacks callbacks;
-    bool ok = false;
-
-    explicit TermSetup(int cols = 20, int rows = 5)
-    {
-        host.cols_ = cols;
-        host.rows_ = rows;
-
-        // TextService initialisation: don't care about glyph rendering for VT tests.
-        // Use an absolute path so the test works regardless of the working directory.
-        TextServiceConfig ts_cfg;
-        ts_cfg.font_path = (std::filesystem::path(DRAXUL_PROJECT_ROOT) / "fonts" / "JetBrainsMonoNerdFont-Regular.ttf").string();
-        text_service.initialize(ts_cfg, TextService::DEFAULT_POINT_SIZE, 96.0f);
-
-        HostViewport vp;
-        vp.grid_size.x = cols;
-        vp.grid_size.y = rows;
-
-        HostContext ctx{ &window, &renderer, &text_service, {}, vp, 96.0f };
-        ok = host.initialize(ctx, callbacks);
-    }
-};
+using VtTerminalSetup = TerminalHostFixture<TestVtTerminalHost>;
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -139,7 +17,7 @@ struct TermSetup
 
 TEST_CASE("terminal: plain text writes to grid cells", "[terminal]")
 {
-    TermSetup ts;
+    VtTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("Hello");
@@ -155,7 +33,7 @@ TEST_CASE("terminal: plain text writes to grid cells", "[terminal]")
 
 TEST_CASE("terminal: carriage return moves cursor to column 0", "[terminal]")
 {
-    TermSetup ts;
+    VtTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("AB\rC");
@@ -169,7 +47,7 @@ TEST_CASE("terminal: carriage return moves cursor to column 0", "[terminal]")
 
 TEST_CASE("terminal: linefeed advances row without carriage return", "[terminal]")
 {
-    TermSetup ts;
+    VtTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("AB\nC");
@@ -183,7 +61,7 @@ TEST_CASE("terminal: linefeed advances row without carriage return", "[terminal]
 
 TEST_CASE("terminal: CRLF advances row and resets column", "[terminal]")
 {
-    TermSetup ts;
+    VtTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("AB\r\nCD");
@@ -199,7 +77,7 @@ TEST_CASE("terminal: CRLF advances row and resets column", "[terminal]")
 
 TEST_CASE("terminal: scroll when cursor at bottom", "[terminal]")
 {
-    TermSetup ts(4, 3);
+    VtTerminalSetup ts(4, 3);
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("A\r\nB\r\nC\r\nD");
@@ -215,7 +93,7 @@ TEST_CASE("terminal: scroll when cursor at bottom", "[terminal]")
 
 TEST_CASE("terminal: CSI H positions cursor", "[terminal]")
 {
-    TermSetup ts;
+    VtTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("\x1B[4;7H");
@@ -227,7 +105,7 @@ TEST_CASE("terminal: CSI H positions cursor", "[terminal]")
 
 TEST_CASE("terminal: CSI H with no params moves to home", "[terminal]")
 {
-    TermSetup ts;
+    VtTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("AB\r\nCD\x1B[H");
@@ -239,7 +117,7 @@ TEST_CASE("terminal: CSI H with no params moves to home", "[terminal]")
 
 TEST_CASE("terminal: CSI A/B/C/D move cursor", "[terminal]")
 {
-    TermSetup ts(20, 5);
+    VtTerminalSetup ts(20, 5);
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("\x1B[3;3H"); // 1-based row 3 col 3 -> row 2 col 2
@@ -259,7 +137,7 @@ TEST_CASE("terminal: CSI A/B/C/D move cursor", "[terminal]")
 
 TEST_CASE("terminal: CSI G CHA positions in column", "[terminal]")
 {
-    TermSetup ts;
+    VtTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("Hello\x1B[3G"); // col 3 (1-based) -> col 2 (0-based)
@@ -269,7 +147,7 @@ TEST_CASE("terminal: CSI G CHA positions in column", "[terminal]")
 
 TEST_CASE("terminal: CSI E and F cursor next/preceding line", "[terminal]")
 {
-    TermSetup ts(20, 5);
+    VtTerminalSetup ts(20, 5);
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("\x1B[3;5H\x1B[2E"); // row 3,col 5 -> CNL 2 -> row 5 (max 4), col 0
@@ -286,7 +164,7 @@ TEST_CASE("terminal: CSI E and F cursor next/preceding line", "[terminal]")
 
 TEST_CASE("terminal: cursor save and restore", "[terminal]")
 {
-    TermSetup ts;
+    VtTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("\x1B[3;5H\x1B[s\x1B[1;1H\x1B[u");
@@ -298,7 +176,7 @@ TEST_CASE("terminal: cursor save and restore", "[terminal]")
 
 TEST_CASE("terminal: backspace moves cursor left", "[terminal]")
 {
-    TermSetup ts;
+    VtTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("ABC\b");
@@ -308,7 +186,7 @@ TEST_CASE("terminal: backspace moves cursor left", "[terminal]")
 
 TEST_CASE("terminal: tab advances to next 8-column boundary", "[terminal]")
 {
-    TermSetup ts(20, 3);
+    VtTerminalSetup ts(20, 3);
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("AB\t");
@@ -321,7 +199,7 @@ TEST_CASE("terminal: tab advances to next 8-column boundary", "[terminal]")
 
 TEST_CASE("terminal: CSI d VPA sets row directly", "[terminal]")
 {
-    TermSetup ts(10, 5);
+    VtTerminalSetup ts(10, 5);
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("\x1B[3d");
@@ -331,7 +209,7 @@ TEST_CASE("terminal: CSI d VPA sets row directly", "[terminal]")
 
 TEST_CASE("terminal: CSI K erases to end of line", "[terminal]")
 {
-    TermSetup ts;
+    VtTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("Hello\x1B[3G\x1B[K"); // write, move to col 3 (1-based = col 2 0-based), erase to EOL
@@ -349,7 +227,7 @@ TEST_CASE("terminal: CSI K erases to end of line", "[terminal]")
 
 TEST_CASE("terminal: CSI 2K erases whole line", "[terminal]")
 {
-    TermSetup ts;
+    VtTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("Hello\x1B[3G\x1B[2K");
@@ -362,7 +240,7 @@ TEST_CASE("terminal: CSI 2K erases whole line", "[terminal]")
 
 TEST_CASE("terminal: CSI 2J clears entire screen", "[terminal]")
 {
-    TermSetup ts(5, 3);
+    VtTerminalSetup ts(5, 3);
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("ABCDE\r\nFGHIJ\r\nKLMNO\x1B[2J");
@@ -376,7 +254,7 @@ TEST_CASE("terminal: CSI 2J clears entire screen", "[terminal]")
 
 TEST_CASE("terminal: SGR colors produce distinct hl_attr_ids", "[terminal]")
 {
-    TermSetup ts;
+    VtTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("\x1B[31mA\x1B[32mB\x1B[0mC");
@@ -392,7 +270,7 @@ TEST_CASE("terminal: SGR colors produce distinct hl_attr_ids", "[terminal]")
 
 TEST_CASE("terminal: DECSTBM scroll region restricts newline scroll", "[terminal]")
 {
-    TermSetup ts(5, 5);
+    VtTerminalSetup ts(5, 5);
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("AAAAA\r\nBBBBB\r\nCCCCC\r\nDDDDD\r\nEEEEE");
@@ -413,7 +291,7 @@ TEST_CASE("terminal: DECSTBM scroll region restricts newline scroll", "[terminal
 
 TEST_CASE("terminal: CSI S scrolls up within scroll region", "[terminal]")
 {
-    TermSetup ts(5, 5);
+    VtTerminalSetup ts(5, 5);
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("AAAAA\r\nBBBBB\r\nCCCCC\r\nDDDDD\r\nEEEEE");
@@ -433,7 +311,7 @@ TEST_CASE("terminal: CSI S scrolls up within scroll region", "[terminal]")
 
 TEST_CASE("terminal: CSI T scrolls down within scroll region", "[terminal]")
 {
-    TermSetup ts(5, 5);
+    VtTerminalSetup ts(5, 5);
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("AAAAA\r\nBBBBB\r\nCCCCC\r\nDDDDD\r\nEEEEE");
@@ -453,7 +331,7 @@ TEST_CASE("terminal: CSI T scrolls down within scroll region", "[terminal]")
 
 TEST_CASE("terminal: CSI L inserts blank lines pushing content down", "[terminal]")
 {
-    TermSetup ts(5, 5);
+    VtTerminalSetup ts(5, 5);
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("AAAAA\r\nBBBBB\r\nCCCCC\r\nDDDDD\r\nEEEEE");
@@ -473,7 +351,7 @@ TEST_CASE("terminal: CSI L inserts blank lines pushing content down", "[terminal
 
 TEST_CASE("terminal: CSI M deletes lines pulling content up", "[terminal]")
 {
-    TermSetup ts(5, 5);
+    VtTerminalSetup ts(5, 5);
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("AAAAA\r\nBBBBB\r\nCCCCC\r\nDDDDD\r\nEEEEE");
@@ -493,7 +371,7 @@ TEST_CASE("terminal: CSI M deletes lines pulling content up", "[terminal]")
 
 TEST_CASE("terminal: CSI @ inserts blank characters shifting right", "[terminal]")
 {
-    TermSetup ts(6, 1);
+    VtTerminalSetup ts(6, 1);
     INFO("host must initialize");
     REQUIRE(ts.ok);
     // Write ABCDE, then move to col 3 (1-based = col 2 0-based) via CHA, insert 2 chars
@@ -515,7 +393,7 @@ TEST_CASE("terminal: CSI @ inserts blank characters shifting right", "[terminal]
 
 TEST_CASE("terminal: CSI P deletes characters pulling left", "[terminal]")
 {
-    TermSetup ts(6, 1);
+    VtTerminalSetup ts(6, 1);
     INFO("host must initialize");
     REQUIRE(ts.ok);
     // Write ABCDEF, then move to col 3 (1-based = col 2 0-based) via CHA, delete 2 chars
@@ -537,7 +415,7 @@ TEST_CASE("terminal: CSI P deletes characters pulling left", "[terminal]")
 
 TEST_CASE("terminal: CSI X erases characters in place", "[terminal]")
 {
-    TermSetup ts(6, 1);
+    VtTerminalSetup ts(6, 1);
     INFO("host must initialize");
     REQUIRE(ts.ok);
     // Write ABCDEF, then move to col 3 (1-based = col 2 0-based) via CHA, erase 3 chars
@@ -559,7 +437,7 @@ TEST_CASE("terminal: CSI X erases characters in place", "[terminal]")
 
 TEST_CASE("terminal: alternate screen entry clears screen", "[terminal]")
 {
-    TermSetup ts(5, 3);
+    VtTerminalSetup ts(5, 3);
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("Hello\x1B[?1049h");
@@ -571,7 +449,7 @@ TEST_CASE("terminal: alternate screen entry clears screen", "[terminal]")
 
 TEST_CASE("terminal: alternate screen exit restores main screen content", "[terminal]")
 {
-    TermSetup ts(5, 3);
+    VtTerminalSetup ts(5, 3);
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("Hello\x1B[?1049h"); // enter alt screen (saves main)
@@ -587,7 +465,7 @@ TEST_CASE("terminal: alternate screen exit restores main screen content", "[term
 
 TEST_CASE("terminal: pending wrap wraps on next character", "[terminal]")
 {
-    TermSetup ts(5, 3);
+    VtTerminalSetup ts(5, 3);
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("ABCDE"); // fills row 0
@@ -602,7 +480,7 @@ TEST_CASE("terminal: pending wrap wraps on next character", "[terminal]")
 
 TEST_CASE("terminal: cursor movement clears pending wrap", "[terminal]")
 {
-    TermSetup ts(5, 3);
+    VtTerminalSetup ts(5, 3);
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("ABCDE"); // fills row 0, pending wrap
@@ -616,7 +494,7 @@ TEST_CASE("terminal: cursor movement clears pending wrap", "[terminal]")
 
 TEST_CASE("terminal: auto-wrap off prevents wrap", "[terminal]")
 {
-    TermSetup ts(5, 3);
+    VtTerminalSetup ts(5, 3);
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("\x1B[?7l"); // disable auto-wrap
@@ -630,7 +508,7 @@ TEST_CASE("terminal: auto-wrap off prevents wrap", "[terminal]")
 
 TEST_CASE("terminal: scrolled-off rows accumulate in scrollback", "[terminal]")
 {
-    TermSetup ts(5, 3);
+    VtTerminalSetup ts(5, 3);
     INFO("host must initialize");
     REQUIRE(ts.ok);
     // Write 5 rows to a 3-row terminal — 2 rows scroll off
@@ -646,7 +524,7 @@ TEST_CASE("terminal: scrolled-off rows accumulate in scrollback", "[terminal]")
 
 TEST_CASE("terminal: OSC title sequence parses without crash", "[terminal]")
 {
-    TermSetup ts;
+    VtTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("\x1B]0;My Title\x07");
@@ -656,7 +534,7 @@ TEST_CASE("terminal: OSC title sequence parses without crash", "[terminal]")
 
 TEST_CASE("terminal: SGR 0 full reset clears all attributes", "[terminal]")
 {
-    TermSetup ts;
+    VtTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     // Set bold, italic, underline, strikethrough and a foreground color, then reset
@@ -669,7 +547,7 @@ TEST_CASE("terminal: SGR 0 full reset clears all attributes", "[terminal]")
 
 TEST_CASE("terminal: SGR 39 resets foreground to default", "[terminal]")
 {
-    TermSetup ts;
+    VtTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     // Set foreground red, then write A; then reset foreground with SGR 39 and write B
@@ -688,7 +566,7 @@ TEST_CASE("terminal: SGR 39 resets foreground to default", "[terminal]")
 
 TEST_CASE("terminal: SGR 49 resets background to default", "[terminal]")
 {
-    TermSetup ts;
+    VtTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("\x1B[41mA\x1B[49mB");
@@ -704,7 +582,7 @@ TEST_CASE("terminal: SGR 49 resets background to default", "[terminal]")
 
 TEST_CASE("terminal: SGR 1 bold and SGR 22 bold-off", "[terminal]")
 {
-    TermSetup ts;
+    VtTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("\x1B[1mA\x1B[22mB");
@@ -718,7 +596,7 @@ TEST_CASE("terminal: SGR 1 bold and SGR 22 bold-off", "[terminal]")
 
 TEST_CASE("terminal: SGR 3 italic and SGR 23 italic-off", "[terminal]")
 {
-    TermSetup ts;
+    VtTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("\x1B[3mA\x1B[23mB");
@@ -732,7 +610,7 @@ TEST_CASE("terminal: SGR 3 italic and SGR 23 italic-off", "[terminal]")
 
 TEST_CASE("terminal: SGR 4 underline and SGR 24 underline-off", "[terminal]")
 {
-    TermSetup ts;
+    VtTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("\x1B[4mA\x1B[24mB");
@@ -746,7 +624,7 @@ TEST_CASE("terminal: SGR 4 underline and SGR 24 underline-off", "[terminal]")
 
 TEST_CASE("terminal: SGR 9 strikethrough and SGR 29 strikethrough-off", "[terminal]")
 {
-    TermSetup ts;
+    VtTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("\x1B[9mA\x1B[29mB");
@@ -760,7 +638,7 @@ TEST_CASE("terminal: SGR 9 strikethrough and SGR 29 strikethrough-off", "[termin
 
 TEST_CASE("terminal: SGR 30-37 set foreground colors producing distinct hl ids", "[terminal]")
 {
-    TermSetup ts(20, 2);
+    VtTerminalSetup ts(20, 2);
     INFO("host must initialize");
     REQUIRE(ts.ok);
     // Write one character per ANSI foreground color (30–37)
@@ -786,7 +664,7 @@ TEST_CASE("terminal: SGR 30-37 set foreground colors producing distinct hl ids",
 
 TEST_CASE("terminal: SGR 40-47 set background colors producing distinct hl ids", "[terminal]")
 {
-    TermSetup ts(20, 2);
+    VtTerminalSetup ts(20, 2);
     INFO("host must initialize");
     REQUIRE(ts.ok);
     for (int i = 40; i <= 47; ++i)
@@ -809,7 +687,7 @@ TEST_CASE("terminal: SGR 40-47 set background colors producing distinct hl ids",
 
 TEST_CASE("terminal: SGR 90-97 set bright foreground colors", "[terminal]")
 {
-    TermSetup ts(20, 2);
+    VtTerminalSetup ts(20, 2);
     INFO("host must initialize");
     REQUIRE(ts.ok);
     for (int i = 90; i <= 97; ++i)
@@ -833,7 +711,7 @@ TEST_CASE("terminal: SGR 90-97 set bright foreground colors", "[terminal]")
 
 TEST_CASE("terminal: SGR 100-107 set bright background colors", "[terminal]")
 {
-    TermSetup ts(20, 2);
+    VtTerminalSetup ts(20, 2);
     INFO("host must initialize");
     REQUIRE(ts.ok);
     for (int i = 100; i <= 107; ++i)
@@ -856,7 +734,7 @@ TEST_CASE("terminal: SGR 100-107 set bright background colors", "[terminal]")
 
 TEST_CASE("terminal: SGR 38;2 true-color foreground sets distinct hl", "[terminal]")
 {
-    TermSetup ts;
+    VtTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     // True-color red: SGR 38;2;255;0;0
@@ -876,7 +754,7 @@ TEST_CASE("terminal: SGR 38;2 true-color foreground sets distinct hl", "[termina
 
 TEST_CASE("terminal: SGR 48;2 true-color background sets distinct hl", "[terminal]")
 {
-    TermSetup ts;
+    VtTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("\x1B[48;2;0;255;0mA");
@@ -894,7 +772,7 @@ TEST_CASE("terminal: SGR 48;2 true-color background sets distinct hl", "[termina
 
 TEST_CASE("terminal: SGR 38;5 256-color foreground sets distinct hl", "[terminal]")
 {
-    TermSetup ts;
+    VtTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     // 256-color index 200 and 201 should produce different colors
@@ -913,7 +791,7 @@ TEST_CASE("terminal: SGR 38;5 256-color foreground sets distinct hl", "[terminal
 
 TEST_CASE("terminal: SGR 48;5 256-color background sets distinct hl", "[terminal]")
 {
-    TermSetup ts;
+    VtTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("\x1B[48;5;100mA");
@@ -931,7 +809,7 @@ TEST_CASE("terminal: SGR 48;5 256-color background sets distinct hl", "[terminal
 
 TEST_CASE("terminal: SGR 38;5;0 uses ANSI black (index 0)", "[terminal]")
 {
-    TermSetup ts;
+    VtTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("\x1B[38;5;0mA\x1B[0mB");
@@ -943,7 +821,7 @@ TEST_CASE("terminal: SGR 38;5;0 uses ANSI black (index 0)", "[terminal]")
 
 TEST_CASE("terminal: SGR combinations produce the correct cumulative effect", "[terminal]")
 {
-    TermSetup ts;
+    VtTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     // Bold + italic together
@@ -967,7 +845,7 @@ TEST_CASE("terminal: SGR combinations produce the correct cumulative effect", "[
 
 TEST_CASE("terminal: alt-screen enter preserves main cursor position", "[terminal]")
 {
-    TermSetup ts(10, 5);
+    VtTerminalSetup ts(10, 5);
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("\x1B[3;5H"); // move to row 3, col 5 (1-based) = row 2, col 4 (0-based)
@@ -989,7 +867,7 @@ TEST_CASE("terminal: alt-screen enter preserves main cursor position", "[termina
 
 TEST_CASE("terminal: alt-screen double enter is idempotent", "[terminal]")
 {
-    TermSetup ts(5, 3);
+    VtTerminalSetup ts(5, 3);
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("Hello");
@@ -1004,7 +882,7 @@ TEST_CASE("terminal: alt-screen double enter is idempotent", "[terminal]")
 
 TEST_CASE("terminal: origin mode restricts cursor to scroll region on positioning", "[terminal]")
 {
-    TermSetup ts(10, 6);
+    VtTerminalSetup ts(10, 6);
     INFO("host must initialize");
     REQUIRE(ts.ok);
     // Set scroll region rows 3-5 (1-based), then enable origin mode
@@ -1032,7 +910,7 @@ TEST_CASE("terminal: nvim command-mode layout: statusline and cmdline at bottom 
     // Verifies that CUP positioning with DECSTBM lands content at the correct rows.
     const int cols = 20;
     const int rows = 10;
-    TermSetup ts(cols, rows);
+    VtTerminalSetup ts(cols, rows);
     INFO("host must initialize");
     REQUIRE(ts.ok);
 
@@ -1081,7 +959,7 @@ TEST_CASE("terminal: nvim command-mode layout: statusline and cmdline at bottom 
 
 TEST_CASE("terminal: auto-wrap mode can be toggled with ?7h and ?7l", "[terminal]")
 {
-    TermSetup ts(5, 3);
+    VtTerminalSetup ts(5, 3);
     INFO("host must initialize");
     REQUIRE(ts.ok);
     // Disable wrap, overfill row 0, then re-enable and overfill again
@@ -1104,7 +982,7 @@ TEST_CASE("terminal: auto-wrap mode can be toggled with ?7h and ?7l", "[terminal
 
 TEST_CASE("terminal: OSC 7 sets window title to directory basename", "[terminal]")
 {
-    TermSetup ts;
+    VtTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     // Standard OSC 7 with localhost hostname, BEL terminator
@@ -1114,7 +992,7 @@ TEST_CASE("terminal: OSC 7 sets window title to directory basename", "[terminal]
 
 TEST_CASE("terminal: OSC 7 with empty hostname", "[terminal]")
 {
-    TermSetup ts;
+    VtTerminalSetup ts;
     REQUIRE(ts.ok);
     // Empty hostname (common on macOS zsh)
     ts.host.feed("\x1B]7;file:///tmp\x07");
@@ -1123,7 +1001,7 @@ TEST_CASE("terminal: OSC 7 with empty hostname", "[terminal]")
 
 TEST_CASE("terminal: OSC 7 with trailing slash", "[terminal]")
 {
-    TermSetup ts;
+    VtTerminalSetup ts;
     REQUIRE(ts.ok);
     ts.host.feed("\x1B]7;file://host/home/user/\x07");
     REQUIRE(ts.callbacks.last_window_title == "user");
@@ -1131,7 +1009,7 @@ TEST_CASE("terminal: OSC 7 with trailing slash", "[terminal]")
 
 TEST_CASE("terminal: OSC 7 root directory", "[terminal]")
 {
-    TermSetup ts;
+    VtTerminalSetup ts;
     REQUIRE(ts.ok);
     ts.host.feed("\x1B]7;file://localhost/\x07");
     REQUIRE(ts.callbacks.last_window_title == "/");
@@ -1139,7 +1017,7 @@ TEST_CASE("terminal: OSC 7 root directory", "[terminal]")
 
 TEST_CASE("terminal: OSC 7 percent-decodes path", "[terminal]")
 {
-    TermSetup ts;
+    VtTerminalSetup ts;
     REQUIRE(ts.ok);
     // %20 = space, %2F should not appear in practice but test mixed encoding
     ts.host.feed("\x1B]7;file://localhost/home/my%20folder\x07");
@@ -1148,7 +1026,7 @@ TEST_CASE("terminal: OSC 7 percent-decodes path", "[terminal]")
 
 TEST_CASE("terminal: OSC 7 with ST terminator", "[terminal]")
 {
-    TermSetup ts;
+    VtTerminalSetup ts;
     REQUIRE(ts.ok);
     // ST = ESC backslash
     ts.host.feed("\x1B]7;file:///var/log\x1B\\");
@@ -1157,7 +1035,7 @@ TEST_CASE("terminal: OSC 7 with ST terminator", "[terminal]")
 
 TEST_CASE("terminal: OSC 7 malformed URI is ignored", "[terminal]")
 {
-    TermSetup ts;
+    VtTerminalSetup ts;
     REQUIRE(ts.ok);
     // Not a file:// URI — should be silently ignored
     ts.host.feed("\x1B]7;http://example.com/path\x07");
@@ -1166,7 +1044,7 @@ TEST_CASE("terminal: OSC 7 malformed URI is ignored", "[terminal]")
 
 TEST_CASE("terminal: OSC 0 title still works alongside OSC 7", "[terminal]")
 {
-    TermSetup ts;
+    VtTerminalSetup ts;
     REQUIRE(ts.ok);
     // OSC 0 sets title
     ts.host.feed("\x1B]0;My Terminal\x07");
@@ -1179,7 +1057,7 @@ TEST_CASE("terminal: OSC 0 title still works alongside OSC 7", "[terminal]")
 TEST_CASE("terminal: OSC 7 non-URI string produces WARN and is ignored", "[terminal]")
 {
     ScopedLogCapture logs(LogLevel::Warn);
-    TermSetup ts;
+    VtTerminalSetup ts;
     REQUIRE(ts.ok);
     ts.host.feed("\x1B]7;not-a-url\x07");
     REQUIRE(ts.callbacks.last_window_title.empty());
@@ -1198,7 +1076,7 @@ TEST_CASE("terminal: OSC 7 non-URI string produces WARN and is ignored", "[termi
 TEST_CASE("terminal: OSC 7 empty URI produces WARN and is ignored", "[terminal]")
 {
     ScopedLogCapture logs(LogLevel::Warn);
-    TermSetup ts;
+    VtTerminalSetup ts;
     REQUIRE(ts.ok);
     ts.host.feed("\x1B]7;\x07");
     REQUIRE(ts.callbacks.last_window_title.empty());
@@ -1216,7 +1094,7 @@ TEST_CASE("terminal: OSC 7 empty URI produces WARN and is ignored", "[terminal]"
 
 TEST_CASE("terminal: OSC 7 remote host URI updates CWD correctly", "[terminal]")
 {
-    TermSetup ts;
+    VtTerminalSetup ts;
     REQUIRE(ts.ok);
     ts.host.feed("\x1B]7;file://remotehost/home/user/work\x07");
     REQUIRE(ts.callbacks.last_window_title == "work");
@@ -1228,7 +1106,7 @@ TEST_CASE("terminal: OSC 7 remote host URI updates CWD correctly", "[terminal]")
 
 TEST_CASE("terminal: DECSTBM top > bot is ignored", "[terminal]")
 {
-    TermSetup ts(10, 5);
+    VtTerminalSetup ts(10, 5);
     REQUIRE(ts.ok);
 
     INFO("default scroll_top is 0");
@@ -1253,7 +1131,7 @@ TEST_CASE("terminal: DECSTBM top > bot is ignored", "[terminal]")
 
 TEST_CASE("terminal: DECSTBM bot > rows is clamped", "[terminal]")
 {
-    TermSetup ts(10, 5);
+    VtTerminalSetup ts(10, 5);
     REQUIRE(ts.ok);
 
     ts.host.feed("\x1B[1;999r");
@@ -1265,7 +1143,7 @@ TEST_CASE("terminal: DECSTBM bot > rows is clamped", "[terminal]")
 
 TEST_CASE("terminal: DECSTBM 0;0 resets to full screen", "[terminal]")
 {
-    TermSetup ts(10, 5);
+    VtTerminalSetup ts(10, 5);
     REQUIRE(ts.ok);
 
     ts.host.feed("\x1B[2;4r");

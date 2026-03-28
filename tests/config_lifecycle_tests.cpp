@@ -5,12 +5,11 @@
 
 #include "support/fake_renderer.h"
 #include "support/fake_window.h"
+#include "support/home_dir_redirect.h"
+#include "support/temp_dir.h"
 
-#include <atomic>
 #include <catch2/catch_all.hpp>
-#include <chrono>
 #include <draxul/app_config.h>
-#include <filesystem>
 #include <fstream>
 
 #include "app.h"
@@ -20,81 +19,6 @@ using namespace draxul::tests;
 
 namespace
 {
-
-struct TempDir
-{
-    std::filesystem::path path;
-
-    explicit TempDir(const char* prefix)
-    {
-        static std::atomic<uint64_t> counter = 0;
-        const auto suffix = std::to_string(
-                                std::chrono::steady_clock::now().time_since_epoch().count())
-            + "-" + std::to_string(counter++);
-        path = std::filesystem::temp_directory_path() / (std::string(prefix) + "-" + suffix);
-        std::filesystem::create_directories(path);
-    }
-
-    ~TempDir()
-    {
-        std::error_code ec;
-        std::filesystem::remove_all(path, ec);
-    }
-};
-
-// Redirect HOME / APPDATA so AppConfig::save() writes to an isolated temp
-// directory and cannot touch the real user config.
-struct HomeDirRedirect
-{
-    std::filesystem::path config_path;
-
-#ifdef _WIN32
-    std::string original_appdata_;
-    explicit HomeDirRedirect(const std::filesystem::path& home)
-    {
-        const char* orig = std::getenv("APPDATA");
-        original_appdata_ = orig ? orig : "";
-        config_path = home / "draxul" / "config.toml";
-        _putenv_s("APPDATA", home.string().c_str());
-    }
-    ~HomeDirRedirect()
-    {
-        _putenv_s("APPDATA", original_appdata_.c_str());
-    }
-#elif defined(__APPLE__)
-    std::string original_home_;
-    explicit HomeDirRedirect(const std::filesystem::path& home)
-    {
-        const char* orig = std::getenv("HOME");
-        original_home_ = orig ? orig : "";
-        config_path = home / "Library" / "Application Support" / "draxul" / "config.toml";
-        setenv("HOME", home.string().c_str(), /*overwrite=*/1);
-    }
-    ~HomeDirRedirect()
-    {
-        setenv("HOME", original_home_.c_str(), /*overwrite=*/1);
-    }
-#else
-    std::string original_xdg_;
-    std::string original_home_;
-    explicit HomeDirRedirect(const std::filesystem::path& home)
-    {
-        const char* xdg = std::getenv("XDG_CONFIG_HOME");
-        original_xdg_ = xdg ? xdg : "";
-        const char* orig = std::getenv("HOME");
-        original_home_ = orig ? orig : "";
-        setenv("HOME", home.string().c_str(), /*overwrite=*/1);
-        unsetenv("XDG_CONFIG_HOME");
-        config_path = home / ".config" / "draxul" / "config.toml";
-    }
-    ~HomeDirRedirect()
-    {
-        setenv("HOME", original_home_.c_str(), /*overwrite=*/1);
-        if (!original_xdg_.empty())
-            setenv("XDG_CONFIG_HOME", original_xdg_.c_str(), /*overwrite=*/1);
-    }
-#endif
-};
 
 AppOptions base_options()
 {

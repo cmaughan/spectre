@@ -1,3 +1,4 @@
+#include "support/temp_dir.h"
 #include "support/test_support.h"
 
 #include <SDL3/SDL.h>
@@ -6,11 +7,8 @@
 #include <draxul/megacity_code_config.h>
 #include <draxul/text_service.h>
 
-#include <atomic>
 #include <catch2/catch_all.hpp>
-#include <chrono>
 #include <draxul/log.h>
-#include <filesystem>
 #include <fstream>
 
 using namespace draxul;
@@ -18,27 +16,6 @@ using namespace draxul::tests;
 
 namespace
 {
-
-struct TempDir
-{
-    std::filesystem::path path;
-
-    explicit TempDir(const char* prefix)
-    {
-        static std::atomic<uint64_t> counter = 0;
-        const auto suffix = std::to_string(
-                                std::chrono::steady_clock::now().time_since_epoch().count())
-            + "-" + std::to_string(counter++);
-        path = std::filesystem::temp_directory_path() / (std::string(prefix) + "-" + suffix);
-        std::filesystem::create_directories(path);
-    }
-
-    ~TempDir()
-    {
-        std::error_code ec;
-        std::filesystem::remove_all(path, ec);
-    }
-};
 
 bool contains_message(const std::vector<LogRecord>& records, std::string_view needle)
 {

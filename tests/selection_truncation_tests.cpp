@@ -1,17 +1,9 @@
-#include "support/fake_renderer.h"
-#include "support/fake_window.h"
 #include "support/test_host_callbacks.h"
-
-#include <draxul/local_terminal_host.h>
-
-#include <draxul/host.h>
-#include <draxul/renderer.h>
-#include <draxul/text_service.h>
-#include <draxul/window.h>
+#include "support/test_local_terminal_host.h"
+#include "support/test_terminal_host_fixture.h"
 
 #include <catch2/catch_all.hpp>
 
-#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -22,23 +14,14 @@ namespace
 {
 
 // ---------------------------------------------------------------------------
-// TestTerminalHost — exposes internals needed by selection tests.
+// SelectionTestTerminalHost — exposes internals needed by selection tests.
 // ---------------------------------------------------------------------------
 
-class TestTerminalHost final : public LocalTerminalHost
+class SelectionTestTerminalHost final : public TestLocalTerminalHost
 {
 public:
-    void feed(std::string_view bytes)
-    {
-        consume_output(bytes);
-    }
-
-    // Direct selection control for testing.
     void begin_selection(int c1, int r1, int c2, int r2)
     {
-        // Simulate a completed drag selection without triggering pixel math.
-        // We set the internal state via the public event interface using pixel
-        // coordinates that map to the desired cells (cell_w=8, cell_h=16, pad=0).
         MouseButtonEvent press_ev;
         press_ev.button = 1;
         press_ev.pressed = true;
@@ -58,95 +41,19 @@ public:
         on_mouse_button(release_ev);
     }
 
-    // Copy selection text via the action dispatch path (exercises extract_selection_text).
-    std::string copy_selection()
-    {
-        dispatch_action("copy");
-        return window_clipboard();
-    }
-
-    std::string window_clipboard() const
-    {
-        return window_clipboard_;
-    }
-
-    std::string written;
-
-    int cols_ = 80;
-    int rows_ = 30;
-
     // Mirror of TerminalHostBase::kSelectionMaxCells — kept in sync manually.
     static constexpr int kLimit = 8192;
-
-protected:
-    std::string_view host_name() const override
-    {
-        return "test";
-    }
-
-    bool initialize_host() override
-    {
-        highlights().set_default_fg({ 1.0f, 1.0f, 1.0f, 1.0f });
-        highlights().set_default_bg({ 0.0f, 0.0f, 0.0f, 1.0f });
-        apply_grid_size(cols_, rows_);
-        reset_terminal_state();
-        set_content_ready(true);
-        return true;
-    }
-
-    bool do_process_write(std::string_view text) override
-    {
-        written += text;
-        return true;
-    }
-    std::vector<std::string> do_process_drain() override
-    {
-        return {};
-    }
-    bool do_process_resize(int, int) override
-    {
-        return true;
-    }
-    bool do_process_is_running() const override
-    {
-        return true;
-    }
-    void do_process_shutdown() override {}
-
-private:
-    // We need to intercept set_clipboard_text to capture the copied text.
-    // The FakeWindow clipboard is not directly accessible from TestTerminalHost,
-    // so we use the window reference via the IHost::window() accessor.
-    std::string window_clipboard_; // updated by copy_selection via FakeWindow
 };
 
 // ---------------------------------------------------------------------------
 // Setup helper
 // ---------------------------------------------------------------------------
 
-struct SelSetup
+struct SelectionSetup : TerminalHostFixture<SelectionTestTerminalHost>
 {
-    FakeWindow window;
-    FakeTermRenderer renderer;
-    TextService text_service;
-    TestTerminalHost host;
-    TestHostCallbacks callbacks;
-    bool ok = false;
-
-    explicit SelSetup(int cols = 80, int rows = 30)
+    explicit SelectionSetup(int cols = 80, int rows = 30)
+        : TerminalHostFixture(cols, rows)
     {
-        host.cols_ = cols;
-        host.rows_ = rows;
-
-        TextServiceConfig ts_cfg;
-        ts_cfg.font_path = (std::filesystem::path(DRAXUL_PROJECT_ROOT) / "fonts" / "JetBrainsMonoNerdFont-Regular.ttf").string();
-        text_service.initialize(ts_cfg, TextService::DEFAULT_POINT_SIZE, 96.0f);
-
-        HostViewport vp;
-        vp.grid_size = { cols, rows };
-
-        HostContext ctx{ &window, &renderer, &text_service, {}, vp, 96.0f };
-        ok = host.initialize(ctx, callbacks);
     }
 
     // Fill the grid with a repeating ASCII character 'ch' so selections have content.
@@ -223,7 +130,7 @@ static bool is_valid_utf8(const std::string& s)
 
 TEST_CASE("selection: empty selection produces empty clipboard", "[terminal]")
 {
-    SelSetup ss;
+    SelectionSetup ss;
     INFO("host must initialize");
     REQUIRE(ss.ok);
     // Select a zero-area region (same start and end point).
@@ -236,8 +143,8 @@ TEST_CASE("selection: empty selection produces empty clipboard", "[terminal]")
 
 TEST_CASE("selection: small selection copies full content", "[terminal]")
 {
-    const int limit = TestTerminalHost::kLimit;
-    SelSetup ss(80, 30);
+    const int limit = SelectionTestTerminalHost::kLimit;
+    SelectionSetup ss(80, 30);
     INFO("host must initialize");
     REQUIRE(ss.ok);
     ss.fill_grid('X');
@@ -253,13 +160,13 @@ TEST_CASE("selection: small selection copies full content", "[terminal]")
 
 TEST_CASE("selection: selection at exactly kSelectionMaxCells cells copies without truncation", "[terminal]")
 {
-    const int limit = TestTerminalHost::kLimit;
+    const int limit = SelectionTestTerminalHost::kLimit;
     // Use a grid sized so that one full row equals limit/cols rows.
     // Choose 100 columns so that limit/100 complete rows fills exactly 'limit' cells.
     const int cols = 100;
     const int target_cells = limit;
     const int rows_needed = target_cells / cols + 2; // extra rows for safety
-    SelSetup ss(cols, rows_needed);
+    SelectionSetup ss(cols, rows_needed);
     INFO("host must initialize");
     REQUIRE(ss.ok);
     ss.fill_grid('Z');
@@ -277,11 +184,11 @@ TEST_CASE("selection: selection at exactly kSelectionMaxCells cells copies witho
 
 TEST_CASE("selection: selection one cell over limit truncates without crash", "[terminal]")
 {
-    const int limit = TestTerminalHost::kLimit;
+    const int limit = SelectionTestTerminalHost::kLimit;
     const int cols = 100;
     const int over_cells = limit + 1;
     const int rows_needed = over_cells / cols + 2;
-    SelSetup ss(cols, rows_needed);
+    SelectionSetup ss(cols, rows_needed);
     INFO("host must initialize");
     REQUIRE(ss.ok);
     ss.fill_grid('Y');
@@ -298,10 +205,10 @@ TEST_CASE("selection: selection one cell over limit truncates without crash", "[
 
 TEST_CASE("selection: selection far over limit truncates without crash", "[terminal]")
 {
-    const int limit = TestTerminalHost::kLimit;
+    const int limit = SelectionTestTerminalHost::kLimit;
     const int cols = 80;
     const int rows_needed = (limit * 2) / cols + 2;
-    SelSetup ss(cols, rows_needed);
+    SelectionSetup ss(cols, rows_needed);
     INFO("host must initialize");
     REQUIRE(ss.ok);
     ss.fill_grid('W');
@@ -319,7 +226,7 @@ TEST_CASE("selection: selection far over limit truncates without crash", "[termi
 TEST_CASE("selection: UTF-8 multibyte content produces valid UTF-8 in clipboard", "[terminal]")
 {
     // Use a small terminal and write UTF-8 content (2-byte sequences: U+00E9 = 0xC3 0xA9).
-    SelSetup ss(20, 10);
+    SelectionSetup ss(20, 10);
     INFO("host must initialize");
     REQUIRE(ss.ok);
     // Write rows of 'é' (U+00E9, encoded as 0xC3 0xA9 in UTF-8).

@@ -78,7 +78,7 @@ struct CanaryPair
     }
 };
 
-struct CorpusEntry
+struct UnicodeCorpusEntry
 {
     const char* label;
     std::string_view sequence;

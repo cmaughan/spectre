@@ -1,19 +1,10 @@
-#include "support/fake_renderer.h"
-#include "support/fake_window.h"
 #include "support/test_host_callbacks.h"
-
-#include <draxul/local_terminal_host.h>
-
-#include <draxul/host.h>
-#include <draxul/renderer.h>
-#include <draxul/text_service.h>
-#include <draxul/window.h>
+#include "support/test_local_terminal_host.h"
+#include "support/test_terminal_host_fixture.h"
 
 #include <catch2/catch_all.hpp>
 
-#include <filesystem>
 #include <string>
-#include <vector>
 
 using namespace draxul;
 using namespace draxul::tests;
@@ -21,90 +12,13 @@ using namespace draxul::tests;
 namespace
 {
 
-// ---------------------------------------------------------------------------
-// TestTerminalHost — exposes consume_output() and input helpers for tests.
-// ---------------------------------------------------------------------------
-
-class TestTerminalHost final : public LocalTerminalHost
+struct MouseTerminalSetup : TerminalHostFixture<TestLocalTerminalHost>
 {
-public:
-    // Feed raw VT bytes into the parser.
-    void feed(std::string_view bytes)
+    explicit MouseTerminalSetup(int cols = 20, int rows = 5)
+        : TerminalHostFixture(cols, rows)
     {
-        consume_output(bytes);
     }
 
-    std::string written; // bytes sent back to the "process"
-
-    int cols_ = 20;
-    int rows_ = 5;
-
-protected:
-    std::string_view host_name() const override
-    {
-        return "test";
-    }
-
-    bool initialize_host() override
-    {
-        highlights().set_default_fg({ 1.0f, 1.0f, 1.0f, 1.0f });
-        highlights().set_default_bg({ 0.0f, 0.0f, 0.0f, 1.0f });
-        apply_grid_size(cols_, rows_);
-        reset_terminal_state();
-        set_content_ready(true);
-        return true;
-    }
-
-    bool do_process_write(std::string_view text) override
-    {
-        written += text;
-        return true;
-    }
-    std::vector<std::string> do_process_drain() override
-    {
-        return {};
-    }
-    bool do_process_resize(int, int) override
-    {
-        return true;
-    }
-    bool do_process_is_running() const override
-    {
-        return true;
-    }
-    void do_process_shutdown() override {}
-};
-
-// ---------------------------------------------------------------------------
-// Setup helper
-// ---------------------------------------------------------------------------
-
-struct TermSetup
-{
-    FakeWindow window;
-    FakeTermRenderer renderer;
-    TextService text_service;
-    TestTerminalHost host;
-    TestHostCallbacks callbacks;
-    bool ok = false;
-
-    explicit TermSetup(int cols = 20, int rows = 5)
-    {
-        host.cols_ = cols;
-        host.rows_ = rows;
-
-        TextServiceConfig ts_cfg;
-        ts_cfg.font_path = (std::filesystem::path(DRAXUL_PROJECT_ROOT) / "fonts" / "JetBrainsMonoNerdFont-Regular.ttf").string();
-        text_service.initialize(ts_cfg, TextService::DEFAULT_POINT_SIZE, 96.0f);
-
-        HostViewport vp;
-        vp.grid_size = { cols, rows };
-
-        HostContext ctx{ &window, &renderer, &text_service, {}, vp, 96.0f };
-        ok = host.initialize(ctx, callbacks);
-    }
-
-    // Helpers to synthesise mouse events.
     void press(int button, int px, int py, int mod = 0)
     {
         MouseButtonEvent ev;
@@ -167,7 +81,7 @@ bool has_sgr_report(const std::string& written)
 
 TEST_CASE("mouse: no mode — press produces no output", "[terminal]")
 {
-    TermSetup ts;
+    MouseTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.press(1, 0, 0);
@@ -177,7 +91,7 @@ TEST_CASE("mouse: no mode — press produces no output", "[terminal]")
 
 TEST_CASE("mouse: no mode — motion produces no output", "[terminal]")
 {
-    TermSetup ts;
+    MouseTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.press(1, 0, 0);
@@ -189,7 +103,7 @@ TEST_CASE("mouse: no mode — motion produces no output", "[terminal]")
 
 TEST_CASE("mouse: no mode — release produces no output", "[terminal]")
 {
-    TermSetup ts;
+    MouseTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.press(1, 0, 0);
@@ -200,7 +114,7 @@ TEST_CASE("mouse: no mode — release produces no output", "[terminal]")
 
 TEST_CASE("mouse: DECSET 1000 — button press emits X10 report", "[terminal]")
 {
-    TermSetup ts;
+    MouseTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("\x1B[?1000h"); // enable button tracking
@@ -213,7 +127,7 @@ TEST_CASE("mouse: DECSET 1000 — button press emits X10 report", "[terminal]")
 
 TEST_CASE("mouse: DECSET 1000 — button release emits report", "[terminal]")
 {
-    TermSetup ts;
+    MouseTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("\x1B[?1000h");
@@ -226,7 +140,7 @@ TEST_CASE("mouse: DECSET 1000 — button release emits report", "[terminal]")
 
 TEST_CASE("mouse: DECSET 1000 — motion produces no report", "[terminal]")
 {
-    TermSetup ts;
+    MouseTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("\x1B[?1000h");
@@ -240,7 +154,7 @@ TEST_CASE("mouse: DECSET 1000 — motion produces no report", "[terminal]")
 
 TEST_CASE("mouse: DECSET 1002 — press emits report", "[terminal]")
 {
-    TermSetup ts;
+    MouseTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("\x1B[?1002h");
@@ -251,7 +165,7 @@ TEST_CASE("mouse: DECSET 1002 — press emits report", "[terminal]")
 
 TEST_CASE("mouse: DECSET 1002 — motion without button held produces no output", "[terminal]")
 {
-    TermSetup ts;
+    MouseTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("\x1B[?1002h");
@@ -263,7 +177,7 @@ TEST_CASE("mouse: DECSET 1002 — motion without button held produces no output"
 
 TEST_CASE("mouse: DECSET 1002 — motion with button held emits report", "[terminal]")
 {
-    TermSetup ts;
+    MouseTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("\x1B[?1002h");
@@ -276,7 +190,7 @@ TEST_CASE("mouse: DECSET 1002 — motion with button held emits report", "[termi
 
 TEST_CASE("mouse: DECSET 1002 — release then motion produces no output", "[terminal]")
 {
-    TermSetup ts;
+    MouseTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("\x1B[?1002h");
@@ -290,7 +204,7 @@ TEST_CASE("mouse: DECSET 1002 — release then motion produces no output", "[ter
 
 TEST_CASE("mouse: DECSET 1003 — motion without button emits report", "[terminal]")
 {
-    TermSetup ts;
+    MouseTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("\x1B[?1003h");
@@ -301,7 +215,7 @@ TEST_CASE("mouse: DECSET 1003 — motion without button emits report", "[termina
 
 TEST_CASE("mouse: DECSET 1003 — motion with button held emits report", "[terminal]")
 {
-    TermSetup ts;
+    MouseTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("\x1B[?1003h");
@@ -314,7 +228,7 @@ TEST_CASE("mouse: DECSET 1003 — motion with button held emits report", "[termi
 
 TEST_CASE("mouse: SGR encoding used when DECSET 1006 is active", "[terminal]")
 {
-    TermSetup ts(80, 30);
+    MouseTerminalSetup ts(80, 30);
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("\x1B[?1000h\x1B[?1006h");
@@ -327,7 +241,7 @@ TEST_CASE("mouse: SGR encoding used when DECSET 1006 is active", "[terminal]")
 
 TEST_CASE("mouse: SGR press and release use correct final chars", "[terminal]")
 {
-    TermSetup ts;
+    MouseTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("\x1B[?1000h\x1B[?1006h");
@@ -344,7 +258,7 @@ TEST_CASE("mouse: SGR press and release use correct final chars", "[terminal]")
 
 TEST_CASE("mouse: drag report encodes modifier bits", "[terminal]")
 {
-    TermSetup ts;
+    MouseTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("\x1B[?1002h\x1B[?1006h");
@@ -359,7 +273,7 @@ TEST_CASE("mouse: drag report encodes modifier bits", "[terminal]")
 
 TEST_CASE("mouse: wheel report encodes modifier bits", "[terminal]")
 {
-    TermSetup ts;
+    MouseTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("\x1B[?1000h\x1B[?1006h");
@@ -372,7 +286,7 @@ TEST_CASE("mouse: wheel report encodes modifier bits", "[terminal]")
 
 TEST_CASE("mouse: disabling DECSET 1003 reverts to no-output on motion", "[terminal]")
 {
-    TermSetup ts;
+    MouseTerminalSetup ts;
     INFO("host must initialize");
     REQUIRE(ts.ok);
     ts.host.feed("\x1B[?1003h");
