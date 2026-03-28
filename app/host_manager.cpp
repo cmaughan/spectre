@@ -268,6 +268,14 @@ bool HostManager::create_host_for_leaf(LeafId id, IHostCallbacks& callbacks,
         return false;
     }
 
+#ifdef DRAXUL_ENABLE_MEGACITY
+    if (deps_.options && deps_.options->no_ui)
+    {
+        if (auto* megacity = dynamic_cast<MegaCityHost*>(new_host.get()))
+            megacity->set_ui_panels_visible(false);
+    }
+#endif
+
     // Wire 3D renderer post-init for hosts that opt into I3DHost.
     if (auto* h3d = dynamic_cast<I3DHost*>(new_host.get()))
     {

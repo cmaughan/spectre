@@ -70,6 +70,7 @@ struct ParsedArgs
     bool smoke_test = false;
     bool continuous_refresh = false;
     bool no_vblank = false;
+    bool no_ui = false;
 #ifdef DRAXUL_ENABLE_RENDER_TESTS
     bool bless_render_test = false;
     bool show_render_test_window = false;
@@ -99,6 +100,8 @@ ParsedArgs parse_args(const std::vector<std::string>& args)
             parsed.continuous_refresh = true;
         else if (args[i] == "--no-vblank")
             parsed.no_vblank = true;
+        else if (args[i] == "--no-ui")
+            parsed.no_ui = true;
 #ifdef DRAXUL_ENABLE_RENDER_TESTS
         else if (args[i] == "--bless-render-test")
             parsed.bless_render_test = true;
@@ -274,6 +277,8 @@ static int draxul_main(std::vector<std::string> args)
         options.megacity_continuous_refresh = true;
     if (parsed.no_vblank)
         options.no_vblank = true;
+    if (parsed.no_ui)
+        options.no_ui = true;
     if (!parsed.screenshot_path.empty())
     {
         if (parsed.screenshot_width > 0 && parsed.screenshot_height > 0)

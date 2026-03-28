@@ -34,6 +34,7 @@ struct AppOptions
     bool show_render_test_window = false;
     bool megacity_continuous_refresh = false;
     bool no_vblank = false;
+    bool no_ui = false;
     std::optional<float> override_display_ppi;
     int render_target_pixel_width = 0;
     int render_target_pixel_height = 0;

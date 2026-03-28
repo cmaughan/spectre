@@ -43,6 +43,10 @@ public:
     {
         continuous_refresh_enabled_ = enabled;
     }
+    void set_ui_panels_visible(bool visible)
+    {
+        show_ui_panels_ = visible;
+    }
 
     bool initialize(const HostContext& context, IHostCallbacks& callbacks) override;
     void shutdown() override;
