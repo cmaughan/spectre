@@ -59,6 +59,10 @@ struct MegaCityCodeConfig
     bool hide_struct_entities = false;
     bool auto_rebuild = true;
     bool show_ui_panels = true;
+    float selection_dependency_alpha = 0.7f;
+    float selection_hidden_alpha = 0.15f;
+    float selection_hidden_hover_alpha = 0.45f;
+    float selection_hidden_road_alpha = 1.0f;
 
     float placement_step = 0.5f;
     int max_spiral_rings = 4096;
@@ -77,6 +81,7 @@ struct MegaCityCodeConfig
     float road_width_scale = 0.85f;
     glm::vec2 road_width_range{ 0.6f, 3.0f }; // (min, max)
     float sidewalk_width = 1.0f;
+    float dependency_route_layer_step = 0.036f;
     float park_footprint = 6.0f;
     float park_height = 0.15f;
     float park_sidewalk_width = 1.0f;

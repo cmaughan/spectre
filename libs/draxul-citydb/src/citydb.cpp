@@ -464,6 +464,89 @@ std::string module_path_for_file(std::string_view file_path)
     return std::string(symbol_id) + "|field|" + std::string(field_name) + "|" + std::to_string(ordinal);
 }
 
+std::unordered_map<std::string, std::vector<std::string>> build_inheritance_component_members(
+    const std::unordered_map<std::string, std::vector<std::string>>& direct_base_refs_by_symbol_id,
+    const std::unordered_map<std::string, std::vector<std::string>>& known_type_symbol_ids)
+{
+    std::unordered_map<std::string, std::vector<std::string>> adjacency;
+    adjacency.reserve(direct_base_refs_by_symbol_id.size() * 2);
+
+    for (const auto& [symbol_id, base_refs] : direct_base_refs_by_symbol_id)
+    {
+        for (const std::string& base_ref : base_refs)
+        {
+            const auto it = known_type_symbol_ids.find(base_ref);
+            if (it == known_type_symbol_ids.end() || it->second.size() != 1)
+                continue;
+            const std::string& target_symbol_id = it->second.front();
+            if (target_symbol_id == symbol_id)
+                continue;
+            adjacency[symbol_id].push_back(target_symbol_id);
+            adjacency[target_symbol_id].push_back(symbol_id);
+        }
+    }
+
+    std::unordered_map<std::string, std::vector<std::string>> component_members;
+    std::unordered_set<std::string> visited;
+    visited.reserve(adjacency.size());
+    for (const auto& [root_symbol_id, _] : adjacency)
+    {
+        (void)_;
+        if (!visited.insert(root_symbol_id).second)
+            continue;
+
+        std::vector<std::string> component;
+        std::vector<std::string> frontier{ root_symbol_id };
+        while (!frontier.empty())
+        {
+            const std::string current = frontier.back();
+            frontier.pop_back();
+            component.push_back(current);
+
+            const auto neighbors_it = adjacency.find(current);
+            if (neighbors_it == adjacency.end())
+                continue;
+            for (const std::string& neighbor : neighbors_it->second)
+            {
+                if (visited.insert(neighbor).second)
+                    frontier.push_back(neighbor);
+            }
+        }
+
+        for (const std::string& member : component)
+            component_members[member] = component;
+    }
+
+    return component_members;
+}
+
+std::vector<std::string> resolve_dependency_targets(
+    std::string_view source_symbol_id,
+    std::string_view referenced_type_name,
+    const std::unordered_map<std::string, std::vector<std::string>>& known_type_symbol_ids,
+    const std::unordered_map<std::string, std::vector<std::string>>& inheritance_component_members)
+{
+    const auto it = known_type_symbol_ids.find(std::string(referenced_type_name));
+    if (it == known_type_symbol_ids.end() || it->second.size() != 1)
+        return {};
+
+    const std::string& direct_target_symbol_id = it->second.front();
+    std::vector<std::string> targets;
+    const auto component_it = inheritance_component_members.find(direct_target_symbol_id);
+    if (component_it != inheritance_component_members.end())
+        targets = component_it->second;
+    else
+        targets = { direct_target_symbol_id };
+
+    targets.erase(
+        std::remove_if(
+            targets.begin(),
+            targets.end(),
+            [&](const std::string& target_symbol_id) { return target_symbol_id == source_symbol_id; }),
+        targets.end());
+    return targets;
+}
+
 void create_schema_v2(sqlite3* db)
 {
     exec(db, R"sql(
@@ -731,6 +814,7 @@ bool CityDatabase::reconcile_snapshot(const CodebaseSnapshot& snapshot)
         std::unordered_set<std::string> types_with_methods;
         std::unordered_map<std::string, std::vector<int>> method_sizes_by_type;
         std::unordered_map<std::string, std::vector<std::string>> known_type_symbol_ids;
+        std::unordered_map<std::string, std::vector<std::string>> direct_base_refs_by_symbol_id;
         for (const auto& file : snapshot.files)
         {
             for (const auto& sym : file.symbols)
@@ -740,8 +824,10 @@ bool CityDatabase::reconcile_snapshot(const CodebaseSnapshot& snapshot)
                     const std::string qualified_name = sym.parent.empty()
                         ? sym.name
                         : (sym.parent + "::" + sym.name);
-                    known_type_symbol_ids[sym.name].push_back(
-                        make_symbol_id(file.path, sym.kind, qualified_name, sym.line));
+                    const std::string symbol_id = make_symbol_id(file.path, sym.kind, qualified_name, sym.line);
+                    known_type_symbol_ids[sym.name].push_back(symbol_id);
+                    if (!sym.inherited_types.empty())
+                        direct_base_refs_by_symbol_id.emplace(symbol_id, sym.inherited_types);
                 }
                 if (sym.kind == SymbolKind::Function && !sym.parent.empty())
                 {
@@ -752,6 +838,8 @@ bool CityDatabase::reconcile_snapshot(const CodebaseSnapshot& snapshot)
                 }
             }
         }
+        const std::unordered_map<std::string, std::vector<std::string>> inheritance_component_members
+            = build_inheritance_component_members(direct_base_refs_by_symbol_id, known_type_symbol_ids);
 
         Transaction txn(impl_->db.get());
         exec(impl_->db.get(), "DELETE FROM city_entities");
@@ -829,6 +917,7 @@ bool CityDatabase::reconcile_snapshot(const CodebaseSnapshot& snapshot)
                         function_sizes = it->second;
                 }
                 const int building_functions = static_cast<int>(function_sizes.size());
+                const std::string symbol_id = make_symbol_id(file.path, sym.kind, qualified_name, sym.line);
                 std::unordered_set<std::string> dependency_targets;
                 if ((sym.kind == SymbolKind::Class || sym.kind == SymbolKind::Struct) && !sym.fields.empty())
                 {
@@ -838,15 +927,16 @@ bool CityDatabase::reconcile_snapshot(const CodebaseSnapshot& snapshot)
                         {
                             if (ref == sym.name)
                                 continue;
-                            const auto it = known_type_symbol_ids.find(ref);
-                            if (it == known_type_symbol_ids.end() || it->second.size() != 1)
-                                continue;
-                            dependency_targets.insert(it->second.front());
+                            const std::vector<std::string> resolved_targets = resolve_dependency_targets(
+                                symbol_id,
+                                ref,
+                                known_type_symbol_ids,
+                                inheritance_component_members);
+                            dependency_targets.insert(resolved_targets.begin(), resolved_targets.end());
                         }
                     }
                 }
                 const int road_size = static_cast<int>(dependency_targets.size());
-                const std::string symbol_id = make_symbol_id(file.path, sym.kind, qualified_name, sym.line);
 
                 insert_symbol.reuse();
                 insert_symbol.bind_text(1, symbol_id);
@@ -906,18 +996,20 @@ bool CityDatabase::reconcile_snapshot(const CodebaseSnapshot& snapshot)
 
                 for (const auto& ref : field.referenced_types)
                 {
-                    const auto it = known_type_symbol_ids.find(ref);
-                    if (it == known_type_symbol_ids.end() || it->second.size() != 1)
-                        continue;
-                    const std::string& target_symbol_id = it->second.front();
-                    if (target_symbol_id == pending.symbol_id)
-                        continue;
-                    insert_dependency.reuse();
-                    insert_dependency.bind_text(1, pending.symbol_id);
-                    insert_dependency.bind_text(2, target_symbol_id);
-                    insert_dependency.bind_text(3, field.name);
-                    insert_dependency.bind_text(4, field.type_name);
-                    insert_dependency.step_done();
+                    const std::vector<std::string> resolved_targets = resolve_dependency_targets(
+                        pending.symbol_id,
+                        ref,
+                        known_type_symbol_ids,
+                        inheritance_component_members);
+                    for (const std::string& target_symbol_id : resolved_targets)
+                    {
+                        insert_dependency.reuse();
+                        insert_dependency.bind_text(1, pending.symbol_id);
+                        insert_dependency.bind_text(2, target_symbol_id);
+                        insert_dependency.bind_text(3, field.name);
+                        insert_dependency.bind_text(4, field.type_name);
+                        insert_dependency.step_done();
+                    }
                 }
             }
         }

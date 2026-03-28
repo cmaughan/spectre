@@ -193,4 +193,36 @@ TEST_CASE("tree-sitter snapshot does not flatten nested type fields into the par
     std::filesystem::remove_all(temp_root);
 }
 
+TEST_CASE("tree-sitter snapshot captures direct inherited base types", "[treesitter]")
+{
+    const auto temp_root
+        = std::filesystem::temp_directory_path() / "draxul-treesitter-inheritance";
+    std::filesystem::remove_all(temp_root);
+    std::filesystem::create_directories(temp_root);
+
+    const auto source_path = temp_root / "inheritance.h";
+    {
+        std::ofstream out(source_path);
+        REQUIRE(out.is_open());
+        out << "class IRenderer {};\n";
+        out << "struct DeviceBase {};\n";
+        out << "class VkRenderDevice : public IRenderer, public DeviceBase {};\n";
+    }
+
+    CodebaseScanner scanner;
+    scanner.start(temp_root);
+    const auto snapshot = wait_for_complete_snapshot(scanner);
+    scanner.stop();
+
+    REQUIRE(snapshot);
+    REQUIRE(snapshot->complete);
+    REQUIRE(snapshot->files.size() == 1);
+
+    const SymbolRecord* vk = find_symbol(snapshot->files[0], SymbolKind::Class, "VkRenderDevice");
+    REQUIRE(vk != nullptr);
+    CHECK(vk->inherited_types == std::vector<std::string>{ "DeviceBase", "IRenderer" });
+
+    std::filesystem::remove_all(temp_root);
+}
+
 } // namespace draxul

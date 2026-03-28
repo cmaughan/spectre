@@ -37,6 +37,7 @@ struct SymbolRecord
         std::vector<std::string> referenced_types; // raw type names referenced by this field declaration
     };
     std::vector<FieldRecord> fields; // Class/Struct only: direct data members with best-effort type info
+    std::vector<std::string> inherited_types; // Class/Struct only: direct base/interface type names
 };
 
 struct ParseError

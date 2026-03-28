@@ -10,6 +10,7 @@
 #include "ui_city_map_panel.h"
 #include "ui_treesitter_panel.h"
 #include <SDL3/SDL.h>
+#include <algorithm>
 #include <cstdlib>
 #include <draxul/log.h>
 #include <draxul/megacity_host.h>
@@ -52,6 +53,7 @@ MegaCityCodeConfig world_rebuild_signature(MegaCityCodeConfig config)
     config.world_floor_grid_y_offset = 0.0f;
     config.world_floor_grid_tile_scale = 0.0f;
     config.world_floor_grid_line_width = 0.0f;
+    config.dependency_route_layer_step = 0.0f;
     config.ambient_strength = 0.0f;
     config.directional_light_dir = glm::vec3(0.0f);
     config.point_light_position_valid = false;
@@ -103,6 +105,16 @@ std::filesystem::path megacity_db_path()
 #else
     return repo_root / "db" / "megacity.sqlite3";
 #endif
+}
+
+std::string building_identity_key(std::string_view module_path, std::string_view qualified_name)
+{
+    std::string key;
+    key.reserve(module_path.size() + qualified_name.size() + 1);
+    key.append(module_path);
+    key.push_back('|');
+    key.append(qualified_name);
+    return key;
 }
 
 } // namespace
@@ -255,7 +267,7 @@ void MegaCityHost::route_worker_loop()
                 *request.layout,
                 *request.model,
                 *request.grid,
-                request.focus_qualified_name);
+                building_identity_key(request.focus_module_path, request.focus_qualified_name));
         }
 
         {
@@ -270,7 +282,7 @@ void MegaCityHost::route_worker_loop()
     }
 }
 
-void MegaCityHost::request_routes_for_focus(std::string focus_qualified_name)
+void MegaCityHost::request_routes_for_focus(std::string focus_module_path, std::string focus_qualified_name)
 {
     if (focus_qualified_name.empty() || !semantic_layout_ || !semantic_model_)
         return;
@@ -287,6 +299,7 @@ void MegaCityHost::request_routes_for_focus(std::string focus_qualified_name)
         std::lock_guard<std::mutex> lock(route_mutex_);
         pending_route_request_ = RouteBuildRequest{
             ++route_request_generation_,
+            std::move(focus_module_path),
             std::move(focus_qualified_name),
             semantic_layout_,
             semantic_model_,
@@ -419,6 +432,8 @@ void MegaCityHost::on_mouse_move(const MouseMoveEvent& event)
     if (!camera_)
         return;
 
+    update_hovered_building(event.pos);
+
     if (input_->on_mouse_move(event, *camera_))
     {
         last_activity_time_ = std::chrono::steady_clock::now();
@@ -509,6 +524,19 @@ void MegaCityHost::render_imgui(float dt)
         else if (pending_changed)
         {
             renderer_config_ = pending_renderer_config_;
+            if (world_ && previous_pending.dependency_route_layer_step != renderer_config_.dependency_route_layer_step)
+            {
+                std::shared_ptr<const CityGrid> grid;
+                {
+                    std::lock_guard<std::mutex> lock(grid_mutex_);
+                    grid = city_grid_;
+                }
+                if (grid && !grid->routes.empty())
+                {
+                    world_->clear_route_segments();
+                    emit_route_entities(*world_, grid->routes, renderer_config_);
+                }
+            }
             mark_scene_dirty();
         }
 
@@ -848,7 +876,7 @@ void MegaCityHost::pump()
             grid = city_grid_;
         }
         if (grid && grid->routes.empty() && !route_build_in_progress_.load())
-            request_routes_for_focus(selected_building_name_);
+            request_routes_for_focus(selected_building_module_path_, selected_building_name_);
     }
 
     if (scene_dirty_ && scene_pass_ && camera_ && world_)
@@ -944,16 +972,20 @@ void MegaCityHost::handle_click(const glm::ivec2& screen_pos)
     auto hit = pick_building(local_pos, pixel_w_, pixel_h_, *camera_, *semantic_model_);
     if (hit)
     {
-        if (hit->qualified_name == selected_building_name_)
+        if (hit->qualified_name == selected_building_name_
+            && hit->module_path == selected_building_module_path_)
         {
             clear_selection();
             return;
         }
         clear_active_routes(false);
         selected_building_name_ = hit->qualified_name;
-        DRAXUL_LOG_DEBUG(LogCategory::App, "Selected building: %s", selected_building_name_.c_str());
+        selected_building_module_path_ = hit->module_path;
+        DRAXUL_LOG_DEBUG(LogCategory::App, "Selected building: %s (%s)",
+            selected_building_name_.c_str(),
+            selected_building_module_path_.c_str());
         apply_selection_opacity();
-        request_routes_for_focus(selected_building_name_);
+        request_routes_for_focus(selected_building_module_path_, selected_building_name_);
     }
     else
     {
@@ -961,37 +993,88 @@ void MegaCityHost::handle_click(const glm::ivec2& screen_pos)
     }
 }
 
+void MegaCityHost::update_hovered_building(const glm::ivec2& screen_pos)
+{
+    std::string next_hovered_name;
+    std::string next_hovered_module_path;
+
+    if (!selected_building_name_.empty() && camera_ && semantic_model_ && scene_pass_)
+    {
+        const glm::ivec2 local_pos = screen_pos - viewport_.pixel_pos;
+        if (local_pos.x >= 0 && local_pos.y >= 0 && local_pos.x < pixel_w_ && local_pos.y < pixel_h_)
+        {
+            if (auto hit = pick_building(local_pos, pixel_w_, pixel_h_, *camera_, *semantic_model_))
+            {
+                next_hovered_name = hit->qualified_name;
+                next_hovered_module_path = hit->module_path;
+            }
+        }
+    }
+
+    if (next_hovered_name == selected_building_name_
+        && next_hovered_module_path == selected_building_module_path_)
+    {
+        next_hovered_name.clear();
+        next_hovered_module_path.clear();
+    }
+
+    if (next_hovered_name == hovered_building_name_
+        && next_hovered_module_path == hovered_building_module_path_)
+        return;
+
+    hovered_building_name_ = std::move(next_hovered_name);
+    hovered_building_module_path_ = std::move(next_hovered_module_path);
+
+    if (!selected_building_name_.empty())
+        apply_selection_opacity();
+}
+
 void MegaCityHost::apply_selection_opacity()
 {
     if (!scene_pass_ || !semantic_model_ || selected_building_name_.empty())
         return;
 
-    // Build the set of highlighted qualified names: selected + connected buildings.
-    std::unordered_set<std::string> highlighted;
-    highlighted.insert(selected_building_name_);
+    const std::string selected_identity
+        = building_identity_key(selected_building_module_path_, selected_building_name_);
+    const std::string hovered_identity
+        = building_identity_key(hovered_building_module_path_, hovered_building_name_);
+    std::unordered_set<std::string> connected;
     for (const auto& dep : semantic_model_->dependencies)
     {
-        if (dep.source_qualified_name == selected_building_name_)
-            highlighted.insert(dep.target_qualified_name);
-        else if (dep.target_qualified_name == selected_building_name_)
-            highlighted.insert(dep.source_qualified_name);
+        const std::string source_identity
+            = building_identity_key(dep.source_module_path, dep.source_qualified_name);
+        const std::string target_identity
+            = building_identity_key(dep.target_module_path, dep.target_qualified_name);
+        if (source_identity == selected_identity)
+            connected.insert(target_identity);
+        else if (target_identity == selected_identity)
+            connected.insert(source_identity);
     }
 
     SceneSnapshot& scene = scene_pass_->scene();
     for (auto& obj : scene.objects)
     {
-        bool is_highlighted = false;
+        const std::string object_identity = obj.source_name.empty()
+            ? std::string()
+            : building_identity_key(obj.source_module_path, obj.source_name);
+        const bool is_selected = !object_identity.empty() && object_identity == selected_identity;
+        const bool is_connected = !object_identity.empty() && connected.count(object_identity) > 0;
+        const bool is_hovered_hidden = !object_identity.empty() && object_identity == hovered_identity && !is_connected;
+        const bool is_selected_route = !obj.route_source.empty()
+            && (building_identity_key(obj.route_source_module_path, obj.route_source) == selected_identity
+                || building_identity_key(obj.route_target_module_path, obj.route_target) == selected_identity);
 
-        // Check building identity
-        if (!obj.source_name.empty() && highlighted.count(obj.source_name))
-            is_highlighted = true;
+        float alpha = obj.mesh == MeshId::RoadSurface
+            ? renderer_config_.selection_hidden_road_alpha
+            : renderer_config_.selection_hidden_alpha;
+        if (is_hovered_hidden)
+            alpha = renderer_config_.selection_hidden_hover_alpha;
+        if (is_connected)
+            alpha = renderer_config_.selection_dependency_alpha;
+        if (is_selected || is_selected_route)
+            alpha = 1.0f;
 
-        // Check route link
-        if (!obj.route_source.empty()
-            && (highlighted.count(obj.route_source) || highlighted.count(obj.route_target)))
-            is_highlighted = true;
-
-        obj.color.a = is_highlighted ? 1.0f : 0.15f;
+        obj.color.a = std::clamp(alpha, 0.0f, 1.0f);
     }
 
     sort_scene_objects(scene);
@@ -1006,6 +1089,9 @@ void MegaCityHost::clear_selection()
         return;
 
     selected_building_name_.clear();
+    selected_building_module_path_.clear();
+    hovered_building_name_.clear();
+    hovered_building_module_path_.clear();
 
     if (scene_pass_)
     {

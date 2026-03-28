@@ -185,6 +185,10 @@ void apply_megacity_code_table(MegaCityCodeConfig& config, const toml::table& ta
     assign_bool("hide_struct_entities", config.hide_struct_entities);
     assign_bool("auto_rebuild", config.auto_rebuild);
     assign_bool("show_ui_panels", config.show_ui_panels);
+    assign_float("selection_dependency_alpha", config.selection_dependency_alpha);
+    assign_float("selection_hidden_alpha", config.selection_hidden_alpha);
+    assign_float("selection_hidden_hover_alpha", config.selection_hidden_hover_alpha);
+    assign_float("selection_hidden_road_alpha", config.selection_hidden_road_alpha);
 
     assign_float("placement_step", config.placement_step);
     assign_int("max_spiral_rings", config.max_spiral_rings);
@@ -203,6 +207,7 @@ void apply_megacity_code_table(MegaCityCodeConfig& config, const toml::table& ta
     assign_float("road_width_scale", config.road_width_scale);
     assign_vec2(table, "road_width_range", config.road_width_range);
     assign_float("sidewalk_width", config.sidewalk_width);
+    assign_float("dependency_route_layer_step", config.dependency_route_layer_step);
     assign_float("park_footprint", config.park_footprint);
     assign_float("park_height", config.park_height);
     assign_float("park_sidewalk_width", config.park_sidewalk_width);
@@ -318,6 +323,10 @@ toml::table serialize_megacity_code_table(const MegaCityCodeConfig& config)
     table.insert_or_assign("hide_struct_entities", config.hide_struct_entities);
     table.insert_or_assign("auto_rebuild", config.auto_rebuild);
     table.insert_or_assign("show_ui_panels", config.show_ui_panels);
+    table.insert_or_assign("selection_dependency_alpha", static_cast<double>(config.selection_dependency_alpha));
+    table.insert_or_assign("selection_hidden_alpha", static_cast<double>(config.selection_hidden_alpha));
+    table.insert_or_assign("selection_hidden_hover_alpha", static_cast<double>(config.selection_hidden_hover_alpha));
+    table.insert_or_assign("selection_hidden_road_alpha", static_cast<double>(config.selection_hidden_road_alpha));
     table.insert_or_assign("placement_step", static_cast<double>(config.placement_step));
     table.insert_or_assign("max_spiral_rings", config.max_spiral_rings);
     table.insert_or_assign("footprint_base", static_cast<double>(config.footprint_base));
@@ -332,6 +341,7 @@ toml::table serialize_megacity_code_table(const MegaCityCodeConfig& config)
     table.insert_or_assign("road_width_scale", static_cast<double>(config.road_width_scale));
     toml_support::insert_vec2(table, "road_width_range", config.road_width_range);
     table.insert_or_assign("sidewalk_width", static_cast<double>(config.sidewalk_width));
+    table.insert_or_assign("dependency_route_layer_step", static_cast<double>(config.dependency_route_layer_step));
     table.insert_or_assign("park_footprint", static_cast<double>(config.park_footprint));
     table.insert_or_assign("park_height", static_cast<double>(config.park_height));
     table.insert_or_assign("park_sidewalk_width", static_cast<double>(config.park_sidewalk_width));

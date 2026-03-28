@@ -271,6 +271,7 @@ SceneSnapshotResult build_scene_snapshot(
             extent_x = route->extent_x;
             extent_z = route->extent_z;
             transform = glm::translate(transform, glm::vec3(0.0f, route->height * 0.5f, 0.0f));
+            transform = glm::rotate(transform, route->yaw_radians, glm::vec3(0.0f, 1.0f, 0.0f));
             transform = glm::scale(transform, glm::vec3(route->extent_x, route->height, route->extent_z));
         }
         else if (const auto* module_surface = reg.try_get<ModuleSurfaceMetrics>(entity))
@@ -299,10 +300,15 @@ SceneSnapshotResult build_scene_snapshot(
         obj.color = appearance.color;
 
         if (const auto* sym = reg.try_get<SourceSymbol>(entity))
+        {
             obj.source_name = sym->name;
+            obj.source_module_path = sym->module_path;
+        }
         if (const auto* link = reg.try_get<RouteLink>(entity))
         {
+            obj.route_source_module_path = link->source_module_path;
             obj.route_source = link->source_qualified_name;
+            obj.route_target_module_path = link->target_module_path;
             obj.route_target = link->target_qualified_name;
         }
 

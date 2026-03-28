@@ -306,6 +306,22 @@ std::vector<SymbolRecord::FieldRecord> collect_data_field_records(TSNode class_n
     return fields;
 }
 
+std::vector<std::string> collect_direct_base_type_names(
+    TSNode type_node, const std::string& source, std::string_view self_name)
+{
+    std::set<std::string> refs;
+    const uint32_t child_count = ts_node_named_child_count(type_node);
+    for (uint32_t i = 0; i < child_count; ++i)
+    {
+        const TSNode child = ts_node_named_child(type_node, i);
+        if (node_type_is(child, "field_declaration_list"))
+            continue;
+        collect_type_references(child, source, refs);
+    }
+    refs.erase(std::string(self_name));
+    return { refs.begin(), refs.end() };
+}
+
 bool has_type_definition_body(TSNode type_node)
 {
     return ts_node_is_null(find_named_child_of_type(type_node, "field_declaration_list")) == 0;
@@ -481,6 +497,7 @@ void CodebaseScanner::scan_thread(std::filesystem::path root)
                     uint32_t field_count = 0;
                     std::vector<std::string> referenced_types;
                     std::vector<SymbolRecord::FieldRecord> fields;
+                    std::vector<std::string> inherited_types;
                     if (name_len == 2 && strncmp(cap_name, "fn", 2) == 0)
                     {
                         kind = SymbolKind::Function;
@@ -522,6 +539,7 @@ void CodebaseScanner::scan_thread(std::filesystem::path root)
                             collect_type_references(class_node, source, refs);
                             refs.erase(sym_name);
                             referenced_types.assign(refs.begin(), refs.end());
+                            inherited_types = collect_direct_base_type_names(class_node, source, sym_name);
                         }
                     }
                     else if (name_len == 2 && strncmp(cap_name, "st", 2) == 0)
@@ -539,6 +557,7 @@ void CodebaseScanner::scan_thread(std::filesystem::path root)
                             collect_type_references(struct_node, source, refs);
                             refs.erase(sym_name);
                             referenced_types.assign(refs.begin(), refs.end());
+                            inherited_types = collect_direct_base_type_names(struct_node, source, sym_name);
                         }
                     }
                     else if (name_len == 3 && strncmp(cap_name, "inc", 3) == 0)
@@ -549,8 +568,18 @@ void CodebaseScanner::scan_thread(std::filesystem::path root)
                     else
                         continue;
 
-                    file.symbols.push_back({ kind, std::move(sym_name), std::move(parent_name),
-                        false, line, end_line, field_count, std::move(referenced_types), std::move(fields) });
+                    SymbolRecord record;
+                    record.kind = kind;
+                    record.name = std::move(sym_name);
+                    record.parent = std::move(parent_name);
+                    record.is_abstract = false;
+                    record.line = line;
+                    record.end_line = end_line;
+                    record.field_count = field_count;
+                    record.referenced_types = std::move(referenced_types);
+                    record.fields = std::move(fields);
+                    record.inherited_types = std::move(inherited_types);
+                    file.symbols.push_back(std::move(record));
                 }
             }
         }

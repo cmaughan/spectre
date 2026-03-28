@@ -702,28 +702,28 @@ CityBuildResult build_city(
             module_layout.max_z - border_width * 0.5f,
             ModuleSurfaceMetrics{ extent_x, border_width, kModuleSurfaceHeight },
             module_color,
-            SourceSymbol{ "", module_layout.module_path },
+            SourceSymbol{ "", module_layout.module_path, module_layout.module_path },
             module_surface_elevation);
         world.create_module_surface(
             center_x,
             module_layout.min_z + border_width * 0.5f,
             ModuleSurfaceMetrics{ extent_x, border_width, kModuleSurfaceHeight },
             module_color,
-            SourceSymbol{ "", module_layout.module_path },
+            SourceSymbol{ "", module_layout.module_path, module_layout.module_path },
             module_surface_elevation);
         world.create_module_surface(
             module_layout.min_x + border_width * 0.5f,
             center_z,
             ModuleSurfaceMetrics{ border_width, inner_extent_z, kModuleSurfaceHeight },
             module_color,
-            SourceSymbol{ "", module_layout.module_path },
+            SourceSymbol{ "", module_layout.module_path, module_layout.module_path },
             module_surface_elevation);
         world.create_module_surface(
             module_layout.max_x - border_width * 0.5f,
             center_z,
             ModuleSurfaceMetrics{ border_width, inner_extent_z, kModuleSurfaceHeight },
             module_color,
-            SourceSymbol{ "", module_layout.module_path },
+            SourceSymbol{ "", module_layout.module_path, module_layout.module_path },
             module_surface_elevation);
     }
 
@@ -749,7 +749,7 @@ CityBuildResult build_city(
                 building_base_elevation(config),
                 park_metrics,
                 park_color,
-                SourceSymbol{ "", module_layout.module_path },
+                SourceSymbol{ "", module_layout.module_path, module_layout.module_path },
                 MaterialId::FlatColor);
 
             if (module_layout.is_central_park)
@@ -760,14 +760,14 @@ CityBuildResult build_city(
                     building_base_elevation(config) + config.park_height,
                     central_park_tree_metrics,
                     glm::vec4(1.0f),
-                    SourceSymbol{ "", "CentralParkTreeBark" });
+                    SourceSymbol{ "", "CentralParkTreeBark", module_layout.module_path });
                 world.create_tree_leaves(
                     module_layout.park_center.x,
                     module_layout.park_center.y,
                     building_base_elevation(config) + config.park_height,
                     central_park_tree_metrics,
                     glm::vec4(1.0f),
-                    SourceSymbol{ "", "CentralParkTreeLeaves" });
+                    SourceSymbol{ "", "CentralParkTreeLeaves", module_layout.module_path });
             }
 
             // Reuse the building sidewalk/road segment builders for the park.
@@ -782,7 +782,7 @@ CityBuildResult build_city(
                     sidewalk.center.y,
                     RoadMetrics{ sidewalk.extent.x, sidewalk.extent.y, config.sidewalk_surface_height },
                     kSidewalkSurfaceColor,
-                    SourceSymbol{ "", module_layout.module_path },
+                    SourceSymbol{ "", module_layout.module_path, module_layout.module_path },
                     config.sidewalk_surface_lift);
             }
         }
@@ -801,7 +801,7 @@ CityBuildResult build_city(
                 building_base_elevation(config),
                 building.metrics,
                 glm::vec4(1.0f),
-                SourceSymbol{ building.source_file_path, building.qualified_name },
+                SourceSymbol{ building.source_file_path, building.qualified_name, building.module_path },
                 MaterialId::FlatColor,
                 build_procedural_building_mesh(
                     building,
@@ -828,7 +828,7 @@ CityBuildResult build_city(
                             building_base_elevation(config) + building.metrics.height,
                             cap_metrics,
                             module_color,
-                            SourceSymbol{ building.source_file_path, building.qualified_name },
+                            SourceSymbol{ building.source_file_path, building.qualified_name, building.module_path },
                             MaterialId::FlatColor,
                             build_procedural_building_cap_mesh(
                                 building,
@@ -852,7 +852,7 @@ CityBuildResult build_city(
                             sign,
                             placement.mesh,
                             sign_color,
-                            SourceSymbol{ building.source_file_path, building.qualified_name });
+                            SourceSymbol{ building.source_file_path, building.qualified_name, building.module_path });
                     }
                 }
             }
@@ -864,7 +864,7 @@ CityBuildResult build_city(
                     sidewalk.center.y,
                     RoadMetrics{ sidewalk.extent.x, sidewalk.extent.y, config.sidewalk_surface_height },
                     kSidewalkSurfaceColor,
-                    SourceSymbol{ building.source_file_path, building.qualified_name },
+                    SourceSymbol{ building.source_file_path, building.qualified_name, building.module_path },
                     config.sidewalk_surface_lift);
             }
         }
@@ -893,7 +893,7 @@ CityBuildResult build_city(
                         sign,
                         park_sign.mesh,
                         module_sign_board_color(config),
-                        SourceSymbol{ "", module_layout.module_path });
+                        SourceSymbol{ "", module_layout.module_path, module_layout.module_path });
                 }
             }
         }
@@ -911,12 +911,12 @@ CityBuildResult build_city(
         std::unordered_map<std::string, glm::vec2> layout_centers;
         for (const auto& module_layout : layout->modules)
             for (const auto& building : module_layout.buildings)
-                layout_centers[building.qualified_name] = building.center;
+                layout_centers[building_connection_key(building.module_path, building.qualified_name)] = building.center;
 
         for (auto& module : semantic_model->modules)
             for (auto& building : module.buildings)
             {
-                auto it = layout_centers.find(building.qualified_name);
+                auto it = layout_centers.find(building_connection_key(building.module_path, building.qualified_name));
                 if (it != layout_centers.end())
                     building.center = it->second;
             }
@@ -940,30 +940,55 @@ void emit_route_entities(
                                       kRoadSurfaceTextureLift + config.road_surface_height,
                                       config.sidewalk_surface_lift + config.sidewalk_surface_height)
         + kDependencyRouteLift;
-    const std::vector<CityGrid::RouteRenderSegment> route_segments = build_city_route_render_segments(
-        routes,
-        config.placement_step * 0.18f);
-    for (const auto& segment : route_segments)
+    for (size_t route_index = 0; route_index < routes.size(); ++route_index)
     {
-        const glm::vec2 delta = segment.b - segment.a;
-        const float length_x = std::abs(delta.x);
-        const float length_z = std::abs(delta.y);
-        if (length_x <= 1e-4f && length_z <= 1e-4f)
+        const auto& route = routes[route_index];
+        if (route.world_points.size() < 2)
             continue;
 
-        const bool horizontal = length_x >= length_z;
-        world.create_route_segment(
-            (segment.a.x + segment.b.x) * 0.5f,
-            (segment.a.y + segment.b.y) * 0.5f,
-            RouteSegmentMetrics{
-                horizontal ? std::max(length_x, route_width) : route_width,
-                horizontal ? route_width : std::max(length_z, route_width),
-                kDependencyRouteHeight,
-            },
-            segment.color,
-            SourceSymbol{},
-            route_elevation,
-            RouteLink{ segment.source_qualified_name, segment.target_qualified_name });
+        float total_length = 0.0f;
+        for (size_t point_index = 1; point_index < route.world_points.size(); ++point_index)
+            total_length += glm::length(route.world_points[point_index] - route.world_points[point_index - 1]);
+        if (total_length <= 1e-4f)
+            continue;
+
+        const float layered_route_elevation
+            = route_elevation + static_cast<float>(route_index) * std::max(config.dependency_route_layer_step, 0.0f);
+        float traversed_length = 0.0f;
+        for (size_t point_index = 1; point_index < route.world_points.size(); ++point_index)
+        {
+            const glm::vec2 a = route.world_points[point_index - 1];
+            const glm::vec2 b = route.world_points[point_index];
+            const glm::vec2 delta = b - a;
+            const float length = glm::length(delta);
+            if (length <= 1e-4f)
+                continue;
+
+            const float segment_mid_length = traversed_length + length * 0.5f;
+            const float color_t = std::clamp(segment_mid_length / total_length, 0.0f, 1.0f);
+            const glm::vec4 color = glm::mix(route.source_color, route.target_color, color_t);
+
+            world.create_route_segment(
+                (a.x + b.x) * 0.5f,
+                (a.y + b.y) * 0.5f,
+                RouteSegmentMetrics{
+                    std::max(length, route_width),
+                    route_width,
+                    kDependencyRouteHeight,
+                    -std::atan2(delta.y, delta.x),
+                },
+                color,
+                SourceSymbol{},
+                layered_route_elevation,
+                RouteLink{
+                    route.source_module_path,
+                    route.source_qualified_name,
+                    route.target_module_path,
+                    route.target_qualified_name,
+                });
+
+            traversed_length += length;
+        }
     }
 }
 

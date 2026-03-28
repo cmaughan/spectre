@@ -88,10 +88,11 @@ private:
     void mark_scene_dirty();
     void mark_world_rebuild_pending();
     void handle_click(const glm::ivec2& screen_pos);
+    void update_hovered_building(const glm::ivec2& screen_pos);
     void apply_selection_opacity();
     void clear_selection();
     void route_worker_loop();
-    void request_routes_for_focus(std::string focus_qualified_name);
+    void request_routes_for_focus(std::string focus_module_path, std::string focus_qualified_name);
     void consume_completed_routes();
     void clear_active_routes(bool request_frame = true);
     void refresh_available_modules();
@@ -141,6 +142,9 @@ private:
     std::string imgui_ini_path_;
     bool continuous_refresh_enabled_ = false;
     std::string selected_building_name_;
+    std::string selected_building_module_path_;
+    std::string hovered_building_name_;
+    std::string hovered_building_module_path_;
     std::chrono::steady_clock::time_point last_activity_time_ = std::chrono::steady_clock::now();
     std::chrono::steady_clock::time_point last_pump_time_ = std::chrono::steady_clock::now();
 
@@ -153,6 +157,7 @@ private:
     struct RouteBuildRequest
     {
         uint64_t generation = 0;
+        std::string focus_module_path;
         std::string focus_qualified_name;
         std::shared_ptr<const SemanticMegacityLayout> layout;
         std::shared_ptr<const SemanticMegacityModel> model;

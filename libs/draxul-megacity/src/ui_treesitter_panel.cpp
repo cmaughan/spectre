@@ -795,6 +795,16 @@ bool render_renderer_controls(MegacityRendererControls& controls)
             ImGui::TreePop();
         }
 
+        // Selection
+        if (ImGui::TreeNodeEx("##build_selection", ImGuiTreeNodeFlags_SpanAvailWidth, "Selection"))
+        {
+            edit_float("Dependency Alpha", config.selection_dependency_alpha, 0.01f, 0.0f, 1.0f, "%.2f");
+            edit_float("Hidden Alpha", config.selection_hidden_alpha, 0.01f, 0.0f, 1.0f, "%.2f");
+            edit_float("Hover Hidden Alpha", config.selection_hidden_hover_alpha, 0.01f, 0.0f, 1.0f, "%.2f");
+            edit_float("Road Hidden Alpha", config.selection_hidden_road_alpha, 0.01f, 0.0f, 1.0f, "%.2f");
+            ImGui::TreePop();
+        }
+
         // Buildings
         if (ImGui::TreeNodeEx("##build_buildings", ImGuiTreeNodeFlags_SpanAvailWidth, "Buildings"))
         {
@@ -810,6 +820,13 @@ bool render_renderer_controls(MegacityRendererControls& controls)
             edit_float("Road Width Scale", config.road_width_scale, 0.01f, 0.0f, 8.0f, "%.2f");
             edit_vec2("Road Width Range", config.road_width_range, 0.01f, 0.0f, 32.0f, "%.2f");
             edit_float("Sidewalk Width", config.sidewalk_width, 0.01f, 0.0f, 16.0f, "%.2f");
+            ImGui::TreePop();
+        }
+
+        // Routes
+        if (ImGui::TreeNodeEx("##build_routes", ImGuiTreeNodeFlags_SpanAvailWidth, "Routes"))
+        {
+            edit_float("Layer Step", config.dependency_route_layer_step, 0.001f, 0.0f, 0.25f, "%.3f");
             ImGui::TreePop();
         }
 

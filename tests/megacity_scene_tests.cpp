@@ -245,6 +245,49 @@ TEST_CASE("procedural building side count becomes hex for heavily connected buil
     CHECK(procedural_building_side_count(12) == 6);
 }
 
+TEST_CASE("route segment world transform follows its intended direction", "[megacity]")
+{
+    SceneWorld world;
+    const glm::vec2 a{ 1.0f, 2.0f };
+    const glm::vec2 b{ 4.0f, 5.0f };
+    const glm::vec2 delta = glm::normalize(b - a);
+
+    world.create_route_segment(
+        (a.x + b.x) * 0.5f,
+        (a.y + b.y) * 0.5f,
+        RouteSegmentMetrics{
+            .extent_x = glm::length(b - a),
+            .extent_z = 0.1f,
+            .height = 0.04f,
+            .yaw_radians = -std::atan2(b.y - a.y, b.x - a.x),
+        },
+        glm::vec4(1.0f),
+        {},
+        0.0f);
+
+    IsometricCamera camera;
+    camera.look_at_world_center(2.5f, 3.5f);
+    camera.set_viewport(800, 600);
+    MegaCityCodeConfig config;
+
+    const SceneSnapshotResult result = build_scene_snapshot(
+        camera,
+        world,
+        config,
+        {},
+        {},
+        {});
+
+    REQUIRE(result.snapshot.objects.size() == 1);
+    const glm::mat4& world_matrix = result.snapshot.objects[0].world;
+    const glm::vec3 local_start = glm::vec3(world_matrix * glm::vec4(-0.5f, 0.0f, 0.0f, 1.0f));
+    const glm::vec3 local_end = glm::vec3(world_matrix * glm::vec4(0.5f, 0.0f, 0.0f, 1.0f));
+    const glm::vec2 world_dir = glm::normalize(glm::vec2(local_end.x - local_start.x, local_end.z - local_start.z));
+
+    CHECK(world_dir.x == Catch::Approx(delta.x).margin(1e-4f));
+    CHECK(world_dir.y == Catch::Approx(delta.y).margin(1e-4f));
+}
+
 TEST_CASE("megacity camera projection responds to viewport aspect", "[megacity]")
 {
     IsometricCamera camera;
@@ -805,7 +848,7 @@ TEST_CASE("city grid uses one shared road surface under the building envelope", 
     CHECK(sample_cell(-4.0f, 0.0f) == kCityGridRoad);
 }
 
-TEST_CASE("city grid routes dependencies along road cells between buildings", "[megacity]")
+TEST_CASE("city routes dependencies through visible road space between buildings", "[megacity]")
 {
     SemanticMegacityLayout layout;
     SemanticCityModuleLayout module_layout;
@@ -824,14 +867,14 @@ TEST_CASE("city grid routes dependencies along road cells between buildings", "[
 
     SemanticCityBuilding target = source;
     target.qualified_name = "Target";
-    target.center = { 10.0f, 0.0f };
+    target.center = { 8.0f, 8.0f };
 
     module_layout.buildings = { source, target };
     layout.modules.push_back(module_layout);
     layout.min_x = -6.0f;
     layout.max_x = 16.0f;
     layout.min_z = -6.0f;
-    layout.max_z = 6.0f;
+    layout.max_z = 14.0f;
 
     SemanticMegacityModel model;
     model.modules.push_back({ module_layout.module_path, 0, 0.5f, {}, module_layout.buildings });
@@ -857,19 +900,28 @@ TEST_CASE("city grid routes dependencies along road cells between buildings", "[
     CHECK(route.source_color == glm::vec4(0.20f, 0.88f, 0.30f, 1.0f));
     CHECK(route.target_color == glm::vec4(0.92f, 0.22f, 0.18f, 1.0f));
 
+    bool found_diagonal = false;
     for (size_t i = 1; i < route.world_points.size(); ++i)
     {
         const glm::vec2 a = route.world_points[i - 1];
         const glm::vec2 b = route.world_points[i];
-        CHECK((std::abs(a.x - b.x) <= 1e-4f || std::abs(a.y - b.y) <= 1e-4f));
+        found_diagonal |= std::abs(a.x - b.x) > 1e-4f && std::abs(a.y - b.y) > 1e-4f;
     }
+    CHECK(found_diagonal);
+
+    const auto point_in_sidewalk_or_building = [](const glm::vec2& point, const SemanticCityBuilding& building) {
+        const float half_extent = building.metrics.footprint * 0.5f + building.metrics.sidewalk_width;
+        return point.x > building.center.x - half_extent + 1e-4f
+            && point.x < building.center.x + half_extent - 1e-4f
+            && point.y > building.center.y - half_extent + 1e-4f
+            && point.y < building.center.y + half_extent - 1e-4f;
+    };
 
     for (size_t i = 1; i + 1 < route.world_points.size(); ++i)
     {
         const glm::vec2 point = route.world_points[i];
-        const int col = static_cast<int>(std::floor((point.x - grid.origin_x) / grid.cell_size));
-        const int row = static_cast<int>(std::floor((point.y - grid.origin_z) / grid.cell_size));
-        CHECK(grid.at(col, row) == kCityGridRoad);
+        CHECK_FALSE(point_in_sidewalk_or_building(point, source));
+        CHECK_FALSE(point_in_sidewalk_or_building(point, target));
     }
 }
 
@@ -937,7 +989,9 @@ TEST_CASE("route render segments preserve independent route geometry", "[megacit
 {
     std::vector<CityGrid::RoutePolyline> routes;
     routes.push_back({
+        "libs/example",
         "Alpha",
+        "libs/example",
         "Target",
         glm::vec4(0.20f, 0.88f, 0.30f, 1.0f),
         glm::vec4(0.92f, 0.22f, 0.18f, 1.0f),
@@ -950,7 +1004,9 @@ TEST_CASE("route render segments preserve independent route geometry", "[megacit
         },
     });
     routes.push_back({
+        "libs/example",
         "Beta",
+        "libs/example",
         "Target",
         glm::vec4(0.20f, 0.88f, 0.30f, 1.0f),
         glm::vec4(0.92f, 0.22f, 0.18f, 1.0f),
@@ -964,7 +1020,7 @@ TEST_CASE("route render segments preserve independent route geometry", "[megacit
     });
 
     const auto segments = build_city_route_render_segments(routes, 0.2f);
-    REQUIRE(segments.size() == 24);
+    REQUIRE(segments.size() == 8);
 
     bool found_centerline_gradient_segment = false;
     bool found_greenish_segment = false;

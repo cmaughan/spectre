@@ -2,14 +2,18 @@
 #include "city_helpers.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <functional>
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/norm.hpp>
 #include <limits>
 #include <numbers>
 #include <numeric>
 #include <optional>
 #include <queue>
 #include <string_view>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -318,10 +322,8 @@ int world_to_grid_row(const CityGrid& grid, float world_z)
 
 struct BuildingRoutePort
 {
-    int col = -1;
-    int row = -1;
     glm::vec2 edge_world{ 0.0f };
-    bool vertical_exit = false;
+    glm::vec2 road_entry_world{ 0.0f };
 };
 
 enum class PortSide : uint8_t
@@ -350,43 +352,21 @@ struct RouteEndpointRequest
     float sort_key = 0.0f;
 };
 
-bool find_nearest_road_cell(const CityGrid& grid, int start_col, int start_row, int& out_col, int& out_row)
+struct RouteObstacle
 {
-    constexpr int kMaxSearchRadius = 3;
-    if (grid.at(start_col, start_row) == kCityGridRoad)
-    {
-        out_col = start_col;
-        out_row = start_row;
-        return true;
-    }
+    float min_x = 0.0f;
+    float max_x = 0.0f;
+    float min_z = 0.0f;
+    float max_z = 0.0f;
+};
 
-    float best_distance_sq = std::numeric_limits<float>::max();
-    bool found = false;
-    for (int radius = 1; radius <= kMaxSearchRadius; ++radius)
-    {
-        for (int row = start_row - radius; row <= start_row + radius; ++row)
-        {
-            for (int col = start_col - radius; col <= start_col + radius; ++col)
-            {
-                if (grid.at(col, row) != kCityGridRoad)
-                    continue;
-                const float dx = static_cast<float>(col - start_col);
-                const float dz = static_cast<float>(row - start_row);
-                const float distance_sq = dx * dx + dz * dz;
-                if (distance_sq < best_distance_sq)
-                {
-                    best_distance_sq = distance_sq;
-                    out_col = col;
-                    out_row = row;
-                    found = true;
-                }
-            }
-        }
-        if (found)
-            return true;
-    }
-    return false;
-}
+struct VisibilityGraph
+{
+    CitySurfaceBounds bounds;
+    std::vector<RouteObstacle> obstacles;
+    std::vector<glm::vec2> nodes;
+    std::vector<std::vector<std::pair<int, float>>> adjacency;
+};
 
 PortSide side_towards(const SemanticCityBuilding& from, const SemanticCityBuilding& to)
 {
@@ -418,46 +398,35 @@ std::string route_port_group_key(std::string_view building_key_value, PortSide s
 std::optional<BuildingRoutePort> make_building_route_port(
     const SemanticCityBuilding& building, PortSide side, float tangent_offset, const CityGrid& grid)
 {
+    (void)grid;
     const float half_footprint = building.metrics.footprint * 0.5f;
     const float road_center_offset = half_footprint + building.metrics.sidewalk_width + building.metrics.road_width * 0.5f;
 
     glm::vec2 edge_world(0.0f);
     glm::vec2 road_world(0.0f);
-    bool vertical_exit = false;
     switch (side)
     {
     case PortSide::North:
         edge_world = { building.center.x + tangent_offset, building.center.y + half_footprint };
         road_world = { building.center.x + tangent_offset, building.center.y + road_center_offset };
-        vertical_exit = true;
         break;
     case PortSide::South:
         edge_world = { building.center.x + tangent_offset, building.center.y - half_footprint };
         road_world = { building.center.x + tangent_offset, building.center.y - road_center_offset };
-        vertical_exit = true;
         break;
     case PortSide::West:
         edge_world = { building.center.x - half_footprint, building.center.y + tangent_offset };
         road_world = { building.center.x - road_center_offset, building.center.y + tangent_offset };
-        vertical_exit = false;
         break;
     case PortSide::East:
         edge_world = { building.center.x + half_footprint, building.center.y + tangent_offset };
         road_world = { building.center.x + road_center_offset, building.center.y + tangent_offset };
-        vertical_exit = false;
         break;
     }
 
-    int col = world_to_grid_col(grid, road_world.x);
-    int row = world_to_grid_row(grid, road_world.y);
-    if (!find_nearest_road_cell(grid, col, row, col, row))
-        return std::nullopt;
-
     return BuildingRoutePort{
-        col,
-        row,
         edge_world,
-        vertical_exit,
+        road_world,
     };
 }
 
@@ -475,15 +444,17 @@ std::vector<RoutePair> collect_route_pairs(
     route_pairs.reserve(model.dependencies.size());
     for (const auto& dep : model.dependencies)
     {
+        const std::string source_key = building_key(dep.source_module_path, dep.source_qualified_name);
+        const std::string target_key = building_key(dep.target_module_path, dep.target_qualified_name);
         if (!focus_qualified_name.empty()
             && dep.source_qualified_name != focus_qualified_name
-            && dep.target_qualified_name != focus_qualified_name)
+            && dep.target_qualified_name != focus_qualified_name
+            && source_key != focus_qualified_name
+            && target_key != focus_qualified_name)
         {
             continue;
         }
 
-        const std::string source_key = building_key(dep.source_module_path, dep.source_qualified_name);
-        const std::string target_key = building_key(dep.target_module_path, dep.target_qualified_name);
         if (source_key == target_key)
             continue;
         const auto source_it = buildings_by_key.find(source_key);
@@ -595,14 +566,7 @@ void append_point_if_new(std::vector<glm::vec2>& points, const glm::vec2& point)
     points.push_back(point);
 }
 
-glm::vec2 axis_aligned_connector(const BuildingRoutePort& port, const glm::vec2& road_cell_center)
-{
-    if (port.vertical_exit)
-        return { port.edge_world.x, road_cell_center.y };
-    return { road_cell_center.x, port.edge_world.y };
-}
-
-void simplify_axis_aligned_polyline(std::vector<glm::vec2>& points)
+void simplify_polyline(std::vector<glm::vec2>& points)
 {
     if (points.size() < 3)
         return;
@@ -627,78 +591,281 @@ void simplify_axis_aligned_polyline(std::vector<glm::vec2>& points)
     points = std::move(simplified);
 }
 
-std::array<int, 4> preferred_direction_order(int col, int row, int target_col, int target_row)
+bool point_within_bounds(const glm::vec2& point, const CitySurfaceBounds& bounds)
 {
-    const int dx = target_col - col;
-    const int dy = target_row - row;
-
-    const int horizontal_primary = dx >= 0 ? 0 : 1;
-    const int horizontal_secondary = dx >= 0 ? 1 : 0;
-    const int vertical_primary = dy >= 0 ? 2 : 3;
-    const int vertical_secondary = dy >= 0 ? 3 : 2;
-
-    if (std::abs(dx) >= std::abs(dy))
-    {
-        return { horizontal_primary, vertical_primary, horizontal_secondary, vertical_secondary };
-    }
-    return { vertical_primary, horizontal_primary, vertical_secondary, horizontal_secondary };
+    constexpr float kEpsilon = 1e-4f;
+    return point.x >= bounds.min_x - kEpsilon && point.x <= bounds.max_x + kEpsilon
+        && point.y >= bounds.min_z - kEpsilon && point.y <= bounds.max_z + kEpsilon;
 }
 
-bool find_road_path(
-    const CityGrid& grid, int start_col, int start_row, int target_col, int target_row, std::vector<int>& path_out)
+bool point_strictly_inside_obstacle(const glm::vec2& point, const RouteObstacle& obstacle)
 {
-    path_out.clear();
-    if (grid.at(start_col, start_row) != kCityGridRoad || grid.at(target_col, target_row) != kCityGridRoad)
+    constexpr float kEpsilon = 1e-4f;
+    return point.x > obstacle.min_x + kEpsilon && point.x < obstacle.max_x - kEpsilon
+        && point.y > obstacle.min_z + kEpsilon && point.y < obstacle.max_z - kEpsilon;
+}
+
+bool liang_barsky_clip(float p, float q, float& t0, float& t1)
+{
+    constexpr float kEpsilon = 1e-6f;
+    if (std::abs(p) <= kEpsilon)
+        return q >= 0.0f;
+
+    const float r = q / p;
+    if (p < 0.0f)
+    {
+        if (r > t1)
+            return false;
+        if (r > t0)
+            t0 = r;
+    }
+    else
+    {
+        if (r < t0)
+            return false;
+        if (r < t1)
+            t1 = r;
+    }
+    return true;
+}
+
+bool segment_intersects_obstacle_interior(const glm::vec2& a, const glm::vec2& b, const RouteObstacle& obstacle)
+{
+    if (point_strictly_inside_obstacle(a, obstacle) || point_strictly_inside_obstacle(b, obstacle))
+        return true;
+
+    float t0 = 0.0f;
+    float t1 = 1.0f;
+    const glm::vec2 delta = b - a;
+    if (!liang_barsky_clip(-delta.x, a.x - obstacle.min_x, t0, t1))
+        return false;
+    if (!liang_barsky_clip(delta.x, obstacle.max_x - a.x, t0, t1))
+        return false;
+    if (!liang_barsky_clip(-delta.y, a.y - obstacle.min_z, t0, t1))
+        return false;
+    if (!liang_barsky_clip(delta.y, obstacle.max_z - a.y, t0, t1))
+        return false;
+    if (t1 < t0)
         return false;
 
-    const std::array<int, 4> dc{ 1, -1, 0, 0 };
-    const std::array<int, 4> dr{ 0, 0, 1, -1 };
-    const int cell_count = grid.cols * grid.rows;
-    const int start_index = grid_index(grid, start_col, start_row);
-    const int target_index = grid_index(grid, target_col, target_row);
-    std::vector<int> distance(cell_count, -1);
-    std::vector<int> predecessor(cell_count, -1);
-    std::queue<int> frontier;
-    distance[start_index] = 0;
-    frontier.push(start_index);
+    const glm::vec2 sample = glm::mix(a, b, (t0 + t1) * 0.5f);
+    return point_strictly_inside_obstacle(sample, obstacle);
+}
 
-    while (!frontier.empty())
+std::vector<RouteObstacle> build_route_obstacles(const SemanticMegacityLayout& layout)
+{
+    std::vector<RouteObstacle> obstacles;
+    obstacles.reserve(layout.building_count() + layout.modules.size());
+
+    for (const auto& module_layout : layout.modules)
     {
-        const int index = frontier.front();
-        frontier.pop();
-        if (index == target_index)
-            break;
-
-        const int col = index % grid.cols;
-        const int row = index / grid.cols;
-        const std::array<int, 4> dir_order = preferred_direction_order(col, row, target_col, target_row);
-        for (const int dir : dir_order)
+        for (const auto& building : module_layout.buildings)
         {
-            const int next_col = col + dc[dir];
-            const int next_row = row + dr[dir];
-            if (grid.at(next_col, next_row) != kCityGridRoad)
-                continue;
-            const int next_index = grid_index(grid, next_col, next_row);
-            if (distance[next_index] != -1)
-                continue;
-            distance[next_index] = distance[index] + 1;
-            predecessor[next_index] = index;
-            frontier.push(next_index);
+            const float half_extent = building.metrics.footprint * 0.5f + building.metrics.sidewalk_width;
+            obstacles.push_back({
+                building.center.x - half_extent,
+                building.center.x + half_extent,
+                building.center.y - half_extent,
+                building.center.y + half_extent,
+            });
+        }
+
+        if (module_layout.park_footprint > 0.0f)
+        {
+            const float half_extent = module_layout.park_footprint * 0.5f + module_layout.park_sidewalk_width;
+            obstacles.push_back({
+                module_layout.park_center.x - half_extent,
+                module_layout.park_center.x + half_extent,
+                module_layout.park_center.y - half_extent,
+                module_layout.park_center.y + half_extent,
+            });
         }
     }
 
-    if (distance[target_index] < 0)
+    return obstacles;
+}
+
+bool segment_visible_in_road_space(
+    const glm::vec2& a, const glm::vec2& b, const CitySurfaceBounds& bounds, const std::vector<RouteObstacle>& obstacles)
+{
+    if (!point_within_bounds(a, bounds) || !point_within_bounds(b, bounds))
         return false;
 
-    int current = target_index;
+    for (const RouteObstacle& obstacle : obstacles)
+    {
+        if (segment_intersects_obstacle_interior(a, b, obstacle))
+            return false;
+    }
+
+    return true;
+}
+
+std::vector<glm::vec2> build_static_visibility_nodes(
+    const CitySurfaceBounds& bounds, const std::vector<RouteObstacle>& obstacles)
+{
+    constexpr float kPointMergeEpsilon = 1e-4f;
+
+    std::vector<glm::vec2> nodes;
+    nodes.reserve(obstacles.size() * 4 + 4);
+
+    const auto add_unique = [&](const glm::vec2& point) {
+        if (!point_within_bounds(point, bounds))
+            return;
+        for (const RouteObstacle& obstacle : obstacles)
+        {
+            if (point_strictly_inside_obstacle(point, obstacle))
+                return;
+        }
+        for (const glm::vec2& existing : nodes)
+        {
+            if (glm::distance2(existing, point) <= kPointMergeEpsilon * kPointMergeEpsilon)
+                return;
+        }
+        nodes.push_back(point);
+    };
+
+    add_unique({ bounds.min_x, bounds.min_z });
+    add_unique({ bounds.min_x, bounds.max_z });
+    add_unique({ bounds.max_x, bounds.min_z });
+    add_unique({ bounds.max_x, bounds.max_z });
+
+    for (const RouteObstacle& obstacle : obstacles)
+    {
+        add_unique({ obstacle.min_x, obstacle.min_z });
+        add_unique({ obstacle.min_x, obstacle.max_z });
+        add_unique({ obstacle.max_x, obstacle.min_z });
+        add_unique({ obstacle.max_x, obstacle.max_z });
+    }
+
+    return nodes;
+}
+
+VisibilityGraph build_visibility_graph(
+    const CitySurfaceBounds& bounds, std::vector<RouteObstacle> obstacles)
+{
+    VisibilityGraph graph;
+    graph.bounds = bounds;
+    graph.obstacles = std::move(obstacles);
+    graph.nodes = build_static_visibility_nodes(graph.bounds, graph.obstacles);
+    graph.adjacency.resize(graph.nodes.size());
+
+    for (size_t i = 0; i < graph.nodes.size(); ++i)
+    {
+        for (size_t j = i + 1; j < graph.nodes.size(); ++j)
+        {
+            if (!segment_visible_in_road_space(graph.nodes[i], graph.nodes[j], graph.bounds, graph.obstacles))
+                continue;
+            const float length = glm::length(graph.nodes[j] - graph.nodes[i]);
+            graph.adjacency[i].push_back({ static_cast<int>(j), length });
+            graph.adjacency[j].push_back({ static_cast<int>(i), length });
+        }
+    }
+
+    return graph;
+}
+
+int add_visibility_endpoint_node(
+    const VisibilityGraph& graph,
+    std::vector<glm::vec2>& nodes,
+    std::vector<std::vector<std::pair<int, float>>>& adjacency,
+    const glm::vec2& point)
+{
+    constexpr float kPointMergeEpsilon = 1e-4f;
+
+    if (!point_within_bounds(point, graph.bounds))
+        return -1;
+    for (const RouteObstacle& obstacle : graph.obstacles)
+    {
+        if (point_strictly_inside_obstacle(point, obstacle))
+            return -1;
+    }
+
+    for (size_t index = 0; index < nodes.size(); ++index)
+    {
+        if (glm::distance2(nodes[index], point) <= kPointMergeEpsilon * kPointMergeEpsilon)
+            return static_cast<int>(index);
+    }
+
+    const int node_index = static_cast<int>(nodes.size());
+    nodes.push_back(point);
+    adjacency.emplace_back();
+    for (int existing_index = 0; existing_index < node_index; ++existing_index)
+    {
+        if (!segment_visible_in_road_space(point, nodes[static_cast<size_t>(existing_index)], graph.bounds, graph.obstacles))
+            continue;
+        const float length = glm::length(point - nodes[static_cast<size_t>(existing_index)]);
+        adjacency[static_cast<size_t>(node_index)].push_back({ existing_index, length });
+        adjacency[static_cast<size_t>(existing_index)].push_back({ node_index, length });
+    }
+
+    return node_index;
+}
+
+bool find_visibility_path(
+    const VisibilityGraph& graph,
+    const glm::vec2& start,
+    const glm::vec2& goal,
+    std::vector<glm::vec2>& path_out)
+{
+    path_out.clear();
+    if (!point_within_bounds(start, graph.bounds) || !point_within_bounds(goal, graph.bounds))
+        return false;
+
+    std::vector<glm::vec2> nodes = graph.nodes;
+    std::vector<std::vector<std::pair<int, float>>> adjacency = graph.adjacency;
+    const int start_index = add_visibility_endpoint_node(graph, nodes, adjacency, start);
+    const int goal_index = add_visibility_endpoint_node(graph, nodes, adjacency, goal);
+    if (start_index < 0 || goal_index < 0)
+        return false;
+    if (start_index == goal_index)
+    {
+        path_out.push_back(nodes[static_cast<size_t>(start_index)]);
+        return true;
+    }
+
+    const size_t node_count = nodes.size();
+
+    std::vector<float> g_score(node_count, std::numeric_limits<float>::max());
+    std::vector<int> predecessor(node_count, -1);
+    using QueueEntry = std::pair<float, int>;
+    std::priority_queue<QueueEntry, std::vector<QueueEntry>, std::greater<QueueEntry>> frontier;
+
+    g_score[start_index] = 0.0f;
+    frontier.push({ glm::distance(start, goal), start_index });
+
+    while (!frontier.empty())
+    {
+        const auto [f_score, current] = frontier.top();
+        (void)f_score;
+        frontier.pop();
+
+        if (current == goal_index)
+            break;
+
+        for (const auto& [next, edge_cost] : adjacency[current])
+        {
+            const float tentative_g = g_score[current] + edge_cost;
+            if (tentative_g + 1e-5f >= g_score[next])
+                continue;
+            g_score[next] = tentative_g;
+            predecessor[next] = current;
+            const float heuristic = glm::length(nodes[goal_index] - nodes[next]);
+            frontier.push({ tentative_g + heuristic, next });
+        }
+    }
+
+    if (g_score[goal_index] == std::numeric_limits<float>::max())
+        return false;
+
+    int current = goal_index;
     while (current >= 0)
     {
-        path_out.push_back(current);
+        path_out.push_back(nodes[current]);
         if (current == start_index)
             break;
         current = predecessor[current];
     }
-    if (path_out.empty() || path_out.back() != start_index)
+    if (path_out.empty() || glm::distance2(path_out.back(), start) > 1e-8f)
     {
         path_out.clear();
         return false;
@@ -712,57 +879,89 @@ std::vector<CityGrid::RoutePolyline> build_city_routes_from_grid(
     const SemanticMegacityLayout& layout, const SemanticMegacityModel& model, const CityGrid& grid,
     std::string_view focus_qualified_name)
 {
+    (void)grid;
     const std::vector<RoutePair> route_pairs = collect_route_pairs(layout, model, focus_qualified_name);
     const std::vector<AssignedRoutePorts> assigned_ports = assign_route_ports(route_pairs, grid);
+    const CitySurfaceBounds road_bounds = compute_city_road_surface_bounds(layout);
+    const VisibilityGraph visibility_graph = build_visibility_graph(road_bounds, build_route_obstacles(layout));
 
-    std::vector<CityGrid::RoutePolyline> routes;
-    routes.reserve(route_pairs.size());
-    for (size_t route_index = 0; route_index < route_pairs.size(); ++route_index)
-    {
+    std::vector<std::optional<CityGrid::RoutePolyline>> route_results(route_pairs.size());
+    const auto solve_route = [&](size_t route_index) {
         const RoutePair& pair = route_pairs[route_index];
         const AssignedRoutePorts& ports = assigned_ports[route_index];
         if (pair.source == nullptr || pair.target == nullptr
-            || !ports.source_port.has_value() || !ports.target_port.has_value())
+            || !ports.source_port.has_value() || !ports.target_port.has_value()
+            || !visibility_graph.bounds.valid())
         {
-            continue;
+            return;
         }
 
-        std::vector<int> cell_path;
-        if (!find_road_path(grid,
-                ports.source_port->col, ports.source_port->row,
-                ports.target_port->col, ports.target_port->row,
-                cell_path))
+        std::vector<glm::vec2> road_path;
+        if (!find_visibility_path(
+                visibility_graph,
+                ports.source_port->road_entry_world,
+                ports.target_port->road_entry_world,
+                road_path))
         {
-            continue;
+            return;
         }
 
         std::vector<glm::vec2> world_points;
         append_point_if_new(world_points, ports.source_port->edge_world);
-        const glm::vec2 source_cell_center = grid_cell_center_world(grid, ports.source_port->col, ports.source_port->row);
-        append_point_if_new(world_points, axis_aligned_connector(*ports.source_port, source_cell_center));
-        append_point_if_new(world_points, source_cell_center);
-
-        for (size_t cell_index = 1; cell_index < cell_path.size(); ++cell_index)
-        {
-            const int index = cell_path[cell_index];
-            const int col = index % grid.cols;
-            const int row = index / grid.cols;
-            append_point_if_new(world_points, grid_cell_center_world(grid, col, row));
-        }
-
-        const glm::vec2 target_cell_center
-            = grid_cell_center_world(grid, ports.target_port->col, ports.target_port->row);
-        append_point_if_new(world_points, axis_aligned_connector(*ports.target_port, target_cell_center));
+        append_point_if_new(world_points, ports.source_port->road_entry_world);
+        for (const glm::vec2& point : road_path)
+            append_point_if_new(world_points, point);
+        append_point_if_new(world_points, ports.target_port->road_entry_world);
         append_point_if_new(world_points, ports.target_port->edge_world);
 
-        simplify_axis_aligned_polyline(world_points);
-        routes.push_back({
+        simplify_polyline(world_points);
+        route_results[route_index] = CityGrid::RoutePolyline{
+            pair.source->module_path,
             pair.source_qualified_name,
+            pair.target->module_path,
             pair.target_qualified_name,
             kOutgoingRouteColor,
             kIncomingRouteColor,
             std::move(world_points),
-        });
+        };
+    };
+
+    const unsigned hw_threads = std::thread::hardware_concurrency();
+    const size_t worker_count = std::min<size_t>(
+        route_pairs.size(),
+        std::max<size_t>(1, hw_threads == 0 ? 1 : hw_threads));
+    if (worker_count <= 1 || route_pairs.size() < 4)
+    {
+        for (size_t route_index = 0; route_index < route_pairs.size(); ++route_index)
+            solve_route(route_index);
+    }
+    else
+    {
+        std::atomic<size_t> next_route_index{ 0 };
+        std::vector<std::thread> workers;
+        workers.reserve(worker_count);
+        for (size_t worker_index = 0; worker_index < worker_count; ++worker_index)
+        {
+            workers.emplace_back([&]() {
+                while (true)
+                {
+                    const size_t route_index = next_route_index.fetch_add(1);
+                    if (route_index >= route_pairs.size())
+                        break;
+                    solve_route(route_index);
+                }
+            });
+        }
+        for (std::thread& worker : workers)
+            worker.join();
+    }
+
+    std::vector<CityGrid::RoutePolyline> routes;
+    routes.reserve(route_pairs.size());
+    for (auto& route_result : route_results)
+    {
+        if (route_result.has_value())
+            routes.push_back(std::move(*route_result));
     }
 
     return routes;
@@ -1384,8 +1583,6 @@ std::vector<CityGrid::RouteRenderSegment> build_city_route_render_segments(
 {
     (void)lane_spacing;
 
-    constexpr float kGradientChunkLength = 0.5f;
-
     std::vector<CityGrid::RouteRenderSegment> segments;
     for (const auto& route : routes)
     {
@@ -1403,25 +1600,23 @@ std::vector<CityGrid::RouteRenderSegment> build_city_route_render_segments(
         {
             const glm::vec2 a = route.world_points[point_index - 1];
             const glm::vec2 b = route.world_points[point_index];
-            const glm::vec2 delta = b - a;
-            const float segment_length = glm::length(delta);
+            const float segment_length = glm::length(b - a);
             if (segment_length <= 1e-4f)
                 continue;
 
-            const int chunk_count = std::max(1, static_cast<int>(std::ceil(segment_length / kGradientChunkLength)));
-            for (int chunk_index = 0; chunk_index < chunk_count; ++chunk_index)
-            {
-                const float t0 = static_cast<float>(chunk_index) / static_cast<float>(chunk_count);
-                const float t1 = static_cast<float>(chunk_index + 1) / static_cast<float>(chunk_count);
-                const glm::vec2 chunk_a = glm::mix(a, b, t0);
-                const glm::vec2 chunk_b = glm::mix(a, b, t1);
-                const float chunk_mid_length = traversed_length + segment_length * (t0 + t1) * 0.5f;
-                const float color_t = std::clamp(chunk_mid_length / total_length, 0.0f, 1.0f);
-                const glm::vec4 chunk_color = glm::mix(route.source_color, route.target_color, color_t);
-                segments.push_back(
-                    { chunk_a, chunk_b, chunk_color, route.source_qualified_name, route.target_qualified_name });
-            }
-
+            const float segment_mid_length = traversed_length + segment_length * 0.5f;
+            const float color_t = std::clamp(segment_mid_length / total_length, 0.0f, 1.0f);
+            const glm::vec4 segment_color = glm::mix(route.source_color, route.target_color, color_t);
+            segments.push_back(
+                {
+                    a,
+                    b,
+                    segment_color,
+                    route.source_module_path,
+                    route.source_qualified_name,
+                    route.target_module_path,
+                    route.target_qualified_name,
+                });
             traversed_length += segment_length;
         }
     }

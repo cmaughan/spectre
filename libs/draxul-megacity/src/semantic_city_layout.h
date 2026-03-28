@@ -199,7 +199,9 @@ struct CityGrid
 {
     struct RoutePolyline
     {
+        std::string source_module_path;
         std::string source_qualified_name;
+        std::string target_module_path;
         std::string target_qualified_name;
         glm::vec4 source_color{ 1.0f };
         glm::vec4 target_color{ 1.0f };
@@ -211,7 +213,9 @@ struct CityGrid
         glm::vec2 a{ 0.0f };
         glm::vec2 b{ 0.0f };
         glm::vec4 color{ 1.0f };
+        std::string source_module_path;
         std::string source_qualified_name;
+        std::string target_module_path;
         std::string target_qualified_name;
     };
 

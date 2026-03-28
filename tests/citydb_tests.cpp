@@ -301,4 +301,79 @@ TEST_CASE("city database does not cross-product nested type fields onto the pare
     std::filesystem::remove(db_path);
 }
 
+TEST_CASE("city database expands interface-typed field dependencies across the inheritance graph", "[citydb]")
+{
+    const auto db_path = std::filesystem::temp_directory_path() / "draxul-citydb-inheritance.sqlite3";
+    std::filesystem::remove(db_path);
+
+    CodebaseSnapshot snapshot;
+    snapshot.complete = true;
+    snapshot.scan_time = std::chrono::steady_clock::now();
+
+    ParsedFile file;
+    file.path = "src/render.cpp";
+
+    SymbolRecord irenderer{
+        SymbolKind::Class,
+        "IRenderer",
+        "",
+        true,
+        10,
+        12,
+        0,
+        {},
+        {},
+    };
+
+    SymbolRecord vk_render_device{
+        SymbolKind::Class,
+        "VkRenderDevice",
+        "",
+        false,
+        20,
+        30,
+        0,
+        { "IRenderer" },
+        {},
+    };
+    vk_render_device.inherited_types = { "IRenderer" };
+
+    SymbolRecord app{
+        SymbolKind::Class,
+        "App",
+        "",
+        false,
+        40,
+        60,
+        1,
+        { "IRenderer" },
+        {
+            { "renderer_", "IRenderer", { "IRenderer" } },
+        },
+    };
+
+    file.symbols = { irenderer, vk_render_device, app };
+    snapshot.files.push_back(file);
+
+    CityDatabase db;
+    REQUIRE(db.open(db_path));
+    REQUIRE(db.reconcile_snapshot(snapshot));
+
+    const std::vector<CityDependencyRecord> deps = db.list_class_dependencies_in_module("src");
+    REQUIRE(deps.size() == 2);
+    CHECK(deps[0].source_qualified_name == "App");
+    CHECK(deps[0].field_name == "renderer_");
+    CHECK(deps[0].target_qualified_name == "IRenderer");
+    CHECK(deps[1].source_qualified_name == "App");
+    CHECK(deps[1].field_name == "renderer_");
+    CHECK(deps[1].target_qualified_name == "VkRenderDevice");
+
+    SqliteReadHandle raw(db_path);
+    CHECK(scalar_int(raw.get(),
+              "SELECT road_size FROM city_entities WHERE display_name = 'App'")
+        == 2);
+
+    std::filesystem::remove(db_path);
+}
+
 } // namespace draxul

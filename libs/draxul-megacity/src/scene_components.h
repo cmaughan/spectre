@@ -66,6 +66,7 @@ struct RouteSegmentMetrics
     float extent_x = 1.0f;
     float extent_z = 1.0f;
     float height = 0.04f;
+    float yaw_radians = 0.0f;
 };
 
 struct ModuleSurfaceMetrics
@@ -97,6 +98,7 @@ struct SourceSymbol
 {
     std::string file;
     std::string name;
+    std::string module_path;
 };
 
 struct CustomMeshRef
@@ -107,7 +109,9 @@ struct CustomMeshRef
 // Links a route segment entity to the buildings it connects.
 struct RouteLink
 {
+    std::string source_module_path;
     std::string source_qualified_name;
+    std::string target_module_path;
     std::string target_qualified_name;
 };
 

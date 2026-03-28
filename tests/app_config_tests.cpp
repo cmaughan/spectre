@@ -691,6 +691,10 @@ TEST_CASE("megacity config round-trips through config document", "[config][megac
     current.height_multiplier = 2.25f;
     current.hide_test_entities = false;
     current.hide_struct_entities = true;
+    current.selection_dependency_alpha = 0.68f;
+    current.selection_hidden_alpha = 0.22f;
+    current.selection_hidden_hover_alpha = 0.46f;
+    current.selection_hidden_road_alpha = 0.88f;
     current.debug_view = MegaCityDebugView::Normals;
     current.ao_denoise = false;
     current.ao_radius = 2.4f;
@@ -729,6 +733,7 @@ TEST_CASE("megacity config round-trips through config document", "[config][megac
     current.point_light_position = { -14.0f, 18.5f, -9.5f };
     current.point_light_radius = 37.0f;
     current.point_light_brightness = 1.7f;
+    current.dependency_route_layer_step = 0.048f;
     current.directional_light_dir.x = -0.25f;
     current.world_floor_grid_tile_scale = 3.0f;
     current.auto_rebuild = false;
