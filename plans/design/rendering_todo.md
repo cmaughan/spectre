@@ -28,3 +28,24 @@
 - Roads use world-space planar UVs and a simple fixed TBN.
 - Buildings currently use dominant-axis mapping because stacked cube geometry does not yet carry authored facade UVs/tangents.
 - A future material/mesh cleanup could move more of this into shared material evaluation helpers or mesh-authored data, reducing explicit shader branching.
+
+## Point-Light Shadow Cubemap Sampling
+
+- Megacity directional shadows are now working correctly with cascaded shadow maps, and point-light shadows are also working visually.
+- The current point-light receiver path does **not** use direct `samplerCube` lookup for the shadow compare.
+- Instead, it:
+  - renders the six point-shadow faces as before
+  - binds those six faces as six separate 2D textures
+  - selects the face explicitly from the dominant axis of `light_to_surface`
+  - projects the receiver position with the exact per-face matrix used to render that face
+  - samples the selected 2D face directly
+- This was introduced because the true cubemap receiver path had cross-backend orientation ambiguity and produced misaligned shadows even when the face renders themselves looked plausible in debug.
+- The explicit-face path is a good correctness/debugging baseline, but it has tradeoffs:
+  - slightly more receiver-side ALU than `samplerCube`
+  - no automatic cubemap seam filtering at face boundaries
+  - more shader/descriptors plumbing
+- Future cleanup target:
+  - revisit true cubemap sampling for point-light shadows
+  - validate a canonical face/up-orientation table on both Metal and Vulkan
+  - compare the result directly against the current explicit-face path as the ground-truth reference
+  - only switch back if the receiver mapping is proven equivalent on both backends
