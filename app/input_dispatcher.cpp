@@ -7,6 +7,7 @@
 #include <draxul/app_config.h>
 #include <draxul/events.h>
 #include <draxul/host.h>
+#include <draxul/perf_timing.h>
 #include <draxul/ui_panel.h>
 #include <draxul/window.h>
 
@@ -32,6 +33,7 @@ int InputDispatcher::to_physical(int logical) const
 // physical pixels, so we scale before hit-testing.
 IHost* InputDispatcher::host_for_mouse_pos(int px, int py)
 {
+    PERF_MEASURE();
     if (deps_.host_manager)
     {
         const int phys_x = to_physical(px);
@@ -74,6 +76,7 @@ void request_imgui_frame_if_needed(const Deps& deps)
 
 void InputDispatcher::on_key_event(const KeyEvent& event)
 {
+    PERF_MEASURE();
     if (event.pressed)
     {
         if (prefix_active_)
@@ -137,6 +140,7 @@ void InputDispatcher::on_key_event(const KeyEvent& event)
 
 void InputDispatcher::on_mouse_button_event(const MouseButtonEvent& event)
 {
+    PERF_MEASURE();
     deps_.ui_panel->on_mouse_button(event);
     IHost* target = host_for_mouse_pos(event.pos.x, event.pos.y);
     const bool host_has_imgui = target && target->has_imgui();
@@ -161,6 +165,7 @@ void InputDispatcher::on_mouse_button_event(const MouseButtonEvent& event)
 
 void InputDispatcher::on_mouse_move_event(const MouseMoveEvent& event)
 {
+    PERF_MEASURE();
     deps_.ui_panel->on_mouse_move(event);
     IHost* target = host_for_mouse_pos(event.pos.x, event.pos.y);
     const bool host_has_imgui = target && target->has_imgui();
@@ -184,6 +189,7 @@ void InputDispatcher::on_mouse_move_event(const MouseMoveEvent& event)
 
 void InputDispatcher::on_mouse_wheel_event(const MouseWheelEvent& event)
 {
+    PERF_MEASURE();
     deps_.ui_panel->on_mouse_wheel(event);
     IHost* wheel_host = host_for_mouse_pos(event.pos.x, event.pos.y);
     const bool host_has_imgui = wheel_host && wheel_host->has_imgui();

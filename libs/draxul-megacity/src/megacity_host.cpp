@@ -5,6 +5,7 @@
 #include "city_picking.h"
 #include "isometric_camera.h"
 #include "isometric_scene_pass.h"
+#include "live_city_metrics.h"
 #include "scene_snapshot_builder.h"
 #include "scene_world.h"
 #include "semantic_city_layout.h"
@@ -17,6 +18,7 @@
 #include <cstdlib>
 #include <draxul/log.h>
 #include <draxul/megacity_host.h>
+#include <draxul/perf_timing.h>
 #include <draxul/text_service.h>
 #include <filesystem>
 #include <functional>
@@ -37,8 +39,10 @@ constexpr float kMovementSpeedFractionPerSecond = 0.35f;
 constexpr float kOrbitSpeedRadiansPerSecond = 1.8f;
 constexpr float kZoomSpeedPerSecond = 1.35f;
 constexpr float kPitchSpeedRadiansPerSecond = 0.9f;
+constexpr int kHoverTooltipResetDistancePixels = 4;
 constexpr auto kMovementTick = std::chrono::milliseconds(16);
 constexpr auto kDragSmoothingTick = std::chrono::milliseconds(8);
+constexpr auto kLivePerfRefreshTick = std::chrono::milliseconds(100);
 
 MegaCityCodeConfig world_rebuild_signature(MegaCityCodeConfig config)
 {
@@ -165,6 +169,18 @@ bool is_module_context_object(const SceneObject& obj)
         || obj.role == SceneObject::Role::ModuleLabel;
 }
 
+void preserve_visible_tooltip(const IsometricScenePass* scene_pass, bool hover_tooltip_visible, SceneSnapshot& snapshot)
+{
+    if (!scene_pass || !hover_tooltip_visible)
+        return;
+
+    const TooltipOverlay& tooltip = scene_pass->scene().tooltip;
+    if (!tooltip.valid())
+        return;
+
+    snapshot.tooltip = tooltip;
+}
+
 } // namespace
 
 MegaCityHost::MegaCityHost()
@@ -188,6 +204,7 @@ MegaCityHost::~MegaCityHost()
 
 void MegaCityHost::refresh_sign_text_service()
 {
+    PERF_MEASURE();
     sign_label_atlas_.reset();
     if (sign_font_path_.empty())
     {
@@ -233,6 +250,7 @@ void MegaCityHost::refresh_sign_text_service()
 
 bool MegaCityHost::initialize(const HostContext& context, IHostCallbacks& callbacks)
 {
+    PERF_MEASURE();
     callbacks_ = &callbacks;
     config_document_ = context.config_document;
     renderer_defaults_ = config_document_
@@ -271,6 +289,9 @@ bool MegaCityHost::initialize(const HostContext& context, IHostCallbacks& callba
     city_bounds_valid_ = false;
     last_activity_time_ = std::chrono::steady_clock::now();
     last_pump_time_ = last_activity_time_;
+    last_live_perf_refresh_time_ = last_activity_time_;
+    last_live_perf_generation_ = 0;
+    runtime_perf_collector().set_enabled(renderer_config_.performance_heat_mode);
     const std::filesystem::path city_db_path = megacity_db_path();
     if (!city_db_.open(city_db_path))
     {
@@ -319,6 +340,8 @@ void MegaCityHost::route_worker_loop()
             request = *pending_route_request_;
             pending_route_request_.reset();
         }
+
+        PERF_MEASURE();
 
         std::shared_ptr<CityGrid> routed_grid;
         if (request.layout && request.model && request.grid && !request.focus_qualified_name.empty())
@@ -381,6 +404,7 @@ void MegaCityHost::request_routes_for_focus(
 
 void MegaCityHost::clear_active_routes(bool request_frame)
 {
+    PERF_MEASURE();
     {
         std::lock_guard<std::mutex> lock(grid_mutex_);
         if (city_grid_)
@@ -401,6 +425,7 @@ void MegaCityHost::clear_active_routes(bool request_frame)
 
 void MegaCityHost::consume_completed_routes()
 {
+    PERF_MEASURE();
     std::optional<RouteBuildResult> result;
     {
         std::lock_guard<std::mutex> lock(route_mutex_);
@@ -512,20 +537,33 @@ void MegaCityHost::on_mouse_move(const MouseMoveEvent& event)
     if (!camera_)
         return;
 
-    // Reset hover tooltip whenever the mouse moves.
-    const bool had_tooltip = hover_tooltip_visible_;
     const bool shift_held = (event.mod & kModShift) != 0;
+    const bool anchor_valid = hover_anchor_pos_.x >= 0 && hover_anchor_pos_.y >= 0;
+    const glm::ivec2 previous_anchor = anchor_valid ? hover_anchor_pos_ : event.pos;
+    const glm::ivec2 anchor_delta = event.pos - previous_anchor;
+    const int anchor_distance_sq = anchor_delta.x * anchor_delta.x + anchor_delta.y * anchor_delta.y;
+    const bool significant_hover_move
+        = anchor_distance_sq >= (kHoverTooltipResetDistancePixels * kHoverTooltipResetDistancePixels);
+
     hover_mouse_pos_ = event.pos;
     hover_shift_held_ = shift_held;
-    if (!shift_held)
-        hover_start_time_ = std::chrono::steady_clock::now();
-    hover_tooltip_visible_ = false;
-    hover_building_name_.clear();
-    if (had_tooltip && scene_pass_)
+
+    if (!anchor_valid || significant_hover_move)
     {
-        scene_pass_->scene().tooltip.visible = false;
-        mark_scene_dirty();
+        hover_anchor_pos_ = event.pos;
+        if (!shift_held)
+            hover_start_time_ = std::chrono::steady_clock::now();
+
+        const bool had_tooltip = hover_tooltip_visible_;
+        hover_tooltip_visible_ = false;
+        hover_building_name_.clear();
+        if (had_tooltip && scene_pass_)
+        {
+            scene_pass_->scene().tooltip.visible = false;
+            mark_scene_dirty();
+        }
     }
+
     // When shift is held, request a frame so pump() can show tooltip immediately.
     if (shift_held && callbacks_)
         callbacks_->request_frame();
@@ -557,6 +595,7 @@ void MegaCityHost::set_imgui_font(const std::string&, float)
 
 void MegaCityHost::render_imgui(float dt)
 {
+    PERF_MEASURE();
     ImGuiIO& io = ImGui::GetIO();
     io.DisplaySize = ImVec2(static_cast<float>(pixel_w_), static_cast<float>(pixel_h_));
     io.DeltaTime = dt > 0.0f ? dt : (1.0f / 60.0f);
@@ -661,6 +700,7 @@ void MegaCityHost::render_imgui(float dt)
 
 void MegaCityHost::attach_3d_renderer(I3DRenderer& renderer)
 {
+    PERF_MEASURE();
     renderer_3d_ = &renderer;
     renderer_3d_->register_render_pass(scene_pass_);
     renderer_3d_->set_3d_viewport(viewport_.pixel_pos.x, viewport_.pixel_pos.y, pixel_w_, pixel_h_);
@@ -675,6 +715,7 @@ void MegaCityHost::attach_3d_renderer(I3DRenderer& renderer)
             sign_label_atlas_,
             tree_bark_mesh_,
             tree_leaf_mesh_);
+        preserve_visible_tooltip(scene_pass_.get(), hover_tooltip_visible_, result.snapshot);
         world_span_ = result.world_span;
         scene_pass_->set_scene(std::move(result.snapshot));
         if (!selected_building_name_.empty())
@@ -698,6 +739,7 @@ void MegaCityHost::detach_3d_renderer()
 
 void MegaCityHost::shutdown()
 {
+    PERF_MEASURE();
     if (grid_thread_.joinable())
         grid_thread_.join();
     {
@@ -734,6 +776,7 @@ void MegaCityHost::shutdown()
         sign_text_service_->shutdown();
         sign_text_service_.reset();
     }
+    runtime_perf_collector().set_enabled(false);
     sign_label_atlas_.reset();
     live_metrics_.reset();
     semantic_model_.reset();
@@ -770,6 +813,7 @@ void MegaCityHost::set_viewport(const HostViewport& viewport)
 
 void MegaCityHost::rebuild_semantic_city()
 {
+    PERF_MEASURE();
     if (!world_ || !camera_)
         return;
 
@@ -807,6 +851,7 @@ void MegaCityHost::rebuild_semantic_city()
 
     sign_label_atlas_ = std::move(result.sign_label_atlas);
     live_metrics_ = std::move(result.live_metrics);
+    last_live_perf_generation_ = 0;
     semantic_model_ = std::move(result.semantic_model);
     semantic_layout_ = result.layout
         ? std::make_shared<SemanticMegacityLayout>(*result.layout)
@@ -854,6 +899,7 @@ void MegaCityHost::rebuild_semantic_city()
 
 void MegaCityHost::launch_grid_build(const SemanticMegacityLayout& layout, const SemanticMegacityModel& model)
 {
+    PERF_MEASURE();
     // Wait for any previous grid build to finish.
     if (grid_thread_.joinable())
         grid_thread_.join();
@@ -871,6 +917,7 @@ void MegaCityHost::launch_grid_build(const SemanticMegacityLayout& layout, const
 
     grid_build_in_progress_ = true;
     grid_thread_ = std::thread([this, layout_copy, config]() {
+        PERF_MEASURE();
         auto grid = std::make_shared<CityGrid>(build_city_grid(*layout_copy, config));
 
         DRAXUL_LOG_DEBUG(LogCategory::App,
@@ -890,8 +937,10 @@ void MegaCityHost::launch_grid_build(const SemanticMegacityLayout& layout, const
 
 void MegaCityHost::pump()
 {
+    PERF_MEASURE();
     const auto now = std::chrono::steady_clock::now();
     const float dt = std::chrono::duration<float>(now - last_pump_time_).count();
+    runtime_perf_collector().set_enabled(renderer_config_.performance_heat_mode);
     bool camera_changed = false;
 
     if (camera_)
@@ -976,6 +1025,21 @@ void MegaCityHost::pump()
 
     consume_completed_routes();
 
+    if (renderer_config_.performance_heat_mode
+        && semantic_model_
+        && now - last_live_perf_refresh_time_ >= kLivePerfRefreshTick)
+    {
+        last_live_perf_refresh_time_ = now;
+        const RuntimePerfSnapshot perf_snapshot = runtime_perf_collector().latest_snapshot();
+        if (perf_snapshot.generation != last_live_perf_generation_)
+        {
+            live_metrics_ = std::make_shared<LiveCityMetricsSnapshot>(
+                build_live_city_metrics_snapshot(*semantic_model_, &perf_snapshot));
+            last_live_perf_generation_ = perf_snapshot.generation;
+            mark_scene_dirty();
+        }
+    }
+
     if (!selected_building_name_.empty() && semantic_layout_ && semantic_model_)
     {
         std::shared_ptr<const CityGrid> grid;
@@ -1000,6 +1064,7 @@ void MegaCityHost::pump()
             sign_label_atlas_,
             tree_bark_mesh_,
             tree_leaf_mesh_);
+        preserve_visible_tooltip(scene_pass_.get(), hover_tooltip_visible_, result.snapshot);
         world_span_ = result.world_span;
         scene_pass_->set_scene(std::move(result.snapshot));
         if (!selected_building_name_.empty())
@@ -1331,10 +1396,12 @@ std::optional<std::chrono::steady_clock::time_point> MegaCityHost::next_deadline
     }
 
     if (!continuous_refresh_enabled_ && !input_->movement_active() && !input_->drag_smoothing_active()
-        && hidden_hover_blend_ <= 1e-3f)
+        && hidden_hover_blend_ <= 1e-3f && !renderer_config_.performance_heat_mode)
         return std::nullopt;
     if (input_->drag_smoothing_active())
         return std::chrono::steady_clock::now() + kDragSmoothingTick;
+    if (renderer_config_.performance_heat_mode)
+        return std::chrono::steady_clock::now() + kLivePerfRefreshTick;
     return std::chrono::steady_clock::now() + kMovementTick;
 }
 
@@ -1387,6 +1454,7 @@ HostDebugState MegaCityHost::debug_state() const
 
 void MegaCityHost::handle_click(const glm::ivec2& screen_pos)
 {
+    PERF_MEASURE();
     if (!camera_ || !semantic_model_ || !semantic_layout_ || !scene_pass_)
         return;
 
@@ -1474,6 +1542,7 @@ bool MegaCityHost::update_hidden_hover_blend(float dt, std::chrono::steady_clock
 
 void MegaCityHost::apply_selection_opacity()
 {
+    PERF_MEASURE();
     if (!scene_pass_ || !semantic_model_ || selected_building_name_.empty())
         return;
 

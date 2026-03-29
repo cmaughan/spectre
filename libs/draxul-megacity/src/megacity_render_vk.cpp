@@ -9,6 +9,7 @@
 #include <backends/imgui_impl_vulkan.h>
 #include <cstring>
 #include <draxul/log.h>
+#include <draxul/perf_timing.h>
 #include <draxul/runtime_path.h>
 #include <fstream>
 #include <imgui.h>
@@ -3752,16 +3753,19 @@ IsometricScenePass::IsometricScenePass(int grid_width, int grid_height, float ti
     , tile_size_(tile_size)
     , state_(std::make_unique<State>())
 {
+    PERF_MEASURE();
 }
 
 IsometricScenePass::~IsometricScenePass()
 {
+    PERF_MEASURE();
     state_->destroy_gbuffer();
     state_->destroy();
 }
 
 void IsometricScenePass::record_prepass(IRenderContext& ctx)
 {
+    PERF_MEASURE();
     auto* vk_ctx = static_cast<VkRenderContext*>(&ctx);
     auto cmd = static_cast<VkCommandBuffer>(ctx.native_command_buffer());
     if (!cmd)
@@ -4438,6 +4442,7 @@ void IsometricScenePass::record_prepass(IRenderContext& ctx)
 
 void IsometricScenePass::record(IRenderContext& ctx)
 {
+    PERF_MEASURE();
     auto* vk_ctx = static_cast<VkRenderContext*>(&ctx);
     auto cmd = static_cast<VkCommandBuffer>(ctx.native_command_buffer());
     if (!cmd)
@@ -4525,6 +4530,7 @@ void IsometricScenePass::record(IRenderContext& ctx)
 
 void IsometricScenePass::render_gbuffer_debug_ui()
 {
+    PERF_MEASURE();
     if (state_->gbuffer_targets.empty() || state_->gbuffer_sampler == VK_NULL_HANDLE)
         return;
 

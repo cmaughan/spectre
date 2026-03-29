@@ -1,4 +1,5 @@
 #include <draxul/grid_rendering_pipeline.h>
+#include <draxul/perf_timing.h>
 
 #include <algorithm>
 #include <cstring>
@@ -99,6 +100,7 @@ void GridRenderingPipeline::set_enable_ligatures(bool enable)
 
 void GridRenderingPipeline::expand_dirty_cells_for_ligatures(const std::vector<Grid::DirtyCell>& dirty)
 {
+    PERF_MEASURE();
     expand_dirty_cells_for_ligatures_impl(grid_, dirty, expanded_scratch_);
 }
 
@@ -128,6 +130,7 @@ bool GridRenderingPipeline::try_shape_ligature(int col, int row, const Cell& cel
 void GridRenderingPipeline::build_cell_updates(const std::vector<Grid::DirtyCell>& dirty,
     std::vector<CellUpdate>& updates, bool& atlas_updated)
 {
+    PERF_MEASURE();
     bool skip_next_cell = false;
     Grid::DirtyCell skipped_cell = {};
 
@@ -167,6 +170,7 @@ void GridRenderingPipeline::build_cell_updates(const std::vector<Grid::DirtyCell
 
 void GridRenderingPipeline::flush()
 {
+    PERF_MEASURE();
     thread_checker_.assert_main_thread("GridRenderingPipeline::flush");
     if (!renderer_ || !grid_handle_)
         return;
@@ -219,6 +223,7 @@ void GridRenderingPipeline::force_full_atlas_upload()
 
 void GridRenderingPipeline::upload_atlas()
 {
+    PERF_MEASURE();
     if (!glyph_atlas_.atlas_dirty() && !force_full_atlas_upload_)
         return;
 

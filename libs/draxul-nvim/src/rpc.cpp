@@ -6,6 +6,7 @@
 #include <draxul/log.h>
 #include <draxul/mpack_codec.h>
 #include <draxul/nvim_rpc.h>
+#include <draxul/perf_timing.h>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
@@ -56,6 +57,7 @@ NvimRpc::~NvimRpc() = default;
 
 bool NvimRpc::initialize(NvimProcess& process)
 {
+    PERF_MEASURE();
     impl_->process_ = &process;
     impl_->read_buf_.resize(256 * 1024);
     impl_->read_failed_ = false;
@@ -67,6 +69,7 @@ bool NvimRpc::initialize(NvimProcess& process)
 
 void NvimRpc::close()
 {
+    PERF_MEASURE();
     bool was_running = impl_->running_.exchange(false);
     if (was_running)
     {
@@ -77,6 +80,7 @@ void NvimRpc::close()
 
 void NvimRpc::shutdown()
 {
+    PERF_MEASURE();
     close();
     if (impl_->reader_thread_.joinable())
     {
@@ -91,6 +95,7 @@ bool NvimRpc::connection_failed() const
 
 RpcResult NvimRpc::request(const std::string& method, const std::vector<MpackValue>& params)
 {
+    PERF_MEASURE();
     // Belt-and-suspenders thread guard: assert fires in Debug builds; the runtime
     // check below also fires in Release builds where assert is compiled out.
     assert((main_thread_id_ == std::thread::id{} || std::this_thread::get_id() != main_thread_id_)
@@ -152,6 +157,7 @@ RpcResult NvimRpc::request(const std::string& method, const std::vector<MpackVal
 
 void NvimRpc::notify(const std::string& method, const std::vector<MpackValue>& params)
 {
+    PERF_MEASURE();
     if (!impl_->process_ || !impl_->running_)
     {
         return;
@@ -178,6 +184,7 @@ void NvimRpc::notify(const std::string& method, const std::vector<MpackValue>& p
 
 std::vector<RpcNotification> NvimRpc::drain_notifications()
 {
+    PERF_MEASURE();
     std::lock_guard<std::mutex> lock(impl_->notif_mutex_);
     std::vector<RpcNotification> result;
     result.swap(impl_->notifications_);
@@ -252,6 +259,7 @@ void NvimRpc::dispatch_rpc_notification(const std::vector<MpackValue>& msg_array
 
 void NvimRpc::dispatch_rpc_message(const MpackValue& msg)
 {
+    PERF_MEASURE();
     if (msg.type() != MpackValue::Array || msg.as_array().size() < 3)
         return;
 

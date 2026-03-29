@@ -6,6 +6,7 @@
 #include "ligature_analyser.h"
 
 #include <algorithm>
+#include <draxul/perf_timing.h>
 
 namespace draxul
 {
@@ -86,17 +87,20 @@ bool TextService::initialize(float point_size, float display_ppi)
 
 bool TextService::initialize(const TextServiceConfig& config, float point_size, float display_ppi)
 {
+    PERF_MEASURE();
     impl_->config = config;
     return impl_->initialize(point_size, display_ppi);
 }
 
 void TextService::shutdown()
 {
+    PERF_MEASURE();
     impl_->shutdown();
 }
 
 bool TextService::set_point_size(float point_size)
 {
+    PERF_MEASURE();
     return impl_->set_point_size(point_size);
 }
 

@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <draxul/log.h>
 #include <draxul/nvim_ui.h>
+#include <draxul/perf_timing.h>
 #include <draxul/unicode.h>
 #include <memory>
 #include <utility>
@@ -114,6 +115,7 @@ const RedrawDispatchEntry* find_redraw_dispatch(std::string_view name)
 
 void UiEventHandler::process_redraw(const std::vector<MpackValue>& params)
 {
+    PERF_MEASURE();
     auto dispatch_batch = [&](RedrawEventType type, const MpackValue& args) {
         switch (type)
         {
@@ -200,6 +202,7 @@ void UiEventHandler::process_redraw(const std::vector<MpackValue>& params)
 
 void UiEventHandler::handle_grid_line(const MpackValue& args)
 {
+    PERF_MEASURE();
     if (!grid_)
         return;
 

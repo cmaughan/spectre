@@ -2,6 +2,7 @@
 #include <draxul/clipboard_util.h>
 
 #include <draxul/log.h>
+#include <draxul/perf_timing.h>
 #include <draxul/text_service.h>
 #include <draxul/window.h>
 #include <thread>
@@ -22,6 +23,7 @@ void apply_ui_option(UiOptions& options, const std::string& name, const MpackVal
 
 bool NvimHost::initialize_host()
 {
+    PERF_MEASURE();
     const std::string command = launch_options().command.empty() ? "nvim" : launch_options().command;
     if (!nvim_process_.spawn(command, launch_options().args, launch_options().working_dir))
     {
@@ -78,6 +80,7 @@ std::string NvimHost::init_error() const
 
 void NvimHost::shutdown()
 {
+    PERF_MEASURE();
     if (nvim_process_.is_running())
         rpc_.notify("nvim_input", { NvimRpc::make_str("<C-\\><C-n>:qa!<CR>") });
 
@@ -89,6 +92,7 @@ void NvimHost::shutdown()
 
 void NvimHost::pump()
 {
+    PERF_MEASURE();
     if (!nvim_process_.is_running())
         return;
 
@@ -136,6 +140,7 @@ void NvimHost::on_mouse_wheel(const MouseWheelEvent& event)
 
 bool NvimHost::dispatch_action(std::string_view action)
 {
+    PERF_MEASURE();
     if (action == "copy")
     {
         if (clipboard_channel_id_ >= 0)
@@ -178,6 +183,7 @@ void NvimHost::request_close()
 
 void NvimHost::on_viewport_changed()
 {
+    PERF_MEASURE();
     input_.set_viewport_origin(viewport().pixel_pos.x + renderer().padding(), viewport().pixel_pos.y + renderer().padding());
     const int new_cols = std::max(1, viewport().grid_size.x);
     const int new_rows = std::max(1, viewport().grid_size.y);
@@ -202,6 +208,7 @@ void NvimHost::on_viewport_changed()
 
 void NvimHost::on_font_metrics_changed_impl()
 {
+    PERF_MEASURE();
     const auto& metrics = text_service().metrics();
     input_.set_cell_size(metrics.cell_width, metrics.cell_height);
     flush_grid();
@@ -215,6 +222,7 @@ void NvimHost::on_font_metrics_changed_impl()
 
 bool NvimHost::attach_ui()
 {
+    PERF_MEASURE();
     auto attach = rpc_.request("nvim_ui_attach", {
                                                      NvimRpc::make_int(grid_cols()),
                                                      NvimRpc::make_int(grid_rows()),
@@ -235,6 +243,7 @@ bool NvimHost::attach_ui()
 
 bool NvimHost::execute_startup_commands()
 {
+    PERF_MEASURE();
     for (const auto& command : launch_options().startup_commands)
     {
         auto response = rpc_.request("nvim_command", { NvimRpc::make_str(command) });
@@ -250,6 +259,7 @@ bool NvimHost::execute_startup_commands()
 
 bool NvimHost::setup_clipboard_provider()
 {
+    PERF_MEASURE();
     auto api_info = rpc_.request("nvim_get_api_info", {});
     if (!api_info.ok() || api_info.result.type() != MpackValue::Array || api_info.result.as_array().empty())
         return true;
@@ -286,6 +296,7 @@ void NvimHost::queue_resize_request(int cols, int rows, const char* reason)
 
 void NvimHost::on_flush()
 {
+    PERF_MEASURE();
     const bool first_flush = !runtime_state().content_ready;
     flush_grid();
     if (first_flush && startup_resize_state_.pending())
@@ -304,6 +315,7 @@ void NvimHost::on_busy(bool busy)
 
 void NvimHost::refresh_cursor_style()
 {
+    PERF_MEASURE();
     CursorStyle style = {};
     style.bg = highlights().default_fg();
     style.fg = highlights().default_bg();
@@ -361,6 +373,7 @@ void NvimHost::handle_clipboard_set(const std::vector<MpackValue>& params) const
 
 void NvimHost::wire_ui_callbacks()
 {
+    PERF_MEASURE();
     ui_events_.set_grid(&grid());
     ui_events_.set_highlights(&highlights());
     ui_events_.set_options(&ui_options_);

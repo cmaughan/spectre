@@ -152,11 +152,14 @@ private:
     std::string selected_building_source_file_;
     bool hidden_hover_active_ = false;
     float hidden_hover_blend_ = 0.0f;
+    uint64_t last_live_perf_generation_ = 0;
     std::chrono::steady_clock::time_point last_activity_time_ = std::chrono::steady_clock::now();
     std::chrono::steady_clock::time_point last_pump_time_ = std::chrono::steady_clock::now();
+    std::chrono::steady_clock::time_point last_live_perf_refresh_time_ = std::chrono::steady_clock::now();
 
     // Hover tooltip state
     glm::ivec2 hover_mouse_pos_{ -1, -1 };
+    glm::ivec2 hover_anchor_pos_{ -1, -1 };
     std::chrono::steady_clock::time_point hover_start_time_;
     bool hover_tooltip_visible_ = false;
     bool hover_shift_held_ = false;

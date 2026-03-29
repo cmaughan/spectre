@@ -1,6 +1,7 @@
 #include "font_engine.h"
 #include <cmath>
 #include <draxul/log.h>
+#include <draxul/perf_timing.h>
 #include <utility>
 
 namespace draxul
@@ -37,6 +38,7 @@ FontManager& FontManager::operator=(FontManager&& other) noexcept
 
 bool FontManager::initialize(const std::string& font_path, float point_size, float display_ppi)
 {
+    PERF_MEASURE();
     point_size_ = point_size;
     display_ppi_ = display_ppi;
 
@@ -73,6 +75,7 @@ bool FontManager::initialize(const std::string& font_path, float point_size, flo
 
 bool FontManager::set_point_size(float point_size)
 {
+    PERF_MEASURE();
     point_size_ = point_size;
     FT_Set_Char_Size(face_, 0, static_cast<FT_F26Dot6>(point_size * 64.0f), (FT_UInt)display_ppi_, (FT_UInt)display_ppi_);
     select_best_fixed_size();
@@ -117,6 +120,7 @@ void FontManager::update_metrics()
 
 void FontManager::shutdown()
 {
+    PERF_MEASURE();
     if (hb_font_)
     {
         hb_font_destroy(hb_font_);

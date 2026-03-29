@@ -383,27 +383,92 @@ TEST_CASE("megacity live metrics snapshot includes buildings and functions", "[m
     module.buildings.push_back(building);
     model.modules.push_back(module);
 
-    const LiveCityMetricsSnapshot snapshot = build_live_city_metrics_snapshot(model);
+    RuntimePerfSnapshot perf_snapshot;
+    perf_snapshot.generation = 7;
+    perf_snapshot.frame_time_microseconds = 10000;
+    perf_snapshot.functions.push_back({
+        .source_file_path = "app/renderer.cpp",
+        .owner_qualified_name = "Renderer",
+        .function_name = "update",
+        .pretty_function = "void draxul::Renderer::update()",
+        .frame_microseconds = 2500,
+        .smoothed_microseconds = 2500,
+        .frame_fraction = 0.25f,
+        .smoothed_frame_fraction = 0.25f,
+        .normalized_heat = 0.5f,
+        .call_count = 1,
+    });
+    perf_snapshot.functions.push_back({
+        .source_file_path = "app/renderer.cpp",
+        .owner_qualified_name = "Renderer",
+        .function_name = "render",
+        .pretty_function = "void draxul::Renderer::render()",
+        .frame_microseconds = 5000,
+        .smoothed_microseconds = 5000,
+        .frame_fraction = 0.5f,
+        .smoothed_frame_fraction = 0.5f,
+        .normalized_heat = 1.0f,
+        .call_count = 1,
+    });
 
-    const LiveCityMetricsSnapshot snapshot_again = build_live_city_metrics_snapshot(model);
+    const LiveCityMetricsSnapshot snapshot = build_live_city_metrics_snapshot(model, &perf_snapshot);
 
-    REQUIRE(snapshot.generation == 1);
+    REQUIRE(snapshot.generation == 7);
     REQUIRE(snapshot.buildings.size() == 1);
     REQUIRE(snapshot.functions.size() == 3);
     CHECK(snapshot.buildings[0].qualified_name == "Renderer");
-    CHECK(snapshot.buildings[0].heat >= 0.0f);
-    CHECK(snapshot.buildings[0].heat <= 1.0f);
+    CHECK(snapshot.buildings[0].frame_fraction == Catch::Approx(0.5f));
+    CHECK(snapshot.buildings[0].smoothed_frame_fraction == Catch::Approx(0.5f));
+    CHECK(snapshot.buildings[0].heat == Catch::Approx(1.0f));
     CHECK(snapshot.functions[0].function_name == "update");
-    CHECK(snapshot.functions[0].heat >= 0.0f);
-    CHECK(snapshot.functions[0].heat <= 1.0f);
-    CHECK(snapshot.functions[1].heat >= 0.0f);
-    CHECK(snapshot.functions[1].heat <= 1.0f);
-    CHECK(snapshot.functions[2].heat >= 0.0f);
-    CHECK(snapshot.functions[2].heat <= 1.0f);
-    CHECK(snapshot.buildings[0].heat == Catch::Approx(snapshot_again.buildings[0].heat));
-    CHECK(snapshot.functions[0].heat == Catch::Approx(snapshot_again.functions[0].heat));
-    CHECK(snapshot.functions[1].heat == Catch::Approx(snapshot_again.functions[1].heat));
-    CHECK(snapshot.functions[2].heat == Catch::Approx(snapshot_again.functions[2].heat));
+    CHECK(snapshot.functions[0].heat == Catch::Approx(0.5f));
+    CHECK(snapshot.functions[1].heat == Catch::Approx(1.0f));
+    CHECK(snapshot.functions[2].heat == Catch::Approx(0.0f));
+}
+
+TEST_CASE("megacity live metrics snapshot matches header-owned buildings to implementation timings", "[megacity]")
+{
+    SemanticMegacityModel model;
+    SemanticCityModuleModel module;
+    module.module_path = "libs/draxul-renderer";
+
+    SemanticCityBuilding building;
+    building.module_path = "libs/draxul-renderer";
+    building.display_name = "MetalRenderer";
+    building.qualified_name = "MetalRenderer";
+    building.source_file_path = "libs/draxul-renderer/src/metal/metal_renderer.h";
+    building.layers = {
+        { "begin_frame", 10, 1.0f },
+        { "end_frame", 20, 1.0f },
+    };
+    module.buildings.push_back(building);
+    model.modules.push_back(module);
+
+    RuntimePerfSnapshot perf_snapshot;
+    perf_snapshot.generation = 3;
+    perf_snapshot.frame_time_microseconds = 10000;
+    perf_snapshot.functions.push_back({
+        .source_file_path = "libs/draxul-renderer/src/metal/metal_renderer.mm",
+        .owner_qualified_name = "MetalRenderer",
+        .function_name = "begin_frame",
+        .pretty_function = "bool draxul::MetalRenderer::begin_frame()",
+        .frame_microseconds = 5000,
+        .smoothed_microseconds = 5000,
+        .frame_fraction = 0.5f,
+        .smoothed_frame_fraction = 0.5f,
+        .normalized_heat = 1.0f,
+        .call_count = 1,
+    });
+
+    const LiveCityMetricsSnapshot snapshot = build_live_city_metrics_snapshot(model, &perf_snapshot);
+
+    REQUIRE(snapshot.buildings.size() == 1);
+    REQUIRE(snapshot.functions.size() == 2);
+    CHECK(snapshot.buildings[0].heat == Catch::Approx(1.0f));
+    CHECK(snapshot.functions[0].function_name == "begin_frame");
+    CHECK(snapshot.functions[0].heat == Catch::Approx(1.0f));
+    CHECK(snapshot.functions[1].function_name == "end_frame");
+    CHECK(snapshot.functions[1].heat == Catch::Approx(0.0f));
 }
 
 TEST_CASE("megacity scene snapshot carries per-layer performance heat state for buildings", "[megacity]")

@@ -7,6 +7,7 @@
 #include <cstring>
 #include <draxul/log.h>
 #include <draxul/pane_descriptor.h>
+#include <draxul/perf_timing.h>
 #include <draxul/window.h>
 #include <imgui.h>
 
@@ -101,12 +102,14 @@ MetalRenderer::MetalRenderer(int atlas_size, RendererOptions options)
     : atlas_size_(atlas_size)
     , wait_for_vblank_(options.wait_for_vblank)
 {
+    PERF_MEASURE();
 }
 
 MetalRenderer::~MetalRenderer() = default;
 
 void MetalRenderer::upload_dirty_state()
 {
+    PERF_MEASURE();
     size_t total_size = 0;
     for (auto* handle : grid_handles_)
         total_size += handle->state_.buffer_size_bytes();
@@ -139,6 +142,7 @@ void MetalRenderer::upload_dirty_state()
 
 bool MetalRenderer::ensure_capture_buffer(size_t width, size_t height)
 {
+    PERF_MEASURE();
     const size_t bytes_per_row = align_capture_row_bytes(static_cast<NSUInteger>(width));
     const size_t required_size = static_cast<size_t>(bytes_per_row * height);
     if (capture_buffer_ && required_size <= capture_buffer_size_ && bytes_per_row == capture_bytes_per_row_)
@@ -161,6 +165,7 @@ bool MetalRenderer::ensure_capture_buffer(size_t width, size_t height)
 
 bool MetalRenderer::ensure_depth_texture()
 {
+    PERF_MEASURE();
     if (!device_ || pixel_w_ <= 0 || pixel_h_ <= 0)
         return false;
 
@@ -188,6 +193,7 @@ bool MetalRenderer::ensure_depth_texture()
 
 bool MetalRenderer::initialize(IWindow& window)
 {
+    PERF_MEASURE();
     current_frame_ = 0;
 
     // Get Metal device
@@ -348,6 +354,7 @@ bool MetalRenderer::initialize(IWindow& window)
 
 void MetalRenderer::shutdown()
 {
+    PERF_MEASURE();
     // Wait for every frame slot to be returned before releasing shared resources.
     dispatch_semaphore_t sema = frame_semaphore_.get();
     if (sema)
@@ -378,23 +385,27 @@ void MetalRenderer::shutdown()
 
 std::unique_ptr<IGridHandle> MetalRenderer::create_grid_handle()
 {
+    PERF_MEASURE();
     return std::make_unique<MetalGridHandle>(*this, padding_);
 }
 
 void MetalRenderer::set_atlas_texture(const uint8_t* data, int w, int h)
 {
+    PERF_MEASURE();
     thread_checker_.assert_main_thread("MetalRenderer::set_atlas_texture");
     queue_full_atlas_upload(pending_atlas_uploads_, data, w, h);
 }
 
 void MetalRenderer::update_atlas_region(int x, int y, int w, int h, const uint8_t* data)
 {
+    PERF_MEASURE();
     thread_checker_.assert_main_thread("MetalRenderer::update_atlas_region");
     queue_atlas_region_upload(pending_atlas_uploads_, x, y, w, h, data);
 }
 
 void MetalRenderer::resize(int pixel_w, int pixel_h)
 {
+    PERF_MEASURE();
     pixel_w_ = pixel_w;
     pixel_h_ = pixel_h;
     layer_.get().drawableSize = CGSizeMake(pixel_w, pixel_h);
@@ -404,11 +415,13 @@ void MetalRenderer::resize(int pixel_w, int pixel_h)
 
 std::pair<int, int> MetalRenderer::cell_size_pixels() const
 {
+    PERF_MEASURE();
     return { cell_w_, cell_h_ };
 }
 
 void MetalRenderer::set_cell_size(int w, int h)
 {
+    PERF_MEASURE();
     cell_w_ = w;
     cell_h_ = h;
     for (auto* handle : grid_handles_)
@@ -417,6 +430,7 @@ void MetalRenderer::set_cell_size(int w, int h)
 
 void MetalRenderer::set_ascender(int a)
 {
+    PERF_MEASURE();
     ascender_ = a;
     for (auto* handle : grid_handles_)
         handle->state_.set_ascender(a);
@@ -424,6 +438,7 @@ void MetalRenderer::set_ascender(int a)
 
 void MetalRenderer::set_default_background(Color bg)
 {
+    PERF_MEASURE();
     clear_r_ = bg.r;
     clear_g_ = bg.g;
     clear_b_ = bg.b;
@@ -431,6 +446,7 @@ void MetalRenderer::set_default_background(Color bg)
 
 bool MetalRenderer::initialize_imgui_backend()
 {
+    PERF_MEASURE();
     // Guard per context: ImGui_ImplMetal_Init() stores backend data in the current
     // context's BackendRendererUserData. If the current context already has it, skip.
     if (ImGui::GetIO().BackendRendererUserData != nullptr)
@@ -448,6 +464,7 @@ bool MetalRenderer::initialize_imgui_backend()
 
 void MetalRenderer::shutdown_imgui_backend()
 {
+    PERF_MEASURE();
     imgui_draw_data_ = nullptr;
     imgui_initialized_ = false;
 
@@ -461,6 +478,7 @@ void MetalRenderer::shutdown_imgui_backend()
 
 void MetalRenderer::rebuild_imgui_font_texture()
 {
+    PERF_MEASURE();
     if (!imgui_initialized_)
         return;
 
@@ -470,6 +488,7 @@ void MetalRenderer::rebuild_imgui_font_texture()
 
 void MetalRenderer::begin_imgui_frame()
 {
+    PERF_MEASURE();
     if (!imgui_initialized_ || !current_drawable_)
         return;
 
@@ -489,16 +508,19 @@ void MetalRenderer::begin_imgui_frame()
 
 void MetalRenderer::set_imgui_draw_data(const ImDrawData* draw_data)
 {
+    PERF_MEASURE();
     imgui_draw_data_ = draw_data;
 }
 
 void MetalRenderer::request_frame_capture()
 {
+    PERF_MEASURE();
     capture_requested_ = true;
 }
 
 std::optional<CapturedFrame> MetalRenderer::take_captured_frame()
 {
+    PERF_MEASURE();
     auto frame = std::move(captured_frame_);
     captured_frame_.reset();
     return frame;
@@ -507,26 +529,36 @@ std::optional<CapturedFrame> MetalRenderer::take_captured_frame()
 bool MetalRenderer::begin_frame()
 {
     thread_checker_.assert_main_thread("MetalRenderer::begin_frame");
-    dispatch_semaphore_t sema = frame_semaphore_.get();
-    dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+    runtime_perf_collector().begin_frame();
 
-    for (auto* handle : grid_handles_)
-        handle->state_.restore_cursor();
-    upload_dirty_state();
-
-    id<CAMetalDrawable> drawable = [layer_.get() nextDrawable];
-    if (!drawable)
+    bool success = false;
     {
-        dispatch_semaphore_signal(sema);
-        return false;
-    }
-    current_drawable_.reset(drawable);
+        PERF_MEASURE();
+        dispatch_semaphore_t sema = frame_semaphore_.get();
+        dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
 
-    return true;
+        for (auto* handle : grid_handles_)
+            handle->state_.restore_cursor();
+        upload_dirty_state();
+
+        id<CAMetalDrawable> drawable = [layer_.get() nextDrawable];
+        if (!drawable)
+            dispatch_semaphore_signal(sema);
+        else
+        {
+            current_drawable_.reset(drawable);
+            success = true;
+        }
+    }
+
+    if (!success)
+        runtime_perf_collector().cancel_frame();
+    return success;
 }
 
 void MetalRenderer::flush_pending_atlas_uploads(void* cmd_buf_opaque)
 {
+    PERF_MEASURE();
     if (pending_atlas_uploads_.empty())
         return;
 
@@ -590,222 +622,229 @@ void MetalRenderer::flush_pending_atlas_uploads(void* cmd_buf_opaque)
 void MetalRenderer::end_frame()
 {
     thread_checker_.assert_main_thread("MetalRenderer::end_frame");
-    for (auto* handle : grid_handles_)
-        handle->state_.apply_cursor();
-    upload_dirty_state();
-
-    id<CAMetalDrawable> drawable = current_drawable_.take();
-
-    id<MTLCommandBuffer> cmdBuf = [command_queue_.get() commandBuffer];
-
-    // Flush any queued atlas uploads via blit encoder before the render pass samples the atlas.
-    flush_pending_atlas_uploads((__bridge void*)cmdBuf);
-
-    // Run any registered pre-pass (e.g. GBuffer) before the main render pass.
-    if (render_pass_)
     {
-        int vx = viewport3d_x_;
-        int vy = viewport3d_y_;
-        int vw = viewport3d_w_ > 0 ? viewport3d_w_ : pixel_w_;
-        int vh = viewport3d_h_ > 0 ? viewport3d_h_ : pixel_h_;
-        MetalRenderContext prepass_ctx(cmdBuf, nil, current_frame_, MAX_FRAMES_IN_FLIGHT,
-            pixel_w_, pixel_h_, vx, vy, vw, vh);
-        render_pass_->record_prepass(prepass_ctx);
-    }
+        PERF_MEASURE();
+        for (auto* handle : grid_handles_)
+            handle->state_.apply_cursor();
+        upload_dirty_state();
 
-    // Create render pass descriptor
-    MTLRenderPassDescriptor* rpDesc = [MTLRenderPassDescriptor renderPassDescriptor];
-    rpDesc.colorAttachments[0].texture = drawable.texture;
-    rpDesc.colorAttachments[0].loadAction = MTLLoadActionClear;
-    rpDesc.colorAttachments[0].storeAction = MTLStoreActionStore;
-    rpDesc.colorAttachments[0].clearColor = MTLClearColorMake(clear_r_, clear_g_, clear_b_, 1.0);
-    if (ensure_depth_texture())
-    {
-        rpDesc.depthAttachment.texture = depth_texture_.get();
-        rpDesc.depthAttachment.loadAction = MTLLoadActionClear;
-        rpDesc.depthAttachment.storeAction = MTLStoreActionDontCare;
-        rpDesc.depthAttachment.clearDepth = 1.0;
-    }
+        id<CAMetalDrawable> drawable = current_drawable_.take();
 
-    id<MTLRenderCommandEncoder> encoder = [cmdBuf renderCommandEncoderWithDescriptor:rpDesc];
+        id<MTLCommandBuffer> cmdBuf = [command_queue_.get() commandBuffer];
 
-    id<MTLTexture> atlasTex = atlas_texture_.get();
-    id<MTLSamplerState> sampler = atlas_sampler_.get();
-    id<MTLBuffer> gridBuf = grid_buffers_[current_frame_ % MAX_FRAMES_IN_FLIGHT].get();
+        // Flush any queued atlas uploads via blit encoder before the render pass samples the atlas.
+        flush_pending_atlas_uploads((__bridge void*)cmdBuf);
 
-    // Draw each active grid handle using instance offsets into the shared buffer.
-    NSUInteger instance_offset = 0;
-    for (auto* handle : grid_handles_)
-    {
-        const int bg_instances = handle->state_.bg_instances();
-        const int fg_instances = handle->state_.fg_instances();
-        const NSUInteger handle_span = static_cast<NSUInteger>(handle->state_.buffer_size_bytes() / sizeof(GpuCell));
-
-        if (bg_instances <= 0 || !gridBuf)
+        // Run any registered pre-pass (e.g. GBuffer) before the main render pass.
+        if (render_pass_)
         {
+            int vx = viewport3d_x_;
+            int vy = viewport3d_y_;
+            int vw = viewport3d_w_ > 0 ? viewport3d_w_ : pixel_w_;
+            int vh = viewport3d_h_ > 0 ? viewport3d_h_ : pixel_h_;
+            MetalRenderContext prepass_ctx(cmdBuf, nil, current_frame_, MAX_FRAMES_IN_FLIGHT,
+                pixel_w_, pixel_h_, vx, vy, vw, vh);
+            render_pass_->record_prepass(prepass_ctx);
+        }
+
+        // Create render pass descriptor
+        MTLRenderPassDescriptor* rpDesc = [MTLRenderPassDescriptor renderPassDescriptor];
+        rpDesc.colorAttachments[0].texture = drawable.texture;
+        rpDesc.colorAttachments[0].loadAction = MTLLoadActionClear;
+        rpDesc.colorAttachments[0].storeAction = MTLStoreActionStore;
+        rpDesc.colorAttachments[0].clearColor = MTLClearColorMake(clear_r_, clear_g_, clear_b_, 1.0);
+        if (ensure_depth_texture())
+        {
+            rpDesc.depthAttachment.texture = depth_texture_.get();
+            rpDesc.depthAttachment.loadAction = MTLLoadActionClear;
+            rpDesc.depthAttachment.storeAction = MTLStoreActionDontCare;
+            rpDesc.depthAttachment.clearDepth = 1.0;
+        }
+
+        id<MTLRenderCommandEncoder> encoder = [cmdBuf renderCommandEncoderWithDescriptor:rpDesc];
+
+        id<MTLTexture> atlasTex = atlas_texture_.get();
+        id<MTLSamplerState> sampler = atlas_sampler_.get();
+        id<MTLBuffer> gridBuf = grid_buffers_[current_frame_ % MAX_FRAMES_IN_FLIGHT].get();
+
+        // Draw each active grid handle using instance offsets into the shared buffer.
+        NSUInteger instance_offset = 0;
+        for (auto* handle : grid_handles_)
+        {
+            const int bg_instances = handle->state_.bg_instances();
+            const int fg_instances = handle->state_.fg_instances();
+            const NSUInteger handle_span = static_cast<NSUInteger>(handle->state_.buffer_size_bytes() / sizeof(GpuCell));
+
+            if (bg_instances <= 0 || !gridBuf)
+            {
+                instance_offset += handle_span;
+                continue;
+            }
+
+            // Set scissor rect to clip this host to its screen region
+            const PaneDescriptor& desc = handle->descriptor_;
+            if (desc.pixel_size.x > 0 && desc.pixel_size.y > 0)
+            {
+                MTLScissorRect scissor;
+                scissor.x = static_cast<NSUInteger>(std::max(0, desc.pixel_pos.x));
+                scissor.y = static_cast<NSUInteger>(std::max(0, desc.pixel_pos.y));
+                scissor.width = static_cast<NSUInteger>(std::min(desc.pixel_size.x,
+                    pixel_w_ - std::max(0, desc.pixel_pos.x)));
+                scissor.height = static_cast<NSUInteger>(std::min(desc.pixel_size.y,
+                    pixel_h_ - std::max(0, desc.pixel_pos.y)));
+                [encoder setScissorRect:scissor];
+            }
+
+            // Push constants with viewport offset
+            struct
+            {
+                float screen_w, screen_h, cell_w, cell_h, scroll_offset_px, viewport_x, viewport_y;
+            } push_data = {
+                (float)pixel_w_, (float)pixel_h_,
+                (float)cell_w_, (float)cell_h_,
+                handle->scroll_offset_px_,
+                (float)desc.pixel_pos.x,
+                (float)desc.pixel_pos.y
+            };
+
+            // Background pass — shared buffer with baseInstance offset
+            [encoder setRenderPipelineState:bg_pipeline_.get()];
+            [encoder setVertexBuffer:gridBuf offset:0 atIndex:0];
+            [encoder setVertexBytes:&push_data length:sizeof(push_data) atIndex:1];
+            [encoder drawPrimitives:MTLPrimitiveTypeTriangle
+                        vertexStart:0
+                        vertexCount:6
+                      instanceCount:static_cast<NSUInteger>(bg_instances)
+                       baseInstance:instance_offset];
+
+            // Foreground pass
+            [encoder setRenderPipelineState:fg_pipeline_.get()];
+            [encoder setVertexBuffer:gridBuf offset:0 atIndex:0];
+            [encoder setVertexBytes:&push_data length:sizeof(push_data) atIndex:1];
+            [encoder setFragmentTexture:atlasTex atIndex:0];
+            [encoder setFragmentSamplerState:sampler atIndex:0];
+            [encoder drawPrimitives:MTLPrimitiveTypeTriangle
+                        vertexStart:0
+                        vertexCount:6
+                      instanceCount:static_cast<NSUInteger>(fg_instances)
+                       baseInstance:instance_offset];
+
             instance_offset += handle_span;
-            continue;
         }
 
-        // Set scissor rect to clip this host to its screen region
-        const PaneDescriptor& desc = handle->descriptor_;
-        if (desc.pixel_size.x > 0 && desc.pixel_size.y > 0)
+        // Reset scissor to full window before 3D passes / ImGui
+        if (pixel_w_ > 0 && pixel_h_ > 0)
         {
-            MTLScissorRect scissor;
-            scissor.x = static_cast<NSUInteger>(std::max(0, desc.pixel_pos.x));
-            scissor.y = static_cast<NSUInteger>(std::max(0, desc.pixel_pos.y));
-            scissor.width = static_cast<NSUInteger>(std::min(desc.pixel_size.x,
-                pixel_w_ - std::max(0, desc.pixel_pos.x)));
-            scissor.height = static_cast<NSUInteger>(std::min(desc.pixel_size.y,
-                pixel_h_ - std::max(0, desc.pixel_pos.y)));
-            [encoder setScissorRect:scissor];
+            MTLScissorRect full_scissor;
+            full_scissor.x = 0;
+            full_scissor.y = 0;
+            full_scissor.width = static_cast<NSUInteger>(pixel_w_);
+            full_scissor.height = static_cast<NSUInteger>(pixel_h_);
+            [encoder setScissorRect:full_scissor];
         }
 
-        // Push constants with viewport offset
-        struct
+        if (render_pass_)
         {
-            float screen_w, screen_h, cell_w, cell_h, scroll_offset_px, viewport_x, viewport_y;
-        } push_data = {
-            (float)pixel_w_, (float)pixel_h_,
-            (float)cell_w_, (float)cell_h_,
-            handle->scroll_offset_px_,
-            (float)desc.pixel_pos.x,
-            (float)desc.pixel_pos.y
-        };
-
-        // Background pass — shared buffer with baseInstance offset
-        [encoder setRenderPipelineState:bg_pipeline_.get()];
-        [encoder setVertexBuffer:gridBuf offset:0 atIndex:0];
-        [encoder setVertexBytes:&push_data length:sizeof(push_data) atIndex:1];
-        [encoder drawPrimitives:MTLPrimitiveTypeTriangle
-                    vertexStart:0
-                    vertexCount:6
-                  instanceCount:static_cast<NSUInteger>(bg_instances)
-                   baseInstance:instance_offset];
-
-        // Foreground pass
-        [encoder setRenderPipelineState:fg_pipeline_.get()];
-        [encoder setVertexBuffer:gridBuf offset:0 atIndex:0];
-        [encoder setVertexBytes:&push_data length:sizeof(push_data) atIndex:1];
-        [encoder setFragmentTexture:atlasTex atIndex:0];
-        [encoder setFragmentSamplerState:sampler atIndex:0];
-        [encoder drawPrimitives:MTLPrimitiveTypeTriangle
-                    vertexStart:0
-                    vertexCount:6
-                  instanceCount:static_cast<NSUInteger>(fg_instances)
-                   baseInstance:instance_offset];
-
-        instance_offset += handle_span;
-    }
-
-    // Reset scissor to full window before 3D passes / ImGui
-    if (pixel_w_ > 0 && pixel_h_ > 0)
-    {
-        MTLScissorRect full_scissor;
-        full_scissor.x = 0;
-        full_scissor.y = 0;
-        full_scissor.width = static_cast<NSUInteger>(pixel_w_);
-        full_scissor.height = static_cast<NSUInteger>(pixel_h_);
-        [encoder setScissorRect:full_scissor];
-    }
-
-    if (render_pass_)
-    {
-        int vx = viewport3d_x_;
-        int vy = viewport3d_y_;
-        int vw = viewport3d_w_ > 0 ? viewport3d_w_ : pixel_w_;
-        int vh = viewport3d_h_ > 0 ? viewport3d_h_ : pixel_h_;
-        MetalRenderContext ctx(cmdBuf, encoder, current_frame_, MAX_FRAMES_IN_FLIGHT,
-            pixel_w_, pixel_h_, vx, vy, vw, vh);
-        render_pass_->record(ctx);
-    }
-
-    if (imgui_initialized_ && imgui_draw_data_)
-        ImGui_ImplMetal_RenderDrawData(const_cast<ImDrawData*>(imgui_draw_data_), cmdBuf, encoder);
-
-    [encoder endEncoding];
-
-    if (capture_requested_)
-    {
-        const size_t width = drawable.texture.width;
-        const size_t height = drawable.texture.height;
-        if (ensure_capture_buffer(width, height))
-        {
-            id<MTLBlitCommandEncoder> blit = [cmdBuf blitCommandEncoder];
-            [blit copyFromTexture:drawable.texture
-                             sourceSlice:0
-                             sourceLevel:0
-                            sourceOrigin:MTLOriginMake(0, 0, 0)
-                              sourceSize:MTLSizeMake(width, height, 1)
-                                toBuffer:capture_buffer_.get()
-                       destinationOffset:0
-                  destinationBytesPerRow:capture_bytes_per_row_
-                destinationBytesPerImage:capture_bytes_per_row_ * height];
-            [blit endEncoding];
+            int vx = viewport3d_x_;
+            int vy = viewport3d_y_;
+            int vw = viewport3d_w_ > 0 ? viewport3d_w_ : pixel_w_;
+            int vh = viewport3d_h_ > 0 ? viewport3d_h_ : pixel_h_;
+            MetalRenderContext ctx(cmdBuf, encoder, current_frame_, MAX_FRAMES_IN_FLIGHT,
+                pixel_w_, pixel_h_, vx, vy, vw, vh);
+            render_pass_->record(ctx);
         }
-        else
+
+        if (imgui_initialized_ && imgui_draw_data_)
+            ImGui_ImplMetal_RenderDrawData(const_cast<ImDrawData*>(imgui_draw_data_), cmdBuf, encoder);
+
+        [encoder endEncoding];
+
+        if (capture_requested_)
         {
+            const size_t width = drawable.texture.width;
+            const size_t height = drawable.texture.height;
+            if (ensure_capture_buffer(width, height))
+            {
+                id<MTLBlitCommandEncoder> blit = [cmdBuf blitCommandEncoder];
+                [blit copyFromTexture:drawable.texture
+                                 sourceSlice:0
+                                 sourceLevel:0
+                                sourceOrigin:MTLOriginMake(0, 0, 0)
+                                  sourceSize:MTLSizeMake(width, height, 1)
+                                    toBuffer:capture_buffer_.get()
+                           destinationOffset:0
+                      destinationBytesPerRow:capture_bytes_per_row_
+                    destinationBytesPerImage:capture_bytes_per_row_ * height];
+                [blit endEncoding];
+            }
+            else
+            {
+                capture_requested_ = false;
+            }
+        }
+
+        [cmdBuf presentDrawable:drawable];
+
+        // Signal semaphore when GPU is done
+        dispatch_semaphore_t sema = frame_semaphore_.get();
+        [cmdBuf addCompletedHandler:^(id<MTLCommandBuffer>) {
+            dispatch_semaphore_signal(sema);
+        }];
+
+        [cmdBuf commit];
+
+        if (capture_requested_)
+        {
+            [cmdBuf waitUntilCompleted];
+
+            CapturedFrame frame;
+            frame.width = pixel_w_;
+            frame.height = pixel_h_;
+            frame.rgba.resize(static_cast<size_t>(frame.width) * frame.height * 4);
+
+            const auto* src = static_cast<const uint8_t*>([capture_buffer_.get() contents]);
+            if (src)
+            {
+                for (int y = 0; y < frame.height; ++y)
+                {
+                    const size_t src_row = static_cast<size_t>(y) * capture_bytes_per_row_;
+                    const size_t dst_row = static_cast<size_t>(y) * frame.width * 4;
+                    for (int x = 0; x < frame.width; ++x)
+                    {
+                        const size_t src_index = src_row + static_cast<size_t>(x * 4);
+                        const size_t dst_index = dst_row + static_cast<size_t>(x * 4);
+                        frame.rgba[dst_index + 0] = src[src_index + 2];
+                        frame.rgba[dst_index + 1] = src[src_index + 1];
+                        frame.rgba[dst_index + 2] = src[src_index + 0];
+                        frame.rgba[dst_index + 3] = src[src_index + 3];
+                    }
+                }
+                captured_frame_ = std::move(frame);
+            }
             capture_requested_ = false;
         }
+
+        imgui_draw_data_ = nullptr;
+        current_frame_ = (current_frame_ + 1) % MAX_FRAMES_IN_FLIGHT;
     }
-
-    [cmdBuf presentDrawable:drawable];
-
-    // Signal semaphore when GPU is done
-    dispatch_semaphore_t sema = frame_semaphore_.get();
-    [cmdBuf addCompletedHandler:^(id<MTLCommandBuffer>) {
-        dispatch_semaphore_signal(sema);
-    }];
-
-    [cmdBuf commit];
-
-    if (capture_requested_)
-    {
-        [cmdBuf waitUntilCompleted];
-
-        CapturedFrame frame;
-        frame.width = pixel_w_;
-        frame.height = pixel_h_;
-        frame.rgba.resize(static_cast<size_t>(frame.width) * frame.height * 4);
-
-        const auto* src = static_cast<const uint8_t*>([capture_buffer_.get() contents]);
-        if (src)
-        {
-            for (int y = 0; y < frame.height; ++y)
-            {
-                const size_t src_row = static_cast<size_t>(y) * capture_bytes_per_row_;
-                const size_t dst_row = static_cast<size_t>(y) * frame.width * 4;
-                for (int x = 0; x < frame.width; ++x)
-                {
-                    const size_t src_index = src_row + static_cast<size_t>(x * 4);
-                    const size_t dst_index = dst_row + static_cast<size_t>(x * 4);
-                    frame.rgba[dst_index + 0] = src[src_index + 2];
-                    frame.rgba[dst_index + 1] = src[src_index + 1];
-                    frame.rgba[dst_index + 2] = src[src_index + 0];
-                    frame.rgba[dst_index + 3] = src[src_index + 3];
-                }
-            }
-            captured_frame_ = std::move(frame);
-        }
-        capture_requested_ = false;
-    }
-
-    imgui_draw_data_ = nullptr;
-    current_frame_ = (current_frame_ + 1) % MAX_FRAMES_IN_FLIGHT;
+    runtime_perf_collector().end_frame();
 }
 
 void MetalRenderer::register_render_pass(std::shared_ptr<IRenderPass> pass)
 {
+    PERF_MEASURE();
     render_pass_ = std::move(pass);
 }
 
 void MetalRenderer::unregister_render_pass()
 {
+    PERF_MEASURE();
     render_pass_.reset();
 }
 
 void MetalRenderer::set_3d_viewport(int x, int y, int w, int h)
 {
+    PERF_MEASURE();
     viewport3d_x_ = x;
     viewport3d_y_ = y;
     viewport3d_w_ = w;

@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <draxul/alt_screen_manager.h>
 #include <draxul/log.h>
+#include <draxul/perf_timing.h>
 #include <draxul/unicode.h>
 #include <draxul/vt_parser.h>
 #include <draxul/window.h>
@@ -53,6 +54,7 @@ TerminalHostBase::TerminalHostBase()
 
 void TerminalHostBase::pump()
 {
+    PERF_MEASURE();
     auto chunks = do_process_drain();
     if (!chunks.empty())
     {
@@ -87,6 +89,7 @@ void TerminalHostBase::on_text_input(const TextInputEvent& event)
 
 bool TerminalHostBase::dispatch_action(std::string_view action)
 {
+    PERF_MEASURE();
     if (action == "paste")
     {
         const std::string clip = window().clipboard_text();
@@ -114,6 +117,7 @@ bool TerminalHostBase::dispatch_action(std::string_view action)
 
 void TerminalHostBase::on_viewport_changed()
 {
+    PERF_MEASURE();
     const int new_cols = std::max(1, viewport().grid_size.x);
     const int new_rows = std::max(1, viewport().grid_size.y);
     if (new_cols == grid_cols() && new_rows == grid_rows())
@@ -145,6 +149,7 @@ void TerminalHostBase::on_viewport_changed()
 
 void TerminalHostBase::on_font_metrics_changed_impl()
 {
+    PERF_MEASURE();
     force_full_redraw();
     flush_grid();
 }
@@ -155,6 +160,7 @@ void TerminalHostBase::on_font_metrics_changed_impl()
 
 void TerminalHostBase::reset_terminal_state()
 {
+    PERF_MEASURE();
     current_attr_ = {};
     attr_cache_.clear();
     next_attr_id_ = 1;
@@ -176,6 +182,7 @@ void TerminalHostBase::reset_terminal_state()
 
 void TerminalHostBase::update_cursor_style()
 {
+    PERF_MEASURE();
     CursorStyle style = {};
     style.shape = CursorShape::Block;
     style.bg = highlights().default_fg();
@@ -190,6 +197,7 @@ void TerminalHostBase::update_cursor_style()
 
 void TerminalHostBase::enter_alt_screen()
 {
+    PERF_MEASURE();
     alt_screen_.enter(vt_.col, vt_.row, vt_.scroll_top, vt_.scroll_bottom, vt_.pending_wrap);
     vt_.col = 0;
     vt_.row = 0;
@@ -198,6 +206,7 @@ void TerminalHostBase::enter_alt_screen()
 
 void TerminalHostBase::leave_alt_screen()
 {
+    PERF_MEASURE();
     alt_screen_.leave(vt_.col, vt_.row, vt_.pending_wrap, vt_.scroll_top, vt_.scroll_bottom);
 }
 
@@ -232,6 +241,7 @@ uint16_t TerminalHostBase::attr_id()
 
 void TerminalHostBase::compact_attr_ids()
 {
+    PERF_MEASURE();
     struct ActiveAttrCollector
     {
         TerminalHostBase* self;

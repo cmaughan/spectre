@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <chrono>
 #include <draxul/log.h>
+#include <draxul/perf_timing.h>
 #include <draxul/sdl_window.h>
 #include <imgui.h>
 #include <sstream>
@@ -61,6 +62,7 @@ App::~App() = default;
 
 bool App::initialize()
 {
+    PERF_MEASURE();
     using Clock = std::chrono::steady_clock;
     using Ms = std::chrono::duration<double, std::milli>;
 
@@ -238,6 +240,7 @@ TextServiceConfig App::make_text_service_config() const
 
 bool App::initialize_text_service()
 {
+    PERF_MEASURE();
     display_ppi_ = options_.override_display_ppi.value_or(window_->display_ppi());
 
     if (const TextServiceConfig text_config = make_text_service_config();
@@ -258,6 +261,7 @@ bool App::initialize_text_service()
 
 void App::apply_font_metrics()
 {
+    PERF_MEASURE();
     const auto& metrics = text_service_.metrics();
     renderer_.grid()->set_cell_size(metrics.cell_width, metrics.cell_height);
     renderer_.grid()->set_ascender(metrics.ascender);
@@ -276,6 +280,7 @@ void App::apply_font_metrics()
 
 bool App::initialize_host()
 {
+    PERF_MEASURE();
     host_owner_lifetime_ = std::make_shared<int>(0);
     HostManager::Deps host_deps;
     host_deps.options = &options_;
@@ -536,6 +541,7 @@ std::optional<CapturedFrame> App::run_render_test(std::chrono::milliseconds time
 
 bool App::close_dead_panes()
 {
+    PERF_MEASURE();
     std::vector<LeafId> dead;
     host_manager_.for_each_host([&dead](LeafId id, const IHost& h) {
         if (!h.is_running())
@@ -555,6 +561,7 @@ bool App::close_dead_panes()
 
 void App::render_imgui_overlay(float delta_seconds)
 {
+    PERF_MEASURE();
     bool any_host_imgui = false;
     host_manager_.for_each_host([&any_host_imgui](LeafId, const IHost& h) {
         if (h.has_imgui())
@@ -583,6 +590,7 @@ void App::render_imgui_overlay(float delta_seconds)
 
 bool App::render_frame()
 {
+    PERF_MEASURE();
     // Consume the current request up front so any nested request_frame() calls
     // made during this frame schedule a follow-up frame instead of being
     // cleared at the end of the render.
@@ -614,6 +622,7 @@ bool App::render_frame()
 
 bool App::pump_once(std::optional<std::chrono::steady_clock::time_point> wait_deadline)
 {
+    PERF_MEASURE();
     while (running_)
     {
         if (pending_window_activation_)
@@ -672,6 +681,7 @@ bool App::pump_once(std::optional<std::chrono::steady_clock::time_point> wait_de
 
 void App::on_resize(int pixel_w, int pixel_h)
 {
+    PERF_MEASURE();
     if (pixel_w == last_pixel_w_ && pixel_h == last_pixel_h_)
         return;
     last_pixel_w_ = pixel_w;
@@ -684,6 +694,7 @@ void App::on_resize(int pixel_w, int pixel_h)
 
 void App::on_display_scale_changed(float new_ppi)
 {
+    PERF_MEASURE();
     if (new_ppi == display_ppi_)
         return;
 
@@ -741,6 +752,7 @@ void App::set_text_input_area(int x, int y, int w, int h)
 
 void App::update_diagnostics_panel()
 {
+    PERF_MEASURE();
     auto [cell_w, cell_h] = renderer_.grid()->cell_size_pixels();
 
     DiagnosticPanelState panel;
@@ -767,6 +779,7 @@ void App::update_diagnostics_panel()
 
 void App::refresh_window_layout()
 {
+    PERF_MEASURE();
     auto [pixel_w, pixel_h] = window_->size_pixels();
     const auto [logical_w, logical_h] = window_->size_logical();
     auto [cell_w, cell_h] = renderer_.grid()->cell_size_pixels();
@@ -829,6 +842,7 @@ int App::wait_timeout_ms(std::optional<std::chrono::steady_clock::time_point> wa
 
 void App::shutdown()
 {
+    PERF_MEASURE();
 #ifdef __APPLE__
     macos_menu_.reset(); // tear down menu before handler goes away
 #endif

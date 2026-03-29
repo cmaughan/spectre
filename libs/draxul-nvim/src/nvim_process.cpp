@@ -1,5 +1,6 @@
 #include <draxul/log.h>
 #include <draxul/nvim_rpc.h>
+#include <draxul/perf_timing.h>
 
 #include <sstream>
 
@@ -78,6 +79,7 @@ std::string quote_windows_arg(const std::string& value)
 
 bool NvimProcess::spawn(const std::string& nvim_path, const std::vector<std::string>& extra_args, const std::string& working_dir)
 {
+    PERF_MEASURE();
     SECURITY_ATTRIBUTES sa = {};
     sa.nLength = sizeof(sa);
     sa.bInheritHandle = TRUE;
@@ -152,6 +154,7 @@ bool NvimProcess::spawn(const std::string& nvim_path, const std::vector<std::str
 
 void NvimProcess::shutdown()
 {
+    PERF_MEASURE();
     if (!impl_->started_)
         return;
 
@@ -206,6 +209,7 @@ bool NvimProcess::is_running() const
 
 bool NvimProcess::spawn(const std::string& nvim_path, const std::vector<std::string>& extra_args, const std::string& working_dir)
 {
+    PERF_MEASURE();
     std::array<int, 2> stdin_pipe;
     std::array<int, 2> stdout_pipe;
     std::array<int, 2> exec_status_pipe;
@@ -332,6 +336,7 @@ bool NvimProcess::spawn(const std::string& nvim_path, const std::vector<std::str
 
 void NvimProcess::shutdown()
 {
+    PERF_MEASURE();
     if (!impl_->started_)
         return;
 

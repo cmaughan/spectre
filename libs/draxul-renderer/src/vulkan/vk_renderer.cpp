@@ -7,6 +7,7 @@
 #include <cstring>
 #include <draxul/log.h>
 #include <draxul/pane_descriptor.h>
+#include <draxul/perf_timing.h>
 #include <draxul/renderer_state.h>
 #include <draxul/window.h>
 #include <imgui.h>
@@ -101,10 +102,12 @@ VkRenderer::VkRenderer(int atlas_size, RendererOptions options)
     : atlas_size_(atlas_size)
     , ctx_(options.wait_for_vblank)
 {
+    PERF_MEASURE();
 }
 
 void VkRenderer::upload_dirty_state()
 {
+    PERF_MEASURE();
     size_t total_size = 0;
     for (auto* handle : grid_handles_)
         total_size += handle->state_.buffer_size_bytes();
@@ -138,6 +141,7 @@ void VkRenderer::upload_dirty_state()
 
 bool VkRenderer::ensure_capture_buffer(size_t required_size)
 {
+    PERF_MEASURE();
     if (required_size <= capture_buffer_size_ && capture_buffer_ != VK_NULL_HANDLE)
         return true;
 
@@ -166,6 +170,7 @@ bool VkRenderer::ensure_capture_buffer(size_t required_size)
 
 void VkRenderer::destroy_capture_buffer()
 {
+    PERF_MEASURE();
     if (capture_buffer_ == VK_NULL_HANDLE)
         return;
 
@@ -178,6 +183,7 @@ void VkRenderer::destroy_capture_buffer()
 
 void VkRenderer::finish_capture_readback()
 {
+    PERF_MEASURE();
     if (!capture_requested_ || capture_buffer_ == VK_NULL_HANDLE || capture_mapped_ == nullptr)
         return;
 
@@ -205,6 +211,7 @@ void VkRenderer::finish_capture_readback()
 
 bool VkRenderer::initialize(IWindow& window)
 {
+    PERF_MEASURE();
     if (!ctx_.initialize(static_cast<SDL_Window*>(window.native_handle())))
         return false;
 
@@ -234,6 +241,7 @@ bool VkRenderer::initialize(IWindow& window)
 
 void VkRenderer::register_render_pass(std::shared_ptr<IRenderPass> pass)
 {
+    PERF_MEASURE();
     if (ctx_.device() != VK_NULL_HANDLE && render_pass_ && render_pass_ != pass)
         vkDeviceWaitIdle(ctx_.device());
     render_pass_ = std::move(pass);
@@ -241,6 +249,7 @@ void VkRenderer::register_render_pass(std::shared_ptr<IRenderPass> pass)
 
 void VkRenderer::unregister_render_pass()
 {
+    PERF_MEASURE();
     if (ctx_.device() != VK_NULL_HANDLE && render_pass_)
         vkDeviceWaitIdle(ctx_.device());
     render_pass_.reset();
@@ -248,6 +257,7 @@ void VkRenderer::unregister_render_pass()
 
 void VkRenderer::set_3d_viewport(int x, int y, int w, int h)
 {
+    PERF_MEASURE();
     viewport3d_x_ = x;
     viewport3d_y_ = y;
     viewport3d_w_ = w;
@@ -256,6 +266,7 @@ void VkRenderer::set_3d_viewport(int x, int y, int w, int h)
 
 void VkRenderer::shutdown()
 {
+    PERF_MEASURE();
     if (ctx_.device())
         vkDeviceWaitIdle(ctx_.device());
 
@@ -282,6 +293,7 @@ void VkRenderer::shutdown()
 
 bool VkRenderer::create_sync_objects()
 {
+    PERF_MEASURE();
     image_available_sem_.resize(MAX_FRAMES_IN_FLIGHT);
     render_finished_sem_.resize(MAX_FRAMES_IN_FLIGHT);
     in_flight_fences_.resize(MAX_FRAMES_IN_FLIGHT);
@@ -304,6 +316,7 @@ bool VkRenderer::create_sync_objects()
 
 bool VkRenderer::create_command_buffers()
 {
+    PERF_MEASURE();
     VkCommandPoolCreateInfo pool_ci = { VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
     pool_ci.queueFamilyIndex = ctx_.graphics_queue_family();
     pool_ci.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
@@ -321,6 +334,7 @@ bool VkRenderer::create_command_buffers()
 bool VkRenderer::create_descriptor_pool(const VkPipelineManager& pipeline, VkDescriptorPool& pool,
     std::vector<VkDescriptorSet>& bg_desc_sets, std::vector<VkDescriptorSet>& fg_desc_sets)
 {
+    PERF_MEASURE();
     VkDescriptorPoolSize pool_sizes[] = {
         { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, (uint32_t)(MAX_FRAMES_IN_FLIGHT * 2) },
         { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, (uint32_t)MAX_FRAMES_IN_FLIGHT },
@@ -358,6 +372,7 @@ bool VkRenderer::create_descriptor_pool(const VkPipelineManager& pipeline, VkDes
 
 bool VkRenderer::recreate_frame_resources()
 {
+    PERF_MEASURE();
     PendingSwapchainResources pending_swapchain;
     if (!ctx_.build_swapchain_resources(pixel_w_, pixel_h_, pending_swapchain))
         return false;
@@ -410,6 +425,7 @@ bool VkRenderer::recreate_frame_resources()
 
 void VkRenderer::update_descriptor_sets_for_frame(size_t frame_index, VkDescriptorSet bg_desc_set, VkDescriptorSet fg_desc_set)
 {
+    PERF_MEASURE();
     auto& grid_buffer = grid_buffers_[frame_index];
 
     VkDescriptorBufferInfo buf_info = {};
@@ -449,22 +465,26 @@ void VkRenderer::update_descriptor_sets_for_frame(size_t frame_index, VkDescript
 
 void VkRenderer::update_all_descriptor_sets()
 {
+    PERF_MEASURE();
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
         update_descriptor_sets_for_frame(static_cast<size_t>(i), bg_desc_sets_[(size_t)i], fg_desc_sets_[(size_t)i]);
 }
 
 void VkRenderer::set_atlas_texture(const uint8_t* data, int w, int h)
 {
+    PERF_MEASURE();
     queue_full_atlas_upload(pending_atlas_uploads_, data, w, h);
 }
 
 void VkRenderer::update_atlas_region(int x, int y, int w, int h, const uint8_t* data)
 {
+    PERF_MEASURE();
     queue_atlas_region_upload(pending_atlas_uploads_, x, y, w, h, data);
 }
 
 void VkRenderer::resize(int pixel_w, int pixel_h)
 {
+    PERF_MEASURE();
     pixel_w_ = pixel_w;
     pixel_h_ = pixel_h;
     framebuffer_resized_ = true;
@@ -472,11 +492,13 @@ void VkRenderer::resize(int pixel_w, int pixel_h)
 
 std::pair<int, int> VkRenderer::cell_size_pixels() const
 {
+    PERF_MEASURE();
     return { cell_w_, cell_h_ };
 }
 
 void VkRenderer::set_cell_size(int w, int h)
 {
+    PERF_MEASURE();
     cell_w_ = w;
     cell_h_ = h;
     for (auto* handle : grid_handles_)
@@ -485,6 +507,7 @@ void VkRenderer::set_cell_size(int w, int h)
 
 void VkRenderer::set_ascender(int a)
 {
+    PERF_MEASURE();
     ascender_ = a;
     for (auto* handle : grid_handles_)
         handle->state_.set_ascender(a);
@@ -492,11 +515,13 @@ void VkRenderer::set_ascender(int a)
 
 std::unique_ptr<IGridHandle> VkRenderer::create_grid_handle()
 {
+    PERF_MEASURE();
     return std::make_unique<VkGridHandle>(*this, padding_);
 }
 
 void VkRenderer::set_default_background(Color bg)
 {
+    PERF_MEASURE();
     clear_r_ = bg.r;
     clear_g_ = bg.g;
     clear_b_ = bg.b;
@@ -504,6 +529,7 @@ void VkRenderer::set_default_background(Color bg)
 
 bool VkRenderer::create_imgui_descriptor_pool()
 {
+    PERF_MEASURE();
     if (imgui_desc_pool_ != VK_NULL_HANDLE)
         return true;
 
@@ -537,12 +563,14 @@ bool VkRenderer::create_imgui_descriptor_pool()
 
 bool VkRenderer::create_imgui_font_texture()
 {
+    PERF_MEASURE();
     const bool ok = ImGui_ImplVulkan_CreateFontsTexture();
     return ok;
 }
 
 void VkRenderer::rebuild_imgui_font_texture()
 {
+    PERF_MEASURE();
     if (!ImGui::GetCurrentContext() || !ImGui::GetIO().BackendRendererUserData)
         return;
 
@@ -552,6 +580,7 @@ void VkRenderer::rebuild_imgui_font_texture()
 
 bool VkRenderer::initialize_imgui_backend()
 {
+    PERF_MEASURE();
     // Already initialized for the current ImGui context — nothing to do.
     if (ImGui::GetCurrentContext() && ImGui::GetIO().BackendRendererUserData)
         return true;
@@ -590,6 +619,7 @@ bool VkRenderer::initialize_imgui_backend()
 
 void VkRenderer::shutdown_imgui_backend()
 {
+    PERF_MEASURE();
     // Shuts down the backend for the current ImGui context only.
     if (!ImGui::GetCurrentContext() || !ImGui::GetIO().BackendRendererUserData)
         return;
@@ -601,6 +631,7 @@ void VkRenderer::shutdown_imgui_backend()
 
 void VkRenderer::begin_imgui_frame()
 {
+    PERF_MEASURE();
     if (!ImGui::GetCurrentContext() || !ImGui::GetIO().BackendRendererUserData)
         return;
 
@@ -609,16 +640,19 @@ void VkRenderer::begin_imgui_frame()
 
 void VkRenderer::set_imgui_draw_data(const ImDrawData* draw_data)
 {
+    PERF_MEASURE();
     imgui_draw_data_ = draw_data;
 }
 
 void VkRenderer::request_frame_capture()
 {
+    PERF_MEASURE();
     capture_requested_ = true;
 }
 
 std::optional<CapturedFrame> VkRenderer::take_captured_frame()
 {
+    PERF_MEASURE();
     auto frame = std::move(captured_frame_);
     captured_frame_.reset();
     return frame;
@@ -626,47 +660,58 @@ std::optional<CapturedFrame> VkRenderer::take_captured_frame()
 
 bool VkRenderer::begin_frame()
 {
-    vkWaitForFences(ctx_.device(), 1, &in_flight_fences_[current_frame_], VK_TRUE, UINT64_MAX);
-
-    for (auto* handle : grid_handles_)
-        handle->state_.restore_cursor();
-    upload_dirty_state();
-
-    VkResult result = vkAcquireNextImageKHR(
-        ctx_.device(), ctx_.swapchain().swapchain, UINT64_MAX,
-        image_available_sem_[current_frame_], VK_NULL_HANDLE, &current_image_);
-
-    if (result == VK_ERROR_OUT_OF_DATE_KHR)
+    runtime_perf_collector().begin_frame();
+    bool success = false;
     {
-        DRAXUL_LOG_WARN(LogCategory::Renderer, "Vulkan acquire returned VK_ERROR_OUT_OF_DATE_KHR");
-        if (!recreate_frame_resources())
-            DRAXUL_LOG_ERROR(LogCategory::Renderer, "Failed to rebuild Vulkan frame resources after acquire");
-        return false;
-    }
-    if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
-    {
-        DRAXUL_LOG_ERROR(LogCategory::Renderer, "vkAcquireNextImageKHR failed: %d", (int)result);
-        return false;
-    }
-    if (result == VK_SUBOPTIMAL_KHR)
-    {
-        DRAXUL_LOG_WARN(LogCategory::Renderer, "Vulkan acquire returned VK_SUBOPTIMAL_KHR");
-    }
+        PERF_MEASURE();
+        vkWaitForFences(ctx_.device(), 1, &in_flight_fences_[current_frame_], VK_TRUE, UINT64_MAX);
 
-    if (current_image_ < images_in_flight_.size() && images_in_flight_[current_image_] != VK_NULL_HANDLE)
-    {
-        vkWaitForFences(ctx_.device(), 1, &images_in_flight_[current_image_], VK_TRUE, UINT64_MAX);
-    }
-    if (current_image_ < images_in_flight_.size())
-        images_in_flight_[current_image_] = in_flight_fences_[current_frame_];
+        for (auto* handle : grid_handles_)
+            handle->state_.restore_cursor();
+        upload_dirty_state();
 
-    vkResetFences(ctx_.device(), 1, &in_flight_fences_[current_frame_]);
-    vkResetCommandBuffer(cmd_buffers_[current_frame_], 0);
-    return true;
+        VkResult result = vkAcquireNextImageKHR(
+            ctx_.device(), ctx_.swapchain().swapchain, UINT64_MAX,
+            image_available_sem_[current_frame_], VK_NULL_HANDLE, &current_image_);
+
+        if (result == VK_ERROR_OUT_OF_DATE_KHR)
+        {
+            DRAXUL_LOG_WARN(LogCategory::Renderer, "Vulkan acquire returned VK_ERROR_OUT_OF_DATE_KHR");
+            if (!recreate_frame_resources())
+                DRAXUL_LOG_ERROR(LogCategory::Renderer, "Failed to rebuild Vulkan frame resources after acquire");
+            success = false;
+            goto finish_begin_frame;
+        }
+        if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
+        {
+            DRAXUL_LOG_ERROR(LogCategory::Renderer, "vkAcquireNextImageKHR failed: %d", (int)result);
+            goto finish_begin_frame;
+        }
+        if (result == VK_SUBOPTIMAL_KHR)
+        {
+            DRAXUL_LOG_WARN(LogCategory::Renderer, "Vulkan acquire returned VK_SUBOPTIMAL_KHR");
+        }
+
+        if (current_image_ < images_in_flight_.size() && images_in_flight_[current_image_] != VK_NULL_HANDLE)
+        {
+            vkWaitForFences(ctx_.device(), 1, &images_in_flight_[current_image_], VK_TRUE, UINT64_MAX);
+        }
+        if (current_image_ < images_in_flight_.size())
+            images_in_flight_[current_image_] = in_flight_fences_[current_frame_];
+
+        vkResetFences(ctx_.device(), 1, &in_flight_fences_[current_frame_]);
+        vkResetCommandBuffer(cmd_buffers_[current_frame_], 0);
+        success = true;
+    finish_begin_frame:;
+    }
+    if (!success)
+        runtime_perf_collector().cancel_frame();
+    return success;
 }
 
 void VkRenderer::record_command_buffer(VkCommandBuffer cmd, uint32_t image_index)
 {
+    PERF_MEASURE();
     VkCommandBufferBeginInfo begin_info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
     vkBeginCommandBuffer(cmd, &begin_info);
 
@@ -835,6 +880,7 @@ void VkRenderer::record_command_buffer(VkCommandBuffer cmd, uint32_t image_index
 
 bool VkRenderer::flush_pending_atlas_uploads(VkCommandBuffer cmd)
 {
+    PERF_MEASURE();
     if (pending_atlas_uploads_.empty())
         return true;
 
@@ -850,54 +896,59 @@ bool VkRenderer::flush_pending_atlas_uploads(VkCommandBuffer cmd)
 
 void VkRenderer::end_frame()
 {
-    for (auto* handle : grid_handles_)
-        handle->state_.apply_cursor();
-    upload_dirty_state();
-    if (capture_requested_ && !ensure_capture_buffer(static_cast<size_t>(ctx_.swapchain().extent.width) * ctx_.swapchain().extent.height * 4))
     {
-        capture_requested_ = false;
+        PERF_MEASURE();
+        for (auto* handle : grid_handles_)
+            handle->state_.apply_cursor();
+        upload_dirty_state();
+        if (capture_requested_ && !ensure_capture_buffer(static_cast<size_t>(ctx_.swapchain().extent.width) * ctx_.swapchain().extent.height * 4))
+        {
+            capture_requested_ = false;
+        }
+        record_command_buffer(cmd_buffers_[current_frame_], current_image_);
+
+        VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        VkSubmitInfo submit = { VK_STRUCTURE_TYPE_SUBMIT_INFO };
+        submit.waitSemaphoreCount = 1;
+        submit.pWaitSemaphores = &image_available_sem_[current_frame_];
+        submit.pWaitDstStageMask = &wait_stage;
+        submit.commandBufferCount = 1;
+        submit.pCommandBuffers = &cmd_buffers_[current_frame_];
+        submit.signalSemaphoreCount = 1;
+        submit.pSignalSemaphores = &render_finished_sem_[current_frame_];
+
+        if (vkQueueSubmit(ctx_.graphics_queue(), 1, &submit, in_flight_fences_[current_frame_]) != VK_SUCCESS)
+        {
+            DRAXUL_LOG_ERROR(LogCategory::Renderer, "Failed to submit Vulkan frame");
+            runtime_perf_collector().cancel_frame();
+            return;
+        }
+
+        VkPresentInfoKHR present = { VK_STRUCTURE_TYPE_PRESENT_INFO_KHR };
+        present.waitSemaphoreCount = 1;
+        present.pWaitSemaphores = &render_finished_sem_[current_frame_];
+        present.swapchainCount = 1;
+        present.pSwapchains = &ctx_.swapchain().swapchain;
+        present.pImageIndices = &current_image_;
+
+        VkResult result = vkQueuePresentKHR(ctx_.graphics_queue(), &present);
+        if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebuffer_resized_)
+        {
+            framebuffer_resized_ = false;
+            if (!recreate_frame_resources())
+                DRAXUL_LOG_ERROR(LogCategory::Renderer, "Failed to rebuild Vulkan frame resources after present");
+        }
+
+        if (capture_requested_)
+        {
+            vkWaitForFences(ctx_.device(), 1, &in_flight_fences_[current_frame_], VK_TRUE, UINT64_MAX);
+            finish_capture_readback();
+        }
+
+        current_frame_ = (current_frame_ + 1) % MAX_FRAMES_IN_FLIGHT;
+        imgui_draw_data_ = nullptr;
     }
-    record_command_buffer(cmd_buffers_[current_frame_], current_image_);
-
-    VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    VkSubmitInfo submit = { VK_STRUCTURE_TYPE_SUBMIT_INFO };
-    submit.waitSemaphoreCount = 1;
-    submit.pWaitSemaphores = &image_available_sem_[current_frame_];
-    submit.pWaitDstStageMask = &wait_stage;
-    submit.commandBufferCount = 1;
-    submit.pCommandBuffers = &cmd_buffers_[current_frame_];
-    submit.signalSemaphoreCount = 1;
-    submit.pSignalSemaphores = &render_finished_sem_[current_frame_];
-
-    if (vkQueueSubmit(ctx_.graphics_queue(), 1, &submit, in_flight_fences_[current_frame_]) != VK_SUCCESS)
-    {
-        DRAXUL_LOG_ERROR(LogCategory::Renderer, "Failed to submit Vulkan frame");
-        return;
-    }
-
-    VkPresentInfoKHR present = { VK_STRUCTURE_TYPE_PRESENT_INFO_KHR };
-    present.waitSemaphoreCount = 1;
-    present.pWaitSemaphores = &render_finished_sem_[current_frame_];
-    present.swapchainCount = 1;
-    present.pSwapchains = &ctx_.swapchain().swapchain;
-    present.pImageIndices = &current_image_;
-
-    VkResult result = vkQueuePresentKHR(ctx_.graphics_queue(), &present);
-    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebuffer_resized_)
-    {
-        framebuffer_resized_ = false;
-        if (!recreate_frame_resources())
-            DRAXUL_LOG_ERROR(LogCategory::Renderer, "Failed to rebuild Vulkan frame resources after present");
-    }
-
-    if (capture_requested_)
-    {
-        vkWaitForFences(ctx_.device(), 1, &in_flight_fences_[current_frame_], VK_TRUE, UINT64_MAX);
-        finish_capture_readback();
-    }
-
-    current_frame_ = (current_frame_ + 1) % MAX_FRAMES_IN_FLIGHT;
-    imgui_draw_data_ = nullptr;
+    runtime_perf_collector().end_frame();
 }
 
 } // namespace draxul

@@ -12,6 +12,7 @@
 #include <draxul/citydb.h>
 #include <draxul/log.h>
 #include <draxul/megacity_code_config.h>
+#include <draxul/perf_timing.h>
 #include <draxul/roof_sign_generator.h>
 #include <draxul/text_service.h>
 #include <draxul/tree_generator.h>
@@ -581,8 +582,11 @@ CityBuildResult build_city(
     auto semantic_model = std::make_shared<SemanticMegacityModel>(
         build_semantic_megacity_model(modules, config));
     semantic_model->codebase_health = city_db.codebase_health();
+    const RuntimePerfSnapshot perf_snapshot = runtime_perf_collector().latest_snapshot();
     result.live_metrics = std::make_shared<LiveCityMetricsSnapshot>(
-        build_live_city_metrics_snapshot(*semantic_model));
+        build_live_city_metrics_snapshot(
+            *semantic_model,
+            perf_snapshot.generation != 0 ? &perf_snapshot : nullptr));
     const std::unordered_map<std::string, int> building_connection_counts
         = build_incident_connection_counts(*semantic_model);
     auto layout = std::make_unique<SemanticMegacityLayout>(

@@ -5,6 +5,7 @@
 #include <draxul/grid_host_base.h>
 #include <draxul/host_kind.h>
 #include <draxul/log.h>
+#include <draxul/perf_timing.h>
 #ifdef DRAXUL_ENABLE_MEGACITY
 #include <draxul/megacity_host.h>
 #endif
@@ -68,6 +69,7 @@ HostKind HostManager::split_host_kind_for(HostKind primary_kind)
 
 bool HostManager::create(IHostCallbacks& callbacks, int pixel_w, int pixel_h)
 {
+    PERF_MEASURE();
     error_.clear();
     hosts_.clear();
 
@@ -90,6 +92,7 @@ bool HostManager::create(IHostCallbacks& callbacks, int pixel_w, int pixel_h)
 
 LeafId HostManager::split_focused(SplitDirection dir, IHostCallbacks& callbacks)
 {
+    PERF_MEASURE();
     LeafId focused = tree_.focused();
     if (focused == kInvalidLeaf)
         return kInvalidLeaf;
@@ -137,6 +140,7 @@ LeafId HostManager::split_focused(SplitDirection dir, IHostCallbacks& callbacks)
 
 bool HostManager::close_leaf(LeafId id)
 {
+    PERF_MEASURE();
     if (tree_.leaf_count() <= 1)
         return false;
 
@@ -164,12 +168,14 @@ bool HostManager::close_focused()
 
 void HostManager::recompute_viewports(int pixel_w, int pixel_h)
 {
+    PERF_MEASURE();
     tree_.recompute(pixel_w, pixel_h);
     update_all_viewports();
 }
 
 void HostManager::shutdown()
 {
+    PERF_MEASURE();
     for (auto& [id, host] : hosts_)
     {
         if (host)
@@ -199,6 +205,7 @@ IHost* HostManager::host_for(LeafId id) const
 
 IHost* HostManager::host_at_point(int px, int py)
 {
+    PERF_MEASURE();
     auto result = tree_.hit_test(px, py);
     if (const auto* leaf_hit = std::get_if<SplitTree::LeafHit>(&result))
     {
@@ -212,6 +219,7 @@ IHost* HostManager::host_at_point(int px, int py)
 bool HostManager::create_host_for_leaf(LeafId id, IHostCallbacks& callbacks,
     HostLaunchOptions launch, bool is_primary)
 {
+    PERF_MEASURE();
     std::unique_ptr<IHost> new_host;
 
     if (deps_.options && deps_.options->host_factory)
@@ -300,6 +308,7 @@ bool HostManager::create_host_for_leaf(LeafId id, IHostCallbacks& callbacks,
 
 void HostManager::update_all_viewports()
 {
+    PERF_MEASURE();
     if (!deps_.compute_viewport)
         return;
 

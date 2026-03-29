@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstring>
 #include <draxul/log.h>
+#include <draxul/perf_timing.h>
 #include <imgui.h>
 #import <simd/simd.h>
 #include <vector>
@@ -1268,12 +1269,14 @@ IsometricScenePass::IsometricScenePass(int grid_width, int grid_height, float ti
     , tile_size_(tile_size)
     , state_(std::make_unique<State>())
 {
+    PERF_MEASURE();
 }
 
 IsometricScenePass::~IsometricScenePass() = default;
 
 void IsometricScenePass::record_prepass(IRenderContext& ctx)
 {
+    PERF_MEASURE();
     id<MTLCommandBuffer> cmd_buf = (__bridge id<MTLCommandBuffer>)ctx.native_command_buffer();
     if (!cmd_buf)
         return;
@@ -1933,6 +1936,7 @@ void IsometricScenePass::record_prepass(IRenderContext& ctx)
 
 void IsometricScenePass::record(IRenderContext& ctx)
 {
+    PERF_MEASURE();
     id<MTLCommandBuffer> cmd_buf = (__bridge id<MTLCommandBuffer>)ctx.native_command_buffer();
     id<MTLRenderCommandEncoder> encoder = (__bridge id<MTLRenderCommandEncoder>)ctx.native_render_encoder();
     if (!cmd_buf || !encoder)
@@ -2042,6 +2046,7 @@ void IsometricScenePass::record(IRenderContext& ctx)
 
 void IsometricScenePass::render_gbuffer_debug_ui()
 {
+    PERF_MEASURE();
     if (state_->gbuffer_targets.empty())
         return;
 
