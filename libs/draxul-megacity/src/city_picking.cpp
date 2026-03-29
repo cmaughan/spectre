@@ -1,5 +1,6 @@
 #include "city_picking.h"
 #include "city_builder.h"
+#include "city_helpers.h"
 #include "isometric_camera.h"
 #include "semantic_city_layout.h"
 #include <cmath>
@@ -90,20 +91,20 @@ std::vector<glm::vec2> make_building_contour_points(const SemanticCityBuilding& 
     return points;
 }
 
-std::vector<PickingLevel> make_picking_levels(const SemanticCityBuilding& building)
+std::vector<PickingLevel> make_picking_levels(const SemanticCityBuilding& building, float base_elevation)
 {
     std::vector<PickingLevel> levels;
     if (building.layers.empty())
     {
         levels.push_back(PickingLevel{
-            .lower_y = 0.0f,
-            .upper_y = std::max(building.metrics.height, 0.1f),
+            .lower_y = base_elevation,
+            .upper_y = base_elevation + std::max(building.metrics.height, 0.1f),
             .layer_id = 0u,
         });
         return levels;
     }
 
-    float current_y = 0.0f;
+    float current_y = base_elevation;
     levels.reserve(building.layers.size());
     for (size_t layer_index = 0; layer_index < building.layers.size(); ++layer_index)
     {
@@ -121,8 +122,8 @@ std::vector<PickingLevel> make_picking_levels(const SemanticCityBuilding& buildi
     if (levels.empty())
     {
         levels.push_back(PickingLevel{
-            .lower_y = 0.0f,
-            .upper_y = std::max(building.metrics.height, 0.1f),
+            .lower_y = base_elevation,
+            .upper_y = base_elevation + std::max(building.metrics.height, 0.1f),
             .layer_id = 0u,
         });
     }
@@ -250,7 +251,11 @@ void consider_top_cap_hit(
     if (contour.size() < 3)
         return;
 
-    const glm::vec3 center(0.0f, y, 0.0f);
+    glm::vec2 centroid(0.0f);
+    for (const auto& p : contour)
+        centroid += p;
+    centroid /= static_cast<float>(contour.size());
+    const glm::vec3 center(centroid.x, y, centroid.y);
     for (size_t i = 0; i < contour.size(); ++i)
     {
         const size_t next = (i + 1) % contour.size();
@@ -265,14 +270,16 @@ std::optional<RayBuildingHit> ray_building_intersect(
     const glm::vec3& ray_dir,
     const SemanticCityBuilding& building,
     int sides,
-    float middle_strip_scale)
+    float middle_strip_scale,
+    float base_elevation,
+    float sign_extension)
 {
     const std::vector<glm::vec2> outer_contour = make_building_contour_points(building, sides, 1.0f);
     const std::vector<glm::vec2> middle_contour = make_building_contour_points(building, sides, middle_strip_scale);
     if (outer_contour.size() < 3 || middle_contour.size() != outer_contour.size())
         return std::nullopt;
 
-    const std::vector<PickingLevel> levels = make_picking_levels(building);
+    const std::vector<PickingLevel> levels = make_picking_levels(building, base_elevation);
     if (levels.empty())
         return std::nullopt;
 
@@ -309,12 +316,25 @@ std::optional<RayBuildingHit> ray_building_intersect(
             best_hit);
     }
 
+    const float top_y = levels.back().upper_y;
+    const uint32_t top_layer = levels.back().layer_id;
+
+    // Extend picking through the cap + sign region above the building body.
+    if (sign_extension > 0.0f)
+    {
+        consider_strip_hit(
+            ray_origin, ray_dir,
+            outer_contour, outer_contour,
+            top_y, top_y + sign_extension,
+            top_layer, best_hit);
+    }
+
     consider_top_cap_hit(
         ray_origin,
         ray_dir,
         outer_contour,
-        levels.back().upper_y,
-        levels.back().layer_id,
+        top_y + sign_extension,
+        top_layer,
         best_hit);
 
     if (best_hit.t == std::numeric_limits<float>::max())
@@ -353,6 +373,8 @@ std::optional<PickResult> pick_building(
     const std::optional<std::unordered_map<std::string, int>> incident_connection_counts
         = model && config ? std::optional(build_incident_connection_counts(*model)) : std::nullopt;
     const float middle_strip_scale = 1.0f + std::max(config ? config->building_middle_strip_push : 0.0f, 0.0f);
+    const float base_elevation = config ? building_base_elevation(*config) : 0.0f;
+    const float sign_gap = config ? config->roof_sign_gap : 0.0f;
 
     float best_t = std::numeric_limits<float>::max();
     std::optional<PickResult> best;
@@ -370,6 +392,12 @@ std::optional<PickResult> pick_building(
                 continue;
             }
 
+            // Extend picking upward through the cap + gap + sign band above the building body.
+            // Cap height is clamped to at most 15% of building height (see compute_building_sign_height),
+            // and the sign band has the same height, so the total extension is 2*cap + gap.
+            const float cap_height = std::clamp(building.metrics.height * 0.15f, 0.24f, 2.0f);
+            const float sign_extension = cap_height * 2.0f + sign_gap;
+
             const int sides = building_side_count(
                 building,
                 incident_connection_counts ? &*incident_connection_counts : nullptr,
@@ -379,7 +407,9 @@ std::optional<PickResult> pick_building(
                 ray_dir,
                 building,
                 sides,
-                middle_strip_scale);
+                middle_strip_scale,
+                base_elevation,
+                sign_extension);
             if (hit && hit->t < best_t)
             {
                 best_t = hit->t;
