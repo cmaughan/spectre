@@ -813,6 +813,17 @@ glm::mat4 make_vulkan_projection(glm::mat4 proj)
     return proj;
 }
 
+glm::mat4 make_vulkan_shadow_texture_matrix(const glm::mat4& world_to_clip)
+{
+    glm::mat4 bias(1.0f);
+    bias[0][0] = 0.5f;
+    // Vulkan shadow clip space is already Y-flipped before rasterization.
+    bias[1][1] = 0.5f;
+    bias[3][0] = 0.5f;
+    bias[3][1] = 0.5f;
+    return bias * world_to_clip;
+}
+
 } // namespace
 
 struct IsometricScenePass::State
@@ -1431,7 +1442,7 @@ struct IsometricScenePass::State
                     have_point_shadow = false;
                     break;
                 }
-                point_shadow_infos[face_index].sampler = gbuffer_sampler;
+                point_shadow_infos[face_index].sampler = gbuffer_point_sampler;
                 point_shadow_infos[face_index].imageView = gbuffer.point_shadow_face_views[face_index];
                 point_shadow_infos[face_index].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             }
@@ -2076,6 +2087,13 @@ struct IsometricScenePass::State
         depth.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
 
         VkPipelineColorBlendAttachmentState blend_attachment = {};
+        blend_attachment.blendEnable = VK_TRUE;
+        blend_attachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        blend_attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        blend_attachment.colorBlendOp = VK_BLEND_OP_ADD;
+        blend_attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+        blend_attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+        blend_attachment.alphaBlendOp = VK_BLEND_OP_ADD;
         blend_attachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT
             | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 
@@ -3764,7 +3782,7 @@ void IsometricScenePass::record_prepass(IRenderContext& ctx)
         const glm::mat4 shadow_proj = make_vulkan_projection(shadow_cascades.cascades[cascade_index].proj);
         const glm::mat4 world_to_clip = shadow_proj * shadow_cascades.cascades[cascade_index].view;
         frame.shadow_view_proj[cascade_index] = world_to_clip;
-        frame.shadow_texture_matrix[cascade_index] = shadow_texture_matrix(world_to_clip);
+        frame.shadow_texture_matrix[cascade_index] = make_vulkan_shadow_texture_matrix(world_to_clip);
     }
     frame.shadow_split_depths = glm::vec4(
         shadow_cascades.cascades[0].split_depth,
@@ -3780,7 +3798,7 @@ void IsometricScenePass::record_prepass(IRenderContext& ctx)
     {
         const glm::mat4 point_world_to_clip = make_vulkan_projection(point_shadow.view_proj[face_index]);
         frame.point_shadow_view_proj[face_index] = point_world_to_clip;
-        frame.point_shadow_texture_matrix[face_index] = shadow_texture_matrix(point_world_to_clip);
+        frame.point_shadow_texture_matrix[face_index] = make_vulkan_shadow_texture_matrix(point_world_to_clip);
     }
     frame.point_shadow_params = glm::vec4(
         point_shadow.sample_depth_bias,
