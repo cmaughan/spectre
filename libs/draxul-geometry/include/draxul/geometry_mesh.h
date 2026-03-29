@@ -17,6 +17,7 @@ struct GeometryVertex
     glm::vec2 uv{ 0.0f };
     float tex_blend = 0.0f;
     glm::vec4 tangent{ 1.0f, 0.0f, 0.0f, 1.0f };
+    float layer_id = 0.0f;
 };
 
 struct GeometryMesh

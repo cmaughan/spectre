@@ -69,7 +69,7 @@ RingContour make_ring_contour(int sides, float footprint, float scale)
 }
 
 void append_side_strip(GeometryMesh& mesh, const RingContour& lower_contour, const RingContour& upper_contour,
-    float lower_y, float upper_y, float total_height, const glm::vec3& color)
+    float lower_y, float upper_y, float total_height, const glm::vec3& color, uint32_t layer_id)
 {
     if (lower_contour.points.size() != upper_contour.points.size() || lower_contour.points.size() < 3)
         return;
@@ -116,6 +116,7 @@ void append_side_strip(GeometryMesh& mesh, const RingContour& lower_contour, con
             vertex.color = color;
             vertex.uv = uv;
             vertex.tangent = glm::vec4(tangent, 1.0f);
+            vertex.layer_id = static_cast<float>(layer_id);
             mesh.vertices.push_back(vertex);
         }
 
@@ -128,7 +129,8 @@ void append_side_strip(GeometryMesh& mesh, const RingContour& lower_contour, con
     }
 }
 
-void append_cap(GeometryMesh& mesh, const RingContour& contour, float y, bool top, const glm::vec3& color, float footprint)
+void append_cap(GeometryMesh& mesh, const RingContour& contour, float y, bool top, const glm::vec3& color, float footprint,
+    uint32_t layer_id)
 {
     if (contour.points.size() < 3 || !can_append_vertices(mesh, contour.points.size() + 1))
         return;
@@ -140,6 +142,7 @@ void append_cap(GeometryMesh& mesh, const RingContour& contour, float y, bool to
     center.color = color;
     center.uv = { 0.5f, 0.5f };
     center.tangent = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f);
+    center.layer_id = static_cast<float>(layer_id);
     mesh.vertices.push_back(center);
 
     const float inv_footprint = 1.0f / std::max(footprint, 0.1f);
@@ -151,6 +154,7 @@ void append_cap(GeometryMesh& mesh, const RingContour& contour, float y, bool to
         vertex.color = color;
         vertex.uv = glm::vec2(point.x * inv_footprint + 0.5f, point.y * inv_footprint + 0.5f);
         vertex.tangent = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f);
+        vertex.layer_id = static_cast<float>(layer_id);
         mesh.vertices.push_back(vertex);
     }
 
@@ -190,7 +194,7 @@ GeometryMesh generate_draxul_building(const DraxulBuildingParams& input_params)
             [](const DraxulBuildingLevel& level) { return level.height <= 1e-4f; }),
         params.levels.end());
     if (params.levels.empty())
-        params.levels.push_back({ 1.0f, glm::vec3(1.0f) });
+        params.levels.push_back({ 1.0f, glm::vec3(1.0f), 0u });
 
     float total_height = 0.0f;
     for (const DraxulBuildingLevel& level : params.levels)
@@ -208,14 +212,52 @@ GeometryMesh generate_draxul_building(const DraxulBuildingParams& input_params)
     for (const DraxulBuildingLevel& level : params.levels)
     {
         const float strip_height = level.height / 3.0f;
-        append_side_strip(mesh, outer_contour, middle_contour, current_y, current_y + strip_height, total_height, level.color);
-        append_side_strip(mesh, middle_contour, middle_contour, current_y + strip_height, current_y + strip_height * 2.0f, total_height, level.color);
-        append_side_strip(mesh, middle_contour, outer_contour, current_y + strip_height * 2.0f, current_y + level.height, total_height, level.color);
+        append_side_strip(
+            mesh,
+            outer_contour,
+            middle_contour,
+            current_y,
+            current_y + strip_height,
+            total_height,
+            level.color,
+            level.layer_id);
+        append_side_strip(
+            mesh,
+            middle_contour,
+            middle_contour,
+            current_y + strip_height,
+            current_y + strip_height * 2.0f,
+            total_height,
+            level.color,
+            level.layer_id);
+        append_side_strip(
+            mesh,
+            middle_contour,
+            outer_contour,
+            current_y + strip_height * 2.0f,
+            current_y + level.height,
+            total_height,
+            level.color,
+            level.layer_id);
         current_y += level.height;
     }
 
-    append_cap(mesh, outer_contour, 0.0f, false, params.levels.front().color, params.footprint);
-    append_cap(mesh, outer_contour, total_height, true, params.levels.back().color, params.footprint);
+    append_cap(
+        mesh,
+        outer_contour,
+        0.0f,
+        false,
+        params.levels.front().color,
+        params.footprint,
+        params.levels.front().layer_id);
+    append_cap(
+        mesh,
+        outer_contour,
+        total_height,
+        true,
+        params.levels.back().color,
+        params.footprint,
+        params.levels.back().layer_id);
     return mesh;
 }
 

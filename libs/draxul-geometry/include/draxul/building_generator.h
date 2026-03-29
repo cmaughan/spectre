@@ -13,6 +13,7 @@ struct DraxulBuildingLevel
 {
     float height = 1.0f;
     glm::vec3 color{ 1.0f };
+    uint32_t layer_id = 0;
 };
 
 struct DraxulBuildingParams

@@ -1,6 +1,7 @@
 #include "scene_snapshot_builder.h"
 #include "city_helpers.h"
 #include "isometric_camera.h"
+#include "live_city_metrics.h"
 #include "scene_world.h"
 #include "sign_label_atlas.h"
 #include <algorithm>
@@ -8,12 +9,101 @@
 #include <draxul/megacity_code_config.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <limits>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace draxul
 {
 
 namespace
 {
+
+constexpr float kPerformanceHeatBlend = 0.68f;
+
+struct PerformanceHeatTable
+{
+    std::vector<float> values;
+    std::unordered_map<std::string, std::pair<uint32_t, uint32_t>> bindings;
+};
+
+std::string performance_heat_key(
+    std::string_view source_file_path,
+    std::string_view module_path,
+    std::string_view qualified_name)
+{
+    std::string key;
+    key.reserve(source_file_path.size() + module_path.size() + qualified_name.size() + 2);
+    key.append(source_file_path);
+    key.push_back('\n');
+    key.append(module_path);
+    key.push_back('\n');
+    key.append(qualified_name);
+    return key;
+}
+
+PerformanceHeatTable build_performance_heat_table(const LiveCityMetricsSnapshot* snapshot)
+{
+    PerformanceHeatTable table;
+    if (!snapshot)
+        return table;
+
+    std::unordered_map<std::string, std::vector<float>> function_heat_by_building;
+    function_heat_by_building.reserve(snapshot->buildings.size() + snapshot->functions.size());
+    for (const LiveCityFunctionMetric& function : snapshot->functions)
+    {
+        std::vector<float>& heats = function_heat_by_building[performance_heat_key(
+            function.source_file_path,
+            function.module_path,
+            function.qualified_name)];
+        const size_t required_size = std::max<size_t>(function.layer_count, static_cast<size_t>(function.layer_index) + 1);
+        if (heats.size() < required_size)
+            heats.resize(required_size, 0.0f);
+        heats[function.layer_index] = std::clamp(function.heat, 0.0f, 1.0f);
+    }
+
+    table.values.reserve(std::max(snapshot->functions.size(), snapshot->buildings.size()));
+    std::unordered_set<std::string> emitted;
+    emitted.reserve(snapshot->buildings.size());
+
+    auto append_binding = [&](const std::string& key, const std::vector<float>* function_heats, float building_heat) {
+        const uint32_t offset = static_cast<uint32_t>(table.values.size());
+        if (function_heats && !function_heats->empty())
+        {
+            table.values.insert(table.values.end(), function_heats->begin(), function_heats->end());
+            table.bindings.emplace(key, std::pair<uint32_t, uint32_t>(offset, static_cast<uint32_t>(function_heats->size())));
+        }
+        else
+        {
+            table.values.push_back(std::clamp(building_heat, 0.0f, 1.0f));
+            table.bindings.emplace(key, std::pair<uint32_t, uint32_t>(offset, 1u));
+        }
+    };
+
+    for (const LiveCityBuildingMetric& building : snapshot->buildings)
+    {
+        const std::string key = performance_heat_key(
+            building.source_file_path,
+            building.module_path,
+            building.qualified_name);
+        if (!emitted.insert(key).second)
+            continue;
+
+        const auto function_it = function_heat_by_building.find(key);
+        append_binding(
+            key,
+            function_it != function_heat_by_building.end() ? &function_it->second : nullptr,
+            building.heat);
+    }
+
+    for (const auto& [key, heats] : function_heat_by_building)
+    {
+        if (table.bindings.find(key) != table.bindings.end())
+            continue;
+        append_binding(key, &heats, 0.0f);
+    }
+
+    return table;
+}
 
 SceneMaterial build_scene_material(const Appearance& appearance, const MegaCityCodeConfig& config)
 {
@@ -147,14 +237,17 @@ SceneSnapshotResult build_scene_snapshot(
     const IsometricCamera& camera,
     const SceneWorld& world,
     const MegaCityCodeConfig& config,
+    const std::shared_ptr<const LiveCityMetricsSnapshot>& live_metrics,
     const std::shared_ptr<SignLabelAtlas>& label_atlas,
     const std::shared_ptr<const MeshData>& tree_bark_mesh,
     const std::shared_ptr<const MeshData>& tree_leaf_mesh)
 {
     SceneSnapshotResult result;
     SceneSnapshot& scene = result.snapshot;
+    const PerformanceHeatTable performance_heat_table = build_performance_heat_table(live_metrics.get());
     scene.tree_bark_mesh = tree_bark_mesh;
     scene.tree_leaf_mesh = tree_leaf_mesh;
+    scene.performance_heat_values = performance_heat_table.values;
 
     scene.camera.view = camera.view_matrix();
     scene.camera.proj = camera.proj_matrix();
@@ -164,8 +257,8 @@ SceneSnapshotResult build_scene_snapshot(
     scene.camera.label_fade_px = glm::vec4(
         config.sign_text_px_range.x,
         config.sign_text_px_range.y,
-        0.0f,
-        0.0f);
+        config.performance_heat_mode ? 1.0f : 0.0f,
+        kPerformanceHeatBlend);
     scene.camera.render_tuning = glm::vec4(
         config.tone_map_exposure,
         config.point_light_brightness,
@@ -337,6 +430,17 @@ SceneSnapshotResult build_scene_snapshot(
             obj.source_name = sym->name;
             obj.source_module_path = sym->module_path;
             obj.source_file_path = sym->file;
+
+            if (reg.all_of<BuildingMetrics>(entity) && !sym->file.empty())
+            {
+                const auto heat_it = performance_heat_table.bindings.find(
+                    performance_heat_key(sym->file, sym->module_path, sym->name));
+                if (heat_it != performance_heat_table.bindings.end())
+                {
+                    obj.performance_heat_offset = heat_it->second.first;
+                    obj.performance_heat_count = heat_it->second.second;
+                }
+            }
         }
         if (const auto* link = reg.try_get<RouteLink>(entity))
         {

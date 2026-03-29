@@ -7,6 +7,7 @@
 #include "city_picking.h"
 #include "isometric_camera.h"
 #include "isometric_scene_pass.h"
+#include "live_city_metrics.h"
 #include "mesh_library.h"
 #include "scene_snapshot_builder.h"
 #include "scene_world.h"
@@ -363,6 +364,109 @@ TEST_CASE("megacity module signs are placed on module border strips", "[megacity
     std::filesystem::remove(db_path);
 }
 
+TEST_CASE("megacity live metrics snapshot includes buildings and functions", "[megacity]")
+{
+    SemanticMegacityModel model;
+    SemanticCityModuleModel module;
+    module.module_path = "app";
+
+    SemanticCityBuilding building;
+    building.module_path = "app";
+    building.display_name = "Renderer";
+    building.qualified_name = "Renderer";
+    building.source_file_path = "app/renderer.cpp";
+    building.layers = {
+        { "update", 10, 1.0f },
+        { "render", 20, 2.0f },
+        { "present", 30, 3.0f },
+    };
+    module.buildings.push_back(building);
+    model.modules.push_back(module);
+
+    const LiveCityMetricsSnapshot snapshot = build_live_city_metrics_snapshot(model);
+
+    const LiveCityMetricsSnapshot snapshot_again = build_live_city_metrics_snapshot(model);
+
+    REQUIRE(snapshot.generation == 1);
+    REQUIRE(snapshot.buildings.size() == 1);
+    REQUIRE(snapshot.functions.size() == 3);
+    CHECK(snapshot.buildings[0].qualified_name == "Renderer");
+    CHECK(snapshot.buildings[0].heat >= 0.0f);
+    CHECK(snapshot.buildings[0].heat <= 1.0f);
+    CHECK(snapshot.functions[0].function_name == "update");
+    CHECK(snapshot.functions[0].heat >= 0.0f);
+    CHECK(snapshot.functions[0].heat <= 1.0f);
+    CHECK(snapshot.functions[1].heat >= 0.0f);
+    CHECK(snapshot.functions[1].heat <= 1.0f);
+    CHECK(snapshot.functions[2].heat >= 0.0f);
+    CHECK(snapshot.functions[2].heat <= 1.0f);
+    CHECK(snapshot.buildings[0].heat == Catch::Approx(snapshot_again.buildings[0].heat));
+    CHECK(snapshot.functions[0].heat == Catch::Approx(snapshot_again.functions[0].heat));
+    CHECK(snapshot.functions[1].heat == Catch::Approx(snapshot_again.functions[1].heat));
+    CHECK(snapshot.functions[2].heat == Catch::Approx(snapshot_again.functions[2].heat));
+}
+
+TEST_CASE("megacity scene snapshot carries per-layer performance heat state for buildings", "[megacity]")
+{
+    SceneWorld world;
+    world.create_building(
+        2.0f,
+        3.0f,
+        0.0f,
+        BuildingMetrics{
+            .footprint = 2.0f,
+            .height = 6.0f,
+            .sidewalk_width = 0.0f,
+            .road_width = 0.0f,
+        },
+        glm::vec4(1.0f),
+        SourceSymbol{ "app/renderer.cpp", "Renderer", "app" },
+        MaterialId::FlatColor);
+
+    auto live_metrics = std::make_shared<LiveCityMetricsSnapshot>();
+    live_metrics->buildings.push_back({
+        .source_file_path = "app/renderer.cpp",
+        .module_path = "app",
+        .qualified_name = "Renderer",
+        .display_name = "Renderer",
+        .heat = 0.4f,
+    });
+    live_metrics->functions.push_back({
+        .source_file_path = "app/renderer.cpp",
+        .module_path = "app",
+        .qualified_name = "Renderer",
+        .function_name = "update",
+        .layer_index = 0,
+        .layer_count = 2,
+        .heat = 0.1f,
+    });
+    live_metrics->functions.push_back({
+        .source_file_path = "app/renderer.cpp",
+        .module_path = "app",
+        .qualified_name = "Renderer",
+        .function_name = "render",
+        .layer_index = 1,
+        .layer_count = 2,
+        .heat = 0.9f,
+    });
+
+    IsometricCamera camera;
+    camera.set_viewport(800, 600);
+    camera.reframe_world_bounds(0.0f, 4.0f, 0.0f, 6.0f);
+
+    MegaCityCodeConfig config;
+    config.performance_heat_mode = true;
+    SceneSnapshotResult result = build_scene_snapshot(camera, world, config, live_metrics, {}, nullptr, nullptr);
+
+    REQUIRE(result.snapshot.camera.label_fade_px.z == Catch::Approx(1.0f));
+    REQUIRE_FALSE(result.snapshot.objects.empty());
+    REQUIRE(result.snapshot.performance_heat_values.size() == 2);
+    CHECK(result.snapshot.performance_heat_values[0] == Catch::Approx(0.1f));
+    CHECK(result.snapshot.performance_heat_values[1] == Catch::Approx(0.9f));
+    CHECK(result.snapshot.objects[0].performance_heat_offset == 0u);
+    CHECK(result.snapshot.objects[0].performance_heat_count == 2u);
+}
+
 TEST_CASE("megacity building roof sign expands for long text", "[megacity]")
 {
     TextService text_service;
@@ -480,6 +584,7 @@ TEST_CASE("megacity scene snapshot carries custom building meshes", "[megacity]"
         config,
         {},
         {},
+        {},
         {});
 
     REQUIRE(result.snapshot.objects.size() == 1);
@@ -523,6 +628,7 @@ TEST_CASE("megacity scene snapshot carries custom sign meshes", "[megacity]")
         camera,
         world,
         config,
+        {},
         {},
         {},
         {});
@@ -666,6 +772,7 @@ TEST_CASE("route segment world transform follows its intended direction", "[mega
         camera,
         world,
         config,
+        {},
         {},
         {},
         {});
@@ -907,6 +1014,7 @@ TEST_CASE("semantic city lot reserve matches the full visible road width by defa
         row.name,
         row.qualified_name,
         row.source_file_path,
+        row.is_struct,
         row.base_size,
         row.building_functions,
         0,

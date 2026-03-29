@@ -1226,6 +1226,7 @@ SemanticCityModuleModel build_semantic_city_model(
             row.name,
             row.qualified_name,
             row.source_file_path,
+            row.is_struct,
             std::max(row.base_size, 0),
             std::max(row.building_functions, 0),
             function_mass(row),

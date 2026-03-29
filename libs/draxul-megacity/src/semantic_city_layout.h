@@ -28,6 +28,7 @@ struct SemanticCityBuilding
     std::string display_name;
     std::string qualified_name;
     std::string source_file_path;
+    bool is_struct = false;
     int base_size = 0;
     int function_count = 0;
     int function_mass = 0;

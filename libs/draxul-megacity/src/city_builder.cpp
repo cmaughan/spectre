@@ -1,5 +1,6 @@
 #include "city_builder.h"
 #include "city_helpers.h"
+#include "live_city_metrics.h"
 #include "scene_world.h"
 #include "semantic_city_layout.h"
 #include "sign_label_atlas.h"
@@ -201,12 +202,13 @@ std::shared_ptr<const GeometryMesh> build_procedural_building_mesh(
                     module_color,
                     layer_index,
                     config.building_alternate_darkening)),
+                static_cast<uint32_t>(layer_index),
             });
         }
     }
 
     if (params.levels.empty())
-        params.levels.push_back({ std::max(building.metrics.height, 0.1f), glm::vec3(module_color) });
+        params.levels.push_back({ std::max(building.metrics.height, 0.1f), glm::vec3(module_color), 0u });
 
     return std::make_shared<GeometryMesh>(generate_draxul_building(params));
 }
@@ -222,7 +224,10 @@ std::shared_ptr<const GeometryMesh> build_procedural_building_cap_mesh(
     params.footprint = building.metrics.footprint;
     params.sides = std::max(sides, 3);
     params.middle_strip_scale = 1.0f + std::max(config.building_middle_strip_push, 0.0f);
-    params.levels.push_back({ std::max(height, 0.1f), glm::vec3(color) });
+    const uint32_t top_layer_id = building.layers.empty()
+        ? 0u
+        : static_cast<uint32_t>(building.layers.size() - 1);
+    params.levels.push_back({ std::max(height, 0.1f), glm::vec3(color), top_layer_id });
     return std::make_shared<GeometryMesh>(generate_draxul_building(params));
 }
 
@@ -576,6 +581,8 @@ CityBuildResult build_city(
     auto semantic_model = std::make_shared<SemanticMegacityModel>(
         build_semantic_megacity_model(modules, config));
     semantic_model->codebase_health = city_db.codebase_health();
+    result.live_metrics = std::make_shared<LiveCityMetricsSnapshot>(
+        build_live_city_metrics_snapshot(*semantic_model));
     const std::unordered_map<std::string, int> building_connection_counts
         = build_incident_connection_counts(*semantic_model);
     auto layout = std::make_unique<SemanticMegacityLayout>(

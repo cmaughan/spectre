@@ -111,6 +111,8 @@ struct SceneObject
     glm::vec4 color{ 1.0f };
     glm::vec4 uv_rect{ 0.0f, 0.0f, 1.0f, 1.0f };
     glm::vec2 label_ink_pixel_size{ 0.0f };
+    uint32_t performance_heat_offset = 0;
+    uint32_t performance_heat_count = 0;
 
     // Identity: links this object back to its ECS source for runtime queries (e.g. selection).
     std::string source_name;
@@ -145,7 +147,7 @@ struct SceneCameraData
     glm::vec4 camera_pos{ 0.0f, 8.0f, 0.0f, 1.0f };
     glm::vec4 light_dir{ -0.5f, -1.0f, -0.3f, 0.0f };
     glm::vec4 point_light_pos{ 4.0f, 6.0f, 4.0f, 12.0f }; // xyz = position, w = radius
-    glm::vec4 label_fade_px{ 1.5f, 8.0f, 0.0f, 0.0f };
+    glm::vec4 label_fade_px{ 1.5f, 8.0f, 0.0f, 0.68f }; // x/y = label fade range, z = perf mode enabled, w = perf blend
     glm::vec4 render_tuning{ 1.0f, 1.0f, 0.45f, 4.0f }; // x = tone map exposure, y = point brightness, z = ambient, w = tone map white point
     glm::vec4 ao_settings{ 1.6f, 0.12f, 1.35f, 0.0f }; // x = radius (world units), y = bias, z = power
     glm::vec4 debug_view{ 0.0f, 1.0f, 16.0f, 0.0f }; // x = AO debug mode, y = AO denoise enabled, z = AO kernel size
@@ -189,6 +191,7 @@ struct SceneSnapshot
     std::shared_ptr<const MeshData> tree_bark_mesh;
     std::shared_ptr<const MeshData> tree_leaf_mesh;
     std::vector<std::shared_ptr<const MeshData>> custom_meshes;
+    std::vector<float> performance_heat_values;
     std::vector<SceneMaterial> materials;
     std::vector<SceneObject> objects;
     uint32_t opaque_count = 0;

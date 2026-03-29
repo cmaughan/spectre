@@ -54,6 +54,7 @@ struct VertexIn
     float2 uv [[attribute(3)]];
     float tex_blend [[attribute(4)]];
     float4 tangent [[attribute(5)]];
+    float layer_id [[attribute(6)]];
 };
 
 struct VertexOut

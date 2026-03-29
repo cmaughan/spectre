@@ -13,6 +13,7 @@ namespace draxul
 {
 
 struct MegaCityCodeConfig;
+struct LiveCityMetricsSnapshot;
 struct SemanticMegacityModel;
 struct SemanticMegacityLayout;
 struct SignLabelAtlas;
@@ -23,6 +24,7 @@ class TextService;
 struct CityBuildResult
 {
     std::shared_ptr<const SemanticMegacityModel> semantic_model;
+    std::shared_ptr<const LiveCityMetricsSnapshot> live_metrics;
     std::shared_ptr<SignLabelAtlas> sign_label_atlas;
     std::unique_ptr<SemanticMegacityLayout> layout;
     bool city_bounds_valid = false;

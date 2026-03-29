@@ -40,17 +40,19 @@ layout(location = 2) in vec3 in_color;
 layout(location = 3) in vec2 in_uv;
 layout(location = 4) in float in_tex_blend;
 layout(location = 5) in vec4 in_tangent;
+layout(location = 6) in float in_layer_id;
 
 layout(location = 0) out vec3 out_normal_ws;
 layout(location = 1) out vec3 out_base_color;
 layout(location = 2) out vec3 out_world_position;
 layout(location = 3) out vec2 out_atlas_uv;
 layout(location = 4) out float out_tex_blend;
-layout(location = 5) out vec2 out_label_ink_pixel_size;
+layout(location = 5) out vec4 out_label_metrics;
 layout(location = 6) flat out uint out_material_index;
 layout(location = 7) out vec2 out_material_uv;
 layout(location = 8) out vec4 out_tangent_ws;
 layout(location = 9) out float out_opacity;
+layout(location = 10) out float out_layer_id;
 
 void main()
 {
@@ -62,8 +64,9 @@ void main()
     out_atlas_uv = mix(object_data.uv_rect.xy, object_data.uv_rect.zw, in_uv);
     out_material_uv = in_uv * object_data.uv_rect.zw;
     out_tex_blend = in_tex_blend;
-    out_label_ink_pixel_size = object_data.label_metrics.xy;
+    out_label_metrics = object_data.label_metrics;
     out_material_index = object_data.material_data.x;
     out_tangent_ws = vec4(normalize(mat3(object_data.world) * in_tangent.xyz), in_tangent.w);
+    out_layer_id = in_layer_id;
     gl_Position = frame.proj * frame.view * world_position;
 }

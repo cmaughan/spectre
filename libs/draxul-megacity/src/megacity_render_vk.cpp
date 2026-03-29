@@ -136,6 +136,7 @@ struct FrameResources
 {
     Buffer frame_uniforms;
     Buffer material_uniforms;
+    Buffer performance_heat_values;
     TransientGeometryArena geometry_arena;
     VkDescriptorSet descriptor_set = VK_NULL_HANDLE;
     VkDescriptorSet post_descriptor_set = VK_NULL_HANDLE;
@@ -907,7 +908,7 @@ struct IsometricScenePass::State
 
     bool create_device_resources(uint32_t frame_count)
     {
-        VkDescriptorSetLayoutBinding scene_bindings[7] = {};
+        VkDescriptorSetLayoutBinding scene_bindings[8] = {};
         scene_bindings[0].binding = 0;
         scene_bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         scene_bindings[0].descriptorCount = 1;
@@ -936,9 +937,13 @@ struct IsometricScenePass::State
         scene_bindings[6].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         scene_bindings[6].descriptorCount = kPointShadowFaceCount;
         scene_bindings[6].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        scene_bindings[7].binding = 7;
+        scene_bindings[7].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        scene_bindings[7].descriptorCount = 1;
+        scene_bindings[7].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
         VkDescriptorSetLayoutCreateInfo layout_ci = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
-        layout_ci.bindingCount = 7;
+        layout_ci.bindingCount = 8;
         layout_ci.pBindings = scene_bindings;
         if (vkCreateDescriptorSetLayout(device, &layout_ci, nullptr, &descriptor_set_layout) != VK_SUCCESS)
         {
@@ -997,16 +1002,18 @@ struct IsometricScenePass::State
             return false;
         }
 
-        VkDescriptorPoolSize pool_sizes[2] = {};
+        VkDescriptorPoolSize pool_sizes[3] = {};
         pool_sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         pool_sizes[0].descriptorCount = frame_count * 2;
         pool_sizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         pool_sizes[1].descriptorCount
             = frame_count * (3 + kSceneMaterialTextureCount + kShadowCascadeCount + kPointShadowFaceCount);
+        pool_sizes[2].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        pool_sizes[2].descriptorCount = frame_count;
 
         VkDescriptorPoolCreateInfo pool_ci = { VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO };
         pool_ci.maxSets = frame_count;
-        pool_ci.poolSizeCount = 2;
+        pool_ci.poolSizeCount = 3;
         pool_ci.pPoolSizes = pool_sizes;
         if (vkCreateDescriptorPool(device, &pool_ci, nullptr, &descriptor_pool) != VK_SUCCESS)
         {
@@ -1102,6 +1109,12 @@ struct IsometricScenePass::State
                 DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity scene: failed to create material uniform buffer");
                 return false;
             }
+            if (!create_mapped_buffer(allocator, sizeof(float),
+                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, frame.performance_heat_values))
+            {
+                DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity scene: failed to create performance heat buffer");
+                return false;
+            }
 
             VkDescriptorBufferInfo buffer_info = {};
             buffer_info.buffer = frame.frame_uniforms.buffer;
@@ -1109,6 +1122,9 @@ struct IsometricScenePass::State
             VkDescriptorBufferInfo material_buffer_info = {};
             material_buffer_info.buffer = frame.material_uniforms.buffer;
             material_buffer_info.range = sizeof(MaterialUniforms);
+            VkDescriptorBufferInfo performance_heat_buffer_info = {};
+            performance_heat_buffer_info.buffer = frame.performance_heat_values.buffer;
+            performance_heat_buffer_info.range = sizeof(float);
 
             VkWriteDescriptorSet write = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
             write.dstSet = frame.descriptor_set;
@@ -1122,6 +1138,12 @@ struct IsometricScenePass::State
             material_write.descriptorCount = 1;
             material_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
             material_write.pBufferInfo = &material_buffer_info;
+            VkWriteDescriptorSet performance_heat_write = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
+            performance_heat_write.dstSet = frame.descriptor_set;
+            performance_heat_write.dstBinding = 7;
+            performance_heat_write.descriptorCount = 1;
+            performance_heat_write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            performance_heat_write.pBufferInfo = &performance_heat_buffer_info;
             VkWriteDescriptorSet prepass_write = write;
             prepass_write.dstSet = frame.prepass_descriptor_set;
             VkWriteDescriptorSet post_write = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
@@ -1130,8 +1152,8 @@ struct IsometricScenePass::State
             post_write.descriptorCount = 1;
             post_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
             post_write.pBufferInfo = &buffer_info;
-            VkWriteDescriptorSet writes[4] = { write, material_write, prepass_write, post_write };
-            vkUpdateDescriptorSets(device, 4, writes, 0, nullptr);
+            VkWriteDescriptorSet writes[5] = { write, material_write, performance_heat_write, prepass_write, post_write };
+            vkUpdateDescriptorSets(device, 5, writes, 0, nullptr);
         }
 
         buffered_frame_count = frame_count;
@@ -2041,7 +2063,7 @@ struct IsometricScenePass::State
         binding.stride = sizeof(SceneVertex);
         binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-        VkVertexInputAttributeDescription attributes[6] = {};
+        VkVertexInputAttributeDescription attributes[7] = {};
         attributes[0].location = 0;
         attributes[0].binding = 0;
         attributes[0].format = VK_FORMAT_R32G32B32_SFLOAT;
@@ -2066,11 +2088,15 @@ struct IsometricScenePass::State
         attributes[5].binding = 0;
         attributes[5].format = VK_FORMAT_R32G32B32A32_SFLOAT;
         attributes[5].offset = offsetof(SceneVertex, tangent);
+        attributes[6].location = 6;
+        attributes[6].binding = 0;
+        attributes[6].format = VK_FORMAT_R32_SFLOAT;
+        attributes[6].offset = offsetof(SceneVertex, layer_id);
 
         VkPipelineVertexInputStateCreateInfo vertex_input = { VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
         vertex_input.vertexBindingDescriptionCount = 1;
         vertex_input.pVertexBindingDescriptions = &binding;
-        vertex_input.vertexAttributeDescriptionCount = 6;
+        vertex_input.vertexAttributeDescriptionCount = 7;
         vertex_input.pVertexAttributeDescriptions = attributes;
 
         VkPipelineInputAssemblyStateCreateInfo input_assembly = { VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO };
@@ -2801,7 +2827,7 @@ struct IsometricScenePass::State
         binding.stride = sizeof(SceneVertex);
         binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-        VkVertexInputAttributeDescription attributes[6] = {};
+        VkVertexInputAttributeDescription attributes[7] = {};
         attributes[0].location = 0;
         attributes[0].format = VK_FORMAT_R32G32B32_SFLOAT;
         attributes[0].offset = offsetof(SceneVertex, position);
@@ -2820,13 +2846,16 @@ struct IsometricScenePass::State
         attributes[5].location = 5;
         attributes[5].format = VK_FORMAT_R32G32B32A32_SFLOAT;
         attributes[5].offset = offsetof(SceneVertex, tangent);
+        attributes[6].location = 6;
+        attributes[6].format = VK_FORMAT_R32_SFLOAT;
+        attributes[6].offset = offsetof(SceneVertex, layer_id);
 
         VkPipelineVertexInputStateCreateInfo vertex_input = {
             VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO
         };
         vertex_input.vertexBindingDescriptionCount = 1;
         vertex_input.pVertexBindingDescriptions = &binding;
-        vertex_input.vertexAttributeDescriptionCount = 6;
+        vertex_input.vertexAttributeDescriptionCount = 7;
         vertex_input.pVertexAttributeDescriptions = attributes;
 
         VkPipelineInputAssemblyStateCreateInfo input_assembly = {
@@ -3657,6 +3686,7 @@ struct IsometricScenePass::State
                 destroy_buffer(allocator, frame.geometry_arena.indices.buffer);
                 destroy_buffer(allocator, frame.frame_uniforms);
                 destroy_buffer(allocator, frame.material_uniforms);
+                destroy_buffer(allocator, frame.performance_heat_values);
             }
         }
         destroy_present_resources();
@@ -3837,6 +3867,39 @@ void IsometricScenePass::record_prepass(IRenderContext& ctx)
     const MaterialUniforms material_uniforms = build_material_uniforms(scene_);
     std::memcpy(frame_res.material_uniforms.mapped, &material_uniforms, sizeof(material_uniforms));
     vmaFlushAllocation(vk_ctx->allocator(), frame_res.material_uniforms.allocation, 0, sizeof(material_uniforms));
+    const size_t performance_heat_bytes = std::max<size_t>(scene_.performance_heat_values.size(), 1u) * sizeof(float);
+    if (!ensure_mapped_buffer_capacity(
+            vk_ctx->allocator(),
+            performance_heat_bytes,
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+            frame_res.performance_heat_values,
+            sizeof(float)))
+    {
+        DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity scene: failed to grow performance heat buffer");
+        return;
+    }
+    if (scene_.performance_heat_values.empty())
+    {
+        static_cast<float*>(frame_res.performance_heat_values.mapped)[0] = 0.0f;
+    }
+    else
+    {
+        std::memcpy(
+            frame_res.performance_heat_values.mapped,
+            scene_.performance_heat_values.data(),
+            scene_.performance_heat_values.size() * sizeof(float));
+    }
+    vmaFlushAllocation(vk_ctx->allocator(), frame_res.performance_heat_values.allocation, 0, performance_heat_bytes);
+    VkDescriptorBufferInfo performance_heat_buffer_info = {};
+    performance_heat_buffer_info.buffer = frame_res.performance_heat_values.buffer;
+    performance_heat_buffer_info.range = performance_heat_bytes;
+    VkWriteDescriptorSet performance_heat_write = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
+    performance_heat_write.dstSet = frame_res.descriptor_set;
+    performance_heat_write.dstBinding = 7;
+    performance_heat_write.descriptorCount = 1;
+    performance_heat_write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    performance_heat_write.pBufferInfo = &performance_heat_buffer_info;
+    vkUpdateDescriptorSets(device, 1, &performance_heat_write, 0, nullptr);
 
     const uint32_t shadow_opaque_count = std::min(scene_.opaque_count,
         static_cast<uint32_t>(scene_.objects.size()));
@@ -4296,7 +4359,11 @@ void IsometricScenePass::record_prepass(IRenderContext& ctx)
         push.color = obj.color;
         push.material_data = glm::uvec4(obj.material_index, 0u, 0u, 0u);
         push.uv_rect = obj.uv_rect;
-        push.label_metrics = glm::vec4(obj.label_ink_pixel_size, 0.0f, 0.0f);
+        push.label_metrics = glm::vec4(
+            obj.label_ink_pixel_size.x,
+            obj.label_ink_pixel_size.y,
+            static_cast<float>(obj.performance_heat_offset),
+            static_cast<float>(obj.performance_heat_count));
         vkCmdPushConstants(cmd, state_->pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push), &push);
         vkCmdDrawIndexed(cmd, mesh->index_count, 1, 0, 0, 0);
     };

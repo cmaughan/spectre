@@ -77,6 +77,7 @@ struct MegaCityCodeConfig
     int connected_oct_building_threshold = 24;
     float building_middle_strip_push = 0.05f;
     float building_alternate_darkening = 0.28f;
+    bool performance_heat_mode = false;
     float flat_color_roughness = 0.65f;
     float flat_color_metallic = 0.0f;
 

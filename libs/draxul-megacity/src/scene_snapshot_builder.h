@@ -9,6 +9,7 @@ namespace draxul
 class IsometricCamera;
 class SceneWorld;
 struct MegaCityCodeConfig;
+struct LiveCityMetricsSnapshot;
 struct SignLabelAtlas;
 
 struct SceneSnapshotResult
@@ -22,6 +23,7 @@ SceneSnapshotResult build_scene_snapshot(
     const IsometricCamera& camera,
     const SceneWorld& world,
     const MegaCityCodeConfig& config,
+    const std::shared_ptr<const LiveCityMetricsSnapshot>& live_metrics,
     const std::shared_ptr<SignLabelAtlas>& label_atlas,
     const std::shared_ptr<const MeshData>& tree_bark_mesh,
     const std::shared_ptr<const MeshData>& tree_leaf_mesh);

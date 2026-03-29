@@ -114,6 +114,7 @@ struct FrameResources
 {
     ObjCRef<id<MTLBuffer>> frame_uniforms;
     ObjCRef<id<MTLBuffer>> material_uniforms;
+    ObjCRef<id<MTLBuffer>> performance_heat_buffer;
     TransientGeometryArena geometry_arena;
 };
 
@@ -234,6 +235,26 @@ bool ensure_buffer_capacity(id<MTLDevice> device, NSUInteger required_size, ObjC
         return false;
 
     buffer.reset(replacement);
+    return true;
+}
+
+bool upload_performance_heat_values(
+    id<MTLDevice> device,
+    const std::vector<float>& values,
+    ObjCRef<id<MTLBuffer>>& buffer)
+{
+    const NSUInteger byte_count = static_cast<NSUInteger>(std::max<size_t>(values.size(), 1u) * sizeof(float));
+    if (!ensure_buffer_capacity(device, byte_count, buffer))
+        return false;
+
+    float* dst = static_cast<float*>([buffer.get() contents]);
+    if (values.empty())
+    {
+        dst[0] = 0.0f;
+        return true;
+    }
+
+    std::memcpy(dst, values.data(), static_cast<size_t>(values.size()) * sizeof(float));
     return true;
 }
 
@@ -421,6 +442,9 @@ struct IsometricScenePass::State
         vertex_desc.attributes[5].format = MTLVertexFormatFloat4;
         vertex_desc.attributes[5].offset = offsetof(SceneVertex, tangent);
         vertex_desc.attributes[5].bufferIndex = 0;
+        vertex_desc.attributes[6].format = MTLVertexFormatFloat;
+        vertex_desc.attributes[6].offset = offsetof(SceneVertex, layer_id);
+        vertex_desc.attributes[6].bufferIndex = 0;
         vertex_desc.layouts[0].stride = sizeof(SceneVertex);
         vertex_desc.layouts[0].stepFunction = MTLVertexStepFunctionPerVertex;
 
@@ -954,6 +978,9 @@ struct IsometricScenePass::State
         vertex_desc.attributes[5].format = MTLVertexFormatFloat4;
         vertex_desc.attributes[5].offset = offsetof(SceneVertex, tangent);
         vertex_desc.attributes[5].bufferIndex = 0;
+        vertex_desc.attributes[6].format = MTLVertexFormatFloat;
+        vertex_desc.attributes[6].offset = offsetof(SceneVertex, layer_id);
+        vertex_desc.attributes[6].bufferIndex = 0;
         vertex_desc.layouts[0].stride = sizeof(SceneVertex);
         vertex_desc.layouts[0].stepFunction = MTLVertexStepFunctionPerVertex;
 
@@ -1757,6 +1784,8 @@ void IsometricScenePass::record_prepass(IRenderContext& ctx)
 
     const MaterialUniforms material_uniforms = build_material_uniforms(scene_);
     std::memcpy([frame_resources.material_uniforms.get() contents], &material_uniforms, sizeof(material_uniforms));
+    if (!upload_performance_heat_values(cmd_buf.device, scene_.performance_heat_values, frame_resources.performance_heat_buffer))
+        return;
 
     const int debug_mode = static_cast<int>(scene_.camera.debug_view.x + 0.5f);
     const bool use_debug = debug_mode > 0 && state_->debug_pipeline.get() != nil;
@@ -1768,6 +1797,7 @@ void IsometricScenePass::record_prepass(IRenderContext& ctx)
     [sceneEncoder setVertexBuffer:frame_resources.frame_uniforms.get() offset:0 atIndex:1];
     [sceneEncoder setFragmentBuffer:frame_resources.frame_uniforms.get() offset:0 atIndex:1];
     [sceneEncoder setFragmentBuffer:frame_resources.material_uniforms.get() offset:0 atIndex:3];
+    [sceneEncoder setFragmentBuffer:frame_resources.performance_heat_buffer.get() offset:0 atIndex:4];
     [sceneEncoder setFragmentTexture:state_->label_atlas_texture.get() atIndex:0];
     id<MTLTexture> ao_texture = (debug_mode == 1)
         ? gbuffer.ao_raw.get()
@@ -1829,8 +1859,8 @@ void IsometricScenePass::record_prepass(IRenderContext& ctx)
         object.label_metrics = simd_make_float4(
             obj.label_ink_pixel_size.x,
             obj.label_ink_pixel_size.y,
-            0.0f,
-            0.0f);
+            static_cast<float>(obj.performance_heat_offset),
+            static_cast<float>(obj.performance_heat_count));
 
         [sceneEncoder setCullMode:obj.double_sided ? MTLCullModeNone : MTLCullModeBack];
         [sceneEncoder setVertexBuffer:mesh->vertex_buffer.get() offset:0 atIndex:0];

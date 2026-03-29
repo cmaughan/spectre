@@ -54,6 +54,7 @@ struct VertexIn
     float2 uv [[attribute(3)]];
     float tex_blend [[attribute(4)]];
     float4 tangent [[attribute(5)]];
+    float layer_id [[attribute(6)]];
 };
 
 struct VertexOut
@@ -64,11 +65,12 @@ struct VertexOut
     float3 world_position;
     float2 atlas_uv;
     float tex_blend;
-    float2 label_ink_pixel_size;
+    float4 label_metrics;
     uint material_index;
     float2 material_uv;
     float4 tangent_ws;
     float opacity;
+    float layer_id;
 };
 
 vertex VertexOut scene_vertex(VertexIn in [[stage_in]],
@@ -84,10 +86,11 @@ vertex VertexOut scene_vertex(VertexIn in [[stage_in]],
     out.world_position = world_position.xyz;
     out.atlas_uv = mix(object.uv_rect.xy, object.uv_rect.zw, in.uv);
     out.tex_blend = in.tex_blend;
-    out.label_ink_pixel_size = object.label_metrics.xy;
+    out.label_metrics = object.label_metrics;
     out.material_index = object.material_data.x;
     out.material_uv = in.uv * object.uv_rect.zw;
     out.tangent_ws = float4(normalize(float3x3(object.world[0].xyz, object.world[1].xyz, object.world[2].xyz) * in.tangent.xyz), in.tangent.w);
+    out.layer_id = in.layer_id;
     return out;
 }
 
@@ -242,6 +245,14 @@ float point_shadow_stored_depth(
     return pointShadowMaps[face_index].sample(pointShadowSampler, shadow_coord.xy).r;
 }
 
+float3 performance_heat_color(float heat)
+{
+    heat = clamp(heat, 0.0f, 1.0f);
+    if (heat <= 0.5f)
+        return mix(float3(0.18f, 0.84f, 0.24f), float3(0.98f, 0.84f, 0.18f), heat * 2.0f);
+    return mix(float3(0.98f, 0.84f, 0.18f), float3(0.92f, 0.20f, 0.16f), (heat - 0.5f) * 2.0f);
+}
+
 float point_shadow_current_depth(VertexOut in, constant FrameUniforms& frame)
 {
     const float3 light_to_surface = in.world_position - frame.point_light_pos.xyz;
@@ -281,6 +292,7 @@ fragment float4 scene_fragment(
     VertexOut in [[stage_in]],
     constant FrameUniforms& frame [[buffer(1)]],
     constant MaterialUniforms& materialTable [[buffer(3)]],
+    device const float* performanceHeatValues [[buffer(4)]],
     texture2d<float> signAtlas [[texture(0)]],
     texture2d<float> aoTexture [[texture(1)]],
     array<texture2d<float>, 25> materialTextures [[texture(2)]],
@@ -374,6 +386,15 @@ fragment float4 scene_fragment(
             1.0f);
     }
 
+    if (frame.label_fade_px.z > 0.5f && in.label_metrics.w > 0.5f)
+    {
+        const uint heat_offset = uint(max(in.label_metrics.z + 0.5f, 0.0f));
+        const uint heat_count = uint(max(in.label_metrics.w + 0.5f, 0.0f));
+        const uint layer_index = min(uint(max(in.layer_id + 0.5f, 0.0f)), heat_count - 1u);
+        const float heat = performanceHeatValues[heat_offset + layer_index];
+        albedo = mix(albedo, performance_heat_color(heat), clamp(frame.label_fade_px.w, 0.0f, 1.0f));
+    }
+
     const float2 screen_uv = clamp(
         (in.position.xy - frame.screen_params.xy) * frame.screen_params.zw,
         float2(0.0f),
@@ -455,7 +476,7 @@ fragment float4 scene_fragment(
         const float2 atlas_texels_per_pixel = max(
             fwidth(in.atlas_uv) * float2(signAtlas.get_width(), signAtlas.get_height()),
             float2(1e-5f));
-        const float2 projected_ink_pixels = in.label_ink_pixel_size / atlas_texels_per_pixel;
+        const float2 projected_ink_pixels = in.label_metrics.xy / atlas_texels_per_pixel;
         const float projected_text_pixels = min(projected_ink_pixels.x, projected_ink_pixels.y);
         const float fade_start_px = max(min(frame.label_fade_px.x, frame.label_fade_px.y), 0.0f);
         const float fade_end_px = max(max(frame.label_fade_px.x, frame.label_fade_px.y), fade_start_px + 1e-3f);

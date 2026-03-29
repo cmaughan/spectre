@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <unordered_set>
 
 using namespace draxul;
 
@@ -232,6 +233,31 @@ TEST_CASE("dense tree bark stays within index budget and avoids stretched triang
     }
 
     CHECK(max_edge_length < params.max_height * params.overall_scale * 0.45f);
+}
+
+TEST_CASE("procedural building generator stamps semantic layer ids on vertices", "[geometry]")
+{
+    DraxulBuildingParams params;
+    params.footprint = 4.0f;
+    params.sides = 6;
+    params.middle_strip_scale = 1.05f;
+    params.levels = {
+        { 2.0f, glm::vec3(0.8f, 0.2f, 0.2f), 0u },
+        { 3.0f, glm::vec3(0.2f, 0.8f, 0.2f), 1u },
+        { 4.0f, glm::vec3(0.2f, 0.2f, 0.8f), 2u },
+    };
+
+    const GeometryMesh mesh = generate_draxul_building(params);
+
+    REQUIRE_FALSE(mesh.vertices.empty());
+    std::unordered_set<int> seen_layer_ids;
+    for (const GeometryVertex& vertex : mesh.vertices)
+        seen_layer_ids.insert(static_cast<int>(std::lround(vertex.layer_id)));
+
+    CHECK(seen_layer_ids.contains(0));
+    CHECK(seen_layer_ids.contains(1));
+    CHECK(seen_layer_ids.contains(2));
+    CHECK(seen_layer_ids.size() == 3);
 }
 
 TEST_CASE("unit cube geometry uses the shared vertex format", "[geometry]")

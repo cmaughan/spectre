@@ -40,17 +40,23 @@ layout(set = 0, binding = 3) uniform sampler2D ao_buffer;
 layout(set = 0, binding = 4) uniform sampler2D material_textures[25];
 layout(set = 0, binding = 5) uniform sampler2D shadow_maps[3];
 layout(set = 0, binding = 6) uniform sampler2D point_shadow_maps[6];
+layout(set = 0, binding = 7, std430) readonly buffer PerformanceHeatBuffer
+{
+    float heat_values[];
+}
+performance_heat;
 
 layout(location = 0) in vec3 in_normal_ws;
 layout(location = 1) in vec3 in_base_color;
 layout(location = 2) in vec3 in_world_position;
 layout(location = 3) in vec2 in_atlas_uv;
 layout(location = 4) in float in_tex_blend;
-layout(location = 5) in vec2 in_label_ink_pixel_size;
+layout(location = 5) in vec4 in_label_metrics;
 layout(location = 6) flat in uint in_material_index;
 layout(location = 7) in vec2 in_material_uv;
 layout(location = 8) in vec4 in_tangent_ws;
 layout(location = 9) in float in_opacity;
+layout(location = 10) in float in_layer_id;
 layout(location = 0) out vec4 out_frag_color;
 
 const float kPi = 3.14159265359;
@@ -172,6 +178,14 @@ vec4 sample_material_texture(uint texture_index, vec2 uv)
     return texture(material_textures[int(texture_index)], uv);
 }
 
+vec3 performance_heat_color(float heat)
+{
+    heat = clamp(heat, 0.0, 1.0);
+    if (heat <= 0.5)
+        return mix(vec3(0.18, 0.84, 0.24), vec3(0.98, 0.84, 0.18), heat * 2.0);
+    return mix(vec3(0.98, 0.84, 0.18), vec3(0.92, 0.20, 0.16), (heat - 0.5) * 2.0);
+}
+
 void main()
 {
     vec3 normal_ws = normalize(in_normal_ws);
@@ -228,6 +242,15 @@ void main()
         albedo = sample_material_texture(material.texture_indices.x, material_uv).rgb * in_base_color;
         roughness = clamp(sample_material_texture(material.texture_indices.z, material_uv).r, 0.04, 1.0);
         leaf_scattering = sample_material_texture(material.metadata.y, material_uv).r * ao_strength;
+    }
+
+    if (frame.label_fade_px.z > 0.5 && in_label_metrics.w > 0.5)
+    {
+        uint heat_offset = uint(max(in_label_metrics.z + 0.5, 0.0));
+        uint heat_count = uint(max(in_label_metrics.w + 0.5, 0.0));
+        uint layer_index = min(uint(max(in_layer_id + 0.5, 0.0)), heat_count - 1u);
+        float heat = performance_heat.heat_values[heat_offset + layer_index];
+        albedo = mix(albedo, performance_heat_color(heat), clamp(frame.label_fade_px.w, 0.0, 1.0));
     }
 
     vec2 screen_uv = clamp(
@@ -305,7 +328,7 @@ void main()
         vec2 atlas_texels_per_pixel = max(
             fwidth(in_atlas_uv) * vec2(textureSize(sign_atlas, 0)),
             vec2(1e-5));
-        vec2 projected_ink_pixels = in_label_ink_pixel_size / atlas_texels_per_pixel;
+        vec2 projected_ink_pixels = in_label_metrics.xy / atlas_texels_per_pixel;
         float projected_text_pixels = min(projected_ink_pixels.x, projected_ink_pixels.y);
         float fade_start_px = max(min(frame.label_fade_px.x, frame.label_fade_px.y), 0.0);
         float fade_end_px = max(max(frame.label_fade_px.x, frame.label_fade_px.y), fade_start_px + 1e-3);

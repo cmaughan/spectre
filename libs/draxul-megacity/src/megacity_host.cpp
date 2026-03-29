@@ -56,6 +56,7 @@ MegaCityCodeConfig world_rebuild_signature(MegaCityCodeConfig config)
     config.world_floor_grid_y_offset = 0.0f;
     config.world_floor_grid_tile_scale = 0.0f;
     config.world_floor_grid_line_width = 0.0f;
+    config.performance_heat_mode = false;
     config.dependency_route_layer_step = 0.0f;
     config.ambient_strength = 0.0f;
     config.directional_light_dir = glm::vec3(0.0f);
@@ -670,6 +671,7 @@ void MegaCityHost::attach_3d_renderer(I3DRenderer& renderer)
             *camera_,
             *world_,
             renderer_config_,
+            live_metrics_,
             sign_label_atlas_,
             tree_bark_mesh_,
             tree_leaf_mesh_);
@@ -733,6 +735,7 @@ void MegaCityHost::shutdown()
         sign_text_service_.reset();
     }
     sign_label_atlas_.reset();
+    live_metrics_.reset();
     semantic_model_.reset();
     detach_3d_renderer();
     scene_pass_.reset();
@@ -803,6 +806,7 @@ void MegaCityHost::rebuild_semantic_city()
     }
 
     sign_label_atlas_ = std::move(result.sign_label_atlas);
+    live_metrics_ = std::move(result.live_metrics);
     semantic_model_ = std::move(result.semantic_model);
     semantic_layout_ = result.layout
         ? std::make_shared<SemanticMegacityLayout>(*result.layout)
@@ -992,6 +996,7 @@ void MegaCityHost::pump()
             *camera_,
             *world_,
             renderer_config_,
+            live_metrics_,
             sign_label_atlas_,
             tree_bark_mesh_,
             tree_leaf_mesh_);
