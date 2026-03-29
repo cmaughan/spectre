@@ -1,4 +1,4 @@
-#Draxul Features
+# Draxul Features
 
 Quick reference of all user-facing features, configuration, CLI flags, build options, and CI infrastructure.
 
@@ -90,55 +90,72 @@ Pane splits use the platform default shell (Zsh on macOS, PowerShell on Windows)
 
 ## Diagnostics Panel (ImGui)
 
-Toggle with F12.Shows : -Display DPI, cell size, grid dimensions, dirty cell count - Frame timing(current + average) - Atlas usage ratio and glyph count - Startup profiling step timings - MegaCity renderer controls, including module filtering(`All Modules` or a selected module), a `Point Shadow Debug Scene` toggle, debug views(`Final Scene`, `Ambient Occlusion`, `Normals`, `World Position`, `Roughness`, `Metallic`, `Albedo`, `Tangents`, `UV`, `Depth`, `Bitangents`, `TBN Packed`, `Directional Shadow`, `Point Shadow`, `Point Shadow Face`, `Point Shadow Stored Depth`, `Point Shadow Depth Delta`), tone-mapping controls, AO tuning, shadow-map inspection, and configurable connected-building hex/oct thresholds - MegaCity sign styling controls, including separate module-sign and building-sign board/text colors - MegaCity central-park tree controls, including age, seed, branch depth/count, curvature, trunk/branch wander, bend frequency/deviation, leaf density/orientation randomness, leaf size range, leaf start depth, bark colors, and atlas-based leaf cards with PBR normal/roughness/opacity/scattering textures
+Toggle with F12. Shows:
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                --
-        -
+- Display DPI, cell size, grid dimensions, dirty cell count
+- Frame timing (current + average)
+- Atlas usage ratio and glyph count
+- Startup profiling step timings
+- MegaCity renderer controls, including module filtering (`All Modules` or a selected module), a `Point Shadow Debug Scene` toggle, debug views (`Final Scene`, `Ambient Occlusion`, `Normals`, `World Position`, `Roughness`, `Metallic`, `Albedo`, `Tangents`, `UV`, `Depth`, `Bitangents`, `TBN Packed`, `Directional Shadow`, `Point Shadow`, `Point Shadow Face`, `Point Shadow Stored Depth`, `Point Shadow Depth Delta`), tone-mapping controls, AO tuning, shadow-map inspection, and configurable connected-building hex/oct thresholds
+- MegaCity sign styling controls, including separate module-sign and building-sign board/text colors
+- MegaCity central-park tree controls, including age, seed, branch depth/count, curvature, trunk/branch wander, bend frequency/deviation, leaf density/orientation randomness, leaf size range, leaf start depth, bark colors, and atlas-based leaf cards with PBR normal/roughness/opacity/scattering textures
 
-        ##Default Keybindings
+---
 
-    | Action | Default Binding | | -- -- -- --| -- -- -- -- -- -- -- --| | `toggle_diagnostics` | `F12` | | `copy` | `Ctrl + Shift + C` | | `paste` | `Ctrl + Shift + V` | | `font_increase` | `Ctrl +=` | | `font_decrease` | `Ctrl + -` | | `font_reset` | `Ctrl + 0` | | `split_vertical` | `Ctrl + S,
-    Shift +\` |
-    | `split_horizontal` | `Ctrl + S,
-    -` |
-    | `open_file_dialog` | (unbound) |
+## Default Keybindings
 
-    Customizable in `config.toml` under `[keybindings]`.Chord syntax : `"prefix, key"`.Set to empty string to unbind.
+| Action | Default Binding |
+|--------|-----------------|
+| `toggle_diagnostics` | `F12` |
+| `copy` | `Ctrl + Shift + C` |
+| `paste` | `Ctrl + Shift + V` |
+| `font_increase` | `Ctrl + =` |
+| `font_decrease` | `Ctrl + -` |
+| `font_reset` | `Ctrl + 0` |
+| `split_vertical` | `Ctrl + S, Shift + \` |
+| `split_horizontal` | `Ctrl + S, -` |
+| `open_file_dialog` | (unbound) |
 
-    -- -
+Customizable in `config.toml` under `[keybindings]`. Chord syntax: `"prefix, key"`. Set to empty string to unbind.
 
-    ##Configuration(config.toml)
+---
 
-        ## #Display
-    | Key | Default | Range | Notes |
-    | -- -- -| -- -- -- -- -| -- -- -- -| -- -- -- -|
-    | `window_width` | 1280 | 800 --8000 | |
-    | `window_height` | 800 | 600 --8000 | |
+## Configuration (config.toml)
 
-    ## #Font
-    | Key | Default | Range | Notes |
-    | -- -- -| -- -- -- -- -| -- -- -- -| -- -- -- -|
-    | `font_size` | 11.0 | 6.0 --72.0 | Points;
-0.5pt step on increase / decrease |
-    | `font_path` | (bundled) | | Primary font file path |
-    | `bold_font_path` | (none) | | Bold variant |
-    | `italic_font_path` | (none) | | Italic variant |
-    | `bold_italic_font_path` | (none) | | Bold + italic variant |
-    | `fallback_paths` | [] | | Array of fallback font paths |
-    | `enable_ligatures` | true | | Programming ligature combining |
+### Display
 
-    ## #Rendering
-    | Key | Default | Range | Notes |
-    | -- -- -| -- -- -- -- -| -- -- -- -| -- -- -- -|
-    | `atlas_size` | 2048 | 512 --4096 | Must be power of 2 |
+| Key | Default | Range | Notes |
+|-----|---------|-------|-------|
+| `window_width` | 1280 | 800--8000 | |
+| `window_height` | 800 | 600--8000 | |
 
-    ## #Scrolling
-    | Key | Default | Range | Notes |
-    | -- -- -| -- -- -- -- -| -- -- -- -| -- -- -- -|
-    | `smooth_scroll` | true | | Trackpad momentum accumulation |
-    | `scroll_speed` | 1.0 | 0.1 --10.0 | Multiplier; out-of-range logs WARN and resets to 1.0 |
+### Font
+
+| Key | Default | Range | Notes |
+|-----|---------|-------|-------|
+| `font_size` | 11.0 | 6.0--72.0 | Points; 0.5pt step on increase/decrease |
+| `font_path` | (bundled) | | Primary font file path |
+| `bold_font_path` | (none) | | Bold variant |
+| `italic_font_path` | (none) | | Italic variant |
+| `bold_italic_font_path` | (none) | | Bold + italic variant |
+| `fallback_paths` | [] | | Array of fallback font paths |
+| `enable_ligatures` | true | | Programming ligature combining |
+
+### Rendering
+
+| Key | Default | Range | Notes |
+|-----|---------|-------|-------|
+| `atlas_size` | 2048 | 512--4096 | Must be power of 2 |
+
+### Scrolling
+
+| Key | Default | Range | Notes |
+|-----|---------|-------|-------|
+| `smooth_scroll` | true | | Trackpad momentum accumulation |
+| `scroll_speed` | 1.0 | 0.1--10.0 | Multiplier; out-of-range logs WARN and resets to 1.0 |
 
 ### Terminal Colors (`[terminal]` section)
+
 | Key | Default | Notes |
 |-----|---------|-------|
 | `fg` | `#eaeaea` | Hex color (3 or 6 digit) |

@@ -35,7 +35,9 @@ struct NvimRpc::Impl
 
 namespace
 {
-constexpr auto kRequestTimeout = std::chrono::seconds(5);
+// 5 s is a conservative default: long enough for most nvim operations (plugin init,
+// large-workspace indexing), short enough to surface genuine hangs promptly.
+static constexpr auto kRpcRequestTimeout = std::chrono::seconds(5);
 static constexpr size_t kMaxNotificationQueueDepth = 4096;
 static constexpr size_t kNotificationQueueWarnDepth = 512;
 } // namespace
@@ -129,7 +131,7 @@ RpcResult NvimRpc::request(const std::string& method, const std::vector<MpackVal
     }
 
     std::unique_lock<std::mutex> lock(impl_->response_mutex_);
-    bool ready = impl_->response_cv_.wait_for(lock, kRequestTimeout, [this, &msgid]() {
+    bool ready = impl_->response_cv_.wait_for(lock, kRpcRequestTimeout, [this, &msgid]() {
         return impl_->responses_.count(msgid) > 0 || !impl_->running_ || impl_->read_failed_ || (impl_->process_ && !impl_->process_->is_running());
     });
 

@@ -19,12 +19,12 @@ producing a compile error or a checked null.
 
 ## Acceptance Criteria
 
-- [ ] The cast is replaced with `dynamic_cast<I3DRenderer*>(deps_.grid_renderer)` plus a null
+- [x] The cast is replaced with `dynamic_cast<I3DRenderer*>(deps_.grid_renderer)` plus a null
       check (assert or early-return with a logged error).
-- [ ] If the cast succeeds, behaviour is identical to today.
-- [ ] A compile-time `static_assert` or comment documents *why* this cast is expected to
+- [x] If the cast succeeds, behaviour is identical to today.
+- [x] A compile-time `static_assert` or comment documents *why* this cast is expected to
       succeed (to prevent a future developer from converting it back to `static_cast`).
-- [ ] Existing smoke tests and render tests pass.
+- [x] Existing smoke tests and render tests pass.
 
 ## Implementation Plan
 

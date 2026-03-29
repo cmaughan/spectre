@@ -4,6 +4,7 @@
 #include <draxul/base_renderer.h>
 #include <draxul/grid_host_base.h>
 #include <draxul/host_kind.h>
+#include <draxul/log.h>
 #ifdef DRAXUL_ENABLE_MEGACITY
 #include <draxul/megacity_host.h>
 #endif
@@ -277,10 +278,17 @@ bool HostManager::create_host_for_leaf(LeafId id, IHostCallbacks& callbacks,
 #endif
 
     // Wire 3D renderer post-init for hosts that opt into I3DHost.
+    // IGridRenderer inherits I3DRenderer (renderer.h), so this cast is expected
+    // to always succeed.  We use dynamic_cast rather than static_cast so that a
+    // broken inheritance chain surfaces as a logged warning instead of UB.
     if (auto* h3d = dynamic_cast<I3DHost*>(new_host.get()))
     {
-        if (deps_.grid_renderer)
-            h3d->attach_3d_renderer(*static_cast<I3DRenderer*>(deps_.grid_renderer));
+        if (auto* r3d = dynamic_cast<I3DRenderer*>(deps_.grid_renderer))
+            h3d->attach_3d_renderer(*r3d);
+        else if (deps_.grid_renderer)
+            DRAXUL_LOG_WARN(LogCategory::App,
+                "grid_renderer does not implement I3DRenderer; "
+                "3D host will have no renderer attached");
     }
 
     if (is_primary)
