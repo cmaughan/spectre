@@ -148,7 +148,7 @@ void InputDispatcher::on_mouse_button_event(const MouseButtonEvent& event)
         deps_.request_frame();
     if (deps_.ui_panel->wants_mouse())
         return;
-    if (deps_.ui_panel->layout().contains_panel_point(event.pos.x, event.pos.y))
+    if (deps_.ui_panel->layout().contains_panel_point(to_physical(event.pos.x), to_physical(event.pos.y)))
     {
         return;
     }
@@ -173,7 +173,7 @@ void InputDispatcher::on_mouse_move_event(const MouseMoveEvent& event)
         deps_.request_frame();
     if (deps_.ui_panel->wants_mouse())
         return;
-    if (deps_.ui_panel->layout().contains_panel_point(event.pos.x, event.pos.y))
+    if (deps_.ui_panel->layout().contains_panel_point(to_physical(event.pos.x), to_physical(event.pos.y)))
     {
         return;
     }
@@ -197,7 +197,7 @@ void InputDispatcher::on_mouse_wheel_event(const MouseWheelEvent& event)
         deps_.request_frame();
     if (deps_.ui_panel->wants_mouse())
         return;
-    if (deps_.ui_panel->layout().contains_panel_point(event.pos.x, event.pos.y))
+    if (deps_.ui_panel->layout().contains_panel_point(to_physical(event.pos.x), to_physical(event.pos.y)))
         return;
     if (!wheel_host)
         return;

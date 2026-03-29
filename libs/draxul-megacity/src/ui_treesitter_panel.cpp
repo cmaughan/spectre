@@ -1122,6 +1122,8 @@ bool render_renderer_controls(MegacityRendererControls& controls)
 // ---- Public entry point --------------------------------------------------------
 
 bool render_treesitter_panel(
+    int viewport_x,
+    int viewport_y,
     int window_w,
     int window_h,
     const std::shared_ptr<const CodebaseSnapshot>& snapshot,
@@ -1132,7 +1134,7 @@ bool render_treesitter_panel(
     const ImGuiWindowFlags flags = ImGuiWindowFlags_NoBringToFrontOnFocus;
     bool changed = false;
 
-    ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2(static_cast<float>(viewport_x), static_cast<float>(viewport_y)), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(
         ImVec2(static_cast<float>(window_w) * 0.5f, static_cast<float>(window_h)),
         ImGuiCond_FirstUseEver);

@@ -720,16 +720,14 @@ void MegaCityHost::set_imgui_font(const std::string&, float)
 void MegaCityHost::render_imgui(float dt)
 {
     PERF_MEASURE();
-    ImGuiIO& io = ImGui::GetIO();
-    io.DisplaySize = ImVec2(static_cast<float>(pixel_w_), static_cast<float>(pixel_h_));
-    io.DeltaTime = dt > 0.0f ? dt : (1.0f / 60.0f);
+    (void)dt;
 
     const ImGuiWindowFlags ds_flags = ImGuiWindowFlags_NoDocking
         | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse
         | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove
         | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus
         | ImGuiWindowFlags_NoBackground;
-    ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f));
+    ImGui::SetNextWindowPos(ImVec2(static_cast<float>(viewport_.pixel_pos.x), static_cast<float>(viewport_.pixel_pos.y)));
     ImGui::SetNextWindowSize(ImVec2(static_cast<float>(pixel_w_), static_cast<float>(pixel_h_)));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
@@ -780,7 +778,13 @@ void MegaCityHost::render_imgui(float dt)
             || requires_world_rebuild(renderer_config_, pending_renderer_config_),
     };
     if (render_treesitter_panel(
-            pixel_w_, pixel_h_, scanner_.snapshot(), semantic_model_.get(), &renderer_controls))
+            viewport_.pixel_pos.x,
+            viewport_.pixel_pos.y,
+            pixel_w_,
+            pixel_h_,
+            scanner_.snapshot(),
+            semantic_model_.get(),
+            &renderer_controls))
     {
         if (renderer_controls.reset_camera_requested)
             reset_camera_to_default_frame();
