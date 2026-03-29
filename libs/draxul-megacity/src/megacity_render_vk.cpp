@@ -1955,6 +1955,7 @@ struct IsometricScenePass::State
         if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &tooltip_ci, nullptr, &tooltip_pipeline)
             != VK_SUCCESS)
         {
+            tooltip_pipeline = VK_NULL_HANDLE;
             DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity: failed to create tooltip pipeline");
         }
 
@@ -1965,9 +1966,15 @@ struct IsometricScenePass::State
         tooltip_sampler_ci.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         tooltip_sampler_ci.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         if (vkCreateSampler(device, &tooltip_sampler_ci, nullptr, &tooltip_sampler) != VK_SUCCESS)
+        {
+            tooltip_sampler = VK_NULL_HANDLE;
             DRAXUL_LOG_ERROR(LogCategory::Renderer, "MegaCity: failed to create tooltip sampler");
+        }
 
-        tooltip_initialized = true;
+        tooltip_initialized = tooltip_pipeline != VK_NULL_HANDLE
+            && tooltip_pipeline_layout != VK_NULL_HANDLE
+            && tooltip_descriptor_set != VK_NULL_HANDLE
+            && tooltip_sampler != VK_NULL_HANDLE;
         vkDestroyShaderModule(device, tooltip_vert, nullptr);
         vkDestroyShaderModule(device, tooltip_frag, nullptr);
         return true;
@@ -2319,6 +2326,7 @@ struct IsometricScenePass::State
         if (tooltip_image.width != tooltip.width || tooltip_image.height != tooltip.height
             || tooltip_image.image == VK_NULL_HANDLE)
         {
+            tooltip_image.sampler = VK_NULL_HANDLE;
             destroy_image(device, allocator, tooltip_image);
             if (!create_sampled_image(physical_device, device, allocator,
                     tooltip.width, tooltip.height,
@@ -2330,7 +2338,7 @@ struct IsometricScenePass::State
             // Replace the sampler on tooltip_image with our nearest sampler.
             if (tooltip_image.sampler != VK_NULL_HANDLE)
                 vkDestroySampler(device, tooltip_image.sampler, nullptr);
-            tooltip_image.sampler = tooltip_sampler;
+            tooltip_image.sampler = VK_NULL_HANDLE;
             tooltip_image_layout = VK_IMAGE_LAYOUT_UNDEFINED;
         }
 
@@ -4404,6 +4412,7 @@ void IsometricScenePass::record(IRenderContext& ctx)
     // Draw tooltip overlay if visible.
     if (scene_.tooltip.valid() && state_->tooltip_initialized
         && state_->tooltip_pipeline != VK_NULL_HANDLE
+        && state_->tooltip_descriptor_set != VK_NULL_HANDLE
         && state_->tooltip_image.view != VK_NULL_HANDLE
         && state_->tooltip_texture_revision == scene_.tooltip.revision)
     {

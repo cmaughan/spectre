@@ -27,3 +27,4 @@ plans/.obsidian/cache
 draxul.log
 .a
 logs/**
+*.log

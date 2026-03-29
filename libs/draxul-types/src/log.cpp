@@ -221,7 +221,7 @@ void configure_logging(const LogOptions& options)
     if (!options.enable_file || options.file_path.empty())
         return;
 
-    logger_state.file = std::fopen(options.file_path.c_str(), "a");
+    logger_state.file = std::fopen(options.file_path.c_str(), "w");
     if (!logger_state.file)
     {
         std::fprintf(stderr, "[error][app] failed to open log file: %s\n", options.file_path.c_str());

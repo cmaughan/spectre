@@ -21,6 +21,22 @@ Lesson:
 
 ---
 
+### User-supplied logs are a better renderer handoff than agent-generated ones
+
+For renderer bugs, especially startup/shutdown failures and validation-layer issues, it is usually faster and more reliable for the user to run the app, exercise the broken path, and hand over the resulting log than to have the agent try to manufacture the exact same run.
+
+What helped:
+- the user can drive the real interaction path that matters: camera movement, selection, tooltips, shutdown, and timing-sensitive UI behavior
+- a single handed-off log captures the whole failing sequence without the agent guessing how to trigger it from the terminal
+- extra renderer logging and validation output make the log materially more useful to an AI than a terse "it crashed" report
+- once the log exists, the agent can map the failure back to concrete resource lifetime or synchronization code instead of playing psychic
+
+Lesson:
+- when diagnosing renderer bugs, prefer a user-generated log over an agent-generated reproduction when the interaction path is easier for the user to drive
+- investing in targeted logging and validation output pays off because it gives the agent real evidence instead of vibes
+
+---
+
 ### Start the debugger immediately when a renderer change causes a startup crash
 
 A useful reminder from the Metal multi-frame-in-flight work: once the app started trapping during startup, the right move was to proactively switch to the debugger straight away instead of continuing to guess from logs or code inspection.

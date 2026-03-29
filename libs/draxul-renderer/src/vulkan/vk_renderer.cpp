@@ -234,11 +234,15 @@ bool VkRenderer::initialize(IWindow& window)
 
 void VkRenderer::register_render_pass(std::shared_ptr<IRenderPass> pass)
 {
+    if (ctx_.device() != VK_NULL_HANDLE && render_pass_ && render_pass_ != pass)
+        vkDeviceWaitIdle(ctx_.device());
     render_pass_ = std::move(pass);
 }
 
 void VkRenderer::unregister_render_pass()
 {
+    if (ctx_.device() != VK_NULL_HANDLE && render_pass_)
+        vkDeviceWaitIdle(ctx_.device());
     render_pass_.reset();
 }
 
