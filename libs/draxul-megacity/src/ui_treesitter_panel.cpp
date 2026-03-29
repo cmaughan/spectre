@@ -825,6 +825,7 @@ bool render_renderer_controls(MegacityRendererControls& controls)
             edit_float("Height Unclamped Count Weight", config.height_unclamped_count_weight, 0.01f, 0.0f, 8.0f, "%.2f");
             edit_int("Hex Threshold", config.connected_hex_building_threshold, 1, 1, 64);
             edit_float("Middle Strip Push", config.building_middle_strip_push, 0.005f, 0.0f, 0.25f, "%.3f");
+            edit_float("Alternate Darken", config.building_alternate_darkening, 0.01f, 0.0f, 1.0f, "%.2f");
             edit_float("Flat Roughness", config.flat_color_roughness, 0.01f, 0.04f, 1.0f, "%.2f");
             edit_float("Flat Metallic", config.flat_color_metallic, 0.01f, 0.0f, 1.0f, "%.2f");
             edit_float("Road Width Base", config.road_width_base, 0.01f, 0.0f, 16.0f, "%.2f");
@@ -921,6 +922,7 @@ bool render_renderer_controls(MegacityRendererControls& controls)
             edit_float("Thickness", config.wall_sign_thickness, 0.005f, 0.001f, 2.0f, "%.3f");
             edit_float("Face Gap", config.wall_sign_face_gap, 0.001f, 0.0f, 1.0f, "%.3f");
             edit_float("Side Inset", config.wall_sign_side_inset, 0.01f, 0.0f, 4.0f, "%.2f");
+            edit_float("Min Width / Char", config.roof_sign_min_width_per_character, 0.01f, 0.0f, 4.0f, "%.2f");
             edit_int("Text Padding", config.wall_sign_text_padding, 1, 0, 64);
             ImGui::TreePop();
         }

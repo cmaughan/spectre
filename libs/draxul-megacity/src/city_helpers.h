@@ -62,11 +62,14 @@ inline glm::vec4 module_building_color(std::string_view module_path)
     return glm::vec4(glm::mix(glm::vec3(base), kCatppuccinSurface0, 0.12f), base.a);
 }
 
-inline glm::vec4 module_building_layer_color(const glm::vec4& module_color, size_t layer_index)
+inline glm::vec4 module_building_layer_color(const glm::vec4& module_color, size_t layer_index, float darkening)
 {
     if ((layer_index % 2) == 0)
         return module_color;
-    const glm::vec3 dark_band = glm::mix(glm::vec3(module_color), kCatppuccinSurface0, 0.28f);
+    const glm::vec3 dark_band = glm::mix(
+        glm::vec3(module_color),
+        kCatppuccinSurface0,
+        std::clamp(darkening, 0.0f, 1.0f));
     return glm::vec4(glm::clamp(dark_band, glm::vec3(0.0f), glm::vec3(1.0f)), module_color.a);
 }
 

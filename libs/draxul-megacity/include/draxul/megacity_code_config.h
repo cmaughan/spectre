@@ -75,6 +75,7 @@ struct MegaCityCodeConfig
     float height_unclamped_count_weight = 0.27f;
     int connected_hex_building_threshold = 12;
     float building_middle_strip_push = 0.05f;
+    float building_alternate_darkening = 0.28f;
     float flat_color_roughness = 0.65f;
     float flat_color_metallic = 0.0f;
 
@@ -121,6 +122,7 @@ struct MegaCityCodeConfig
     glm::vec3 building_sign_board_color{ 1.0f, 1.0f, 1.0f };
     glm::vec3 building_sign_text_color{ 0.0f, 0.0f, 0.0f };
     float roof_sign_thickness = 0.05f;
+    float roof_sign_min_width_per_character = 0.16f;
     float wall_sign_thickness = 0.05f;
     float wall_sign_face_gap = 0.02f;
     float wall_sign_side_inset = 0.12f;

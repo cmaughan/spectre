@@ -189,6 +189,7 @@ void apply_megacity_code_table(MegaCityCodeConfig& config, const toml::table& ta
     assign_float("height_unclamped_count_weight", config.height_unclamped_count_weight);
     assign_int("connected_hex_building_threshold", config.connected_hex_building_threshold);
     assign_float("building_middle_strip_push", config.building_middle_strip_push);
+    assign_float("building_alternate_darkening", config.building_alternate_darkening);
     assign_float("flat_color_roughness", config.flat_color_roughness);
     assign_float("flat_color_metallic", config.flat_color_metallic);
 
@@ -251,6 +252,7 @@ void apply_megacity_code_table(MegaCityCodeConfig& config, const toml::table& ta
     assign_legacy_color3(table, "wall_sign_text_r", "wall_sign_text_g", "wall_sign_text_b", config.building_sign_text_color);
     assign_legacy_color3(table, "sign_text_r", "sign_text_g", "sign_text_b", config.module_sign_text_color);
     assign_float("roof_sign_thickness", config.roof_sign_thickness);
+    assign_float("roof_sign_min_width_per_character", config.roof_sign_min_width_per_character);
     assign_float("wall_sign_thickness", config.wall_sign_thickness);
     assign_float("wall_sign_face_gap", config.wall_sign_face_gap);
     assign_float("wall_sign_side_inset", config.wall_sign_side_inset);
@@ -324,6 +326,7 @@ toml::table serialize_megacity_code_table(const MegaCityCodeConfig& config)
     table.insert_or_assign("height_unclamped_count_weight", static_cast<double>(config.height_unclamped_count_weight));
     table.insert_or_assign("connected_hex_building_threshold", config.connected_hex_building_threshold);
     table.insert_or_assign("building_middle_strip_push", static_cast<double>(config.building_middle_strip_push));
+    table.insert_or_assign("building_alternate_darkening", static_cast<double>(config.building_alternate_darkening));
     table.insert_or_assign("flat_color_roughness", static_cast<double>(config.flat_color_roughness));
     table.insert_or_assign("flat_color_metallic", static_cast<double>(config.flat_color_metallic));
     table.insert_or_assign("road_width_base", static_cast<double>(config.road_width_base));
@@ -370,6 +373,9 @@ toml::table serialize_megacity_code_table(const MegaCityCodeConfig& config)
     toml_support::insert_vec3(table, "building_sign_board_color", config.building_sign_board_color);
     toml_support::insert_vec3(table, "building_sign_text_color", config.building_sign_text_color);
     table.insert_or_assign("roof_sign_thickness", static_cast<double>(config.roof_sign_thickness));
+    table.insert_or_assign(
+        "roof_sign_min_width_per_character",
+        static_cast<double>(config.roof_sign_min_width_per_character));
     table.insert_or_assign("wall_sign_thickness", static_cast<double>(config.wall_sign_thickness));
     table.insert_or_assign("wall_sign_face_gap", static_cast<double>(config.wall_sign_face_gap));
     table.insert_or_assign("wall_sign_side_inset", static_cast<double>(config.wall_sign_side_inset));

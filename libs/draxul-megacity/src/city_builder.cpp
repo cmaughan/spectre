@@ -187,7 +187,10 @@ std::shared_ptr<const GeometryMesh> build_procedural_building_mesh(
                 continue;
             params.levels.push_back({
                 layer.height,
-                glm::vec3(module_building_layer_color(module_color, layer_index)),
+                glm::vec3(module_building_layer_color(
+                    module_color,
+                    layer_index,
+                    config.building_alternate_darkening)),
             });
         }
     }
