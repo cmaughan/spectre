@@ -90,6 +90,7 @@ It should **not** become home to:
 - world model
 - camera model
 - scene item generation
+- code-health / build-status presentation for the city, including surfacing compile errors or failures as visible in-city state instead of leaving them only in external logs
 - Megacity-specific UI panels
 - render pass public interface
 - optional future ECS
@@ -164,6 +165,7 @@ Pure Megacity logic:
 - object placement
 - camera target
 - scene object list
+- semantic/build diagnostics that should be represented in the city, such as compile failures attached to buildings/modules
 
 ### Layer 2: render-prep layer
 Converts world state into renderer-friendly data:
