@@ -19,13 +19,13 @@ An experimental **Dark Factory Agentic** project with deep visualization of gene
 
 **None of the code has been human-written.** Draxul is 100% agentically coded using multiple agents on Claude, Codex, and Gemini. Code reviews, feature updates, and planning are managed by agents with a human arbiter. A part-time project, built in less than 3 weeks at time of writing — several person-years of equivalent effort.
 
-### Windows
-
-![Draxul on Windows](screenshots/draxul_pc.png)
-
 ### macOS
 
 ![Draxul on macOS](screenshots/draxul_mac.png)
+
+### Windows
+
+![Draxul on Windows](screenshots/draxul_pc.png)
 
 ## Gallery
 
@@ -38,14 +38,10 @@ An experimental **Dark Factory Agentic** project with deep visualization of gene
 </tr>
 <tr>
 <td><a href="screenshots/split_panes_mac.png"><img src="screenshots/split_panes_mac.png" width="400"/></a></td>
-<td><a href="screenshots/vim_tree_mac.png"><img src="screenshots/vim_tree_mac.png" width="400"/></a></td>
-</tr>
-<tr>
 <td><a href="screenshots/tree_mac.png"><img src="screenshots/tree_mac.png" width="400"/></a></td>
-<td><a href="screenshots/tree_mac_2.png"><img src="screenshots/tree_mac_2.png" width="400"/></a></td>
 </tr>
 <tr>
-<td><a href="screenshots/tree_mac_3.png"><img src="screenshots/tree_mac_3.png" width="400"/></a></td>
+<td><a href="screenshots/tree_mac_2.png"><img src="screenshots/tree_mac_2.png" width="400"/></a></td>
 <td><a href="screenshots/inspection_mac.png"><img src="screenshots/inspection_mac.png" width="400"/></a></td>
 </tr>
 <tr>
@@ -63,10 +59,6 @@ An experimental **Dark Factory Agentic** project with deep visualization of gene
 <tr>
 <td><a href="screenshots/test_coverage_2_mac.png"><img src="screenshots/test_coverage_2_mac.png" width="400"/></a></td>
 <td><a href="screenshots/draxul-overlay-mac.png"><img src="screenshots/draxul-overlay-mac.png" width="400"/></a></td>
-</tr>
-<tr>
-<td><a href="screenshots/Screenshot%202026-03-27%20at%2014.53.27.png"><img src="screenshots/Screenshot%202026-03-27%20at%2014.53.27.png" width="400"/></a></td>
-<td></td>
 </tr>
 </table>
 
