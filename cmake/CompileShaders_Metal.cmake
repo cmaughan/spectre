@@ -25,6 +25,27 @@ add_custom_command(
 
 add_custom_target(compile_metal_shaders DEPENDS ${METAL_LIB})
 
+# GUI shader
+set(GUI_METAL_SOURCE ${SHADER_SOURCE_DIR}/gui.metal)
+set(GUI_METAL_AIR    ${SHADER_OUTPUT_DIR}/gui.air)
+set(GUI_METAL_LIB    ${SHADER_OUTPUT_DIR}/gui.metallib)
+
+add_custom_command(
+    OUTPUT ${GUI_METAL_AIR}
+    COMMAND xcrun -sdk macosx metal -c ${GUI_METAL_SOURCE} -o ${GUI_METAL_AIR}
+    DEPENDS ${GUI_METAL_SOURCE}
+    COMMENT "Compiling Metal shader: gui.metal"
+)
+
+add_custom_command(
+    OUTPUT ${GUI_METAL_LIB}
+    COMMAND xcrun -sdk macosx metallib ${GUI_METAL_AIR} -o ${GUI_METAL_LIB}
+    DEPENDS ${GUI_METAL_AIR}
+    COMMENT "Linking Metal shader library: gui.metallib"
+)
+
+add_custom_target(compile_gui_shaders DEPENDS ${GUI_METAL_LIB})
+
 # MegaCity scene shader
 set(MEGACITY_METAL_SOURCE ${SHADER_SOURCE_DIR}/megacity_scene.metal)
 set(MEGACITY_METAL_AIR    ${SHADER_OUTPUT_DIR}/megacity_scene.air)

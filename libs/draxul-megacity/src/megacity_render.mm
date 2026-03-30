@@ -427,6 +427,18 @@ struct IsometricScenePass::State
             return false;
         }
 
+        NSString* guiLibPath = [exeDir stringByAppendingPathComponent:@"shaders/gui.metallib"];
+        NSURL* guiLibURL = [NSURL fileURLWithPath:guiLibPath];
+        id<MTLLibrary> guiLibrary = [device newLibraryWithURL:guiLibURL error:&error];
+        if (!guiLibrary)
+        {
+            DRAXUL_LOG_ERROR(LogCategory::App,
+                "MegaCity: failed to load gui.metallib from %s: %s",
+                [guiLibPath UTF8String],
+                error ? [[error localizedDescription] UTF8String] : "unknown");
+            return false;
+        }
+
         id<MTLFunction> vert_fn = [library newFunctionWithName:@"scene_vertex"];
         id<MTLFunction> frag_fn = [library newFunctionWithName:@"scene_fragment"];
         if (!vert_fn || !frag_fn)
@@ -610,8 +622,8 @@ struct IsometricScenePass::State
         }
 
         // Tooltip overlay pipeline (alpha-blended screen-space quad).
-        id<MTLFunction> tooltip_vert_fn = [library newFunctionWithName:@"tooltip_vertex"];
-        id<MTLFunction> tooltip_frag_fn = [library newFunctionWithName:@"tooltip_fragment"];
+        id<MTLFunction> tooltip_vert_fn = [guiLibrary newFunctionWithName:@"tooltip_vertex"];
+        id<MTLFunction> tooltip_frag_fn = [guiLibrary newFunctionWithName:@"tooltip_fragment"];
         if (tooltip_vert_fn && tooltip_frag_fn)
         {
             MTLRenderPipelineDescriptor* tooltip_desc = [[MTLRenderPipelineDescriptor alloc] init];

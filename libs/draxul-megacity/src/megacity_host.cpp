@@ -1591,7 +1591,7 @@ void MegaCityHost::pump()
                                 }
                             }
 
-                            auto bitmap = rasterize_tooltip(*tooltip_text_service_, tooltip_data);
+                            auto bitmap = rasterize_building_tooltip(*tooltip_text_service_, tooltip_data);
                             hover_building_name_ = hit->qualified_name;
                             show_tooltip_bitmap(bitmap);
                             break;
@@ -1673,7 +1673,7 @@ void MegaCityHost::pump()
                                 tooltip_data.module_path = mod.module_path;
                                 tooltip_data.tree_height = tm.height;
                                 tooltip_data.tree_canopy_radius = tm.canopy_radius;
-                                auto bitmap = rasterize_tooltip(*tooltip_text_service_, tooltip_data);
+                                auto bitmap = rasterize_building_tooltip(*tooltip_text_service_, tooltip_data);
                                 show_tooltip_bitmap(bitmap);
                                 picked_park_or_tree = true;
                                 break;
@@ -1724,7 +1724,7 @@ void MegaCityHost::pump()
                             tooltip_data.park_module = mod.module_path;
                             tooltip_data.park_quality = mod.quality;
                             tooltip_data.park_footprint = mod.park_footprint;
-                            auto bitmap = rasterize_tooltip(*tooltip_text_service_, tooltip_data);
+                            auto bitmap = rasterize_building_tooltip(*tooltip_text_service_, tooltip_data);
                             show_tooltip_bitmap(bitmap);
                             picked_park_or_tree = true;
                             break;
@@ -1784,7 +1784,7 @@ void MegaCityHost::pump()
                                     tooltip_data.route_target = best_route->target_qualified_name;
                                     tooltip_data.route_field_name = best_route->field_name;
                                     tooltip_data.route_field_type = best_route->field_type_name;
-                                    auto bitmap = rasterize_tooltip(*tooltip_text_service_, tooltip_data);
+                                    auto bitmap = rasterize_building_tooltip(*tooltip_text_service_, tooltip_data);
                                     show_tooltip_bitmap(bitmap);
                                 }
                             }

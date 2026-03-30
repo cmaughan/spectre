@@ -1855,8 +1855,8 @@ struct IsometricScenePass::State
             return false;
         }
 
-        auto tooltip_vert = load_shader(device, (shader_dir / "megacity_tooltip.vert.spv").string());
-        auto tooltip_frag = load_shader(device, (shader_dir / "megacity_tooltip.frag.spv").string());
+        auto tooltip_vert = load_shader(device, (shader_dir / "gui_tooltip.vert.spv").string());
+        auto tooltip_frag = load_shader(device, (shader_dir / "gui_tooltip.frag.spv").string());
         if (!tooltip_vert || !tooltip_frag)
         {
             if (tooltip_vert)

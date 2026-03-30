@@ -91,6 +91,7 @@ add_subdirectory(libs/draxul-font)
 add_subdirectory(libs/draxul-grid)
 add_subdirectory(libs/draxul-nvim)
 add_subdirectory(libs/draxul-config)
+add_subdirectory(libs/draxul-gui)
 add_subdirectory(libs/draxul-runtime-support)
 add_subdirectory(libs/draxul-render-test)
 add_subdirectory(libs/draxul-app-support)
@@ -106,7 +107,7 @@ endif()
 foreach(_draxul_lib
     draxul-types draxul-window draxul-renderer draxul-ui
     draxul-font draxul-grid draxul-nvim
-    draxul-config draxul-runtime-support draxul-render-test
+    draxul-config draxul-gui draxul-runtime-support draxul-render-test
     draxul-host)
     draxul_apply_sanitizers(${_draxul_lib})
     draxul_apply_coverage(${_draxul_lib})
@@ -223,6 +224,8 @@ if(APPLE)
 
     draxul_stage_metal_shader(stage_grid_metal_shader
         ${CMAKE_BINARY_DIR}/shaders/grid.metallib)
+    draxul_stage_metal_shader(stage_gui_metal_shader
+        ${CMAKE_BINARY_DIR}/shaders/gui.metallib)
     if(DRAXUL_ENABLE_MEGACITY)
         draxul_stage_metal_shader(stage_megacity_scene_metal_shader
             ${CMAKE_BINARY_DIR}/shaders/megacity_scene.metallib)
@@ -232,17 +235,21 @@ if(APPLE)
             ${CMAKE_BINARY_DIR}/shaders/megacity_ao.metallib)
         add_dependencies(draxul
             compile_metal_shaders
+            compile_gui_shaders
             compile_megacity_shaders
             compile_megacity_gbuffer_shaders
             compile_megacity_ao_shaders
             stage_grid_metal_shader
+            stage_gui_metal_shader
             stage_megacity_scene_metal_shader
             stage_megacity_gbuffer_metal_shader
             stage_megacity_ao_metal_shader)
     else()
         add_dependencies(draxul
             compile_metal_shaders
-            stage_grid_metal_shader)
+            compile_gui_shaders
+            stage_grid_metal_shader
+            stage_gui_metal_shader)
     endif()
 else()
     add_dependencies(draxul compile_shaders)
