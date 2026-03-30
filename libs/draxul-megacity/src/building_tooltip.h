@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <draxul/gui/tooltip.h>
 #include <string>
 #include <vector>
 
@@ -55,24 +56,17 @@ struct BuildingTooltipData
     {
         return tree_height > 0.0f;
     }
+
+    /// Convert to generic GUI tooltip data.
+    [[nodiscard]] draxul::gui::TooltipData to_gui_data() const;
 };
 
-struct TooltipBitmap
-{
-    int width = 0;
-    int height = 0;
-    std::vector<uint8_t> rgba;
-
-    [[nodiscard]] bool valid() const
-    {
-        return width > 0 && height > 0
-            && rgba.size() == static_cast<size_t>(width * height * 4);
-    }
-};
+// Re-alias TooltipBitmap for megacity's internal use to avoid breaking too much code.
+using TooltipBitmap = draxul::gui::TooltipBitmap;
 
 /// Rasterize a multi-line tooltip bitmap with a semi-transparent dark background
 /// and light text showing the building's metadata.
-[[nodiscard]] TooltipBitmap rasterize_tooltip(
+[[nodiscard]] TooltipBitmap rasterize_building_tooltip(
     TextService& text_service, const BuildingTooltipData& data);
 
 } // namespace draxul

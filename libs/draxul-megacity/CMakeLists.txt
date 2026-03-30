@@ -62,6 +62,7 @@ target_link_libraries(draxul-megacity PUBLIC
     draxul-config
     draxul-treesitter
     draxul-citydb
+    draxul-gui
     imgui
     EnTT::EnTT
 )
