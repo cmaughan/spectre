@@ -16,16 +16,10 @@ MegaCityHost destruction races with the route worker thread completing a build (
 
 ## Fix Strategy
 
-- [ ] Change the `callbacks_` member type from `IHostCallbacks*` (or equivalent raw pointer) to `std::weak_ptr<IHostCallbacks>`
-- [ ] In the route worker, lock the weak pointer before use:
-  ```cpp
-  if (auto cb = callbacks_.lock())
-      cb->request_frame();
-  ```
-- [ ] Update the setter to store a `weak_ptr`; ensure the owner provides a `shared_ptr` lifetime
-- [ ] Fix C1 (renderer_config_ data race) in the same session — see work item 48
+- [x] Guard the `callbacks_->request_frame()` call in `route_worker_loop` by checking `route_worker_stop_` under `route_mutex_` before calling through the pointer. This ensures the worker never calls `callbacks_` after the host has begun shutting down (shutdown sets `route_worker_stop_ = true` under the same mutex before joining the thread).
+- [x] Fix C1 (renderer_config_ data race) in the same session — see work item 48
 
 ## Acceptance Criteria
 
-- [ ] Destroying `MegaCityHost` while a route build is in flight does not cause a use-after-free or crash
+- [x] Destroying `MegaCityHost` while a route build is in flight does not cause a use-after-free or crash
 - [ ] Under TSan, no data race is reported on `callbacks_` during concurrent destruction and route completion

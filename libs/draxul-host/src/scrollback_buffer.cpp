@@ -111,9 +111,12 @@ void ScrollbackBuffer::restore_live_snapshot()
     PERF_MEASURE();
     const int rows = cbs_.grid_rows();
     const int cols = cbs_.grid_cols();
+    // Only copy columns that existed at snapshot time; blank-fill any extra
+    // columns that appeared due to a resize since the snapshot was taken.
+    const int copy_cols = std::min(cols, live_snapshot_cols_);
     for (int r = 0; r < rows; ++r)
     {
-        for (int col = 0; col < cols; ++col)
+        for (int col = 0; col < copy_cols; ++col)
         {
             const size_t idx = (size_t)r * live_snapshot_cols_ + col;
             if (idx < live_snapshot_.size())
@@ -126,6 +129,13 @@ void ScrollbackBuffer::restore_live_snapshot()
                 blank.text.assign(" ");
                 cbs_.set_cell(col, r, blank);
             }
+        }
+        // Blank-fill columns beyond the snapshot width.
+        for (int col = copy_cols; col < cols; ++col)
+        {
+            Cell blank;
+            blank.text.assign(" ");
+            cbs_.set_cell(col, r, blank);
         }
     }
     live_snapshot_.clear();
@@ -172,7 +182,8 @@ void ScrollbackBuffer::update_display()
         else
         {
             const int lr = vr - sbsize;
-            for (int col = 0; col < cols; ++col)
+            const int snap_cols = std::min(cols, live_snapshot_cols_);
+            for (int col = 0; col < snap_cols; ++col)
             {
                 const size_t idx = (size_t)lr * live_snapshot_cols_ + col;
                 if (idx < live_snapshot_.size())
@@ -185,6 +196,13 @@ void ScrollbackBuffer::update_display()
                     blank.text.assign(" ");
                     cbs_.set_cell(col, dr, blank);
                 }
+            }
+            // Blank-fill columns beyond the snapshot width.
+            for (int col = snap_cols; col < cols; ++col)
+            {
+                Cell blank;
+                blank.text.assign(" ");
+                cbs_.set_cell(col, dr, blank);
             }
         }
     }

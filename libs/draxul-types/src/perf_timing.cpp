@@ -380,7 +380,8 @@ ScopedPerfMeasure::~ScopedPerfMeasure()
     if (!active_ || !tag_)
         return;
     const uint64_t end_microseconds = now_microseconds();
-    runtime_perf_collector().report_timing(*tag_, end_microseconds - start_microseconds_);
+    if (end_microseconds > start_microseconds_)
+        runtime_perf_collector().report_timing(*tag_, end_microseconds - start_microseconds_);
 }
 
 } // namespace draxul

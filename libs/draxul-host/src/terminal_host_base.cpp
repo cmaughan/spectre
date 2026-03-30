@@ -286,6 +286,8 @@ void TerminalHostBase::compact_attr_ids()
 
     alt_screen_.for_each_saved_cell(ActiveAttrCollector{ this, active_attrs });
 
+    collect_extra_attr_ids(active_attrs);
+
     std::unordered_map<uint16_t, uint16_t> remap;
     remap.reserve(active_attrs.size());
 
@@ -302,6 +304,12 @@ void TerminalHostBase::compact_attr_ids()
 
     grid().remap_highlight_ids(HighlightRemapper{ remap });
     alt_screen_.remap_saved_highlight_ids(HighlightRemapper{ remap });
+    remap_extra_highlight_ids([&remap](uint16_t id) -> uint16_t {
+        if (id == 0)
+            return id;
+        const auto it = remap.find(id);
+        return it != remap.end() ? it->second : static_cast<uint16_t>(0);
+    });
 
     next_attr_id_ = next_id;
     DRAXUL_LOG_DEBUG(LogCategory::App,
@@ -439,6 +447,20 @@ void TerminalHostBase::on_osc_cwd(const std::string& path)
     const std::string_view basename = (last_slash != std::string_view::npos) ? sv.substr(last_slash + 1) : sv;
 
     callbacks().set_window_title(basename.empty() ? "/" : std::string(basename));
+}
+
+// ---------------------------------------------------------------------------
+// Virtual hooks for highlight compaction (default no-ops)
+// ---------------------------------------------------------------------------
+
+void TerminalHostBase::collect_extra_attr_ids(std::unordered_map<uint16_t, HlAttr>& /*active_attrs*/)
+{
+    // Intentionally empty — LocalTerminalHost overrides to scan scrollback.
+}
+
+void TerminalHostBase::remap_extra_highlight_ids(const std::function<uint16_t(uint16_t)>& /*remap_fn*/)
+{
+    // Intentionally empty — LocalTerminalHost overrides to remap scrollback.
 }
 
 } // namespace draxul

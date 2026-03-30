@@ -151,6 +151,7 @@ bool GlyphCache::initialize(FT_Face face, int pixel_size, int atlas_size)
     shelf_height_ = 0;
     used_pixels_ = 0;
     cluster_cache_.clear();
+    face_generation_++;
     return true;
 }
 
@@ -168,6 +169,7 @@ void GlyphCache::reset(FT_Face face, int pixel_size)
     dirty_ = true;
     dirty_rect_ = { { 0, 0 }, { atlas_size_, atlas_size_ } };
     overflowed_ = false;
+    face_generation_++;
 }
 
 size_t GlyphCache::ClusterKeyHash::operator()(const ClusterKey& key) const
@@ -277,6 +279,14 @@ bool GlyphCache::rasterize_cluster(const std::string& text, FT_Face face, TextSh
     {
         region = {};
         return true;
+    }
+
+    // If no glyphs had ink (all zero-size bitmaps), reset sentinels to avoid
+    // signed overflow in cluster_height = bbox_top - bbox_bottom.
+    if (bbox_top == INT_MIN)
+    {
+        bbox_top = 0;
+        bbox_bottom = 0;
     }
 
     // Extend the bounding box to cover the full advance width and to start

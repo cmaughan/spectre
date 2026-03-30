@@ -302,6 +302,12 @@ bool create_mapped_buffer(VmaAllocator allocator, size_t size, VkBufferUsageFlag
 bool upload_mesh(VmaAllocator allocator, const MeshData& mesh, MeshBuffers& gpu_mesh)
 {
     PERF_MEASURE();
+    if (mesh.vertices.empty() || mesh.indices.empty())
+    {
+        gpu_mesh = {};
+        return true;
+    }
+
     const size_t vertex_bytes = mesh.vertices.size() * sizeof(SceneVertex);
     const size_t index_bytes = mesh.indices.size() * sizeof(uint16_t);
 
@@ -466,7 +472,12 @@ bool create_sampled_image(VkPhysicalDevice physical_device, VkDevice device, Vma
     view_ci.subresourceRange.levelCount = mip_levels;
     view_ci.subresourceRange.layerCount = 1;
     if (vkCreateImageView(device, &view_ci, nullptr, &image.view) != VK_SUCCESS)
+    {
+        vmaDestroyImage(allocator, image.image, image.allocation);
+        image.image = VK_NULL_HANDLE;
+        image.allocation = VK_NULL_HANDLE;
         return false;
+    }
 
     VkSamplerCreateInfo sampler_ci = { VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO };
     sampler_ci.magFilter = VK_FILTER_LINEAR;
@@ -486,11 +497,18 @@ bool create_sampled_image(VkPhysicalDevice physical_device, VkDevice device, Vma
         sampler_ci.maxAnisotropy = std::min(8.0f, properties.limits.maxSamplerAnisotropy);
     }
     if (vkCreateSampler(device, &sampler_ci, nullptr, &image.sampler) != VK_SUCCESS)
+    {
+        vkDestroyImageView(device, image.view, nullptr);
+        image.view = VK_NULL_HANDLE;
+        vmaDestroyImage(allocator, image.image, image.allocation);
+        image.image = VK_NULL_HANDLE;
+        image.allocation = VK_NULL_HANDLE;
         return false;
+    }
 
     image.width = width;
     image.height = height;
-    image.size = width;
+    image.size = static_cast<VkDeviceSize>(width) * height * 4;
     image.mip_levels = mip_levels;
     return true;
 }

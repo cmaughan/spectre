@@ -23,29 +23,29 @@ Key file: `libs/draxul-grid/src/grid.cpp`
 
 ## Investigation steps
 
-- [ ] Read `grid.cpp` and identify every site where `row * cols_` (or equivalent) is used for index computation.
-- [ ] Check the types of `row`, `col`, `cols_`, `rows_` — are they `int`, `uint32_t`, `size_t`?
-- [ ] Check whether `Grid::resize()` validates `rows * cols` before allocating.
-- [ ] Check `Grid::set_cell()` and `Grid::scroll()` for the same pattern.
+- [x] Read `grid.cpp` and identify every site where `row * cols_` (or equivalent) is used for index computation.
+- [x] Check the types of `row`, `col`, `cols_`, `rows_` — are they `int`, `uint32_t`, `size_t`?
+- [x] Check whether `Grid::resize()` validates `rows * cols` before allocating.
+- [x] Check `Grid::set_cell()` and `Grid::scroll()` for the same pattern.
 
 ## Fix strategy
 
-- [ ] Change the index computation to use `size_t` arithmetic:
+- [x] Change the index computation to use `size_t` arithmetic:
   ```cpp
   cells_[static_cast<size_t>(row) * static_cast<size_t>(cols_) + static_cast<size_t>(col)]
   ```
-- [ ] In `Grid::resize()`, add a guard:
+- [x] In `Grid::resize()`, add a guard:
   ```cpp
   DRAXUL_ASSERT(rows <= kMaxGridDim && cols <= kMaxGridDim);
   ```
   where `kMaxGridDim` is a reasonable constant (e.g. 10000).
-- [ ] Ensure existing callers that pass `int` values are not broken by the type change; add `static_cast` at call sites as needed.
+- [x] Ensure existing callers that pass `int` values are not broken by the type change; add `static_cast` at call sites as needed.
 
 ## Acceptance criteria
 
-- [ ] No signed-integer overflow UB when grid is indexed with any valid terminal size.
-- [ ] `cmake --preset mac-asan` build passes the full test suite with no UBSan overflow errors.
-- [ ] `Grid::resize()` rejects unreasonably large dimensions with an assertion.
+- [x] No signed-integer overflow UB when grid is indexed with any valid terminal size.
+- [x] `cmake --preset mac-asan` build passes the full test suite with no UBSan overflow errors.
+- [x] `Grid::resize()` rejects unreasonably large dimensions with an assertion.
 
 ## Interdependencies
 

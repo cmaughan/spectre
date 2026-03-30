@@ -17,10 +17,10 @@ Key files:
 
 ## Investigation steps
 
-- [ ] Read `glyph_cache.cpp` and identify exactly where and how `FT_Face*` is stored.
-- [ ] Read `text_service.h` / `text_service.cpp` and trace what happens to the old face on reinit.
-- [ ] Confirm the ordering in `App::apply_font_metrics()` (or equivalent): does `GlyphCache` get cleared *before* or *after* the old face is freed?
-- [ ] Check whether `GlyphCache::clear()` exists and is called on font change.
+- [x] Read `glyph_cache.cpp` and identify exactly where and how `FT_Face*` is stored.
+- [x] Read `text_service.h` / `text_service.cpp` and trace what happens to the old face on reinit.
+- [x] Confirm the ordering in `App::apply_font_metrics()` (or equivalent): does `GlyphCache` get cleared *before* or *after* the old face is freed?
+- [x] Check whether `GlyphCache::clear()` exists and is called on font change.
 
 ## Fix strategy
 
@@ -34,10 +34,10 @@ Option 1 is the smallest change. Option 3 is the safest for concurrent extension
 
 ## Acceptance criteria
 
-- [ ] A font-size change no longer leaves `GlyphCache` holding a freed `FT_Face*`.
-- [ ] After the fix, a font-size change followed by rendering produces correct glyphs.
-- [ ] No `ASAN` use-after-free error when running with the `mac-asan` preset and changing font size mid-session.
-- [ ] Add a regression note or assertion that fires if the face is accessed after being freed.
+- [x] A font-size change no longer leaves `GlyphCache` holding a freed `FT_Face*`.
+- [x] After the fix, a font-size change followed by rendering produces correct glyphs.
+- [x] No `ASAN` use-after-free error when running with the `mac-asan` preset and changing font size mid-session.
+- [x] Add a regression note or assertion that fires if the face is accessed after being freed.
 
 ## Interdependencies
 

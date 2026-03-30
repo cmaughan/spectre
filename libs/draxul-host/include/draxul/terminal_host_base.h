@@ -7,7 +7,6 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 namespace draxul
@@ -96,6 +95,12 @@ protected:
     {
         // Intentionally empty — LocalTerminalHost overrides to forward to MouseReporter.
     }
+
+    // Hooks called by compact_attr_ids() to let subclasses participate in
+    // highlight compaction.  LocalTerminalHost overrides these to include
+    // scrollback buffer cells.
+    virtual void collect_extra_attr_ids(std::unordered_map<uint16_t, HlAttr>& active_attrs);
+    virtual void remap_extra_highlight_ids(const std::function<uint16_t(uint16_t)>& remap_fn);
 
     // Hook called by handle_osc() when the shell emits an OSC 7
     // directory-change notification (file://hostname/path).  The decoded

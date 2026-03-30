@@ -16,7 +16,7 @@ Any call to `upload_mesh` with an empty city layer or mesh (possible during incr
 
 ## Fix Strategy
 
-- [ ] Add at the top of `upload_mesh`:
+- [x] Add at the top of `upload_mesh`:
   ```cpp
   if (mesh.vertices.empty() || mesh.indices.empty())
   {
@@ -24,9 +24,9 @@ Any call to `upload_mesh` with an empty city layer or mesh (possible during incr
       return true;
   }
   ```
-- [ ] Fix H2 (wrong image size) and H3 (resource leak) in the same file pass — see work items 53 and 54
+- [x] Fix H2 (wrong image size) and H3 (resource leak) in the same file pass — see work items 53 and 54
 
 ## Acceptance Criteria
 
-- [ ] Calling `upload_mesh` with empty vertex/index arrays succeeds without Vulkan validation errors
-- [ ] Normal non-empty mesh uploads are unaffected
+- [x] Calling `upload_mesh` with empty vertex/index arrays succeeds without Vulkan validation errors
+- [x] Normal non-empty mesh uploads are unaffected

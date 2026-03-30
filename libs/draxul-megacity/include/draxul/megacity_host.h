@@ -189,6 +189,7 @@ private:
         std::shared_ptr<const SemanticMegacityLayout> layout;
         std::shared_ptr<const SemanticMegacityModel> model;
         std::shared_ptr<const CityGrid> grid;
+        MegaCityCodeConfig config; // Snapshot of renderer_config_ taken under lock
     };
 
     struct RouteBuildResult

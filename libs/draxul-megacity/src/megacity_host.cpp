@@ -572,20 +572,22 @@ void MegaCityHost::route_worker_loop()
                 *request.layout,
                 *request.model,
                 *request.grid,
-                renderer_config_,
+                request.config,
                 request.focus_source_file_path,
                 request.focus_module_path,
                 request.focus_qualified_name);
         }
 
+        bool should_notify = false;
         {
             std::lock_guard<std::mutex> lock(route_mutex_);
             if (request.generation == route_request_generation_)
                 completed_route_result_ = RouteBuildResult{ request.generation, std::move(routed_grid) };
             if (!pending_route_request_.has_value())
                 route_build_in_progress_ = false;
+            should_notify = !route_worker_stop_;
         }
-        if (callbacks_)
+        if (should_notify && callbacks_)
             callbacks_->request_frame();
     }
 }
@@ -617,6 +619,7 @@ void MegaCityHost::request_routes_for_focus(
             semantic_layout_,
             semantic_model_,
             std::move(grid),
+            renderer_config_,
         };
         completed_route_result_.reset();
         route_build_in_progress_ = true;

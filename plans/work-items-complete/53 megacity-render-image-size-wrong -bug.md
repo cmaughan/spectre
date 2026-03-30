@@ -18,15 +18,15 @@ Any code path that reads `ImageResource::size` to determine how many bytes to co
 
 ## Fix Strategy
 
-- [ ] Replace line 485 with:
+- [x] Replace line 485 with:
   ```cpp
   image.size = static_cast<VkDeviceSize>(width) * height * 4;
   ```
-- [ ] Search for all call sites that read `.size` and verify they now receive the correct byte count
-- [ ] Fix H3 (resource leak in `create_sampled_image`) and H4 (upload_mesh empty guard) in the same file pass — see work items 54 and 55
+- [x] Search for all call sites that read `.size` and verify they now receive the correct byte count
+- [x] Fix H3 (resource leak in `create_sampled_image`) and H4 (upload_mesh empty guard) in the same file pass — see work items 54 and 55
 
 ## Acceptance Criteria
 
-- [ ] `ImageResource::size` equals `width * height * 4` for all created images
-- [ ] Megacity textures upload and display correctly after the fix
-- [ ] No Vulkan validation layer errors about incorrect transfer sizes
+- [x] `ImageResource::size` equals `width * height * 4` for all created images
+- [x] Megacity textures upload and display correctly after the fix
+- [x] No Vulkan validation layer errors about incorrect transfer sizes

@@ -18,15 +18,15 @@ NTP backward step or process migration across TSC-divergent CPU cores (NUMA syst
 
 ## Fix Strategy
 
-- [ ] Add a guard in the destructor:
+- [x] Add a guard in the destructor:
   ```cpp
   if (end_microseconds > start_microseconds_)
       runtime_perf_collector().report_timing(*tag_, end_microseconds - start_microseconds_);
   ```
-- [ ] Optionally add a maximum clamp (e.g., 1 second) to prevent any single outlier from dominating the EMA
+- [x] Optionally add a maximum clamp (e.g., 1 second) to prevent any single outlier from dominating the EMA
 
 ## Acceptance Criteria
 
-- [ ] Injecting `end_microseconds = start_microseconds_ - 1` in a unit test does not result in a report to the collector
-- [ ] Normal timing measurements continue to be reported correctly
-- [ ] Existing `perf_timing_tests.cpp` continue to pass
+- [x] Injecting `end_microseconds = start_microseconds_ - 1` in a unit test does not result in a report to the collector
+- [x] Normal timing measurements continue to be reported correctly
+- [x] Existing `perf_timing_tests.cpp` continue to pass

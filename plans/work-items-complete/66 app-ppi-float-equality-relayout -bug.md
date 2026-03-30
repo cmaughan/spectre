@@ -18,7 +18,7 @@ Moving the app window between monitors with the same nominal DPI but marginally 
 
 ## Fix Strategy
 
-- [ ] Replace the exact comparison with an epsilon check:
+- [x] Replace the exact comparison with an epsilon check:
   ```cpp
   if (std::abs(new_ppi - display_ppi_) < 0.5f) return;
   ```
@@ -26,6 +26,6 @@ Moving the app window between monitors with the same nominal DPI but marginally 
 
 ## Acceptance Criteria
 
-- [ ] Moving between monitors that differ by < 0.5 DPI does not trigger unnecessary relayout
-- [ ] Moving between monitors with a measurable DPI difference correctly triggers relayout
-- [ ] No regression in existing DPI-handling tests or render snapshots
+- [x] Moving between monitors that differ by < 0.5 DPI does not trigger unnecessary relayout
+- [x] Moving between monitors with a measurable DPI difference correctly triggers relayout
+- [x] No regression in existing DPI-handling tests or render snapshots

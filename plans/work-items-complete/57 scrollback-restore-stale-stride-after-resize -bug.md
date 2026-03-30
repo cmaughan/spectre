@@ -23,13 +23,13 @@ When `cols > live_snapshot_cols_`: for columns beyond `live_snapshot_cols_`, the
 
 ## Fix Strategy
 
-- [ ] Change `restore_live_snapshot` to iterate only up to `std::min(cols, live_snapshot_cols_)` columns from the snapshot; blank-fill any extra columns beyond that
-- [ ] Alternatively, store the snapshot dimensions with the snapshot data (`live_snapshot_cols_` already exists) and ensure the comment makes the invariant explicit
-- [ ] Add a unit test with resize-before-restore to confirm no cross-row data appears
-- [ ] Fix H5 (compact_attr_ids missing scrollback) in the same session — see work item 56
+- [x] Change `restore_live_snapshot` to iterate only up to `std::min(cols, live_snapshot_cols_)` columns from the snapshot; blank-fill any extra columns beyond that
+- [x] Alternatively, store the snapshot dimensions with the snapshot data (`live_snapshot_cols_` already exists) and ensure the comment makes the invariant explicit
+- [x] Add a unit test with resize-before-restore to confirm no cross-row data appears
+- [x] Fix H5 (compact_attr_ids missing scrollback) in the same session — see work item 56
 
 ## Acceptance Criteria
 
-- [ ] Restoring a snapshot after a column increase shows blank cells for the new columns, not data from adjacent rows
-- [ ] Restoring a snapshot after a column decrease shows the visible portion correctly
-- [ ] No out-of-bounds access under ASan/UBSan during restore
+- [x] Restoring a snapshot after a column increase shows blank cells for the new columns, not data from adjacent rows
+- [x] Restoring a snapshot after a column decrease shows the visible portion correctly
+- [x] No out-of-bounds access under ASan/UBSan during restore

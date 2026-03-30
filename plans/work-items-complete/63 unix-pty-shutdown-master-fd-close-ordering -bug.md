@@ -19,7 +19,7 @@ Normal app exit or reconnect whenever a PTY terminal host is running.
 
 ## Fix Strategy
 
-- [ ] Signal the shutdown pipe before closing `master_fd_`:
+- [x] Signal the shutdown pipe before closing `master_fd_`:
   ```cpp
   // Signal reader thread first
   reader_running_ = false;
@@ -31,10 +31,10 @@ Normal app exit or reconnect whenever a PTY terminal host is running.
   // Now safe to close fds
   if (master_fd_ >= 0) { close(master_fd_); master_fd_ = -1; }
   ```
-- [ ] Ensure `request_close()` is not called redundantly before `shutdown()` in the same lifecycle (or that its close of `master_fd_` is idempotent with the new ordering)
-- [ ] Fix H7 (poll EINTR) and H8 (write EINTR) in the same pass — see work items 58 and 59
+- [x] Ensure `request_close()` is not called redundantly before `shutdown()` in the same lifecycle (or that its close of `master_fd_` is idempotent with the new ordering)
+- [x] Fix H7 (poll EINTR) and H8 (write EINTR) in the same pass — see work items 58 and 59
 
 ## Acceptance Criteria
 
-- [ ] Under TSan, shutdown of a PTY process reports no data races on `master_fd_`
-- [ ] Reader thread exits cleanly on the shutdown pipe signal without needing `master_fd_` to close first
+- [x] Under TSan, shutdown of a PTY process reports no data races on `master_fd_`
+- [x] Reader thread exits cleanly on the shutdown pipe signal without needing `master_fd_` to close first

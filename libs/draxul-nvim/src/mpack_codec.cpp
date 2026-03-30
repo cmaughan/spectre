@@ -10,6 +10,10 @@ namespace draxul
 namespace
 {
 
+// Cap upfront reserve() to prevent OOM from corrupt msgpack counts.
+// The container will still grow beyond this via push_back if needed.
+constexpr uint32_t kMaxReserveCount = 65536;
+
 size_t estimate_value_size(const MpackValue& value)
 {
     PERF_MEASURE();
@@ -162,7 +166,7 @@ MpackValue read_value(mpack_reader_t* reader)
     {
         uint32_t count = mpack_tag_array_count(&tag);
         MpackValue::ArrayStorage items;
-        items.reserve(count);
+        items.reserve(std::min(count, kMaxReserveCount));
         for (uint32_t i = 0; i < count; i++)
         {
             items.push_back(read_value(reader));
@@ -177,7 +181,7 @@ MpackValue read_value(mpack_reader_t* reader)
     {
         uint32_t count = mpack_tag_map_count(&tag);
         MpackValue::MapStorage items;
-        items.reserve(count);
+        items.reserve(std::min(count, kMaxReserveCount));
         for (uint32_t i = 0; i < count; i++)
         {
             auto key = read_value(reader);

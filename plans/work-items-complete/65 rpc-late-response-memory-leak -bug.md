@@ -17,13 +17,13 @@ Any RPC call that times out while Neovim eventually responds. Common in:
 
 ## Fix Strategy
 
-- [ ] Add a `std::unordered_set<uint32_t> timed_out_msgids_` protected by `response_mutex_`
-- [ ] On timeout in `request()`: after erasing from `responses_`, insert `msgid` into `timed_out_msgids_`
-- [ ] In `dispatch_rpc_response`: if the `msgid` is in `timed_out_msgids_`, erase it from the set and discard the response (do not insert into `responses_`)
-- [ ] Bound the size of `timed_out_msgids_` (it should be small; log a warning if it grows large)
+- [x] Add a `std::unordered_set<uint32_t> timed_out_msgids_` protected by `response_mutex_`
+- [x] On timeout in `request()`: after erasing from `responses_`, insert `msgid` into `timed_out_msgids_`
+- [x] In `dispatch_rpc_response`: if the `msgid` is in `timed_out_msgids_`, erase it from the set and discard the response (do not insert into `responses_`)
+- [x] Bound the size of `timed_out_msgids_` (it should be small; log a warning if it grows large)
 
 ## Acceptance Criteria
 
-- [ ] Unit test: simulate a timeout then a late response; verify `responses_` does not grow
-- [ ] Memory usage is stable after a long session with occasional RPC timeouts
-- [ ] Normal request/response flow is unaffected
+- [x] Unit test: simulate a timeout then a late response; verify `responses_` does not grow
+- [x] Memory usage is stable after a long session with occasional RPC timeouts
+- [x] Normal request/response flow is unaffected

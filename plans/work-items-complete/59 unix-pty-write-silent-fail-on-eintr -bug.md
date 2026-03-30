@@ -20,7 +20,7 @@ Signal delivered during a large paste operation or keypress write to the PTY mas
 
 ## Fix Strategy
 
-- [ ] After `written < 0`, check errno and retry on EINTR:
+- [x] After `written < 0`, check errno and retry on EINTR:
   ```cpp
   if (written < 0)
   {
@@ -31,9 +31,9 @@ Signal delivered during a large paste operation or keypress write to the PTY mas
   if (written == 0)
       return false; // unexpected: write to PTY returned 0
   ```
-- [ ] Fix H7 (poll EINTR) and M5 (shutdown ordering) in the same file pass — see work items 58 and 63
+- [x] Fix H7 (poll EINTR) and M5 (shutdown ordering) in the same file pass — see work items 58 and 63
 
 ## Acceptance Criteria
 
-- [ ] Pasting a large buffer while signals are being delivered does not lose any bytes
-- [ ] PTY write returns false only on genuine errors, not on EINTR
+- [x] Pasting a large buffer while signals are being delivered does not lose any bytes
+- [x] PTY write returns false only on genuine errors, not on EINTR

@@ -181,14 +181,16 @@ void UnixPtyProcess::shutdown()
         pid_ = -1;
     }
 
+    // Join the reader thread BEFORE closing master_fd_ to avoid racing on the
+    // fd (the shutdown pipe already woke it, so it will exit promptly).
+    if (reader_thread_.joinable())
+        reader_thread_.join();
+
     if (master_fd_ >= 0)
     {
         close(master_fd_);
         master_fd_ = -1;
     }
-
-    if (reader_thread_.joinable())
-        reader_thread_.join();
 
     for (int& fd : shutdown_pipe_)
     {
@@ -208,14 +210,11 @@ void UnixPtyProcess::request_close()
     PERF_MEASURE();
     reader_running_ = false;
 
+    // Signal the reader thread via the shutdown pipe. Do NOT close master_fd_
+    // here — the reader thread may still be polling it. shutdown() will close
+    // fds after joining the reader thread.
     if (shutdown_pipe_[1] >= 0)
         (void)::write(shutdown_pipe_[1], "x", 1);
-
-    if (master_fd_ >= 0)
-    {
-        close(master_fd_);
-        master_fd_ = -1;
-    }
 }
 
 bool UnixPtyProcess::is_running() const
@@ -247,8 +246,14 @@ bool UnixPtyProcess::write(std::string_view text) const
     while (remaining > 0)
     {
         const ssize_t written = ::write(master_fd_, ptr, remaining);
-        if (written <= 0)
-            return false;
+        if (written < 0)
+        {
+            if (errno == EINTR)
+                continue;
+            return false; // real write error
+        }
+        if (written == 0)
+            return false; // unexpected: write to PTY returned 0
         ptr += written;
         remaining -= static_cast<size_t>(written);
     }
@@ -277,8 +282,15 @@ void UnixPtyProcess::reader_main()
 
     while (reader_running_)
     {
-        if (const int ret = poll(fds, 2, -1); ret <= 0)
-            break;
+        const int ret = poll(fds, 2, -1);
+        if (ret < 0)
+        {
+            if (errno == EINTR)
+                continue;
+            break; // real error
+        }
+        if (ret == 0)
+            continue; // timeout (shouldn't happen with -1 timeout)
 
         // Shutdown pipe signaled — exit immediately.
         if (fds[1].revents & POLLIN)

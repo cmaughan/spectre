@@ -14,19 +14,19 @@ Change any Megacity rendering setting (focus mode, route-display options) while 
 
 ## Investigation Steps
 
-- [ ] Locate all write sites for `renderer_config_` in `megacity_host.cpp`
-- [ ] Confirm none of those writes hold `route_mutex_`
-- [ ] Check if `RouteBuildRequest` already carries a config field that could be reused
+- [x] Locate all write sites for `renderer_config_` in `megacity_host.cpp`
+- [x] Confirm none of those writes hold `route_mutex_`
+- [x] Check if `RouteBuildRequest` already carries a config field that could be reused
 
 ## Fix Strategy
 
-- [ ] Add a `MegaCityRendererConfig config` field to `RouteBuildRequest`
-- [ ] When enqueuing a new request, copy `renderer_config_` into `request.config` under `route_mutex_`
-- [ ] In `route_worker_loop`, use `request.config` instead of `renderer_config_` at line 354
-- [ ] Remove any direct read of `renderer_config_` from the worker loop body
+- [x] Add a `MegaCityCodeConfig config` field to `RouteBuildRequest`
+- [x] When enqueuing a new request, copy `renderer_config_` into `request.config` under `route_mutex_`
+- [x] In `route_worker_loop`, use `request.config` instead of `renderer_config_`
+- [x] Remove any direct read of `renderer_config_` from the worker loop body
 
 ## Acceptance Criteria
 
-- [ ] `renderer_config_` is never read from `route_worker_loop` without going through the request snapshot
+- [x] `renderer_config_` is never read from `route_worker_loop` without going through the request snapshot
 - [ ] Thread-sanitizer (TSan) reports no data race on `renderer_config_` under concurrent config changes
-- [ ] Megacity routing still produces correct results after the fix
+- [x] Megacity routing still produces correct results after the fix

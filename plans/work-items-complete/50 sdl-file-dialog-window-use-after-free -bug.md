@@ -16,18 +16,18 @@
 
 ## Investigation Steps
 
-- [ ] Confirm `SDL_GetWindowID` dereferences the `SDL_Window*` internally (expected: yes)
-- [ ] Check if SDL provides a "window destroyed" notification that could be used to cancel the dialog instead
+- [x] Confirm `SDL_GetWindowID` dereferences the `SDL_Window*` internally (expected: yes)
+- [x] Check if SDL provides a "window destroyed" notification that could be used to cancel the dialog instead
 
 ## Fix Strategy
 
-- [ ] In `Ctx`, replace `SDL_Window* window` with `SDL_WindowID window_id`
-- [ ] At dialog-open time: `Ctx{ SDL_GetWindowID(window), result_event_type }`
-- [ ] In the callback: use `c->window_id` directly — no pointer dereference needed
-- [ ] Also fix M2 (path leak on push failure) in the same pass — see work item 51
+- [x] In `Ctx`, replace `SDL_Window* window` with `SDL_WindowID window_id`
+- [x] At dialog-open time: `Ctx{ SDL_GetWindowID(window), result_event_type }`
+- [x] In the callback: use `c->window_id` directly — no pointer dereference needed
+- [x] Also fix M2 (path leak on push failure) in the same pass — see work item 51
 
 ## Acceptance Criteria
 
-- [ ] `Ctx` no longer stores a raw `SDL_Window*`
-- [ ] Closing the window while the dialog is open does not crash or trigger sanitizer errors
-- [ ] File selection still works correctly after the fix
+- [x] `Ctx` no longer stores a raw `SDL_Window*`
+- [x] Closing the window while the dialog is open does not crash or trigger sanitizer errors
+- [x] File selection still works correctly after the fix

@@ -10,8 +10,8 @@
 #endif
 #include <filesystem>
 #include <optional>
+#include <stdexcept>
 #include <string>
-#include <string_view>
 #include <vector>
 
 #ifdef _WIN32
@@ -150,7 +150,21 @@ ParsedArgs parse_args(const std::vector<std::string>& args)
         else if (args[i] == "--screenshot-delay" && i + 1 < args.size())
         {
             ++i;
-            parsed.screenshot_delay_ms = std::max(std::stoi(args[i]), 0);
+            try
+            {
+                int value = std::stoi(args[i]);
+                if (value < 0)
+                {
+                    std::fprintf(stderr, "error: --screenshot-delay requires a non-negative integer\n");
+                    std::exit(1);
+                }
+                parsed.screenshot_delay_ms = value;
+            }
+            catch (const std::exception&)
+            {
+                std::fprintf(stderr, "error: --screenshot-delay requires a non-negative integer\n");
+                std::exit(1);
+            }
         }
         else if (args[i] == "--screenshot-size" && i + 1 < args.size())
         {
@@ -159,8 +173,21 @@ ParsedArgs parse_args(const std::vector<std::string>& args)
             auto x_pos = size_str.find('x');
             if (x_pos != std::string::npos)
             {
-                parsed.screenshot_width = std::stoi(size_str.substr(0, x_pos));
-                parsed.screenshot_height = std::stoi(size_str.substr(x_pos + 1));
+                try
+                {
+                    parsed.screenshot_width = std::stoi(size_str.substr(0, x_pos));
+                    parsed.screenshot_height = std::stoi(size_str.substr(x_pos + 1));
+                    if (parsed.screenshot_width <= 0 || parsed.screenshot_height <= 0)
+                    {
+                        std::fprintf(stderr, "error: --screenshot-size requires positive dimensions (e.g. 800x600)\n");
+                        std::exit(1);
+                    }
+                }
+                catch (const std::exception&)
+                {
+                    std::fprintf(stderr, "error: --screenshot-size requires valid dimensions (e.g. 800x600)\n");
+                    std::exit(1);
+                }
             }
         }
     }

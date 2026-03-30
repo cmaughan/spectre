@@ -25,14 +25,25 @@ void clear_continuation(Cell& cell)
 
 } // namespace
 
+// Maximum dimension for either rows or cols to prevent overflow in index arithmetic.
+constexpr int kMaxGridDim = 10000;
+
 void Grid::resize(int cols, int rows)
 {
     PERF_MEASURE();
     thread_checker_.assert_main_thread("Grid::resize");
+    if (cols < 0 || cols > kMaxGridDim || rows < 0 || rows > kMaxGridDim)
+    {
+        DRAXUL_LOG_WARN(LogCategory::App,
+            "Grid::resize: dimensions out of range (cols=%d, rows=%d, max=%d) — clamping",
+            cols, rows, kMaxGridDim);
+        cols = std::clamp(cols, 0, kMaxGridDim);
+        rows = std::clamp(rows, 0, kMaxGridDim);
+    }
     cols_ = cols;
     rows_ = rows;
-    cells_.resize(cols * rows);
-    dirty_marks_.assign((size_t)cols * rows, 0);
+    cells_.resize(static_cast<size_t>(cols) * static_cast<size_t>(rows));
+    dirty_marks_.assign(static_cast<size_t>(cols) * static_cast<size_t>(rows), 0);
     dirty_cells_.clear();
     clear();
 }
@@ -107,7 +118,7 @@ const Cell& Grid::get_cell(int col, int row) const
 {
     if (col < 0 || col >= cols_ || row < 0 || row >= rows_)
         return empty_cell_;
-    return cells_[row * cols_ + col];
+    return cells_[static_cast<size_t>(row) * static_cast<size_t>(cols_) + static_cast<size_t>(col)];
 }
 
 void Grid::scroll(int top, int bot, int left, int right, int rows, int cols)
@@ -138,22 +149,27 @@ void Grid::scroll(int top, int bot, int left, int right, int rows, int cols)
     rows = std::clamp(rows, -region_rows, region_rows);
     cols = std::clamp(cols, -region_cols, region_cols);
 
+    // Helper to compute cell index with size_t arithmetic to avoid signed overflow.
+    auto cell_index = [this](int r, int c) -> size_t {
+        return static_cast<size_t>(r) * static_cast<size_t>(cols_) + static_cast<size_t>(c);
+    };
+
     if (rows > 0)
     {
         for (int r = top; r < bot - rows; r++)
         {
             for (int c = left; c < right; c++)
             {
-                cells_[r * cols_ + c] = cells_[(r + rows) * cols_ + c];
-                mark_dirty_index(r * cols_ + c);
+                cells_[cell_index(r, c)] = cells_[cell_index(r + rows, c)];
+                mark_dirty_index(static_cast<int>(cell_index(r, c)));
             }
         }
         for (int r = bot - rows; r < bot; r++)
         {
             for (int c = left; c < right; c++)
             {
-                cells_[r * cols_ + c] = make_blank_cell();
-                mark_dirty_index(r * cols_ + c);
+                cells_[cell_index(r, c)] = make_blank_cell();
+                mark_dirty_index(static_cast<int>(cell_index(r, c)));
             }
         }
     }
@@ -164,16 +180,16 @@ void Grid::scroll(int top, int bot, int left, int right, int rows, int cols)
         {
             for (int c = left; c < right; c++)
             {
-                cells_[r * cols_ + c] = cells_[(r - shift) * cols_ + c];
-                mark_dirty_index(r * cols_ + c);
+                cells_[cell_index(r, c)] = cells_[cell_index(r - shift, c)];
+                mark_dirty_index(static_cast<int>(cell_index(r, c)));
             }
         }
         for (int r = top; r < top + shift; r++)
         {
             for (int c = left; c < right; c++)
             {
-                cells_[r * cols_ + c] = make_blank_cell();
-                mark_dirty_index(r * cols_ + c);
+                cells_[cell_index(r, c)] = make_blank_cell();
+                mark_dirty_index(static_cast<int>(cell_index(r, c)));
             }
         }
     }
@@ -184,13 +200,13 @@ void Grid::scroll(int top, int bot, int left, int right, int rows, int cols)
         {
             for (int c = left; c < right - cols; c++)
             {
-                cells_[r * cols_ + c] = cells_[r * cols_ + c + cols];
-                mark_dirty_index(r * cols_ + c);
+                cells_[cell_index(r, c)] = cells_[cell_index(r, c + cols)];
+                mark_dirty_index(static_cast<int>(cell_index(r, c)));
             }
             for (int c = right - cols; c < right; c++)
             {
-                cells_[r * cols_ + c] = make_blank_cell();
-                mark_dirty_index(r * cols_ + c);
+                cells_[cell_index(r, c)] = make_blank_cell();
+                mark_dirty_index(static_cast<int>(cell_index(r, c)));
             }
         }
     }
@@ -201,13 +217,13 @@ void Grid::scroll(int top, int bot, int left, int right, int rows, int cols)
         {
             for (int c = right - 1; c >= left + shift; c--)
             {
-                cells_[r * cols_ + c] = cells_[r * cols_ + c - shift];
-                mark_dirty_index(r * cols_ + c);
+                cells_[cell_index(r, c)] = cells_[cell_index(r, c - shift)];
+                mark_dirty_index(static_cast<int>(cell_index(r, c)));
             }
             for (int c = left; c < left + shift; c++)
             {
-                cells_[r * cols_ + c] = make_blank_cell();
-                mark_dirty_index(r * cols_ + c);
+                cells_[cell_index(r, c)] = make_blank_cell();
+                mark_dirty_index(static_cast<int>(cell_index(r, c)));
             }
         }
     }
@@ -216,7 +232,7 @@ void Grid::scroll(int top, int bot, int left, int right, int rows, int cols)
     {
         for (int c = left; c < right; ++c)
         {
-            const int index = r * cols_ + c;
+            const int index = static_cast<int>(cell_index(r, c));
             auto& cell = cells_[(size_t)index];
 
             const bool continuation_in_region = c + 1 < right;
@@ -243,7 +259,7 @@ bool Grid::is_dirty(int col, int row) const
 {
     if (col < 0 || col >= cols_ || row < 0 || row >= rows_)
         return false;
-    return cells_[row * cols_ + col].dirty;
+    return cells_[static_cast<size_t>(row) * static_cast<size_t>(cols_) + static_cast<size_t>(col)].dirty;
 }
 
 void Grid::mark_dirty(int col, int row)
@@ -252,7 +268,7 @@ void Grid::mark_dirty(int col, int row)
     thread_checker_.assert_main_thread("Grid::mark_dirty");
     if (col < 0 || col >= cols_ || row < 0 || row >= rows_)
         return;
-    mark_dirty_index(row * cols_ + col);
+    mark_dirty_index(static_cast<int>(static_cast<size_t>(row) * static_cast<size_t>(cols_) + static_cast<size_t>(col)));
 }
 
 void Grid::mark_all_dirty()

@@ -15,6 +15,9 @@ namespace draxul
 namespace
 {
 
+// Maximum attr ID that fits in the internal uint16_t storage type.
+constexpr int64_t kMaxAttrId = UINT16_MAX;
+
 const MpackValue::ArrayStorage* try_get_array(const MpackValue& value)
 {
     if (value.type() != MpackValue::Array)
@@ -250,7 +253,12 @@ void UiEventHandler::handle_grid_line(const MpackValue& args)
             int hl_id = 0;
             if (!try_get_int((*cell_array)[1], hl_id))
                 continue;
-            current_hl = (uint16_t)hl_id;
+            if (hl_id < 0 || hl_id > static_cast<int>(kMaxAttrId))
+            {
+                DRAXUL_LOG_WARN(LogCategory::App, "handle_grid_line: attr_id %d out of range; clamping to 0", hl_id);
+                hl_id = 0;
+            }
+            current_hl = static_cast<uint16_t>(hl_id);
         }
 
         int repeat = 1;
@@ -331,7 +339,14 @@ void UiEventHandler::handle_hl_attr_define(const MpackValue& args)
     if (!highlights_ || args.type() != MpackValue::Array || args.as_array().size() < 2)
         return;
     const auto& args_array = args.as_array();
-    auto id = (uint16_t)args_array[0].as_int();
+    auto raw_id = args_array[0].as_int();
+    if (raw_id < 0 || raw_id > static_cast<int64_t>(kMaxAttrId))
+    {
+        DRAXUL_LOG_WARN(LogCategory::App, "handle_hl_attr_define: attr_id %lld out of range; clamping to 0",
+            static_cast<long long>(raw_id));
+        raw_id = 0;
+    }
+    auto id = static_cast<uint16_t>(raw_id);
     const auto& attrs = args_array[1];
 
     HlAttr hl = {};

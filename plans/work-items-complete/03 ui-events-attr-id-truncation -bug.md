@@ -24,13 +24,13 @@ Key files:
 
 ## Investigation steps
 
-- [ ] Read `ui_events.cpp` and find every `as_int()` call used for attr/highlight IDs.
-- [ ] Check the declared type for attr IDs in `grid.h` / `highlight_table.h`.
-- [ ] Determine the realistic maximum attr ID Neovim will send (typically < 65536; the Neovim protocol doc gives guidance).
+- [x] Read `ui_events.cpp` and find every `as_int()` call used for attr/highlight IDs.
+- [x] Check the declared type for attr IDs in `grid.h` / `highlight_table.h`.
+- [x] Determine the realistic maximum attr ID Neovim will send (typically < 65536; the Neovim protocol doc gives guidance).
 
 ## Fix strategy
 
-- [ ] Replace the cast with a bounds-checked conversion:
+- [x] Replace the cast with a bounds-checked conversion:
   ```cpp
   auto raw = value.as_int();
   if (raw < 0 || raw > kMaxAttrId) {
@@ -39,14 +39,14 @@ Key files:
   }
   auto attr_id = static_cast<uint16_t>(raw);
   ```
-- [ ] Define `kMaxAttrId` as a constant that matches the storage type (`UINT16_MAX` if attr IDs are `uint16_t`).
-- [ ] Apply the same pattern to any other integer narrowing casts in the same file.
+- [x] Define `kMaxAttrId` as a constant that matches the storage type (`UINT16_MAX` if attr IDs are `uint16_t`).
+- [x] Apply the same pattern to any other integer narrowing casts in the same file.
 
 ## Acceptance criteria
 
-- [ ] No implicit narrowing conversion from 64-bit msgpack int to the internal attr ID type.
-- [ ] A `WARN` is logged when an out-of-range value is received.
-- [ ] UBSan does not flag this path under the `mac-asan` preset.
+- [x] No implicit narrowing conversion from 64-bit msgpack int to the internal attr ID type.
+- [x] A `WARN` is logged when an out-of-range value is received.
+- [x] UBSan does not flag this path under the `mac-asan` preset.
 
 ## Interdependencies
 

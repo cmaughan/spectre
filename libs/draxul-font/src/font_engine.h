@@ -102,6 +102,13 @@ public:
     bool initialize(FT_Face face, int pixel_size, int atlas_size = 2048);
     void reset(FT_Face face, int pixel_size);
 
+    // Generation counter — incremented on every reset/initialize.  Callers
+    // can snapshot the value and compare later to detect stale state.
+    uint32_t face_generation() const
+    {
+        return face_generation_;
+    }
+
     const AtlasRegion& get_cluster(const std::string& text, FT_Face face, TextShaper& shaper);
 
     bool atlas_dirty() const
@@ -171,6 +178,7 @@ private:
     FT_Face face_ = nullptr;
     int pixel_size_ = 0;
     int atlas_size_ = 2048;
+    uint32_t face_generation_ = 0;
 
     std::vector<uint8_t> atlas_;
     std::unordered_map<ClusterKey, AtlasRegion, ClusterKeyHash> cluster_cache_;

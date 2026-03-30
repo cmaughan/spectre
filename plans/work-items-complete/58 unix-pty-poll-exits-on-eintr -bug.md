@@ -19,7 +19,7 @@ Any signal delivered to the process while a PTY terminal host is active. On macO
 
 ## Fix Strategy
 
-- [ ] After the `poll()` call, handle EINTR explicitly:
+- [x] After the `poll()` call, handle EINTR explicitly:
   ```cpp
   const int ret = poll(fds, 2, -1);
   if (ret < 0)
@@ -31,10 +31,10 @@ Any signal delivered to the process while a PTY terminal host is active. On macO
   if (ret == 0)
       continue; // timeout (shouldn't happen with -1 timeout)
   ```
-- [ ] Fix H8 (write EINTR) and M5 (shutdown ordering) in the same file pass — see work items 59 and 63
+- [x] Fix H8 (write EINTR) and M5 (shutdown ordering) in the same file pass — see work items 59 and 63
 
 ## Acceptance Criteria
 
-- [ ] Resizing the Draxul window while a PTY terminal is running does not kill the reader thread
-- [ ] Terminal output continues normally after a resize
-- [ ] Sending explicit SIGWINCH to the process does not silence the terminal
+- [x] Resizing the Draxul window while a PTY terminal is running does not kill the reader thread
+- [x] Terminal output continues normally after a resize
+- [x] Sending explicit SIGWINCH to the process does not silence the terminal

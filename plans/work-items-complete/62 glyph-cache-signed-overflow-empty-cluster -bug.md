@@ -25,7 +25,7 @@ Render any cluster where all shaped glyphs have zero bitmap dimensions — space
 
 ## Fix Strategy
 
-- [ ] After the glyph loop and before line 297, add:
+- [x] After the glyph loop and before line 297, add:
   ```cpp
   if (bbox_top == INT_MIN)
   {
@@ -34,10 +34,10 @@ Render any cluster where all shaped glyphs have zero bitmap dimensions — space
       bbox_bottom = 0;
   }
   ```
-- [ ] Verify `cluster_height == 0` is handled correctly by `reserve_region` and the composite buffer allocation (line 305)
+- [x] Verify `cluster_height == 0` is handled correctly by `reserve_region` and the composite buffer allocation (line 305)
 
 ## Acceptance Criteria
 
-- [ ] Rendering a space character through `rasterize_cluster` does not trigger UBSan signed-overflow
-- [ ] Zero-height clusters return a valid (empty) `AtlasRegion` without crashing
-- [ ] Normal glyph clusters with ink are unaffected
+- [x] Rendering a space character through `rasterize_cluster` does not trigger UBSan signed-overflow
+- [x] Zero-height clusters return a valid (empty) `AtlasRegion` without crashing
+- [x] Normal glyph clusters with ink are unaffected

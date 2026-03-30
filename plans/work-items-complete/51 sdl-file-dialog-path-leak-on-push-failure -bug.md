@@ -16,7 +16,7 @@ In the file-dialog callback, `path` is heap-allocated at line 24 via `make_uniqu
 
 ## Fix Strategy
 
-- [ ] Keep the string in a `unique_ptr` through the push attempt:
+- [x] Keep the string in a `unique_ptr` through the push attempt:
   ```cpp
   auto path = std::make_unique<std::string>(filelist[0]);
   // ... build SDL_UserEvent with path.get() in data1 ...
@@ -24,9 +24,9 @@ In the file-dialog callback, `path` is heap-allocated at line 24 via `make_uniqu
       path.release(); // transferred to event queue
   // else: path is freed by unique_ptr destructor
   ```
-- [ ] Fix C3 (use-after-free) in the same session — see work item 50
+- [x] Fix C3 (use-after-free) in the same session — see work item 50
 
 ## Acceptance Criteria
 
-- [ ] No memory leak when `SDL_PushEvent` fails (verified with LeakSanitizer or manual failure injection)
-- [ ] Normal file-selection path still correctly frees `path` in `handle_file_dialog_event`
+- [x] No memory leak when `SDL_PushEvent` fails (verified with LeakSanitizer or manual failure injection)
+- [x] Normal file-selection path still correctly frees `path` in `handle_file_dialog_event`

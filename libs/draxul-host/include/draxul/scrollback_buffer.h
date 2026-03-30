@@ -87,6 +87,29 @@ public:
     // Does not reallocate storage — keeps cols() and the ring buffer alive.
     void reset();
 
+    // Invoke `fn(const Cell&)` for every cell in every stored scrollback row.
+    template <typename Fn>
+    void for_each_cell(Fn&& fn) const
+    {
+        for (int i = 0; i < count_; ++i)
+        {
+            const auto r = row(i);
+            for (const auto& cell : r)
+                fn(cell);
+        }
+    }
+
+    // Remap highlight IDs in all stored scrollback rows using a functor
+    // that maps old IDs to new IDs: `uint16_t fn(uint16_t old_id)`.
+    template <typename Fn>
+    void remap_highlight_ids(Fn&& fn)
+    {
+        for (auto& cell : storage_)
+            cell.hl_attr_id = fn(cell.hl_attr_id);
+        for (auto& cell : live_snapshot_)
+            cell.hl_attr_id = fn(cell.hl_attr_id);
+    }
+
 private:
     // row(i): i=0 is the oldest row, i=size()-1 is the newest.
     std::span<const Cell> row(int i) const;

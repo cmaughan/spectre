@@ -305,11 +305,50 @@ bool VkRenderer::create_sync_objects()
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
     {
         if (vkCreateSemaphore(ctx_.device(), &sem_ci, nullptr, &image_available_sem_[i]) != VK_SUCCESS)
+        {
+            for (int j = 0; j < i; j++)
+            {
+                vkDestroySemaphore(ctx_.device(), image_available_sem_[j], nullptr);
+                vkDestroySemaphore(ctx_.device(), render_finished_sem_[j], nullptr);
+                vkDestroyFence(ctx_.device(), in_flight_fences_[j], nullptr);
+                image_available_sem_[j] = VK_NULL_HANDLE;
+                render_finished_sem_[j] = VK_NULL_HANDLE;
+                in_flight_fences_[j] = VK_NULL_HANDLE;
+            }
             return false;
+        }
         if (vkCreateSemaphore(ctx_.device(), &sem_ci, nullptr, &render_finished_sem_[i]) != VK_SUCCESS)
+        {
+            vkDestroySemaphore(ctx_.device(), image_available_sem_[i], nullptr);
+            image_available_sem_[i] = VK_NULL_HANDLE;
+            for (int j = 0; j < i; j++)
+            {
+                vkDestroySemaphore(ctx_.device(), image_available_sem_[j], nullptr);
+                vkDestroySemaphore(ctx_.device(), render_finished_sem_[j], nullptr);
+                vkDestroyFence(ctx_.device(), in_flight_fences_[j], nullptr);
+                image_available_sem_[j] = VK_NULL_HANDLE;
+                render_finished_sem_[j] = VK_NULL_HANDLE;
+                in_flight_fences_[j] = VK_NULL_HANDLE;
+            }
             return false;
+        }
         if (vkCreateFence(ctx_.device(), &fence_ci, nullptr, &in_flight_fences_[i]) != VK_SUCCESS)
+        {
+            vkDestroySemaphore(ctx_.device(), image_available_sem_[i], nullptr);
+            vkDestroySemaphore(ctx_.device(), render_finished_sem_[i], nullptr);
+            image_available_sem_[i] = VK_NULL_HANDLE;
+            render_finished_sem_[i] = VK_NULL_HANDLE;
+            for (int j = 0; j < i; j++)
+            {
+                vkDestroySemaphore(ctx_.device(), image_available_sem_[j], nullptr);
+                vkDestroySemaphore(ctx_.device(), render_finished_sem_[j], nullptr);
+                vkDestroyFence(ctx_.device(), in_flight_fences_[j], nullptr);
+                image_available_sem_[j] = VK_NULL_HANDLE;
+                render_finished_sem_[j] = VK_NULL_HANDLE;
+                in_flight_fences_[j] = VK_NULL_HANDLE;
+            }
             return false;
+        }
     }
     return true;
 }

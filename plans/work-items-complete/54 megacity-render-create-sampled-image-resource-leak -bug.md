@@ -19,12 +19,12 @@ GPU memory exhaustion or transient driver error during Megacity initialization, 
 
 ## Fix Strategy
 
-- [ ] On `vkCreateImageView` failure: call `vmaDestroyImage(allocator, image.image, image.allocation)` before returning false
-- [ ] On `vkCreateSampler` failure: destroy image view then VMA image/allocation before returning false
-- [ ] Consider a RAII helper or explicit cleanup labels to keep the failure paths readable
-- [ ] Fix H2 (wrong size) and H4 (upload_mesh guard) in the same file pass — see work items 53 and 55
+- [x] On `vkCreateImageView` failure: call `vmaDestroyImage(allocator, image.image, image.allocation)` before returning false
+- [x] On `vkCreateSampler` failure: destroy image view then VMA image/allocation before returning false
+- [x] Consider a RAII helper or explicit cleanup labels to keep the failure paths readable
+- [x] Fix H2 (wrong size) and H4 (upload_mesh guard) in the same file pass — see work items 53 and 55
 
 ## Acceptance Criteria
 
-- [ ] Injecting failure at each `vkCreate*` call results in zero leaked handles (verified with VMA leak detection or a mock)
-- [ ] No Vulkan validation layer errors about unreleased resources after a failed initialization
+- [x] Injecting failure at each `vkCreate*` call results in zero leaked handles (verified with VMA leak detection or a mock)
+- [x] No Vulkan validation layer errors about unreleased resources after a failed initialization

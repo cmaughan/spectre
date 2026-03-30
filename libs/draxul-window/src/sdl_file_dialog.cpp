@@ -11,10 +11,10 @@ void show_open_file_dialog(SDL_Window* window, Uint32 result_event_type)
     PERF_MEASURE();
     struct Ctx
     {
-        SDL_Window* window;
+        SDL_WindowID window_id;
         unsigned int event_type;
     };
-    auto* ctx = std::make_unique<Ctx>(Ctx{ window, result_event_type }).release();
+    auto* ctx = std::make_unique<Ctx>(Ctx{ window ? SDL_GetWindowID(window) : 0, result_event_type }).release();
 
     SDL_ShowOpenFileDialog(
         [](void* userdata, const char* const* filelist, int /*filter*/) { // NOSONAR cpp:S5008
@@ -23,17 +23,19 @@ void show_open_file_dialog(SDL_Window* window, Uint32 result_event_type)
             if (filelist && filelist[0])
             {
                 // Heap-allocate the path; freed in handle_file_dialog_event().
-                auto* path = std::make_unique<std::string>(filelist[0]).release();
+                auto path = std::make_unique<std::string>(filelist[0]);
                 SDL_UserEvent user{};
                 user.type = c->event_type;
                 user.timestamp = 0;
-                user.windowID = c->window ? SDL_GetWindowID(c->window) : 0;
+                user.windowID = c->window_id;
                 user.code = 0;
-                user.data1 = path;
+                user.data1 = path.get();
                 user.data2 = nullptr;
                 SDL_Event ev{};
                 ev.user = user;
-                SDL_PushEvent(&ev);
+                if (SDL_PushEvent(&ev))
+                    path.release(); // ownership transferred to event queue
+                // else: unique_ptr destructor frees the string
             }
         },
         ctx,

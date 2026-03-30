@@ -19,27 +19,27 @@ Two distinct signed-integer UB issues in the BMP codec:
 
 ## Investigation Steps
 
-- [ ] Confirm `frame.width` and `frame.height` types in `CapturedFrame` (expected: `int`)
-- [ ] Confirm `read_u32` is also called from `read_u16` or other paths (check for similar issues there)
+- [x] Confirm `frame.width` and `frame.height` types in `CapturedFrame` (expected: `int`)
+- [x] Confirm `read_u32` is also called from `read_u16` or other paths (check for similar issues there)
 
 ## Fix Strategy
 
-- [ ] Line 46: widen before multiply:
+- [x] Line 46: widen before multiply:
   ```cpp
   const auto image_size = static_cast<uint32_t>(
       static_cast<uint64_t>(frame.width) * frame.height * 4);
   ```
-- [ ] Line 97: cast each byte to `uint32_t` before shifting:
+- [x] Line 97: cast each byte to `uint32_t` before shifting:
   ```cpp
   return static_cast<uint32_t>(bytes[offset])
        | (static_cast<uint32_t>(bytes[offset + 1]) << 8)
        | (static_cast<uint32_t>(bytes[offset + 2]) << 16)
        | (static_cast<uint32_t>(bytes[offset + 3]) << 24);
   ```
-- [ ] Check `read_u16` at line 94 for the same pattern (safe: `<< 8` cannot overflow `uint16_t` range)
+- [x] Check `read_u16` at line 94 for the same pattern (safe: `<< 8` cannot overflow `uint16_t` range)
 
 ## Acceptance Criteria
 
-- [ ] UBSan reports no signed overflow or shift UB in `bmp.cpp` for any frame size
-- [ ] Round-trip write/read test passes for a 4096×4096 frame (large enough to overflow int multiply)
-- [ ] Existing render snapshot tests still pass after the change
+- [x] UBSan reports no signed overflow or shift UB in `bmp.cpp` for any frame size
+- [x] Round-trip write/read test passes for a 4096×4096 frame (large enough to overflow int multiply)
+- [x] Existing render snapshot tests still pass after the change

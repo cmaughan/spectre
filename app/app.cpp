@@ -9,6 +9,7 @@
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <draxul/log.h>
 #include <draxul/perf_timing.h>
 #include <draxul/sdl_window.h>
@@ -721,7 +722,7 @@ void App::on_resize(int pixel_w, int pixel_h)
 void App::on_display_scale_changed(float new_ppi)
 {
     PERF_MEASURE();
-    if (new_ppi == display_ppi_)
+    if (std::abs(new_ppi - display_ppi_) < 0.5f)
         return;
 
     display_ppi_ = new_ppi;

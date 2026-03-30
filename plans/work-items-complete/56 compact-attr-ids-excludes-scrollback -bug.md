@@ -18,13 +18,13 @@ Use a terminal for long enough to exceed `kAttrCompactionThreshold` unique highl
 
 ## Fix Strategy
 
-- [ ] Add a `for_each_cell` (or equivalent) method to `ScrollbackBuffer` that iterates all stored cells
-- [ ] In `compact_attr_ids`, after the alt-screen scan, scan scrollback cells and add their `hl_attr_id` values to `active_attrs`
-- [ ] After building the remap table, call `scrollback_buffer_.remap_highlight_ids(HighlightRemapper{remap})` similarly to `grid().remap_highlight_ids(...)`
-- [ ] Fix H6 (stale stride on restore) in the same scrollback session — see work item 57
+- [x] Add a `for_each_cell` (or equivalent) method to `ScrollbackBuffer` that iterates all stored cells
+- [x] In `compact_attr_ids`, after the alt-screen scan, scan scrollback cells and add their `hl_attr_id` values to `active_attrs`
+- [x] After building the remap table, call `scrollback_buffer_.remap_highlight_ids(HighlightRemapper{remap})` similarly to `grid().remap_highlight_ids(...)`
+- [x] Fix H6 (stale stride on restore) in the same scrollback session — see work item 57
 
 ## Acceptance Criteria
 
-- [ ] After attr compaction, scrollback content retains correct syntax colors
-- [ ] Unit test: populate scrollback with cells using unique highlight IDs, trigger compaction, verify IDs map to correct highlight attributes
-- [ ] No regression in main grid or alt-screen highlight display
+- [x] After attr compaction, scrollback content retains correct syntax colors
+- [x] Unit test: populate scrollback with cells using unique highlight IDs, trigger compaction, verify IDs map to correct highlight attributes
+- [x] No regression in main grid or alt-screen highlight display

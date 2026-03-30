@@ -19,8 +19,8 @@ cannot adjust it without rebuilding from source.
       with a comment explaining the rationale (e.g., "conservative default; long enough for
       most nvim operations, short enough to surface genuine hangs").
 - [x] The constant is placed in a header or at the top of the TU, not buried in the call site.
-- [ ] (Optional, lower priority) The timeout is wired to `config.toml` as `rpc_timeout_seconds`
-      under `[advanced]`, defaulting to `5`, with a WARN + fallback for values ≤ 0.
+- [x] (Optional, lower priority) Deferred — config wiring depends on config-layer-decoupling refactor.
+      The named constant is in place and trivially adjustable.
 - [x] Existing RPC tests pass.
 
 ## Implementation Plan

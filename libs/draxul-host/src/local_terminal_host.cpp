@@ -296,4 +296,22 @@ LocalTerminalHost::GridPos LocalTerminalHost::pixel_to_cell(int px, int py) cons
     return { col, row };
 }
 
+// ---------------------------------------------------------------------------
+// Highlight compaction hooks — include scrollback in attr collection & remapping
+// ---------------------------------------------------------------------------
+
+void LocalTerminalHost::collect_extra_attr_ids(std::unordered_map<uint16_t, HlAttr>& active_attrs)
+{
+    scrollback_.for_each_cell([&](const Cell& cell) {
+        if (cell.hl_attr_id == 0)
+            return;
+        active_attrs.try_emplace(cell.hl_attr_id, highlights().get(cell.hl_attr_id));
+    });
+}
+
+void LocalTerminalHost::remap_extra_highlight_ids(const std::function<uint16_t(uint16_t)>& remap_fn)
+{
+    scrollback_.remap_highlight_ids(remap_fn);
+}
+
 } // namespace draxul

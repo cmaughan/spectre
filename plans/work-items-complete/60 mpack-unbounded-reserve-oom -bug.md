@@ -21,17 +21,17 @@ Neovim sends a corrupt msgpack message with a very large array or map count. Thi
 
 ## Fix Strategy
 
-- [ ] Cap the reserve to a practical maximum:
+- [x] Cap the reserve to a practical maximum:
   ```cpp
   constexpr uint32_t kMaxReserveCount = 65536;
   items.reserve(std::min(count, kMaxReserveCount));
   ```
   The container will grow as items are actually decoded; the cap only prevents the upfront allocation explosion.
-- [ ] Define `kMaxReserveCount` as a named constant near the top of the file for visibility
-- [ ] Verify the existing per-item `mpack_reader_error` check (lines 164, 180) will correctly truncate if the actual element count is less than `count`
+- [x] Define `kMaxReserveCount` as a named constant near the top of the file for visibility
+- [x] Verify the existing per-item `mpack_reader_error` check (lines 164, 180) will correctly truncate if the actual element count is less than `count`
 
 ## Acceptance Criteria
 
-- [ ] Feeding a msgpack message with `count == UINT32_MAX` does not throw `std::bad_alloc` or OOM
-- [ ] Normal Neovim messages with small counts are unaffected (no extra allocations)
-- [ ] Unit test: construct a synthetic msgpack array with a very large declared count and verify graceful handling
+- [x] Feeding a msgpack message with `count == UINT32_MAX` does not throw `std::bad_alloc` or OOM
+- [x] Normal Neovim messages with small counts are unaffected (no extra allocations)
+- [x] Unit test: construct a synthetic msgpack array with a very large declared count and verify graceful handling

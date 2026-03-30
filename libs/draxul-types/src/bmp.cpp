@@ -45,7 +45,8 @@ bool write_bmp_rgba(const std::filesystem::path& path, const CapturedFrame& fram
 
     std::filesystem::create_directories(path.parent_path());
 
-    const auto image_size = static_cast<uint32_t>(frame.width * frame.height * 4);
+    const auto image_size = static_cast<uint32_t>(
+        static_cast<uint64_t>(frame.width) * frame.height * 4);
     const auto file_size = kBmpHeaderSize + kBmpInfoSize + image_size;
 
     std::vector<uint8_t> bytes;
@@ -97,7 +98,10 @@ std::optional<CapturedFrame> read_bmp_rgba(const std::filesystem::path& path)
         return static_cast<uint16_t>(bytes[offset] | (bytes[offset + 1] << 8));
     };
     auto read_u32 = [&](size_t offset) -> uint32_t {
-        return static_cast<uint32_t>(bytes[offset] | (bytes[offset + 1] << 8) | (bytes[offset + 2] << 16) | (bytes[offset + 3] << 24));
+        return static_cast<uint32_t>(bytes[offset])
+            | (static_cast<uint32_t>(bytes[offset + 1]) << 8)
+            | (static_cast<uint32_t>(bytes[offset + 2]) << 16)
+            | (static_cast<uint32_t>(bytes[offset + 3]) << 24);
     };
     auto read_i32 = [&](size_t offset) -> int32_t {
         return static_cast<int32_t>(read_u32(offset));

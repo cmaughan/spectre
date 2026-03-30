@@ -39,6 +39,8 @@ private:
     GridPos pixel_to_cell(int px, int py) const;
     void on_line_scrolled_off(int row) override;
     void on_mouse_mode_changed(int mode, bool enable) override;
+    void collect_extra_attr_ids(std::unordered_map<uint16_t, HlAttr>& active_attrs) override;
+    void remap_extra_highlight_ids(const std::function<uint16_t(uint16_t)>& remap_fn) override;
 
     MouseReporter mouse_reporter_;
     SelectionManager selection_;

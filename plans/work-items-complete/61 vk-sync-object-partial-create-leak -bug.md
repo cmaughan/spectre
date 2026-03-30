@@ -14,10 +14,10 @@
 
 ## Fix Strategy
 
-- [ ] On any failure, iterate the vectors up to the current index and call `vkDestroySemaphore`/`vkDestroyFence` on all non-null handles before returning false
-- [ ] Set handles to `VK_NULL_HANDLE` after destroying to avoid double-destroy in the normal `shutdown()` path
+- [x] On any failure, iterate the vectors up to the current index and call `vkDestroySemaphore`/`vkDestroyFence` on all non-null handles before returning false
+- [x] Set handles to `VK_NULL_HANDLE` after destroying to avoid double-destroy in the normal `shutdown()` path
 
 ## Acceptance Criteria
 
-- [ ] Injecting failure at `vkCreateFence` for `i == 1` (second iteration) leaves no leaked handles
-- [ ] Normal initialization with `MAX_FRAMES_IN_FLIGHT` successes is unaffected
+- [x] Injecting failure at `vkCreateFence` for `i == 1` (second iteration) leaves no leaked handles
+- [x] Normal initialization with `MAX_FRAMES_IN_FLIGHT` successes is unaffected

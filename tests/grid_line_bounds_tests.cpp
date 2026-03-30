@@ -157,9 +157,9 @@ TEST_CASE("grid_line with col_start near max int does not overflow", "[grid_line
     ScopedLogCapture cap;
 
     // Use a large col count to exercise the size_t arithmetic path in set_cell.
-    // cols=65536 means the grid holds 65536 * 1 = 65536 cells (1 row).
+    // Use a moderate grid size (within the 10000 dimension cap).
     Grid grid;
-    grid.resize(65536, 1);
+    grid.resize(1000, 1);
 
     HighlightTable highlights;
     UiEventHandler handler;
@@ -172,7 +172,7 @@ TEST_CASE("grid_line with col_start near max int does not overflow", "[grid_line
 
     // grid dimensions unchanged, no crash.
     INFO("grid dimensions are unchanged after near-INT_MAX col_start");
-    REQUIRE(grid.cols() == 65536);
+    REQUIRE(grid.cols() == 1000);
     REQUIRE(grid.rows() == 1);
 
     // Either a WARN is emitted (if OOB check fires) or the cell is simply

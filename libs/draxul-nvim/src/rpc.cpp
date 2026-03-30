@@ -10,6 +10,7 @@
 #include <mutex>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace draxul
 {
@@ -27,6 +28,7 @@ struct NvimRpc::Impl
     std::mutex response_mutex_;
     std::condition_variable response_cv_;
     std::unordered_map<uint32_t, RpcResponse> responses_;
+    std::unordered_set<uint32_t> timed_out_msgids_;
 
     std::atomic<uint32_t> next_msgid_{ 1 };
     std::atomic<bool> read_failed_{ false };
@@ -144,6 +146,13 @@ RpcResult NvimRpc::request(const std::string& method, const std::vector<MpackVal
     {
         DRAXUL_LOG_WARN(LogCategory::Rpc, "Request timed out or aborted: %s", method.c_str());
         impl_->responses_.erase(msgid);
+        impl_->timed_out_msgids_.insert(msgid);
+        if (impl_->timed_out_msgids_.size() > 64)
+        {
+            DRAXUL_LOG_WARN(LogCategory::Rpc,
+                "Timed-out msgid set is large (%zu); many RPC requests are timing out",
+                impl_->timed_out_msgids_.size());
+        }
         return rpc_result;
     }
 
@@ -200,12 +209,27 @@ size_t NvimRpc::notification_queue_depth() const
 void NvimRpc::dispatch_rpc_response(const std::vector<MpackValue>& msg_array)
 {
     PERF_MEASURE();
+    uint32_t msgid = (uint32_t)msg_array[1].as_int();
+
+    std::lock_guard<std::mutex> lock(impl_->response_mutex_);
+
+    // Discard late responses for requests that already timed out.
+    // Without this, the response data would accumulate in responses_
+    // with no caller ever removing it, leaking memory.
+    auto timed_out_it = impl_->timed_out_msgids_.find(msgid);
+    if (timed_out_it != impl_->timed_out_msgids_.end())
+    {
+        impl_->timed_out_msgids_.erase(timed_out_it);
+        DRAXUL_LOG_DEBUG(LogCategory::Rpc,
+            "Discarding late response for timed-out msgid %u", msgid);
+        return;
+    }
+
     RpcResponse resp;
-    resp.msgid = (uint32_t)msg_array[1].as_int();
+    resp.msgid = msgid;
     resp.error = msg_array[2];
     resp.result = msg_array[3];
 
-    std::lock_guard<std::mutex> lock(impl_->response_mutex_);
     impl_->responses_[resp.msgid] = std::move(resp);
     impl_->response_cv_.notify_all();
 }

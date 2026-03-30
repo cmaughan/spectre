@@ -19,12 +19,12 @@ Neither flag is on a hot path; the fix is a simple try/catch + early-exit with a
 
 ## Acceptance Criteria
 
-- [ ] `--screenshot-delay <non-numeric>` prints a usage error to stderr and exits with a
+- [x] `--screenshot-delay <non-numeric>` prints a usage error to stderr and exits with a
       non-zero code instead of throwing.
-- [ ] `--screenshot-delay <negative>` prints a usage error (delay cannot be negative).
-- [ ] `--screenshot-size <non-numeric>` same treatment.
-- [ ] `--screenshot-size <0>` and `--screenshot-size <negative>` rejected.
-- [ ] No regression to existing valid flag parsing.
+- [x] `--screenshot-delay <negative>` prints a usage error (delay cannot be negative).
+- [x] `--screenshot-size <non-numeric>` same treatment.
+- [x] `--screenshot-size <0>` and `--screenshot-size <negative>` rejected.
+- [x] No regression to existing valid flag parsing.
 
 ## Implementation Plan
 
