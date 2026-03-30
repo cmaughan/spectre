@@ -291,15 +291,15 @@ bool HostManager::create_host_for_leaf(LeafId id, IHostCallbacks& callbacks,
     HostViewport viewport = deps_.compute_viewport ? deps_.compute_viewport(desc) : HostViewport{};
 
     if (HostContext context{
-            deps_.window,
-            &grid_renderer,
-            deps_.text_service,
-            std::move(launch),
-            deps_.config,
-            deps_.config_document,
-            viewport,
-            deps_.owner_lifetime,
-            display_ppi,
+            .window = deps_.window,
+            .grid_renderer = &grid_renderer,
+            .text_service = deps_.text_service,
+            .config = deps_.config,
+            .config_document = deps_.config_document,
+            .launch_options = std::move(launch),
+            .initial_viewport = viewport,
+            .owner_lifetime = deps_.owner_lifetime,
+            .display_ppi = display_ppi,
         };
         !new_host->initialize(context, callbacks))
     {

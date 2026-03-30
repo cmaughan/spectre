@@ -56,20 +56,20 @@ Option A is simpler for a two-platform codebase. Option B is better if a third b
 
 ## Implementation steps
 
-- [ ] Read `base_renderer.h` — find all `void*` accessor methods and their call sites.
-- [ ] Find every render pass that calls `native_command_buffer()` / `native_render_encoder()` (MegaCity cube pass, any others).
-- [ ] Define `MetalContext` / `VulkanContext` structs in a platform-specific header or via conditional compilation in `base_renderer.h`.
-- [ ] Change `IRenderContext` to return a reference to the typed struct.
-- [ ] Update `MetalRenderer` and `VkRenderer` implementations.
-- [ ] Update all render-pass call sites to use the typed accessor.
-- [ ] Build on both platforms (or at minimum macOS; CI covers Windows).
-- [ ] Run tests to confirm no regressions.
+- [x] Read `base_renderer.h` — find all `void*` accessor methods and their call sites.
+- [x] Find every render pass that calls `native_command_buffer()` / `native_render_encoder()` (MegaCity cube pass, any others).
+- [x] Define `MetalContext` / `VulkanContext` structs in a platform-specific header or via conditional compilation in `base_renderer.h`.
+- [x] Change `IRenderContext` to return a reference to the typed struct.
+- [x] Update `MetalRenderer` and `VkRenderer` implementations.
+- [x] Update all render-pass call sites to use the typed accessor.
+- [x] Build on both platforms (or at minimum macOS; CI covers Windows).
+- [x] Run tests to confirm no regressions.
 
 ## Acceptance criteria
 
-- [ ] No `void*` in `IRenderContext` public API.
-- [ ] Misuse of the accessor (e.g. using Metal context on Vulkan) produces a compile error or a `std::bad_variant_access`, not a silent crash.
-- [ ] All existing render passes compile and produce correct output.
+- [x] No `void*` in `IRenderContext` public API.
+- [x] Misuse of the accessor (e.g. using Metal context on Vulkan) produces a compile error or a `std::bad_variant_access`, not a silent crash.
+- [x] All existing render passes compile and produce correct output.
 
 ## Interdependencies
 

@@ -2080,7 +2080,14 @@ TEST_CASE("megacity host mouse drag pans and alt-drag rotates", "[megacity]")
     viewport.pixel_size = { 800, 600 };
     viewport.grid_size = { 1, 1 };
 
-    HostContext context(&window, &renderer, &text_service, std::move(launch), viewport, window.display_ppi_);
+    HostContext context{
+        .window = &window,
+        .grid_renderer = &renderer,
+        .text_service = &text_service,
+        .launch_options = std::move(launch),
+        .initial_viewport = viewport,
+        .display_ppi = window.display_ppi_,
+    };
 
     REQUIRE(host.initialize(context, callbacks));
     host.attach_3d_renderer(renderer);
@@ -2135,7 +2142,14 @@ TEST_CASE("megacity host honors fractional mouse delta for drag input", "[megaci
     viewport.pixel_size = { 800, 600 };
     viewport.grid_size = { 1, 1 };
 
-    HostContext context(&window, &renderer, &text_service, std::move(launch), viewport, window.display_ppi_);
+    HostContext context{
+        .window = &window,
+        .grid_renderer = &renderer,
+        .text_service = &text_service,
+        .launch_options = std::move(launch),
+        .initial_viewport = viewport,
+        .display_ppi = window.display_ppi_,
+    };
 
     REQUIRE(host.initialize(context, callbacks));
     host.attach_3d_renderer(renderer);
@@ -2183,7 +2197,14 @@ TEST_CASE("megacity host keeps catching up between mouse samples", "[megacity]")
     viewport.pixel_size = { 800, 600 };
     viewport.grid_size = { 1, 1 };
 
-    HostContext context(&window, &renderer, &text_service, std::move(launch), viewport, window.display_ppi_);
+    HostContext context{
+        .window = &window,
+        .grid_renderer = &renderer,
+        .text_service = &text_service,
+        .launch_options = std::move(launch),
+        .initial_viewport = viewport,
+        .display_ppi = window.display_ppi_,
+    };
 
     REQUIRE(host.initialize(context, callbacks));
     host.attach_3d_renderer(renderer);

@@ -3,6 +3,7 @@
 #include <draxul/log.h>
 #include <draxul/perf_timing.h>
 #include <draxul/unicode.h>
+#include <functional>
 
 namespace draxul
 {
@@ -21,6 +22,107 @@ void clear_continuation(Cell& cell)
 {
     cell = Cell{};
     cell.dirty = true;
+}
+
+// Helper type for computing flat cell indices from (row, col) pairs.
+struct CellIndexer
+{
+    int grid_cols;
+
+    size_t operator()(int r, int c) const
+    {
+        return static_cast<size_t>(r) * static_cast<size_t>(grid_cols) + static_cast<size_t>(c);
+    }
+};
+
+using DirtyFn = std::function<void(int)>;
+
+// Scroll the cells within the region by `delta` rows.
+// Positive delta = scroll up (content moves up, new blank rows appear at bottom).
+// Negative delta = scroll down (content moves down, new blank rows appear at top).
+void scroll_rows(std::vector<Cell>& cells, CellIndexer idx,
+    int top, int bot, int left, int right, int delta, const DirtyFn& mark_dirty)
+{
+    if (delta > 0)
+    {
+        for (int r = top; r < bot - delta; r++)
+        {
+            for (int c = left; c < right; c++)
+            {
+                cells[idx(r, c)] = cells[idx(r + delta, c)];
+                mark_dirty(static_cast<int>(idx(r, c)));
+            }
+        }
+        for (int r = bot - delta; r < bot; r++)
+        {
+            for (int c = left; c < right; c++)
+            {
+                cells[idx(r, c)] = make_blank_cell();
+                mark_dirty(static_cast<int>(idx(r, c)));
+            }
+        }
+    }
+    else
+    {
+        int shift = -delta;
+        for (int r = bot - 1; r >= top + shift; r--)
+        {
+            for (int c = left; c < right; c++)
+            {
+                cells[idx(r, c)] = cells[idx(r - shift, c)];
+                mark_dirty(static_cast<int>(idx(r, c)));
+            }
+        }
+        for (int r = top; r < top + shift; r++)
+        {
+            for (int c = left; c < right; c++)
+            {
+                cells[idx(r, c)] = make_blank_cell();
+                mark_dirty(static_cast<int>(idx(r, c)));
+            }
+        }
+    }
+}
+
+// Scroll the cells within the region by `delta` columns.
+// Positive delta = scroll left (content moves left, new blank cols appear at right).
+// Negative delta = scroll right (content moves right, new blank cols appear at left).
+void scroll_cols(std::vector<Cell>& cells, CellIndexer idx,
+    int top, int bot, int left, int right, int delta, const DirtyFn& mark_dirty)
+{
+    if (delta > 0)
+    {
+        for (int r = top; r < bot; r++)
+        {
+            for (int c = left; c < right - delta; c++)
+            {
+                cells[idx(r, c)] = cells[idx(r, c + delta)];
+                mark_dirty(static_cast<int>(idx(r, c)));
+            }
+            for (int c = right - delta; c < right; c++)
+            {
+                cells[idx(r, c)] = make_blank_cell();
+                mark_dirty(static_cast<int>(idx(r, c)));
+            }
+        }
+    }
+    else
+    {
+        int shift = -delta;
+        for (int r = top; r < bot; r++)
+        {
+            for (int c = right - 1; c >= left + shift; c--)
+            {
+                cells[idx(r, c)] = cells[idx(r, c - shift)];
+                mark_dirty(static_cast<int>(idx(r, c)));
+            }
+            for (int c = left; c < left + shift; c++)
+            {
+                cells[idx(r, c)] = make_blank_cell();
+                mark_dirty(static_cast<int>(idx(r, c)));
+            }
+        }
+    }
 }
 
 } // namespace
@@ -149,95 +251,25 @@ void Grid::scroll(int top, int bot, int left, int right, int rows, int cols)
     rows = std::clamp(rows, -region_rows, region_rows);
     cols = std::clamp(cols, -region_cols, region_cols);
 
-    // Helper to compute cell index with size_t arithmetic to avoid signed overflow.
-    auto cell_index = [this](int r, int c) -> size_t {
-        return static_cast<size_t>(r) * static_cast<size_t>(cols_) + static_cast<size_t>(c);
-    };
+    CellIndexer idx{ cols_ };
+    auto mark_dirty = [this](int index) { mark_dirty_index(index); };
 
-    if (rows > 0)
-    {
-        for (int r = top; r < bot - rows; r++)
-        {
-            for (int c = left; c < right; c++)
-            {
-                cells_[cell_index(r, c)] = cells_[cell_index(r + rows, c)];
-                mark_dirty_index(static_cast<int>(cell_index(r, c)));
-            }
-        }
-        for (int r = bot - rows; r < bot; r++)
-        {
-            for (int c = left; c < right; c++)
-            {
-                cells_[cell_index(r, c)] = make_blank_cell();
-                mark_dirty_index(static_cast<int>(cell_index(r, c)));
-            }
-        }
-    }
-    else if (rows < 0)
-    {
-        int shift = -rows;
-        for (int r = bot - 1; r >= top + shift; r--)
-        {
-            for (int c = left; c < right; c++)
-            {
-                cells_[cell_index(r, c)] = cells_[cell_index(r - shift, c)];
-                mark_dirty_index(static_cast<int>(cell_index(r, c)));
-            }
-        }
-        for (int r = top; r < top + shift; r++)
-        {
-            for (int c = left; c < right; c++)
-            {
-                cells_[cell_index(r, c)] = make_blank_cell();
-                mark_dirty_index(static_cast<int>(cell_index(r, c)));
-            }
-        }
-    }
+    if (rows != 0)
+        scroll_rows(cells_, idx, top, bot, left, right, rows, mark_dirty);
+    if (cols != 0)
+        scroll_cols(cells_, idx, top, bot, left, right, cols, mark_dirty);
 
-    if (cols > 0)
-    {
-        for (int r = top; r < bot; r++)
-        {
-            for (int c = left; c < right - cols; c++)
-            {
-                cells_[cell_index(r, c)] = cells_[cell_index(r, c + cols)];
-                mark_dirty_index(static_cast<int>(cell_index(r, c)));
-            }
-            for (int c = right - cols; c < right; c++)
-            {
-                cells_[cell_index(r, c)] = make_blank_cell();
-                mark_dirty_index(static_cast<int>(cell_index(r, c)));
-            }
-        }
-    }
-    else if (cols < 0)
-    {
-        int shift = -cols;
-        for (int r = top; r < bot; r++)
-        {
-            for (int c = right - 1; c >= left + shift; c--)
-            {
-                cells_[cell_index(r, c)] = cells_[cell_index(r, c - shift)];
-                mark_dirty_index(static_cast<int>(cell_index(r, c)));
-            }
-            for (int c = left; c < left + shift; c++)
-            {
-                cells_[cell_index(r, c)] = make_blank_cell();
-                mark_dirty_index(static_cast<int>(cell_index(r, c)));
-            }
-        }
-    }
-
+    // Fix up double-width pairs that were split by the scroll.
     for (int r = top; r < bot; ++r)
     {
         for (int c = left; c < right; ++c)
         {
-            const int index = static_cast<int>(cell_index(r, c));
-            auto& cell = cells_[(size_t)index];
+            const int index = static_cast<int>(idx(r, c));
+            auto& cell = cells_[static_cast<size_t>(index)];
 
             const bool continuation_in_region = c + 1 < right;
             if (cell.double_width
-                && (!continuation_in_region || !cells_[(size_t)index + 1].double_width_cont))
+                && (!continuation_in_region || !cells_[static_cast<size_t>(index) + 1].double_width_cont))
             {
                 cell = make_blank_cell();
                 mark_dirty_index(index);
@@ -246,7 +278,7 @@ void Grid::scroll(int top, int bot, int left, int right, int rows, int cols)
 
             const bool leader_in_region = c > left;
             if (cell.double_width_cont
-                && (!leader_in_region || !cells_[(size_t)index - 1].double_width))
+                && (!leader_in_region || !cells_[static_cast<size_t>(index) - 1].double_width))
             {
                 clear_continuation(cell);
                 mark_dirty_index(index);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <draxul/alt_screen_manager.h>
+#include <draxul/attribute_cache.h>
 #include <draxul/grid_host_base.h>
 #include <draxul/vt_parser.h>
 #include <draxul/vt_state.h>
@@ -79,6 +80,10 @@ protected:
     {
         return attr_cache_.size();
     }
+    const AttributeCache& attr_cache() const
+    {
+        return attr_cache_;
+    }
 
     // Hook called by newline() when a line scrolls off the top of the visible
     // area (full-screen scroll region, main screen only). Override in
@@ -109,8 +114,6 @@ protected:
     virtual void on_osc_cwd(const std::string& path);
 
 private:
-    static constexpr uint16_t kAttrCompactionThreshold = 60000;
-
     uint16_t attr_id();
     void compact_attr_ids();
     void clear_cell(int col, int row);
@@ -140,9 +143,8 @@ private:
 
     // SGR / highlight state
     HlAttr current_attr_ = {};
-    // Cached highlight IDs for the active terminal attribute state.
-    std::unordered_map<HlAttr, uint16_t, HlAttrHash> attr_cache_;
-    uint16_t next_attr_id_ = 1;
+    // Shared attribute-to-ID cache (replaces inline map + counter).
+    AttributeCache attr_cache_;
 
     // VT parser
     VtParser vt_parser_;

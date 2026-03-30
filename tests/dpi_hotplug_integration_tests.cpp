@@ -63,10 +63,8 @@ void simulate_display_scale_changed(float new_ppi, float& current_ppi, TextServi
     renderer.set_ascender(metrics.ascender);
 
     // Update input dispatcher pixel_scale (mirrors App::on_display_scale_changed).
-    auto [pixel_w, pixel_h] = window.size_pixels();
-    auto [logical_w, logical_h] = window.size_logical();
-    (void)pixel_h;
-    (void)logical_h;
+    const int pixel_w = window.width_pixels();
+    const int logical_w = window.width_logical();
     if (logical_w > 0)
         dispatcher.set_pixel_scale(static_cast<float>(pixel_w) / static_cast<float>(logical_w));
 }

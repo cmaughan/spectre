@@ -27,17 +27,15 @@ public:
 
 // ---------------------------------------------------------------------------
 // IRenderContext — per-frame platform handles handed to each IRenderPass.
-//   macOS:   native_command_buffer() → id<MTLCommandBuffer> (bridge-cast)
-//            native_render_encoder() → id<MTLRenderCommandEncoder> (bridge-cast)
-//   Windows: native_command_buffer() → VkCommandBuffer (cast)
-//            native_render_encoder() → nullptr (Vulkan has no encoder object)
+// Platform-specific accessors live on the concrete subclass (MetalRenderContext
+// or VkRenderContext).  Render passes that need native handles static_cast to
+// the platform-specific type — a wrong cast is a compile error, not a silent
+// crash.
 // ---------------------------------------------------------------------------
 class IRenderContext
 {
 public:
     virtual ~IRenderContext() = default;
-    virtual void* native_command_buffer() const = 0; // NOSONAR cpp:S5008
-    virtual void* native_render_encoder() const = 0; // NOSONAR cpp:S5008
     virtual int width() const = 0;
     virtual int height() const = 0;
 

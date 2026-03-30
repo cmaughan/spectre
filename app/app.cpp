@@ -12,6 +12,7 @@
 #include <cmath>
 #include <draxul/log.h>
 #include <draxul/perf_timing.h>
+#include <draxul/pixel_scale.h>
 #include <draxul/sdl_window.h>
 #include <imgui.h>
 #include <sstream>
@@ -22,6 +23,51 @@ namespace draxul
 
 namespace
 {
+
+// State machine for run_render_test(). Replaces the previous set of scattered optional flags
+// with an explicit enum + context struct so the current phase is always unambiguous.
+enum class RenderTestPhase
+{
+    kWaitingForContent, // Host has not yet reported content_ready + a rendered frame.
+    kSettlingContent, // Content is ready; waiting for the settle period to elapse.
+    kEnablingDiagnostics, // Diagnostics panel just turned on; waiting for first panel frame + settle.
+    kSettlingForCapture, // Diagnostics done (or skipped); quiet period before capture.
+    kCapturing, // Frame capture requested; waiting for the GPU readback.
+};
+
+const char* render_test_phase_name(RenderTestPhase p)
+{
+    switch (p)
+    {
+    case RenderTestPhase::kWaitingForContent:
+        return "WaitingForContent";
+    case RenderTestPhase::kSettlingContent:
+        return "SettlingContent";
+    case RenderTestPhase::kEnablingDiagnostics:
+        return "EnablingDiagnostics";
+    case RenderTestPhase::kSettlingForCapture:
+        return "SettlingForCapture";
+    case RenderTestPhase::kCapturing:
+        return "Capturing";
+    }
+    return "Unknown";
+}
+
+struct RenderTestContext
+{
+    RenderTestPhase phase = RenderTestPhase::kWaitingForContent;
+
+    // Timestamp of the event that starts the current settle window.
+    std::chrono::steady_clock::time_point settle_start{};
+
+    // True once content has been observed "quiet" (ready + no pending frames) in
+    // the kSettlingForCapture phase. Reset when quiet is lost so the settle
+    // timer restarts on the next quiet observation.
+    bool quiet_observed = false;
+
+    // When diagnostics were enabled (for the timeout diagnostic message).
+    std::optional<std::chrono::steady_clock::time_point> diagnostics_enabled_at;
+};
 
 void normalize_render_target_window_size(IWindow& window, const AppOptions& options)
 {
@@ -53,9 +99,30 @@ void render_app_imgui_dockspace(const PanelLayout& layout)
 
 } // namespace
 
-App::App(AppOptions options)
-    : options_(std::move(options))
+AppDeps AppDeps::from_options(AppOptions opts)
 {
+    AppDeps deps;
+    deps.window_factory = opts.window_factory;
+    deps.renderer_factory = opts.renderer_create_fn;
+    deps.host_factory = opts.host_factory;
+    deps.options = std::move(opts);
+    return deps;
+}
+
+App::App(AppOptions options)
+    : App(AppDeps::from_options(std::move(options)))
+{
+}
+
+App::App(AppDeps deps)
+    : options_(std::move(deps.options))
+    , window_factory_(std::move(deps.window_factory))
+    , renderer_factory_(std::move(deps.renderer_factory))
+    , host_factory_(std::move(deps.host_factory))
+{
+    // HostManager reads options_.host_factory to create hosts.  Sync our
+    // canonical factory back so the two sources stay consistent.
+    options_.host_factory = host_factory_;
     pending_window_activation_ = options_.activate_window_on_startup;
 }
 
@@ -126,9 +193,9 @@ bool App::initialize()
         return false;
 
     if (!time_step("Window Create (SDL)", [this]() {
-            if (options_.window_factory)
+            if (window_factory_)
             {
-                window_ = options_.window_factory();
+                window_ = window_factory_();
             }
             else
             {
@@ -158,8 +225,8 @@ bool App::initialize()
             RendererOptions renderer_options;
             renderer_options.wait_for_vblank = !options_.no_vblank
                 && !(options_.host_kind == HostKind::MegaCity && options_.megacity_continuous_refresh);
-            renderer_ = options_.renderer_create_fn
-                ? options_.renderer_create_fn(config_.atlas_size, renderer_options)
+            renderer_ = renderer_factory_
+                ? renderer_factory_(config_.atlas_size, renderer_options)
                 : create_renderer(config_.atlas_size, renderer_options);
             if (!renderer_ || !renderer_.grid()->initialize(*window_))
             {
@@ -273,9 +340,7 @@ void App::apply_font_metrics()
     if (host_manager_.host())
         host_manager_.host()->on_font_metrics_changed();
     refresh_window_layout();
-    auto [pixel_w, pixel_h] = window_->size_pixels();
-    (void)pixel_h;
-    host_manager_.recompute_viewports(pixel_w, ui_panel_.layout().terminal_height);
+    host_manager_.recompute_viewports(window_->width_pixels(), ui_panel_.layout().terminal_height);
     request_frame();
 }
 
@@ -298,9 +363,7 @@ bool App::initialize_host()
     };
     host_manager_ = HostManager(std::move(host_deps));
 
-    auto [pixel_w, pixel_h] = window_->size_pixels();
-    (void)pixel_h;
-    if (!host_manager_.create(*this, pixel_w, ui_panel_.layout().terminal_height))
+    if (!host_manager_.create(*this, window_->width_pixels(), ui_panel_.layout().terminal_height))
     {
         last_init_error_ = host_manager_.error();
         return false;
@@ -345,9 +408,7 @@ void App::wire_gui_actions()
     };
     gui_deps.on_panel_toggled = [this]() {
         refresh_window_layout();
-        auto [pixel_w, pixel_h] = window_->size_pixels();
-        (void)pixel_h;
-        host_manager_.recompute_viewports(pixel_w, ui_panel_.layout().terminal_height);
+        host_manager_.recompute_viewports(window_->width_pixels(), ui_panel_.layout().terminal_height);
         update_diagnostics_panel();
         request_frame();
     };
@@ -365,13 +426,7 @@ void App::wire_window_callbacks()
     disp_deps.host_manager = &host_manager_;
     disp_deps.smooth_scroll = config_.smooth_scroll;
     disp_deps.scroll_speed = config_.scroll_speed;
-    {
-        auto [pixel_w, pixel_h] = window_->size_pixels();
-        auto [logical_w, logical_h] = window_->size_logical();
-        (void)pixel_h;
-        (void)logical_h;
-        disp_deps.pixel_scale = logical_w > 0 ? static_cast<float>(pixel_w) / static_cast<float>(logical_w) : 1.0f;
-    }
+    disp_deps.pixel_scale = PixelScale::from_window(window_->width_pixels(), window_->width_logical());
     disp_deps.request_frame = [this]() { request_frame(); };
     disp_deps.on_resize = [this](int w, int h) { on_resize(w, h); };
     disp_deps.on_display_scale_changed = [this](float ppi) { on_display_scale_changed(ppi); };
@@ -437,103 +492,167 @@ std::optional<CapturedFrame> App::run_render_test(std::chrono::milliseconds time
     PERF_MEASURE();
     const auto deadline = std::chrono::steady_clock::now() + timeout;
     last_render_test_error_.clear();
-    bool capture_requested = false;
-    bool diagnostics_enabled = !options_.show_diagnostics_in_render_test;
-    std::optional<std::chrono::steady_clock::time_point> diagnostics_enabled_at;
-    std::optional<std::chrono::steady_clock::time_point> ready_since;
-    std::optional<std::chrono::steady_clock::time_point> quiet_since;
+
     if (!renderer_.capture())
     {
         last_render_test_error_ = "Renderer does not support frame capture";
         return std::nullopt;
     }
 
+    // When show_diagnostics_in_render_test is false we skip the diagnostics
+    // phase entirely and jump straight to settling for capture once content is
+    // ready. When true, the diagnostics panel is enabled after the initial
+    // settle and we wait for an additional settle before capturing.
+    const bool want_diagnostics = options_.show_diagnostics_in_render_test;
+
+    RenderTestContext ctx;
+    // If diagnostics are not wanted, we still need to eventually capture. The
+    // flow is: WaitingForContent -> SettlingForCapture -> Capturing.
+    // If diagnostics ARE wanted: WaitingForContent -> SettlingContent ->
+    // EnablingDiagnostics -> SettlingForCapture -> Capturing.
+
     while (running_ && std::chrono::steady_clock::now() < deadline)
     {
+        // Compute a tight wait_deadline so pump_once wakes when the current
+        // settle window expires rather than sleeping until the outer deadline.
         auto wait_deadline = deadline;
-        if (!diagnostics_enabled && ready_since)
-            wait_deadline = std::min(wait_deadline, *ready_since + settle);
-        if (diagnostics_enabled && !capture_requested)
+        if (ctx.phase == RenderTestPhase::kSettlingContent
+            || ctx.phase == RenderTestPhase::kEnablingDiagnostics
+            || ctx.phase == RenderTestPhase::kSettlingForCapture)
         {
-            if (options_.show_diagnostics_in_render_test && diagnostics_enabled_at)
-                wait_deadline = std::min(wait_deadline, *diagnostics_enabled_at + settle);
-            else if (!options_.show_diagnostics_in_render_test && quiet_since)
-                wait_deadline = std::min(wait_deadline, *quiet_since + settle);
+            wait_deadline = std::min(wait_deadline, ctx.settle_start + settle);
         }
 
         pump_once(wait_deadline);
 
+        // Check for a completed capture before anything else — if the GPU
+        // readback finished we are done regardless of phase.
         if (auto captured = renderer_.capture()->take_captured_frame())
             return captured;
 
         if (!host_manager_.host())
             continue;
 
-        const HostRuntimeState state = host_manager_.host()->runtime_state();
+        const HostRuntimeState host_state = host_manager_.host()->runtime_state();
         const auto now = std::chrono::steady_clock::now();
-        if (state.content_ready && saw_frame_)
+        const bool content_ready = host_state.content_ready && saw_frame_;
+        const bool content_quiet = content_ready && !frame_requested_;
+
+        switch (ctx.phase)
         {
-            if (!ready_since)
-                ready_since = now;
-        }
-        else
+        case RenderTestPhase::kWaitingForContent:
         {
-            ready_since.reset();
+            if (content_ready)
+            {
+                ctx.settle_start = now;
+                ctx.phase = RenderTestPhase::kSettlingContent;
+            }
+            break;
         }
 
-        if (state.content_ready && saw_frame_ && !frame_requested_)
+        case RenderTestPhase::kSettlingContent:
         {
-            if (!quiet_since)
-                quiet_since = now;
-        }
-        else
-        {
-            quiet_since.reset();
+            if (!content_ready)
+            {
+                // Content lost — go back and wait again.
+                ctx.phase = RenderTestPhase::kWaitingForContent;
+                break;
+            }
+            if (now - ctx.settle_start >= settle)
+            {
+                if (want_diagnostics)
+                {
+                    // Enable the diagnostics panel and wait for it to render.
+                    ui_panel_.set_visible(true);
+                    refresh_window_layout();
+                    host_manager_.recompute_viewports(
+                        window_->width_pixels(), ui_panel_.layout().terminal_height);
+                    update_diagnostics_panel();
+                    request_frame();
+                    ctx.diagnostics_enabled_at = now;
+                    ctx.settle_start = now;
+                    ctx.phase = RenderTestPhase::kEnablingDiagnostics;
+                }
+                else
+                {
+                    // No diagnostics — go straight to settling for capture.
+                    // Reset settle_start since we need to observe quiet from now.
+                    if (content_quiet)
+                        ctx.settle_start = now;
+                    ctx.phase = RenderTestPhase::kSettlingForCapture;
+                }
+            }
+            break;
         }
 
-        if (!diagnostics_enabled && ready_since && now - *ready_since >= settle)
+        case RenderTestPhase::kEnablingDiagnostics:
         {
-            ui_panel_.set_visible(true);
-            refresh_window_layout();
-            auto [pixel_w, pixel_h] = window_->size_pixels();
-            (void)pixel_h;
-            host_manager_.recompute_viewports(pixel_w, ui_panel_.layout().terminal_height);
-            update_diagnostics_panel();
-            request_frame();
-            diagnostics_enabled = true;
-            diagnostics_enabled_at = now;
-            quiet_since.reset();
-            continue;
+            // Wait for the diagnostics panel to actually render (panel frame
+            // time must advance past the enable timestamp) AND for the settle
+            // period to elapse.
+            const bool panel_rendered = last_panel_frame_time_ > *ctx.diagnostics_enabled_at;
+            if (panel_rendered && now - ctx.settle_start >= settle)
+            {
+                // Diagnostics panel is stable — request capture.
+                renderer_.capture()->request_frame_capture();
+                request_frame();
+                ctx.phase = RenderTestPhase::kCapturing;
+            }
+            break;
         }
 
-        const bool diagnostics_capture_ready = diagnostics_enabled_at
-            && last_panel_frame_time_ > *diagnostics_enabled_at
-            && now - *diagnostics_enabled_at >= settle;
-
-        if (!capture_requested && diagnostics_enabled
-            && ((options_.show_diagnostics_in_render_test && diagnostics_capture_ready)
-                || (!options_.show_diagnostics_in_render_test && quiet_since && now - *quiet_since >= settle)))
+        case RenderTestPhase::kSettlingForCapture:
         {
-            renderer_.capture()->request_frame_capture();
-            request_frame();
-            capture_requested = true;
+            // In the non-diagnostics path we need content to be "quiet"
+            // (ready + no pending frames) for the settle period.
+            if (!content_quiet)
+            {
+                // Not quiet -- reset so the settle timer restarts when quiet resumes.
+                ctx.quiet_observed = false;
+                break;
+            }
+            if (!ctx.quiet_observed)
+            {
+                // First iteration where content is quiet -- start the settle timer.
+                ctx.quiet_observed = true;
+                ctx.settle_start = now;
+                break;
+            }
+            if (now - ctx.settle_start >= settle)
+            {
+                renderer_.capture()->request_frame_capture();
+                request_frame();
+                ctx.phase = RenderTestPhase::kCapturing;
+            }
+            break;
+        }
+
+        case RenderTestPhase::kCapturing:
+            // Waiting for take_captured_frame() at the top of the loop.
+            break;
         }
     }
 
+    // Timeout — build a diagnostic error message.
     if (host_manager_.host())
     {
-        const HostRuntimeState state = host_manager_.host()->runtime_state();
-        std::ostringstream oss;
-        const bool post_diagnostics_frame = diagnostics_enabled_at && last_panel_frame_time_ > *diagnostics_enabled_at;
-        const auto diagnostics_age_ms = diagnostics_enabled_at
-            ? std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - *diagnostics_enabled_at).count()
+        const HostRuntimeState host_state = host_manager_.host()->runtime_state();
+        const bool post_diagnostics_frame = ctx.diagnostics_enabled_at
+            && last_panel_frame_time_ > *ctx.diagnostics_enabled_at;
+        const auto diagnostics_age_ms = ctx.diagnostics_enabled_at
+            ? std::chrono::duration_cast<std::chrono::milliseconds>(
+                  std::chrono::steady_clock::now() - *ctx.diagnostics_enabled_at)
+                  .count()
             : -1;
+        std::ostringstream oss;
         oss << "Timed out waiting for a stable render capture"
-            << " (content_ready=" << (state.content_ready ? "true" : "false")
+            << " (phase=" << render_test_phase_name(ctx.phase)
+            << ", content_ready=" << (host_state.content_ready ? "true" : "false")
             << ", saw_frame=" << (saw_frame_ ? "true" : "false")
             << ", frame_requested=" << (frame_requested_ ? "true" : "false")
-            << ", diagnostics_enabled=" << (diagnostics_enabled ? "true" : "false")
-            << ", capture_requested=" << (capture_requested ? "true" : "false")
+            << ", diagnostics_enabled=" << (ctx.diagnostics_enabled_at.has_value() ? "true" : "false")
+            << ", capture_requested="
+            << (ctx.phase == RenderTestPhase::kCapturing ? "true" : "false")
             << ", post_diagnostics_frame=" << (post_diagnostics_frame ? "true" : "false")
             << ", diagnostics_age_ms=" << diagnostics_age_ms << ")";
         last_render_test_error_ = oss.str();
@@ -737,12 +856,7 @@ void App::on_display_scale_changed(float new_ppi)
     apply_font_metrics();
 
     // Keep the input dispatcher's pixel_scale in sync so mouse hit-testing remains correct.
-    auto [pixel_w, pixel_h] = window_->size_pixels();
-    auto [logical_w, logical_h] = window_->size_logical();
-    (void)pixel_h;
-    (void)logical_h;
-    if (logical_w > 0)
-        input_dispatcher_.set_pixel_scale(static_cast<float>(pixel_w) / static_cast<float>(logical_w));
+    input_dispatcher_.set_pixel_scale(PixelScale::from_window(window_->width_pixels(), window_->width_logical()));
 }
 
 void App::request_frame()
@@ -844,11 +958,10 @@ void App::refresh_window_layout()
 {
     PERF_MEASURE();
     auto [pixel_w, pixel_h] = window_->size_pixels();
-    const auto [logical_w, logical_h] = window_->size_logical();
+    const int logical_w = window_->width_logical();
     auto [cell_w, cell_h] = renderer_.grid()->cell_size_pixels();
-    const float pixel_scale = logical_w > 0 ? static_cast<float>(pixel_w) / static_cast<float>(logical_w) : 1.0f;
-    (void)logical_h;
-    ui_panel_.set_window_metrics(pixel_w, pixel_h, cell_w, cell_h, renderer_.grid()->padding(), pixel_scale);
+    const PixelScale pixel_scale = PixelScale::from_window(pixel_w, logical_w);
+    ui_panel_.set_window_metrics(pixel_w, pixel_h, cell_w, cell_h, renderer_.grid()->padding(), pixel_scale.value());
 }
 
 HostViewport App::viewport_from_descriptor(const PaneDescriptor& desc) const

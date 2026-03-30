@@ -1,5 +1,6 @@
 #pragma once
 
+#include <draxul/pixel_scale.h>
 #include <functional>
 #include <optional>
 #include <string_view>
@@ -44,7 +45,7 @@ public:
         // Ratio of physical pixels to logical pixels (1.0 on non-HiDPI, 2.0 on Retina).
         // Used to convert SDL logical mouse coordinates to physical pixels for hit-testing
         // pane descriptors (which are stored in physical pixels) and for forwarding to hosts.
-        float pixel_scale = 1.0f;
+        PixelScale pixel_scale;
 
         std::function<void()> request_frame;
         std::function<void(int, int)> on_resize;
@@ -60,7 +61,7 @@ public:
     void set_host(IHost* host);
 
     // Updates the pixel scale (called when the display DPI changes).
-    void set_pixel_scale(float scale)
+    void set_pixel_scale(PixelScale scale)
     {
         deps_.pixel_scale = scale;
     }
@@ -97,8 +98,6 @@ private:
     void on_mouse_wheel_event(const MouseWheelEvent& event);
     // Returns the host that should receive mouse events at (px, py).
     IHost* host_for_mouse_pos(int px, int py);
-    // Convert a logical pixel coordinate to physical pixels using deps_.pixel_scale.
-    int to_physical(int logical) const;
 
     Deps deps_;
     float pending_scroll_y_ = 0.0f;

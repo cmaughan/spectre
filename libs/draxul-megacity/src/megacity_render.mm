@@ -2,6 +2,7 @@
 
 #include "megacity_material_assets.h"
 #include "mesh_library.h"
+#include "metal_render_context.h"
 #include "objc_ref.h"
 #include "shadow_cascade.h"
 #import <Metal/Metal.h>
@@ -1298,7 +1299,8 @@ IsometricScenePass::~IsometricScenePass() = default;
 void IsometricScenePass::record_prepass(IRenderContext& ctx)
 {
     PERF_MEASURE();
-    id<MTLCommandBuffer> cmd_buf = (__bridge id<MTLCommandBuffer>)ctx.native_command_buffer();
+    auto* mtl_ctx = static_cast<MetalRenderContext*>(&ctx);
+    id<MTLCommandBuffer> cmd_buf = mtl_ctx->command_buffer();
     if (!cmd_buf)
         return;
 
@@ -1963,8 +1965,9 @@ void IsometricScenePass::record_prepass(IRenderContext& ctx)
 void IsometricScenePass::record(IRenderContext& ctx)
 {
     PERF_MEASURE();
-    id<MTLCommandBuffer> cmd_buf = (__bridge id<MTLCommandBuffer>)ctx.native_command_buffer();
-    id<MTLRenderCommandEncoder> encoder = (__bridge id<MTLRenderCommandEncoder>)ctx.native_render_encoder();
+    auto* mtl_ctx = static_cast<MetalRenderContext*>(&ctx);
+    id<MTLCommandBuffer> cmd_buf = mtl_ctx->command_buffer();
+    id<MTLRenderCommandEncoder> encoder = mtl_ctx->encoder();
     if (!cmd_buf || !encoder)
         return;
 

@@ -19,6 +19,26 @@ public:
     virtual void* native_handle() = 0; // NOSONAR cpp:S5008
     virtual std::pair<int, int> size_logical() const = 0;
     virtual std::pair<int, int> size_pixels() const = 0;
+    virtual int width_pixels() const
+    {
+        auto [w, h] = size_pixels();
+        return w;
+    }
+    virtual int height_pixels() const
+    {
+        auto [w, h] = size_pixels();
+        return h;
+    }
+    virtual int width_logical() const
+    {
+        auto [w, h] = size_logical();
+        return w;
+    }
+    virtual int height_logical() const
+    {
+        auto [w, h] = size_logical();
+        return h;
+    }
     virtual float display_ppi() const = 0; // Physical pixels per inch of the display
     virtual void set_title(const std::string& title) = 0;
     virtual std::string clipboard_text() const = 0;

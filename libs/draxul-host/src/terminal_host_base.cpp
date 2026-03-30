@@ -164,7 +164,6 @@ void TerminalHostBase::reset_terminal_state()
     PERF_MEASURE();
     current_attr_ = {};
     attr_cache_.clear();
-    next_attr_id_ = 1;
     vt_parser_.reset();
     vt_.col = 0;
     vt_.row = 0;
@@ -218,58 +217,15 @@ void TerminalHostBase::leave_alt_screen()
 uint16_t TerminalHostBase::attr_id()
 {
     PERF_MEASURE();
-    if (!current_attr_.has_fg && !current_attr_.has_bg && !current_attr_.has_sp
-        && !current_attr_.bold && !current_attr_.italic && !current_attr_.underline
-        && !current_attr_.undercurl && !current_attr_.strikethrough && !current_attr_.reverse)
-        return 0;
-
-    // perf: O(1) amortized lookup via unordered_map (item 13 refactor).
-    auto it = attr_cache_.find(current_attr_);
-    if (it != attr_cache_.end())
-        return it->second;
-
-    if (next_attr_id_ >= kAttrCompactionThreshold)
-        compact_attr_ids();
-
-    it = attr_cache_.find(current_attr_);
-    if (it != attr_cache_.end())
-        return it->second;
-
-    const uint16_t id = next_attr_id_++;
-    attr_cache_.try_emplace(current_attr_, id);
-    highlights().set(id, current_attr_);
-    return id;
+    return attr_cache_.get_or_insert(
+        current_attr_, highlights(), [this]() { compact_attr_ids(); });
 }
 
 void TerminalHostBase::compact_attr_ids()
 {
     PERF_MEASURE();
-    struct ActiveAttrCollector
-    {
-        TerminalHostBase* self;
-        std::unordered_map<uint16_t, HlAttr>& active_attrs;
 
-        void operator()(const Cell& cell) const
-        {
-            if (cell.hl_attr_id == 0)
-                return;
-            active_attrs.try_emplace(cell.hl_attr_id, self->highlights().get(cell.hl_attr_id));
-        }
-    };
-
-    struct HighlightRemapper
-    {
-        const std::unordered_map<uint16_t, uint16_t>& remap;
-
-        uint16_t operator()(uint16_t id) const
-        {
-            if (id == 0)
-                return id;
-            const auto it = remap.find(id);
-            return it != remap.end() ? it->second : static_cast<uint16_t>(0);
-        }
-    };
-
+    // 1. Collect live attr IDs from all sources.
     std::unordered_map<uint16_t, HlAttr> active_attrs;
     active_attrs.reserve(attr_cache_.size());
 
@@ -284,37 +240,29 @@ void TerminalHostBase::compact_attr_ids()
         }
     }
 
-    alt_screen_.for_each_saved_cell(ActiveAttrCollector{ this, active_attrs });
+    alt_screen_.for_each_saved_cell(
+        [&](const Cell& cell) {
+            if (cell.hl_attr_id == 0)
+                return;
+            active_attrs.try_emplace(cell.hl_attr_id, highlights().get(cell.hl_attr_id));
+        });
 
     collect_extra_attr_ids(active_attrs);
 
-    std::unordered_map<uint16_t, uint16_t> remap;
-    remap.reserve(active_attrs.size());
+    // 2. Compact via the shared AttributeCache.
+    const auto remap = attr_cache_.compact(active_attrs, highlights());
 
-    uint16_t next_id = 1;
-    attr_cache_.clear();
-    for (const auto& [old_id, attr] : active_attrs)
-    {
-        const uint16_t new_id = next_id;
-        ++next_id;
-        remap.try_emplace(old_id, new_id);
-        attr_cache_.try_emplace(attr, new_id);
-        highlights().set(new_id, attr);
-    }
-
-    grid().remap_highlight_ids(HighlightRemapper{ remap });
-    alt_screen_.remap_saved_highlight_ids(HighlightRemapper{ remap });
-    remap_extra_highlight_ids([&remap](uint16_t id) -> uint16_t {
+    // 3. Apply the remap to all ID-bearing storage.
+    auto remap_fn = [&remap](uint16_t id) -> uint16_t {
         if (id == 0)
             return id;
         const auto it = remap.find(id);
         return it != remap.end() ? it->second : static_cast<uint16_t>(0);
-    });
+    };
 
-    next_attr_id_ = next_id;
-    DRAXUL_LOG_DEBUG(LogCategory::App,
-        "Compacted terminal highlight cache from %zu historical attrs to %zu active attrs",
-        active_attrs.size(), attr_cache_.size());
+    grid().remap_highlight_ids(remap_fn);
+    alt_screen_.remap_saved_highlight_ids(remap_fn);
+    remap_extra_highlight_ids(remap_fn);
 }
 
 void TerminalHostBase::clear_cell(int col, int row)

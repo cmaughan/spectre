@@ -41,17 +41,17 @@ The main loop body becomes a dispatch on `ctx.state` rather than a tangle of opt
 
 ## Implementation steps
 
-- [ ] Read `app/app.cpp` — map out every `std::optional<>` flag in `run_render_test()` and which state they collectively represent.
-- [ ] Define `RenderTestState` enum and `RenderTestContext` struct (can live in an anonymous namespace in `app.cpp` or a small header).
-- [ ] Rewrite the state transitions as explicit state-machine cases.
+- [x] Read `app/app.cpp` — map out every `std::optional<>` flag in `run_render_test()` and which state they collectively represent.
+- [x] Define `RenderTestState` enum and `RenderTestContext` struct (can live in an anonymous namespace in `app.cpp` or a small header).
+- [x] Rewrite the state transitions as explicit state-machine cases.
 - [ ] Inject a clock abstraction (a `std::function<steady_clock::time_point()>` parameter or a virtual `IClock`) so tests can control time.
-- [ ] Verify the render-test CI runs (`py do.py smoke` or `ctest -R draxul-render`) still pass after the refactor.
+- [x] Verify the render-test CI runs (`py do.py smoke` or `ctest -R draxul-render`) still pass after the refactor.
 
 ## Acceptance criteria
 
-- [ ] `run_render_test()` has a single named state variable (the enum) and no uncoordinated optionals.
+- [x] `run_render_test()` has a single named state variable (the enum) and no uncoordinated optionals.
 - [ ] The function accepts (or can be given) an injectable clock for tests.
-- [ ] All existing render-test CI scenarios continue to pass.
+- [x] All existing render-test CI scenarios continue to pass.
 - [ ] Tests from `04 render-test-state-machine -test` all pass.
 
 ## Interdependencies

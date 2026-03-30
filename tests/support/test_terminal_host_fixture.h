@@ -40,7 +40,12 @@ struct TerminalHostFixture
         HostViewport vp;
         vp.grid_size = { cols, rows };
 
-        HostContext ctx{ &window, &renderer, &text_service, {}, vp, 96.0f };
+        HostContext ctx{
+            .window = &window,
+            .grid_renderer = &renderer,
+            .text_service = &text_service,
+            .initial_viewport = vp,
+        };
         ok = host.initialize(ctx, callbacks);
     }
 };

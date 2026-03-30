@@ -3814,7 +3814,7 @@ void IsometricScenePass::record_prepass(IRenderContext& ctx)
 {
     PERF_MEASURE();
     auto* vk_ctx = static_cast<VkRenderContext*>(&ctx);
-    auto cmd = static_cast<VkCommandBuffer>(ctx.native_command_buffer());
+    auto cmd = vk_ctx->command_buffer();
     if (!cmd)
         return;
     if (!state_->ensure(*vk_ctx))
@@ -4493,7 +4493,7 @@ void IsometricScenePass::record(IRenderContext& ctx)
 {
     PERF_MEASURE();
     auto* vk_ctx = static_cast<VkRenderContext*>(&ctx);
-    auto cmd = static_cast<VkCommandBuffer>(ctx.native_command_buffer());
+    auto cmd = vk_ctx->command_buffer();
     if (!cmd)
         return;
 

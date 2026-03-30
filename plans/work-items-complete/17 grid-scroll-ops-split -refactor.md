@@ -41,19 +41,19 @@ The free functions can be in an anonymous namespace in `grid.cpp` — no public 
 
 ## Implementation steps
 
-- [ ] Read `grid.cpp` — fully understand all four branches in `scroll()`.
-- [ ] Extract `scroll_rows()` as a free function; verify its test cases manually.
-- [ ] Extract `scroll_cols()` as a free function; verify its test cases manually.
-- [ ] Replace the body of `Grid::scroll()` with the dispatcher.
-- [ ] Build and run existing grid tests to confirm no regression.
+- [x] Read `grid.cpp` — fully understand all four branches in `scroll()`.
+- [x] Extract `scroll_rows()` as a free function; verify its test cases manually.
+- [x] Extract `scroll_cols()` as a free function; verify its test cases manually.
+- [x] Replace the body of `Grid::scroll()` with the dispatcher.
+- [x] Build and run existing grid tests to confirm no regression.
 - [ ] Coordinate with `05 grid-oob-writes -test` — write the OOB test in the same pass.
 
 ## Acceptance criteria
 
-- [ ] `Grid::scroll()` body is ≤ 20 lines (dispatcher only).
-- [ ] `scroll_rows` and `scroll_cols` are separate named functions.
-- [ ] All existing grid tests pass.
-- [ ] No public API changes — only internal restructuring.
+- [x] `Grid::scroll()` body is ≤ 20 lines (dispatcher only).
+- [x] `scroll_rows` and `scroll_cols` are separate named functions.
+- [x] All existing grid tests pass.
+- [x] No public API changes — only internal restructuring.
 
 ## Interdependencies
 

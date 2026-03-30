@@ -19,15 +19,6 @@ InputDispatcher::InputDispatcher(Deps deps)
 {
 }
 
-// Convert a logical pixel coordinate to a physical pixel coordinate.
-// SDL3 mouse events use logical (point) coordinates; pane descriptors and host
-// viewports store physical (device) pixel coordinates. On Retina displays the
-// two differ by the pixel_scale factor.
-int InputDispatcher::to_physical(int logical) const
-{
-    return static_cast<int>(std::round(static_cast<float>(logical) * deps_.pixel_scale));
-}
-
 // Returns the host that should receive a mouse event at (px, py).
 // px, py are SDL logical coordinates. PaneDescriptor boundaries are stored in
 // physical pixels, so we scale before hit-testing.
@@ -36,8 +27,8 @@ IHost* InputDispatcher::host_for_mouse_pos(int px, int py)
     PERF_MEASURE();
     if (deps_.host_manager)
     {
-        const int phys_x = to_physical(px);
-        const int phys_y = to_physical(py);
+        const int phys_x = deps_.pixel_scale.to_physical(px);
+        const int phys_y = deps_.pixel_scale.to_physical(py);
         IHost* target = deps_.host_manager->host_at_point(phys_x, phys_y);
         if (target)
         {
@@ -148,7 +139,7 @@ void InputDispatcher::on_mouse_button_event(const MouseButtonEvent& event)
         deps_.request_frame();
     if (deps_.ui_panel->wants_mouse())
         return;
-    if (deps_.ui_panel->layout().contains_panel_point(to_physical(event.pos.x), to_physical(event.pos.y)))
+    if (deps_.ui_panel->layout().contains_panel_point(deps_.pixel_scale.to_physical(event.pos.x), deps_.pixel_scale.to_physical(event.pos.y)))
     {
         return;
     }
@@ -157,8 +148,8 @@ void InputDispatcher::on_mouse_button_event(const MouseButtonEvent& event)
         // Hosts store viewports and cell sizes in physical pixels; translate
         // the SDL logical coordinates to physical before forwarding.
         MouseButtonEvent phys = event;
-        phys.pos.x = to_physical(event.pos.x);
-        phys.pos.y = to_physical(event.pos.y);
+        phys.pos.x = deps_.pixel_scale.to_physical(event.pos.x);
+        phys.pos.y = deps_.pixel_scale.to_physical(event.pos.y);
         target->on_mouse_button(phys);
     }
 }
@@ -173,16 +164,16 @@ void InputDispatcher::on_mouse_move_event(const MouseMoveEvent& event)
         deps_.request_frame();
     if (deps_.ui_panel->wants_mouse())
         return;
-    if (deps_.ui_panel->layout().contains_panel_point(to_physical(event.pos.x), to_physical(event.pos.y)))
+    if (deps_.ui_panel->layout().contains_panel_point(deps_.pixel_scale.to_physical(event.pos.x), deps_.pixel_scale.to_physical(event.pos.y)))
     {
         return;
     }
     if (target)
     {
         MouseMoveEvent phys = event;
-        phys.pos.x = to_physical(event.pos.x);
-        phys.pos.y = to_physical(event.pos.y);
-        phys.delta *= deps_.pixel_scale;
+        phys.pos.x = deps_.pixel_scale.to_physical(event.pos.x);
+        phys.pos.y = deps_.pixel_scale.to_physical(event.pos.y);
+        phys.delta *= deps_.pixel_scale.value();
         target->on_mouse_move(phys);
     }
 }
@@ -197,15 +188,15 @@ void InputDispatcher::on_mouse_wheel_event(const MouseWheelEvent& event)
         deps_.request_frame();
     if (deps_.ui_panel->wants_mouse())
         return;
-    if (deps_.ui_panel->layout().contains_panel_point(to_physical(event.pos.x), to_physical(event.pos.y)))
+    if (deps_.ui_panel->layout().contains_panel_point(deps_.pixel_scale.to_physical(event.pos.x), deps_.pixel_scale.to_physical(event.pos.y)))
         return;
     if (!wheel_host)
         return;
 
     // Build a physical-coordinate version of the event for forwarding to the host.
     MouseWheelEvent phys_event = event;
-    phys_event.pos.x = to_physical(event.pos.x);
-    phys_event.pos.y = to_physical(event.pos.y);
+    phys_event.pos.x = deps_.pixel_scale.to_physical(event.pos.x);
+    phys_event.pos.y = deps_.pixel_scale.to_physical(event.pos.y);
 
     if (deps_.smooth_scroll && event.delta.y != 0.0f)
     {

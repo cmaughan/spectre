@@ -174,3 +174,41 @@ TEST_CASE("app pump: FakeTermRenderer begin_frame is callable", "[app_pump]")
     renderer.end_frame();
     renderer.shutdown();
 }
+
+// ---------------------------------------------------------------------------
+// AppDeps constructor tests — exercises the explicit dependency injection path
+// ---------------------------------------------------------------------------
+
+TEST_CASE("app pump: AppDeps constructor with renderer failure triggers rollback", "[app_pump][app_deps]")
+{
+    AppDeps deps;
+    deps.options.load_user_config = false;
+    deps.options.save_user_config = false;
+    deps.options.activate_window_on_startup = false;
+    deps.window_factory = []() { return std::make_unique<FakeWindow>(); };
+    deps.renderer_factory = [](int, RendererOptions) { return RendererBundle{}; };
+
+    App app(std::move(deps));
+    REQUIRE_FALSE(app.initialize());
+    REQUIRE_FALSE(app.init_error().empty());
+}
+
+TEST_CASE("app pump: AppDeps::from_options preserves factories", "[app_pump][app_deps]")
+{
+    const std::string font = bundled_font_path();
+    if (!std::filesystem::exists(font))
+        SKIP("bundled font not found");
+
+    AppOptions opts = make_testable_options();
+    AppDeps deps = AppDeps::from_options(std::move(opts));
+
+    // The factories should be populated from the options.
+    REQUIRE(deps.window_factory != nullptr);
+    REQUIRE(deps.renderer_factory != nullptr);
+
+    // Construct App via AppDeps — should behave identically to the AppOptions path.
+    App app(std::move(deps));
+    // Init will fail at the host step (nonexistent binary) — same as make_testable_options.
+    REQUIRE_FALSE(app.initialize());
+    app.shutdown();
+}

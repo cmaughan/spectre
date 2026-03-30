@@ -41,18 +41,24 @@ public:
 
 ## Implementation steps
 
-- [ ] Read both usages in `terminal_host_base.cpp` and `ui_events.cpp` — extract the exact logic.
-- [ ] Create `AttributeCache` class with the interface above.
-- [ ] Replace both existing usages with calls to the shared class.
-- [ ] Add the new class to the appropriate CMake library target.
-- [ ] Run `cmake --build build --target draxul draxul-tests` to verify the refactor compiles and tests pass.
+- [x] Read both usages in `terminal_host_base.cpp` and `ui_events.cpp` — extract the exact logic.
+- [x] Create `AttributeCache` class with the interface above.
+- [x] Replace both existing usages with calls to the shared class.
+- [x] Add the new class to the appropriate CMake library target.
+- [x] Run `cmake --build build --target draxul draxul-tests` to verify the refactor compiles and tests pass.
+
+## Implementation notes
+
+Investigation revealed that `ui_events.cpp` does **not** contain a duplicate attr cache. The Neovim path uses pre-assigned `hl_attr_define` IDs from Neovim's RPC protocol (stored directly into `HighlightTable`), which is fundamentally different from the terminal emulator's "SGR attr -> ID" mapping. The duplication described in the original filing does not exist.
+
+The refactor was still performed for `terminal_host_base.cpp`: the inline `attr_cache_` map, `next_attr_id_` counter, and compaction logic were extracted into `AttributeCache` in `libs/draxul-grid/include/draxul/attribute_cache.h` (header-only, no CMake changes needed). `TerminalHostBase` now delegates to `AttributeCache::get_or_insert()` and `AttributeCache::compact()`.
 
 ## Acceptance criteria
 
-- [ ] No duplication of the attr-map + compaction logic — single implementation in `AttributeCache`.
-- [ ] Both `terminal_host_base.cpp` and `ui_events.cpp` use the shared class.
-- [ ] Tests from `08 attr-cache-compaction -test` all pass against the new class.
-- [ ] No functional change: visual output should be identical before and after.
+- [x] No duplication of the attr-map + compaction logic — single implementation in `AttributeCache`.
+- [x] `terminal_host_base.cpp` uses the shared class. (`ui_events.cpp` uses Neovim-assigned IDs — no cache logic to deduplicate.)
+- [x] All existing attr-cache tests pass against the new class (verified via `ctest`).
+- [x] No functional change: visual output should be identical before and after.
 
 ## Interdependencies
 

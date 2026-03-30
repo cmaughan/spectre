@@ -21,11 +21,11 @@ coverage gaps hard to detect.
 
 ## Acceptance Criteria
 
-- [ ] The `file(GLOB ...)` in `tests/CMakeLists.txt` is changed to:
+- [x] The `file(GLOB ...)` in `tests/CMakeLists.txt` is changed to:
       `file(GLOB TEST_SOURCES CONFIGURE_DEPENDS "*_tests.cpp")`.
-- [ ] Equivalent glob calls in subdirectories (if any) are also updated.
-- [ ] A comment explains why `CONFIGURE_DEPENDS` is required.
-- [ ] The build still works: `cmake --build build --target draxul-tests` succeeds.
+- [x] Equivalent glob calls in subdirectories (if any) are also updated.
+- [x] A comment explains why `CONFIGURE_DEPENDS` is required.
+- [x] The build still works: `cmake --build build --target draxul-tests` succeeds.
 
 ## Implementation Plan
 

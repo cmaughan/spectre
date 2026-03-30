@@ -15,9 +15,9 @@ Two implementations mean two places to update if the scaling model changes (e.g.
 
 ## Investigation steps
 
-- [ ] Read `libs/draxul-nvim/src/input_dispatcher.cpp` (or wherever `to_physical` lives) — find its signature and implementation.
-- [ ] Read `app/app.cpp` — find the inline lambda / duplicate conversion in `wire_window_callbacks`.
-- [ ] Check whether any other sites do inline `* scale` or `/ scale` conversions.
+- [x] Read `libs/draxul-nvim/src/input_dispatcher.cpp` (or wherever `to_physical` lives) — find its signature and implementation.
+- [x] Read `app/app.cpp` — find the inline lambda / duplicate conversion in `wire_window_callbacks`.
+- [x] Check whether any other sites do inline `* scale` or `/ scale` conversions.
 
 ## Proposed design
 
@@ -39,17 +39,17 @@ Since `draxul-types` is header-only and has no deps, this is the right home.
 
 ## Implementation steps
 
-- [ ] Create `pixel_scale.h` in `libs/draxul-types/include/draxul/`.
-- [ ] Replace `InputDispatcher::to_physical()` with `PixelScale::to_physical()`.
-- [ ] Replace the lambda/inline conversion in `App::wire_window_callbacks`.
-- [ ] Search for other inline `* scale` patterns in `app/` and `libs/` and migrate them.
-- [ ] Build and verify no regressions.
+- [x] Create `pixel_scale.h` in `libs/draxul-types/include/draxul/`.
+- [x] Replace `InputDispatcher::to_physical()` with `PixelScale::to_physical()`.
+- [x] Replace the lambda/inline conversion in `App::wire_window_callbacks`.
+- [x] Search for other inline `* scale` patterns in `app/` and `libs/` and migrate them.
+- [x] Build and verify no regressions.
 
 ## Acceptance criteria
 
-- [ ] Single canonical `PixelScale` struct used at all conversion sites.
-- [ ] No inline `* scale` or `/ scale` for pixel conversion outside the struct.
-- [ ] Builds clean; existing tests pass.
+- [x] Single canonical `PixelScale` struct used at all conversion sites.
+- [x] No inline `* scale` or `/ scale` for pixel conversion outside the struct.
+- [x] Builds clean; existing tests pass.
 
 ## Interdependencies
 

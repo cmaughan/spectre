@@ -194,7 +194,6 @@ public:
         return {};
     }
     void set_viewport(const HostViewport&) override {}
-    void on_font_metrics_changed() override {}
     void pump() override {}
     std::optional<std::chrono::steady_clock::time_point> next_deadline() const override
     {

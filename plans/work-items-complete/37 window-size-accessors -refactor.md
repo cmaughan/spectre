@@ -22,14 +22,14 @@ bug in the same vicinity.
 
 ## Acceptance Criteria
 
-- [ ] `IWindow` (and all implementations: `SdlWindow`, `FakeWindow`) gain `width_pixels()`
+- [x] `IWindow` (and all implementations: `SdlWindow`, `FakeWindow`) gain `width_pixels()`
       and `height_pixels()` accessors (returning `int` or the same unit as `size_pixels()`).
-- [ ] Similarly for logical units if `size_logical()` exists.
-- [ ] All `(void)pixel_h;` and `(void)pixel_w;` suppressions in `app/app.cpp` are removed,
+- [x] Similarly for logical units if `size_logical()` exists.
+- [x] All `(void)pixel_h;` and `(void)pixel_w;` suppressions in `app/app.cpp` are removed,
       replaced with the single-dimension accessor.
-- [ ] The existing `size_pixels()` function is kept (do not remove it — it is used where both
+- [x] The existing `size_pixels()` function is kept (do not remove it — it is used where both
       dimensions are needed).
-- [ ] All existing tests pass.
+- [x] All existing tests pass.
 
 ## Implementation Plan
 

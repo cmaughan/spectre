@@ -62,10 +62,8 @@ public:
     void set_viewport(const HostViewport& viewport) override;
     void on_focus_lost() override;
     void on_key(const KeyEvent& event) override;
-    void on_font_metrics_changed() override
-    {
-        // MegaCityHost ignores font metrics changes; it renders 3D geometry, not a text grid.
-    }
+    // on_font_metrics_changed() — inherited no-op from IHost is correct;
+    // MegaCityHost renders 3D geometry, not a text grid.
     void pump() override;
     std::optional<std::chrono::steady_clock::time_point> next_deadline() const override;
 

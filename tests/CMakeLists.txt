@@ -4,8 +4,9 @@ add_executable(draxul-rpc-fake
 target_link_libraries(draxul-rpc-fake PRIVATE draxul-nvim)
 
 # Auto-discover test sources: test_main.cpp + all *_tests.cpp files.
-# New test files matching this pattern are picked up automatically.
-file(GLOB DRAXUL_TEST_SOURCES
+# CONFIGURE_DEPENDS: re-run CMake when new *_tests.cpp files are added
+# so they are picked up without a manual reconfigure.
+file(GLOB DRAXUL_TEST_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/test_main.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/*_tests.cpp
 )

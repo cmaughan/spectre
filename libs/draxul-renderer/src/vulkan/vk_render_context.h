@@ -10,12 +10,8 @@ namespace draxul
 // Platform-specific IRenderContext for the Vulkan backend.
 // Passed to IRenderPass::record() during end_frame() / record_command_buffer().
 //
-// native_render_encoder() returns nullptr — Vulkan has no encoder object.
-// native_command_buffer() returns the VkCommandBuffer (cast to void*).
-//
-// Platform-specific code that knows it is running on Vulkan may static_cast
-// to VkRenderContext to access device() and render_pass() for lazy pipeline
-// creation and recreation detection.
+// Render passes static_cast<VkRenderContext*>(&ctx) to access command_buffer(),
+// device(), allocator(), and render_pass() with full type safety.
 class VkRenderContext : public IRenderContext
 {
 public:
@@ -38,14 +34,12 @@ public:
     {
     }
 
-    void* native_command_buffer() const override
+    // Typed Vulkan accessor — no void* casts needed.
+    VkCommandBuffer command_buffer() const
     {
         return cmd_;
     }
-    void* native_render_encoder() const override
-    {
-        return nullptr;
-    }
+
     int width() const override
     {
         return w_;

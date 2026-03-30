@@ -21,10 +21,42 @@ namespace draxul
 
 class MacOsMenu;
 
+// ---------------------------------------------------------------------------
+// AppDeps — injectable dependency bundle for App.
+//
+// Contains factory functions for the key subsystems that App creates during
+// initialize().  Passing an AppDeps lets tests (or alternative front-ends)
+// supply fakes without touching AppOptions' factory fields.
+//
+// Use `AppDeps::from_options(opts)` to build an AppDeps from an AppOptions
+// using either the caller-supplied factories or the production defaults.
+// ---------------------------------------------------------------------------
+struct AppDeps
+{
+    AppOptions options;
+
+    // Factory that creates (but does NOT initialize) the window.
+    // Return nullptr to simulate window creation failure.
+    std::function<std::unique_ptr<IWindow>()> window_factory;
+
+    // Factory that creates (but does NOT initialize) the renderer bundle.
+    // Return an empty RendererBundle to simulate GPU failure.
+    std::function<RendererBundle(int atlas_size, RendererOptions renderer_options)> renderer_factory;
+
+    // Factory that creates (but does NOT initialize) the host.
+    // Return nullptr to simulate host creation failure.
+    std::function<std::unique_ptr<IHost>(HostKind)> host_factory;
+
+    // Build an AppDeps from an AppOptions, falling back to production
+    // defaults for any factory that is not set on the options struct.
+    static AppDeps from_options(AppOptions opts);
+};
+
 class App : private IHostCallbacks
 {
 public:
     explicit App(AppOptions options = {});
+    explicit App(AppDeps deps);
     ~App();
     bool initialize();
     void run();
@@ -73,6 +105,11 @@ private:
     int wait_timeout_ms(std::optional<std::chrono::steady_clock::time_point> wait_deadline) const;
 
     AppOptions options_;
+    // Dependency factories — populated from AppDeps or from AppOptions' factory fields.
+    std::function<std::unique_ptr<IWindow>()> window_factory_;
+    std::function<RendererBundle(int, RendererOptions)> renderer_factory_;
+    std::function<std::unique_ptr<IHost>(HostKind)> host_factory_;
+
     AppConfig config_;
     ConfigDocument config_document_;
     std::unique_ptr<IWindow> window_;

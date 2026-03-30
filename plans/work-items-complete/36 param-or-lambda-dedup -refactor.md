@@ -20,13 +20,13 @@ might add a clamp while another does not.
 
 ## Acceptance Criteria
 
-- [ ] `param_or` is extracted to a free function (or `static` helper) at the top of
+- [x] `param_or` is extracted to a free function (or `static` helper) at the top of
       `terminal_host_base_csi.cpp` (or into a companion `terminal_host_base_csi_helpers.h`
       if it needs to be shared with other TUs).
-- [ ] All five call sites use the extracted function.
-- [ ] The function signature is exactly equivalent to the existing lambda (same return type,
+- [x] All five call sites use the extracted function.
+- [x] The function signature is exactly equivalent to the existing lambda (same return type,
       same default-value semantics).
-- [ ] All existing VT parser tests pass unchanged.
+- [x] All existing VT parser tests pass unchanged.
 
 ## Implementation Plan
 

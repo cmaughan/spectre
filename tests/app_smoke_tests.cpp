@@ -55,7 +55,6 @@ public:
     }
 
     void set_viewport(const HostViewport&) override {}
-    void on_font_metrics_changed() override {}
 
     void pump() override
     {
@@ -193,7 +192,6 @@ public:
     }
 
     void set_viewport(const HostViewport&) override {}
-    void on_font_metrics_changed() override {}
 
     void pump() override
     {

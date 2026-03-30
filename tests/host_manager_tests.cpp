@@ -59,7 +59,6 @@ public:
     }
 
     void set_viewport(const HostViewport&) override {}
-    void on_font_metrics_changed() override {}
     void pump() override {}
     std::optional<std::chrono::steady_clock::time_point> next_deadline() const override
     {
@@ -243,7 +242,6 @@ public:
     }
 
     void set_viewport(const HostViewport&) override {}
-    void on_font_metrics_changed() override {}
     void pump() override {}
     std::optional<std::chrono::steady_clock::time_point> next_deadline() const override
     {
@@ -603,7 +601,13 @@ TEST_CASE("grid host base: invalidated owner lifetime blocks renderer and callba
     viewport.grid_size = { 80, 24 };
 
     GuardedGridHost host;
-    HostContext context(&window, &renderer, &text_service, HostLaunchOptions{}, viewport, owner_lifetime, 96.0f);
+    HostContext context{
+        .window = &window,
+        .grid_renderer = &renderer,
+        .text_service = &text_service,
+        .initial_viewport = viewport,
+        .owner_lifetime = owner_lifetime,
+    };
     REQUIRE(host.initialize(context, callbacks));
 
     const int baseline_set_cell_size_calls = renderer.set_cell_size_calls;

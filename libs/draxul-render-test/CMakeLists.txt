@@ -16,5 +16,6 @@ endif()
 
 target_link_libraries(draxul-render-test PUBLIC
     draxul-config
+    draxul-font
     draxul-renderer
 )

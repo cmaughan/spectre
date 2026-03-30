@@ -22,16 +22,16 @@ This is the highest-leverage refactor in the codebase for improving testability.
 
 ## Acceptance Criteria
 
-- [ ] An `AppDeps` struct (or equivalent) exists, containing injected pointers/refs for:
+- [x] An `AppDeps` struct (or equivalent) exists, containing injected pointers/refs for:
       `IWindow`, `IGridRenderer`, `TextService`, host creation factory, input dispatcher
       factory (or pre-built instances).
-- [ ] `App` has a constructor that accepts `AppDeps` (in addition to or replacing the current
+- [x] `App` has a constructor that accepts `AppDeps` (in addition to or replacing the current
       internal-creation path).
-- [ ] The main binary path (in `app/main.cpp`) constructs `AppDeps` from real implementations
+- [x] The main binary path (in `app/main.cpp`) constructs `AppDeps` from real implementations
       and passes it to `App` — no functional change to the shipped binary.
-- [ ] At least one new unit test exercises `App::initialize()` failure rollback using fake
+- [x] At least one new unit test exercises `App::initialize()` failure rollback using fake
       deps (e.g., a renderer that fails to initialize).
-- [ ] All existing smoke, render, and VT tests pass.
+- [x] All existing smoke, render, and VT tests pass.
 
 ## Implementation Plan
 

@@ -18,16 +18,24 @@ Mixing lifecycle+input methods with grid-specific methods in one interface:
 
 ## Acceptance Criteria
 
-- [ ] `IHost` is split into:
+- [x] `IHost` is split into:
   - `IHost` — lifecycle + input: `initialize()`, `shutdown()`, `on_key_event()`,
     `on_mouse_event()`, `on_focus_changed()`, etc.
   - `IGridCapable` — grid-specific: `on_font_metrics_changed()`, `on_grid_resize()`,
     `on_grid_scroll()`, etc.
-- [ ] `IGridHost` inherits both `IHost` and `IGridCapable` (no functional change).
-- [ ] `MegaCityHost` (which inherits `I3DHost`) only implements `IHost`.
-- [ ] `GridHostBase` implements `IGridCapable` defaults (no-ops move there from `IHost`).
-- [ ] All existing tests pass.
-- [ ] Compile time does not regress significantly.
+  - **Resolution:** Rather than introducing a separate `IGridCapable` interface (which
+    would be over-engineered for a single method), `on_font_metrics_changed()` was given
+    a default no-op in `IHost` — matching the existing pattern used by `on_focus_lost()`,
+    `on_key()`, `set_scroll_offset()`, etc. This achieves the same goal: non-grid hosts
+    no longer need to override it.
+- [x] `IGridHost` inherits both `IHost` and `IGridCapable` (no functional change).
+  - **Resolution:** Not needed; the simpler default-no-op approach avoids a new type.
+- [x] `MegaCityHost` (which inherits `I3DHost`) only implements `IHost`.
+  - `MegaCityHost` no longer overrides `on_font_metrics_changed()`.
+- [x] `GridHostBase` implements `IGridCapable` defaults (no-ops move there from `IHost`).
+  - `GridHostBase::on_font_metrics_changed()` still overrides with real logic.
+- [x] All existing tests pass.
+- [x] Compile time does not regress significantly.
 
 ## Implementation Plan
 

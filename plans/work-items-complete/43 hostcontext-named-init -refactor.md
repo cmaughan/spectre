@@ -28,13 +28,13 @@ HostContext ctx{
 
 ## Acceptance Criteria
 
-- [ ] `HostContext` is restructured so that designated initializer syntax compiles (all
+- [x] `HostContext` is restructured so that designated initializer syntax compiles (all
       fields are public, no non-trivial constructors blocking aggregate initialization, or a
       named builder is provided).
-- [ ] All four positional constructor overloads are removed or replaced with one default
+- [x] All four positional constructor overloads are removed or replaced with one default
       aggregate constructor.
-- [ ] All `HostContext` construction call sites are updated to use named fields.
-- [ ] All existing tests pass.
+- [x] All `HostContext` construction call sites are updated to use named fields.
+- [x] All existing tests pass.
 
 ## Implementation Plan
 

@@ -14,8 +14,8 @@ namespace draxul
 bool GridHostBase::initialize(const HostContext& context, IHostCallbacks& callbacks)
 {
     PERF_MEASURE();
-    track_owner_lifetime_ = context.track_owner_lifetime;
     owner_lifetime_ = context.owner_lifetime;
+    track_owner_lifetime_ = !owner_lifetime_.expired();
     window_ = context.window;
     renderer_ = context.grid_renderer;
     text_service_ = context.text_service;

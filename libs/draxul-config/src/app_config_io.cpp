@@ -1,7 +1,6 @@
 #include <draxul/app_config_types.h>
 #include <draxul/keybinding_parser.h>
 #include <draxul/perf_timing.h>
-#include <draxul/text_service.h>
 #include <draxul/toml_support.h>
 
 #include <SDL3/SDL.h>
@@ -26,6 +25,10 @@ constexpr int kMaxWindowWidth = 3840;
 constexpr int kMaxWindowHeight = 2160;
 constexpr int kMinAtlasSize = 1024;
 constexpr int kMaxAtlasSize = 8192;
+// Mirror TextService::MIN/MAX_POINT_SIZE so that draxul-config does not need to
+// link draxul-font. Keep in sync with text_service.h if those values change.
+constexpr float kMinFontPointSize = 6.0f;
+constexpr float kMaxFontPointSize = 72.0f;
 // kGuiModifierMask is defined in input_types.h as kGuiModifierMask (same bit values).
 constexpr std::array<std::string_view, 9> kKnownGuiActions = {
     "toggle_diagnostics",
@@ -162,9 +165,9 @@ float parse_font_size(const toml::table& document, float fallback)
     PERF_MEASURE();
     // Accept both integer (font_size = 14) and float (font_size = 14.5) TOML values.
     if (auto parsed = toml_support::get_double(document, "font_size"); parsed.has_value())
-        return std::clamp(static_cast<float>(*parsed), TextService::MIN_POINT_SIZE, TextService::MAX_POINT_SIZE);
+        return std::clamp(static_cast<float>(*parsed), kMinFontPointSize, kMaxFontPointSize);
     if (auto parsed = toml_support::get_int(document, "font_size"); parsed.has_value())
-        return std::clamp(static_cast<float>(*parsed), TextService::MIN_POINT_SIZE, TextService::MAX_POINT_SIZE);
+        return std::clamp(static_cast<float>(*parsed), kMinFontPointSize, kMaxFontPointSize);
     return fallback;
 }
 
@@ -443,7 +446,7 @@ std::string AppConfig::serialize() const
     toml::table document;
     document.insert_or_assign("window_width", clamp_window_dimension(window_width, AppConfig{}.window_width, kMinWindowWidth, kMaxWindowWidth));
     document.insert_or_assign("window_height", clamp_window_dimension(window_height, AppConfig{}.window_height, kMinWindowHeight, kMaxWindowHeight));
-    document.insert_or_assign("font_size", static_cast<double>(std::clamp(font_size, TextService::MIN_POINT_SIZE, TextService::MAX_POINT_SIZE)));
+    document.insert_or_assign("font_size", static_cast<double>(std::clamp(font_size, kMinFontPointSize, kMaxFontPointSize)));
     document.insert_or_assign("atlas_size", floor_to_power_of_two(std::clamp(atlas_size, kMinAtlasSize, kMaxAtlasSize)));
     document.insert_or_assign("enable_ligatures", enable_ligatures);
     document.insert_or_assign("smooth_scroll", smooth_scroll);

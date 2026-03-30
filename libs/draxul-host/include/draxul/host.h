@@ -84,46 +84,6 @@ public:
 
 struct HostContext
 {
-    HostContext(IWindow* window_in, IGridRenderer* grid_renderer_in, TextService* text_service_in,
-        HostLaunchOptions launch_options_in, HostViewport initial_viewport_in, float display_ppi_in)
-        : HostContext(window_in, grid_renderer_in, text_service_in, std::move(launch_options_in),
-              nullptr, nullptr, std::move(initial_viewport_in), std::weak_ptr<void>{}, display_ppi_in)
-    {
-    }
-
-    HostContext(IWindow* window_in, IGridRenderer* grid_renderer_in, TextService* text_service_in,
-        HostLaunchOptions launch_options_in, HostViewport initial_viewport_in, std::weak_ptr<void> owner_lifetime_in, float display_ppi_in)
-        : HostContext(window_in, grid_renderer_in, text_service_in, std::move(launch_options_in),
-              nullptr, nullptr, std::move(initial_viewport_in), std::move(owner_lifetime_in), display_ppi_in)
-    {
-    }
-
-    HostContext(IWindow* window_in, IGridRenderer* grid_renderer_in, TextService* text_service_in,
-        AppConfig* config_in, ConfigDocument* config_document_in, HostLaunchOptions launch_options_in, HostViewport initial_viewport_in, float display_ppi_in)
-        : HostContext(window_in, grid_renderer_in, text_service_in, std::move(launch_options_in),
-              config_in, config_document_in, std::move(initial_viewport_in), std::weak_ptr<void>{}, display_ppi_in)
-    {
-    }
-
-    HostContext(IWindow* window_in, IGridRenderer* grid_renderer_in, TextService* text_service_in,
-        HostLaunchOptions launch_options_in, AppConfig* config_in, ConfigDocument* config_document_in, HostViewport initial_viewport_in,
-        std::weak_ptr<void> owner_lifetime_in = {}, float display_ppi_in = 96.0f)
-        : window(window_in)
-        , grid_renderer(grid_renderer_in)
-        , text_service(text_service_in)
-        , config(config_in)
-        , config_document(config_document_in)
-        , launch_options(std::move(launch_options_in))
-        , initial_viewport(std::move(initial_viewport_in))
-        , track_owner_lifetime(!owner_lifetime_in.expired())
-        , owner_lifetime(std::move(owner_lifetime_in))
-        , display_ppi(display_ppi_in)
-    {
-        assert(window != nullptr);
-        assert(grid_renderer != nullptr);
-        assert(text_service != nullptr);
-    }
-
     IWindow* window = nullptr;
     IGridRenderer* grid_renderer = nullptr;
     TextService* text_service = nullptr;
@@ -131,7 +91,6 @@ struct HostContext
     ConfigDocument* config_document = nullptr;
     HostLaunchOptions launch_options;
     HostViewport initial_viewport;
-    bool track_owner_lifetime = false;
     std::weak_ptr<void> owner_lifetime;
     float display_ppi = 96.0f;
 };
@@ -147,7 +106,10 @@ public:
     virtual std::string init_error() const = 0;
 
     virtual void set_viewport(const HostViewport& viewport) = 0;
-    virtual void on_font_metrics_changed() = 0;
+    virtual void on_font_metrics_changed()
+    {
+        // Default no-op; only grid-capable hosts need to respond to font metric changes.
+    }
     virtual void pump() = 0;
     virtual std::optional<std::chrono::steady_clock::time_point> next_deadline() const = 0;
 

@@ -13,7 +13,6 @@ target_compile_definitions(draxul-config PRIVATE
 )
 
 target_link_libraries(draxul-config PUBLIC
-    draxul-font
     draxul-renderer
     draxul-types
     draxul-window

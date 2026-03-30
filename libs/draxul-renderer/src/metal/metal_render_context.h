@@ -10,7 +10,8 @@ namespace draxul
 
 // Platform-specific IRenderContext for the Metal backend.
 // Passed to IRenderPass::record() during end_frame().
-// Callers that know they are on Metal may cast and use the typed accessors.
+// Render passes static_cast<MetalRenderContext*>(&ctx) to access
+// command_buffer() and encoder() with full type safety.
 class MetalRenderContext : public IRenderContext
 {
 public:
@@ -30,14 +31,16 @@ public:
     {
     }
 
-    void* native_command_buffer() const override
+    // Typed Metal accessors — no void* casts needed.
+    id<MTLCommandBuffer> command_buffer() const
     {
-        return (__bridge void*)cmd_;
+        return cmd_;
     }
-    void* native_render_encoder() const override
+    id<MTLRenderCommandEncoder> encoder() const
     {
-        return (__bridge void*)encoder_;
+        return encoder_;
     }
+
     int width() const override
     {
         return w_;
