@@ -167,17 +167,27 @@ TooltipBitmap rasterize_tooltip(TextService& text_service, const BuildingTooltip
         };
         if (!data.hovered_function.empty())
             rows.push_back({ "Function", data.hovered_function });
-        if (data.has_building_perf)
+        if (data.lcov_mode)
         {
-            rows.push_back({ "Frame", fmt_percent(data.building_frame_fraction) });
-            rows.push_back({ "Avg", fmt_percent(data.building_smoothed_frame_fraction) });
-            rows.push_back({ "Heat", fmt_heat(data.building_heat) });
+            if (data.has_building_perf)
+                rows.push_back({ "Coverage", data.building_heat > 0.0f ? "Covered" : "Not covered" });
+            if (!data.hovered_function.empty() && data.has_function_perf)
+                rows.push_back({ "Fn Coverage", data.function_heat > 0.0f ? "Covered" : "Not covered" });
         }
-        if (!data.hovered_function.empty() && data.has_function_perf)
+        else
         {
-            rows.push_back({ "Fn Frame", fmt_percent(data.function_frame_fraction) });
-            rows.push_back({ "Fn Avg", fmt_percent(data.function_smoothed_frame_fraction) });
-            rows.push_back({ "Fn Heat", fmt_heat(data.function_heat) });
+            if (data.has_building_perf)
+            {
+                rows.push_back({ "Frame", fmt_percent(data.building_frame_fraction) });
+                rows.push_back({ "Avg", fmt_percent(data.building_smoothed_frame_fraction) });
+                rows.push_back({ "Heat", fmt_heat(data.building_heat) });
+            }
+            if (!data.hovered_function.empty() && data.has_function_perf)
+            {
+                rows.push_back({ "Fn Frame", fmt_percent(data.function_frame_fraction) });
+                rows.push_back({ "Fn Avg", fmt_percent(data.function_smoothed_frame_fraction) });
+                rows.push_back({ "Fn Heat", fmt_heat(data.function_heat) });
+            }
         }
     }
 

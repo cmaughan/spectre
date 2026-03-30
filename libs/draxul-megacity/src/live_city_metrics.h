@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lcov_coverage.h"
 #include "semantic_city_layout.h"
 
 #include <draxul/perf_timing.h>
@@ -67,6 +68,14 @@ struct LiveCityPerfDebugState
     uint32_t heated_building_count = 0;
     std::vector<LiveCityPerfDebugFunction> top_matched_functions;
     std::vector<LiveCityPerfDebugFunction> top_unmatched_functions;
+
+    // LCOV import diagnostics (only populated in LcovCoverage mode)
+    bool lcov_mode = false;
+    uint32_t lcov_report_functions = 0;
+    uint32_t lcov_covered_functions = 0;
+    uint32_t lcov_matched_layers = 0;
+    uint32_t lcov_heated_layers = 0;
+    uint32_t lcov_heated_buildings = 0;
 };
 
 [[nodiscard]] LiveCityMetricsSnapshot build_live_city_metrics_snapshot(
@@ -78,5 +87,16 @@ struct LiveCityPerfDebugState
     const SemanticMegacityModel& model,
     const RuntimePerfSnapshot* perf_snapshot = nullptr,
     bool coverage_mode = false);
+
+/// Build a metrics snapshot using imported LCOV function coverage.
+/// Covered functions get heat 1.0; uncovered get 0.0.
+[[nodiscard]] LiveCityMetricsSnapshot build_lcov_city_metrics_snapshot(
+    const SemanticMegacityModel& model,
+    const LcovFunctionLookup& lcov_lookup);
+
+/// Build debug state for the LCOV overlay mode.
+[[nodiscard]] LiveCityPerfDebugState build_lcov_city_perf_debug_state(
+    const SemanticMegacityModel& model,
+    const LcovFunctionLookup& lcov_lookup);
 
 } // namespace draxul

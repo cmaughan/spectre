@@ -19,6 +19,7 @@ enum class OverlayMode : uint8_t
     None,
     Perf,
     Coverage,
+    LcovCoverage,
 };
 
 enum class MegaCityDebugView : uint8_t

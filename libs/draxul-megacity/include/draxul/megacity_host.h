@@ -23,6 +23,7 @@ struct GeometryMesh;
 class IsometricCamera;
 class IsometricScenePass;
 struct LiveCityMetricsSnapshot;
+struct LcovFunctionLookup;
 struct SignLabelAtlas;
 struct SemanticMegacityModel;
 struct SemanticMegacityLayout;
@@ -156,6 +157,7 @@ private:
     float hidden_hover_blend_ = 0.0f;
     uint64_t last_live_perf_generation_ = 0;
     RuntimePerfSnapshot coverage_perf_snapshot_;
+    std::shared_ptr<const LcovFunctionLookup> lcov_lookup_;
     std::chrono::steady_clock::time_point last_activity_time_ = std::chrono::steady_clock::now();
     std::chrono::steady_clock::time_point last_pump_time_ = std::chrono::steady_clock::now();
     std::chrono::steady_clock::time_point last_live_perf_refresh_time_ = std::chrono::steady_clock::now();

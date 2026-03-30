@@ -5,6 +5,7 @@
 #include "city_picking.h"
 #include "isometric_camera.h"
 #include "isometric_scene_pass.h"
+#include "lcov_coverage.h"
 #include "live_city_metrics.h"
 #include "scene_snapshot_builder.h"
 #include "scene_world.h"
@@ -44,6 +45,19 @@ constexpr int kHoverTooltipResetDistancePixels = 4;
 constexpr auto kMovementTick = std::chrono::milliseconds(16);
 constexpr auto kDragSmoothingTick = std::chrono::milliseconds(8);
 constexpr auto kLivePerfRefreshTick = std::chrono::milliseconds(100);
+
+/// Returns true for overlay modes that use the live runtime perf collector (Perf, Coverage).
+/// LcovCoverage uses a static import and does not need the runtime collector.
+bool is_live_perf_overlay(OverlayMode mode)
+{
+    return mode == OverlayMode::Perf || mode == OverlayMode::Coverage;
+}
+
+/// Returns true if any overlay mode is active (including LcovCoverage).
+bool is_overlay_active(OverlayMode mode)
+{
+    return mode != OverlayMode::None;
+}
 
 MegaCityCodeConfig world_rebuild_signature(MegaCityCodeConfig config)
 {
@@ -403,7 +417,7 @@ bool MegaCityHost::initialize(const HostContext& context, IHostCallbacks& callba
     last_pump_time_ = last_activity_time_;
     last_live_perf_refresh_time_ = last_activity_time_;
     last_live_perf_generation_ = 0;
-    runtime_perf_collector().set_enabled(renderer_config_.overlay_mode != OverlayMode::None);
+    runtime_perf_collector().set_enabled(is_live_perf_overlay(renderer_config_.overlay_mode));
     const std::filesystem::path city_db_path = megacity_db_path();
     if (!city_db_.open(city_db_path))
     {
@@ -757,16 +771,24 @@ void MegaCityHost::render_imgui(float dt)
     std::shared_ptr<const LiveCityPerfDebugState> perf_debug;
     if (semantic_model_)
     {
-        const RuntimePerfSnapshot perf_snapshot = runtime_perf_collector().latest_snapshot();
-        const RuntimePerfSnapshot* debug_snapshot
-            = pending_renderer_config_.overlay_mode == OverlayMode::Coverage
-            ? &coverage_perf_snapshot_
-            : &perf_snapshot;
-        perf_debug = std::make_shared<LiveCityPerfDebugState>(
-            build_live_city_perf_debug_state(
-                *semantic_model_,
-                debug_snapshot,
-                pending_renderer_config_.overlay_mode == OverlayMode::Coverage));
+        if (pending_renderer_config_.overlay_mode == OverlayMode::LcovCoverage && lcov_lookup_)
+        {
+            perf_debug = std::make_shared<LiveCityPerfDebugState>(
+                build_lcov_city_perf_debug_state(*semantic_model_, *lcov_lookup_));
+        }
+        else
+        {
+            const RuntimePerfSnapshot perf_snapshot = runtime_perf_collector().latest_snapshot();
+            const RuntimePerfSnapshot* debug_snapshot
+                = pending_renderer_config_.overlay_mode == OverlayMode::Coverage
+                ? &coverage_perf_snapshot_
+                : &perf_snapshot;
+            perf_debug = std::make_shared<LiveCityPerfDebugState>(
+                build_live_city_perf_debug_state(
+                    *semantic_model_,
+                    debug_snapshot,
+                    pending_renderer_config_.overlay_mode == OverlayMode::Coverage));
+        }
     }
 
     MegacityRendererControls renderer_controls{
@@ -802,12 +824,47 @@ void MegaCityHost::render_imgui(float dt)
         const bool coverage_mode_toggled
             = (previous_pending.overlay_mode == OverlayMode::Coverage)
             != (pending_renderer_config_.overlay_mode == OverlayMode::Coverage);
+        const bool lcov_mode_toggled
+            = (previous_pending.overlay_mode == OverlayMode::LcovCoverage)
+            != (pending_renderer_config_.overlay_mode == OverlayMode::LcovCoverage);
         const bool world_rebuild_needed = requires_world_rebuild(renderer_config_, pending_renderer_config_);
 
         if (coverage_mode_toggled)
         {
             clear_coverage_snapshot(coverage_perf_snapshot_);
             last_live_perf_generation_ = 0;
+        }
+
+        if (lcov_mode_toggled && pending_renderer_config_.overlay_mode == OverlayMode::LcovCoverage)
+        {
+            // Load LCOV report on activation
+            const std::filesystem::path repo_root(DRAXUL_REPO_ROOT);
+            const std::filesystem::path lcov_path = repo_root / "build" / "coverage.lcov";
+            const auto report = load_lcov_file(lcov_path);
+            if (report.total_functions > 0)
+            {
+                lcov_lookup_ = std::make_shared<LcovFunctionLookup>(build_lcov_lookup(report, repo_root));
+                DRAXUL_LOG_DEBUG(LogCategory::App,
+                    "LCOV loaded: %u total functions, %u covered",
+                    report.total_functions, report.covered_functions);
+            }
+            else
+            {
+                lcov_lookup_.reset();
+                DRAXUL_LOG_WARN(LogCategory::App, "LCOV file empty or not found: %s", lcov_path.string().c_str());
+            }
+            // Build LCOV metrics immediately
+            if (semantic_model_ && lcov_lookup_)
+            {
+                live_metrics_ = std::make_shared<LiveCityMetricsSnapshot>(
+                    build_lcov_city_metrics_snapshot(*semantic_model_, *lcov_lookup_));
+                mark_scene_dirty();
+            }
+        }
+        else if (lcov_mode_toggled)
+        {
+            // Leaving LCOV mode — clear lookup
+            lcov_lookup_.reset();
         }
 
         if (world_rebuild_needed)
@@ -1095,7 +1152,7 @@ void MegaCityHost::pump()
     PERF_MEASURE();
     const auto now = std::chrono::steady_clock::now();
     const float dt = std::chrono::duration<float>(now - last_pump_time_).count();
-    runtime_perf_collector().set_enabled(renderer_config_.overlay_mode != OverlayMode::None);
+    runtime_perf_collector().set_enabled(is_live_perf_overlay(renderer_config_.overlay_mode));
     bool camera_changed = false;
 
     if (camera_)
@@ -1180,7 +1237,7 @@ void MegaCityHost::pump()
 
     consume_completed_routes();
 
-    if (renderer_config_.overlay_mode != OverlayMode::None
+    if (is_live_perf_overlay(renderer_config_.overlay_mode)
         && semantic_model_
         && now - last_live_perf_refresh_time_ >= kLivePerfRefreshTick)
     {
@@ -1327,6 +1384,7 @@ void MegaCityHost::pump()
                             tooltip_data.module_path = bldg.module_path;
                             tooltip_data.function_count = bldg.function_count;
                             tooltip_data.field_count = bldg.base_size;
+                            tooltip_data.lcov_mode = (renderer_config_.overlay_mode == OverlayMode::LcovCoverage);
                             if (live_metrics_)
                             {
                                 if (const auto* building_metric = find_building_metric(
@@ -1618,11 +1676,11 @@ std::optional<std::chrono::steady_clock::time_point> MegaCityHost::next_deadline
 
     if (!continuous_refresh_enabled_ && !input_->movement_active() && !input_->drag_smoothing_active()
         && hidden_hover_blend_ <= 1e-3f
-        && renderer_config_.overlay_mode == OverlayMode::None)
+        && !is_overlay_active(renderer_config_.overlay_mode))
         return std::nullopt;
     if (input_->drag_smoothing_active())
         return std::chrono::steady_clock::now() + kDragSmoothingTick;
-    if (renderer_config_.overlay_mode != OverlayMode::None)
+    if (is_live_perf_overlay(renderer_config_.overlay_mode))
         return std::chrono::steady_clock::now() + kLivePerfRefreshTick;
     return std::chrono::steady_clock::now() + kMovementTick;
 }

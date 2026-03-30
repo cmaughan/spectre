@@ -25,6 +25,9 @@ struct BuildingTooltipData
     float function_smoothed_frame_fraction = 0.0f;
     float function_heat = 0.0f;
 
+    // LCOV coverage mode indicator
+    bool lcov_mode = false;
+
     // Route tooltip (when hovering a dependency connection).
     std::string route_source;
     std::string route_target;

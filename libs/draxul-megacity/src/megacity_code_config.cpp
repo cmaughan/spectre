@@ -199,6 +199,8 @@ void apply_megacity_code_table(MegaCityCodeConfig& config, const toml::table& ta
             config.overlay_mode = OverlayMode::Perf;
         else if (*om == "coverage")
             config.overlay_mode = OverlayMode::Coverage;
+        else if (*om == "lcov_coverage")
+            config.overlay_mode = OverlayMode::LcovCoverage;
         else
             config.overlay_mode = OverlayMode::None;
     }
@@ -360,6 +362,8 @@ toml::table serialize_megacity_code_table(const MegaCityCodeConfig& config)
             om_str = "perf";
         else if (config.overlay_mode == OverlayMode::Coverage)
             om_str = "coverage";
+        else if (config.overlay_mode == OverlayMode::LcovCoverage)
+            om_str = "lcov_coverage";
         table.insert_or_assign("overlay_mode", std::string(om_str));
     }
     table.insert_or_assign("performance_heat_log_scale", static_cast<double>(config.performance_heat_log_scale));

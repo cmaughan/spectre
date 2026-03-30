@@ -378,4 +378,100 @@ LiveCityPerfDebugState build_live_city_perf_debug_state(
     return debug;
 }
 
+LiveCityMetricsSnapshot build_lcov_city_metrics_snapshot(
+    const SemanticMegacityModel& model,
+    const LcovFunctionLookup& lcov_lookup)
+{
+    PERF_MEASURE();
+    LiveCityMetricsSnapshot snapshot;
+    snapshot.generation = 1; // static import — single generation
+
+    for (const auto& module : model.modules)
+    {
+        snapshot.buildings.reserve(snapshot.buildings.size() + module.buildings.size());
+        for (const auto& building : module.buildings)
+        {
+            float building_heat = 0.0f;
+
+            if (!building.layers.empty())
+            {
+                for (size_t layer_index = 0; layer_index < building.layers.size(); ++layer_index)
+                {
+                    const SemanticBuildingLayer& layer = building.layers[layer_index];
+                    const bool covered = lcov_function_covered(
+                        lcov_lookup,
+                        building.source_file_path,
+                        building.qualified_name,
+                        layer.function_name);
+                    const float heat = covered ? 1.0f : 0.0f;
+                    snapshot.functions.push_back({
+                        .source_file_path = building.source_file_path,
+                        .module_path = building.module_path,
+                        .qualified_name = building.qualified_name,
+                        .function_name = layer.function_name,
+                        .layer_index = static_cast<uint32_t>(layer_index),
+                        .layer_count = static_cast<uint32_t>(building.layers.size()),
+                        .frame_fraction = 0.0f,
+                        .smoothed_frame_fraction = 0.0f,
+                        .heat = heat,
+                    });
+                    building_heat = std::max(building_heat, heat);
+                }
+            }
+
+            snapshot.buildings.push_back({
+                .source_file_path = building.source_file_path,
+                .module_path = building.module_path,
+                .qualified_name = building.qualified_name,
+                .display_name = building.display_name.empty() ? building.qualified_name : building.display_name,
+                .is_struct = building.is_struct,
+                .frame_fraction = 0.0f,
+                .smoothed_frame_fraction = 0.0f,
+                .heat = building_heat,
+            });
+        }
+    }
+
+    return snapshot;
+}
+
+LiveCityPerfDebugState build_lcov_city_perf_debug_state(
+    const SemanticMegacityModel& model,
+    const LcovFunctionLookup& lcov_lookup)
+{
+    PERF_MEASURE();
+    LiveCityPerfDebugState debug;
+    debug.lcov_mode = true;
+    debug.lcov_report_functions = lcov_lookup.total_report_functions;
+    debug.lcov_covered_functions = lcov_lookup.covered_report_functions;
+
+    for (const auto& module : model.modules)
+    {
+        debug.semantic_building_count += static_cast<uint32_t>(module.buildings.size());
+        for (const auto& building : module.buildings)
+        {
+            bool building_heated = false;
+            debug.semantic_layer_count += static_cast<uint32_t>(building.layers.size());
+            for (const auto& layer : building.layers)
+            {
+                const bool covered = lcov_function_covered(
+                    lcov_lookup,
+                    building.source_file_path,
+                    building.qualified_name,
+                    layer.function_name);
+                if (covered)
+                {
+                    ++debug.lcov_matched_layers;
+                    ++debug.lcov_heated_layers;
+                    building_heated = true;
+                }
+            }
+            if (building_heated)
+                ++debug.lcov_heated_buildings;
+        }
+    }
+
+    return debug;
+}
+
 } // namespace draxul

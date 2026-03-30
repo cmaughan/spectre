@@ -7,6 +7,7 @@ if(APPLE)
         src/city_input_state.cpp
         src/city_picking.cpp
         src/isometric_camera.cpp
+        src/lcov_coverage.cpp
         src/live_city_metrics.cpp
         src/megacity_code_config.cpp
         src/megacity_material_assets.cpp
@@ -28,6 +29,7 @@ else()
         src/city_input_state.cpp
         src/city_picking.cpp
         src/isometric_camera.cpp
+        src/lcov_coverage.cpp
         src/live_city_metrics.cpp
         src/megacity_code_config.cpp
         src/megacity_material_assets.cpp

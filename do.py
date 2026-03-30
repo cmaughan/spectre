@@ -111,6 +111,7 @@ Single-word shortcuts:
                Run consensus synthesis on the latest reviews (default: claude)
   consensus-bugs [claude|gpt|gemini]
                Run bug triage consensus on the latest bug reviews (default: claude)
+  coverage     Build with LLVM coverage, run tests, export build/coverage.lcov
   syncboard    Sync work-items and icebox to the GitHub project board
 
 Deterministic render snapshots:
@@ -260,6 +261,62 @@ def main() -> int:
             *extra,
         ]
         return run(cmd, root)
+
+    if command == "coverage":
+        bd = build_dir(root)
+        # 1. Configure with coverage preset
+        rc = run(["cmake", "--preset", "mac-coverage"], root)
+        if rc != 0:
+            return rc
+        # 2. Build test binary
+        rc = run(["cmake", "--build", str(bd), "--target", "draxul-tests", "draxul-rpc-fake"], root)
+        if rc != 0:
+            return rc
+        # 3. Run tests under coverage instrumentation
+        import os
+        env = os.environ.copy()
+        env["LLVM_PROFILE_FILE"] = str(bd / "coverage-%p.profraw")
+        print(f"> ctest --test-dir {bd} -R draxul-tests --output-on-failure")
+        rc = subprocess.run(
+            ["ctest", "--test-dir", str(bd), "-R", "draxul-tests", "--output-on-failure"],
+            env=env, cwd=root, check=False,
+        ).returncode
+        if rc != 0:
+            return rc
+        # 4. Merge raw profiles
+        import glob as globmod
+        profraw_files = globmod.glob(str(bd / "coverage-*.profraw"))
+        if not profraw_files:
+            print("ERROR: no .profraw files found")
+            return 1
+        profdata = bd / "coverage.profdata"
+        rc = run(["xcrun", "llvm-profdata", "merge", "-sparse"] + profraw_files + ["-o", str(profdata)], root)
+        if rc != 0:
+            return rc
+        # 5. Export LCOV
+        lcov_file = bd / "coverage.lcov"
+        test_exe = bd / "tests" / "draxul-tests"
+        rc = subprocess.run(
+            ["xcrun", "llvm-cov", "export", str(test_exe),
+             f"--instr-profile={profdata}",
+             "--format=lcov",
+             "--ignore-filename-regex=(build/_deps|tests/)"],
+            stdout=open(lcov_file, "w"), cwd=root, check=False,
+        ).returncode
+        if rc != 0:
+            return rc
+        print(f"\nCoverage report written to: {lcov_file}")
+        # Quick summary
+        fn_total = 0
+        fn_hit = 0
+        for line in open(lcov_file):
+            if line.startswith("FNF:"):
+                fn_total += int(line[4:].strip())
+            elif line.startswith("FNH:"):
+                fn_hit += int(line[4:].strip())
+        if fn_total > 0:
+            print(f"Functions: {fn_hit}/{fn_total} ({fn_hit * 100.0 / fn_total:.1f}%)")
+        return 0
 
     if command == "syncboard":
         return run([sys.executable, str(root / "scripts" / "sync_project_board.py")], root)

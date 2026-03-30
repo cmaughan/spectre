@@ -25,21 +25,21 @@ This should stay separate from the existing live runtime coverage mode.
 
 ## Acceptance Criteria
 
-- [ ] Megacity can load an `lcov` report from disk, starting with a simple path such as
+- [x] Megacity can load an `lcov` report from disk, starting with a simple path such as
       `build/coverage.lcov` or a user-configured override.
-- [ ] A new overlay mode exists for imported/report coverage and is distinct from runtime
+- [x] A new overlay mode exists for imported/report coverage and is distinct from runtime
       `Perf` and runtime `Coverage`.
-- [ ] Function coverage is mapped onto semantic building layers using existing semantic identity
+- [x] Function coverage is mapped onto semantic building layers using existing semantic identity
       (`source_file_path`, owning qualified name, function name), with sensible fallback matching
       when exact names differ slightly.
-- [ ] Covered functions render as hot/visible in the city; uncovered functions remain at base
+- [x] Covered functions render as hot/visible in the city; uncovered functions remain at base
       color.
-- [ ] The Megacity debug panel reports useful coverage-import diagnostics:
+- [x] The Megacity debug panel reports useful coverage-import diagnostics:
       total report functions, matched functions, unmatched functions, heated layers/buildings.
-- [ ] Tooltip/debug text for hovered functions indicates whether the function is covered by the
+- [x] Tooltip/debug text for hovered functions indicates whether the function is covered by the
       imported report.
-- [ ] Existing runtime perf/coverage modes keep working unchanged.
-- [ ] `docs/features.md` is updated when the feature lands.
+- [x] Existing runtime perf/coverage modes keep working unchanged.
+- [x] `docs/features.md` is updated when the feature lands.
 
 ## Implementation Plan
 

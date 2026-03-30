@@ -245,56 +245,76 @@ void render_perf_debug_panel(const std::shared_ptr<const LiveCityPerfDebugState>
     if (!perf_debug)
         return;
 
-    if (!ImGui::TreeNodeEx("##perf_debug_root", ImGuiTreeNodeFlags_SpanAvailWidth, "Performance Debug"))
+    const char* panel_label = perf_debug->lcov_mode ? "LCOV Coverage Debug" : "Performance Debug";
+    if (!ImGui::TreeNodeEx("##perf_debug_root", ImGuiTreeNodeFlags_SpanAvailWidth, "%s", panel_label))
         return;
 
-    ImGui::Text("Frame: %llu", static_cast<unsigned long long>(perf_debug->frame_index));
-    ImGui::Text("Generation: %llu", static_cast<unsigned long long>(perf_debug->generation));
-    ImGui::Text("Frame Time: %.3f ms", static_cast<double>(perf_debug->frame_time_microseconds) / 1000.0);
-    ImGui::Separator();
-    ImGui::Text("Semantic Buildings: %u", perf_debug->semantic_building_count);
-    ImGui::Text("Semantic Layers: %u", perf_debug->semantic_layer_count);
-    ImGui::Text("Runtime Functions: %u", perf_debug->runtime_function_count);
-    ImGui::Text("Matched Runtime Functions: %u", perf_debug->matched_runtime_function_count);
-    ImGui::Text("Matched Layers: %u", perf_debug->matched_layer_count);
-    ImGui::Text("Heated Layers: %u", perf_debug->heated_layer_count);
-    ImGui::Text("Heated Buildings: %u", perf_debug->heated_building_count);
-
-    auto render_top_list = [](const char* label, const std::vector<LiveCityPerfDebugFunction>& functions) {
-        if (!ImGui::TreeNodeEx(label, ImGuiTreeNodeFlags_SpanAvailWidth, "%s (%zu)", label, functions.size()))
-            return;
-
-        if (functions.empty())
+    if (perf_debug->lcov_mode)
+    {
+        ImGui::Text("Report Functions: %u", perf_debug->lcov_report_functions);
+        ImGui::Text("Covered Functions: %u", perf_debug->lcov_covered_functions);
+        if (perf_debug->lcov_report_functions > 0)
         {
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.65f, 0.65f, 0.65f, 1.0f));
-            ImGui::TextUnformatted("(none)");
-            ImGui::PopStyleColor();
-            ImGui::TreePop();
-            return;
+            ImGui::Text("Report Coverage: %.1f%%",
+                static_cast<double>(perf_debug->lcov_covered_functions) / perf_debug->lcov_report_functions * 100.0);
         }
+        ImGui::Separator();
+        ImGui::Text("Semantic Buildings: %u", perf_debug->semantic_building_count);
+        ImGui::Text("Semantic Layers: %u", perf_debug->semantic_layer_count);
+        ImGui::Text("Matched Layers: %u", perf_debug->lcov_matched_layers);
+        ImGui::Text("Heated Layers: %u", perf_debug->lcov_heated_layers);
+        ImGui::Text("Heated Buildings: %u", perf_debug->lcov_heated_buildings);
+    }
+    else
+    {
+        ImGui::Text("Frame: %llu", static_cast<unsigned long long>(perf_debug->frame_index));
+        ImGui::Text("Generation: %llu", static_cast<unsigned long long>(perf_debug->generation));
+        ImGui::Text("Frame Time: %.3f ms", static_cast<double>(perf_debug->frame_time_microseconds) / 1000.0);
+        ImGui::Separator();
+        ImGui::Text("Semantic Buildings: %u", perf_debug->semantic_building_count);
+        ImGui::Text("Semantic Layers: %u", perf_debug->semantic_layer_count);
+        ImGui::Text("Runtime Functions: %u", perf_debug->runtime_function_count);
+        ImGui::Text("Matched Runtime Functions: %u", perf_debug->matched_runtime_function_count);
+        ImGui::Text("Matched Layers: %u", perf_debug->matched_layer_count);
+        ImGui::Text("Heated Layers: %u", perf_debug->heated_layer_count);
+        ImGui::Text("Heated Buildings: %u", perf_debug->heated_building_count);
 
-        for (const auto& function : functions)
-        {
-            ImGui::Text(
-                "%s::%s  heat %.2f  avg %.2f%%  frame %.2f%%",
-                function.owner_qualified_name.c_str(),
-                function.function_name.c_str(),
-                function.heat,
-                function.smoothed_frame_fraction * 100.0f,
-                function.frame_fraction * 100.0f);
-            if (!function.source_file_path.empty())
+        auto render_top_list = [](const char* label, const std::vector<LiveCityPerfDebugFunction>& functions) {
+            if (!ImGui::TreeNodeEx(label, ImGuiTreeNodeFlags_SpanAvailWidth, "%s (%zu)", label, functions.size()))
+                return;
+
+            if (functions.empty())
             {
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.60f, 0.60f, 0.60f, 1.0f));
-                ImGui::Text("  %s", function.source_file_path.c_str());
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.65f, 0.65f, 0.65f, 1.0f));
+                ImGui::TextUnformatted("(none)");
                 ImGui::PopStyleColor();
+                ImGui::TreePop();
+                return;
             }
-        }
 
-        ImGui::TreePop();
-    };
+            for (const auto& function : functions)
+            {
+                ImGui::Text(
+                    "%s::%s  heat %.2f  avg %.2f%%  frame %.2f%%",
+                    function.owner_qualified_name.c_str(),
+                    function.function_name.c_str(),
+                    function.heat,
+                    function.smoothed_frame_fraction * 100.0f,
+                    function.frame_fraction * 100.0f);
+                if (!function.source_file_path.empty())
+                {
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.60f, 0.60f, 0.60f, 1.0f));
+                    ImGui::Text("  %s", function.source_file_path.c_str());
+                    ImGui::PopStyleColor();
+                }
+            }
 
-    render_top_list("Top Matched", perf_debug->top_matched_functions);
-    render_top_list("Top Unmatched", perf_debug->top_unmatched_functions);
+            ImGui::TreePop();
+        };
+
+        render_top_list("Top Matched", perf_debug->top_matched_functions);
+        render_top_list("Top Unmatched", perf_debug->top_unmatched_functions);
+    }
     ImGui::TreePop();
 }
 
@@ -1169,9 +1189,9 @@ bool render_treesitter_panel(
 
     if (renderer_controls)
     {
-        static constexpr const char* kOverlayLabels[] = { "None", "Perf", "Coverage" };
+        static constexpr const char* kOverlayLabels[] = { "None", "Perf", "Coverage", "LCOV Coverage" };
         int overlay_index = static_cast<int>(renderer_controls->config.overlay_mode);
-        if (ImGui::Combo("Overlay", &overlay_index, kOverlayLabels, 3))
+        if (ImGui::Combo("Overlay", &overlay_index, kOverlayLabels, 4))
         {
             renderer_controls->config.overlay_mode = static_cast<OverlayMode>(overlay_index);
             changed = true;
