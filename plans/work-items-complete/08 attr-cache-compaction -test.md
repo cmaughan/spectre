@@ -14,25 +14,25 @@ If compaction is wrong it produces silent visual corruption (cells rendered with
 
 ## Investigation steps
 
-- [ ] Read `libs/draxul-host/src/terminal_host_base.cpp` — find `attr_id()` and the compaction logic.
-- [ ] Read `libs/draxul-nvim/src/ui_events.cpp` — find the second copy of the same logic.
-- [ ] Understand the data structures: what is `kAttrCompactionThreshold`? How is the live-cell scan performed?
-- [ ] Check whether any existing test covers compaction (search for `compaction` or `kAttrCompaction` in `tests/`).
+- [x] Read `libs/draxul-host/src/terminal_host_base.cpp` — find `attr_id()` and the compaction logic.
+- [x] Read `libs/draxul-nvim/src/ui_events.cpp` — find the second copy of the same logic.
+- [x] Understand the data structures: what is `kAttrCompactionThreshold`? How is the live-cell scan performed?
+- [x] Check whether any existing test covers compaction (search for `compaction` or `kAttrCompaction` in `tests/`).
 
 ## Test design
 
 Add to `tests/highlight_table_tests.cpp` (or create it).
 
-- [ ] **Below threshold**: insert `kAttrCompactionThreshold - 1` unique attrs; verify all survive.
-- [ ] **At threshold**: insert `kAttrCompactionThreshold` attrs; verify compaction is triggered.
-- [ ] **Live-cell protection**: create a grid with cells referencing a specific attr ID, fill the table to trigger compaction, assert the referenced attr ID is still present.
-- [ ] **Eviction of dead attr**: create an attr ID, reference it in no cell, fill the table, trigger compaction — assert the unreferenced ID is evicted.
-- [ ] **Re-insert after eviction**: after a dead attr is evicted, re-insert it; assert it gets a valid (possibly recycled) ID and renders correctly.
+- [x] **Below threshold**: insert `kAttrCompactionThreshold - 1` unique attrs; verify all survive.
+- [x] **At threshold**: insert `kAttrCompactionThreshold` attrs; verify compaction is triggered.
+- [x] **Live-cell protection**: create a grid with cells referencing a specific attr ID, fill the table to trigger compaction, assert the referenced attr ID is still present.
+- [x] **Eviction of dead attr**: create an attr ID, reference it in no cell, fill the table, trigger compaction — assert the unreferenced ID is evicted.
+- [x] **Re-insert after eviction**: after a dead attr is evicted, re-insert it; assert it gets a valid (possibly recycled) ID and renders correctly.
 
 ## Acceptance criteria
 
-- [ ] All above tests pass under ASan.
-- [ ] Tests are part of `draxul-tests`.
+- [x] All above tests pass under ASan.
+- [x] Tests are part of `draxul-tests`.
 
 ## Interdependencies
 
