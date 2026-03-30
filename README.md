@@ -1,4 +1,4 @@
-# 🩸 Draxul
+# Draxul
 
 [![Build](https://github.com/cmaughan/Draxul/actions/workflows/build.yml/badge.svg)](https://github.com/cmaughan/Draxul/actions/workflows/build.yml)
 [![ASan](https://github.com/cmaughan/Draxul/actions/workflows/asan.yml/badge.svg)](https://github.com/cmaughan/Draxul/actions/workflows/asan.yml)
@@ -8,20 +8,67 @@
 
 API docs: **[chrismaughan.com/Draxul](http://chrismaughan.com/Draxul/)** — or generate locally with `python scripts/gen_api_docs.py`.
 
-Draxul is a cross-platform GPU-accelerated terminal emulator and Neovim GUI frontend — wicked fast:
+## What is Draxul?
 
-- Vulkan on Windows, Metal on macOS
-- SDL3 windowing and input
-- Run `zsh`, `bash`, `powershell`, or any shell as a first-class terminal client
-- Deep Neovim integration via embedded `nvim --embed` over msgpack-RPC
+An experimental **Dark Factory Agentic** project with deep visualization of generated code.
+
+- **GPU-accelerated terminal host** — cross-platform (Vulkan on Windows, Metal on macOS) terminal for PowerShell, WSL, Bash, Zsh, Git, and more
+- **Neovim GUI frontend** — a full-featured replacement for nvim-qt, with deep `nvim --embed` integration over msgpack-RPC
+- **Interactive city view of a codebase** — a living 3D city where buildings represent code modules, with live performance and test coverage overlays, clickable links back to source. The city is a human metaphor for the code an agent is building: interactive, informative, and introspective
+- **High-end renderer** — a cross-platform game engine-style rendering pipeline with ambient occlusion, shadow maps, anti-aliasing, HDR, and more
+
+**None of the code has been human-written.** Draxul is 100% agentically coded using multiple agents on Claude, Codex, and Gemini. Code reviews, feature updates, and planning are managed by agents with a human arbiter. A part-time project, built in less than 3 weeks at time of writing — several person-years of equivalent effort.
 
 ### Windows
 
-![Draxul on Windows](screenshots/draxul-pc.png)
+![Draxul on Windows](screenshots/draxul_pc.png)
 
 ### macOS
 
-![Draxul on macOS](screenshots/draxul-mac.png)
+![Draxul on macOS](screenshots/draxul_mac.png)
+
+## Gallery
+
+*Click any image to view full size.*
+
+<table>
+<tr>
+<td><a href="screenshots/terminals_mac.png"><img src="screenshots/terminals_mac.png" width="400"/></a></td>
+<td><a href="screenshots/terminals_mac_2.png"><img src="screenshots/terminals_mac_2.png" width="400"/></a></td>
+</tr>
+<tr>
+<td><a href="screenshots/split_panes_mac.png"><img src="screenshots/split_panes_mac.png" width="400"/></a></td>
+<td><a href="screenshots/vim_tree_mac.png"><img src="screenshots/vim_tree_mac.png" width="400"/></a></td>
+</tr>
+<tr>
+<td><a href="screenshots/tree_mac.png"><img src="screenshots/tree_mac.png" width="400"/></a></td>
+<td><a href="screenshots/tree_mac_2.png"><img src="screenshots/tree_mac_2.png" width="400"/></a></td>
+</tr>
+<tr>
+<td><a href="screenshots/tree_mac_3.png"><img src="screenshots/tree_mac_3.png" width="400"/></a></td>
+<td><a href="screenshots/inspection_mac.png"><img src="screenshots/inspection_mac.png" width="400"/></a></td>
+</tr>
+<tr>
+<td><a href="screenshots/app_connections_mac.png"><img src="screenshots/app_connections_mac.png" width="400"/></a></td>
+<td><a href="screenshots/renderer_connections_mac.png"><img src="screenshots/renderer_connections_mac.png" width="400"/></a></td>
+</tr>
+<tr>
+<td><a href="screenshots/coverage_connections_mac.png"><img src="screenshots/coverage_connections_mac.png" width="400"/></a></td>
+<td><a href="screenshots/tooltip_link_mac.png"><img src="screenshots/tooltip_link_mac.png" width="400"/></a></td>
+</tr>
+<tr>
+<td><a href="screenshots/live_coverage_pc.png"><img src="screenshots/live_coverage_pc.png" width="400"/></a></td>
+<td><a href="screenshots/test_coverage_mac.png"><img src="screenshots/test_coverage_mac.png" width="400"/></a></td>
+</tr>
+<tr>
+<td><a href="screenshots/test_coverage_2_mac.png"><img src="screenshots/test_coverage_2_mac.png" width="400"/></a></td>
+<td><a href="screenshots/draxul-overlay-mac.png"><img src="screenshots/draxul-overlay-mac.png" width="400"/></a></td>
+</tr>
+<tr>
+<td><a href="screenshots/Screenshot%202026-03-27%20at%2014.53.27.png"><img src="screenshots/Screenshot%202026-03-27%20at%2014.53.27.png" width="400"/></a></td>
+<td></td>
+</tr>
+</table>
 
 ## Agent Contributions Welcome
 
@@ -326,17 +373,7 @@ The panel is a bottom-aligned dockable window rendered at native physical-pixel 
 
 **Startup** — per-phase initialisation timing (Config, Window + Renderer, Font, ImGui, Host) and total wall-clock time
 
-macOS example:
-
-![Draxul diagnostics panel on macOS](screenshots/draxul-overlay-mac.png)
-
 The panel does not intercept any keyboard input — the terminal remains fully interactive while it is visible.
-
-To refresh the overlay screenshot locally:
-
-```bash
-python scripts/update_screenshot.py --scenario tests/render/panel-view.toml --output screenshots/draxul-overlay-mac.png
-```
 
 ## Project Layout
 
