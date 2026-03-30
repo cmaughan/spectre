@@ -8,7 +8,7 @@ docs/deps/deps.dot.*
 .cache/
 .claude/
 .draxul/
-db/
+*.sqlite3
 Testing/
 *.user
 *.obj
