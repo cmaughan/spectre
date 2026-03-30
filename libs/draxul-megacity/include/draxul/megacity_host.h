@@ -8,6 +8,7 @@
 #include <draxul/megacity_code_config.h>
 #include <draxul/perf_timing.h>
 #include <draxul/treesitter.h>
+#include <filesystem>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -92,6 +93,7 @@ private:
     void mark_scene_dirty();
     void mark_world_rebuild_pending();
     void handle_click(const glm::ivec2& screen_pos);
+    void handle_double_click(const glm::ivec2& screen_pos);
     bool update_hidden_hover_blend(float dt, std::chrono::steady_clock::time_point now);
     void apply_selection_opacity();
     void clear_selection();
@@ -117,6 +119,7 @@ private:
     std::unique_ptr<IsometricCamera> camera_;
     I3DRenderer* renderer_3d_ = nullptr;
     CodebaseScanner scanner_;
+    std::filesystem::path scan_root_;
     CityDatabase city_db_;
     std::unique_ptr<TextService> sign_text_service_;
     std::unique_ptr<TextService> tooltip_text_service_;

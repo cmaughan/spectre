@@ -776,6 +776,42 @@ void App::set_text_input_area(int x, int y, int w, int h)
         window_->set_text_input_area(x, y, w, h);
 }
 
+bool App::dispatch_to_nvim_host(std::string_view action)
+{
+    // Find an existing NvimHost (identified by debug name, no side effects).
+    IHost* nvim_host = nullptr;
+    LeafId nvim_leaf = kInvalidLeaf;
+    host_manager_.for_each_host([&](LeafId id, IHost& host) {
+        if (!nvim_host && host.debug_state().name == "nvim")
+        {
+            nvim_host = &host;
+            nvim_leaf = id;
+        }
+    });
+
+    if (nvim_host)
+    {
+        nvim_host->dispatch_action(action);
+        host_manager_.set_focused(nvim_leaf);
+        request_frame();
+        return true;
+    }
+
+    // No existing NvimHost — create a vertical split with one.
+    LeafId new_leaf = host_manager_.split_focused(SplitDirection::Vertical, HostKind::Nvim, *this);
+    if (new_leaf == kInvalidLeaf)
+        return false;
+
+    refresh_window_layout();
+    request_frame();
+
+    IHost* new_host = host_manager_.host_for(new_leaf);
+    if (new_host)
+        new_host->dispatch_action(action);
+
+    return true;
+}
+
 void App::update_diagnostics_panel()
 {
     PERF_MEASURE();

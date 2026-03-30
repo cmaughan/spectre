@@ -54,6 +54,9 @@ public:
     // Returns the new leaf's ID, or kInvalidLeaf on failure.
     LeafId split_focused(SplitDirection dir, IHostCallbacks& callbacks);
 
+    // Splits the focused leaf with a specific host kind.
+    LeafId split_focused(SplitDirection dir, HostKind kind, IHostCallbacks& callbacks);
+
     // Closes a leaf by ID — shuts down its host and collapses the tree.
     // Returns false if this is the last leaf.
     bool close_leaf(LeafId id);

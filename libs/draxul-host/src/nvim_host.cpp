@@ -163,6 +163,37 @@ vim.fn.rpcnotify(ch, 'clipboard_set', '"', lines, regtype)
         return true;
     }
 
+    if (action.starts_with("open_file_at_function:"))
+    {
+        // Format: open_file_at_function:path|qualified_name|function_name
+        const std::string_view rest = std::string_view(action).substr(22);
+        const size_t sep2 = rest.rfind('|');
+        const size_t sep1 = (sep2 != std::string_view::npos) ? rest.rfind('|', sep2 - 1) : std::string_view::npos;
+        if (sep1 != std::string_view::npos && sep2 != std::string_view::npos && sep1 < sep2)
+        {
+            const std::string path(rest.substr(0, sep1));
+            const std::string qualified(rest.substr(sep1 + 1, sep2 - sep1 - 1));
+            const std::string func(rest.substr(sep2 + 1));
+            // Try qualified definition first (e.g. "Class::func("), then bare "func("
+            static constexpr const char* kOpenAndSearchLua = R"(
+local path, qualified, func = ...
+vim.cmd.edit(vim.fn.fnameescape(path))
+vim.cmd('normal! gg')
+if qualified ~= '' then
+    local qualified_pat = qualified .. '::' .. func .. [[\s*(]]
+    if vim.fn.search(qualified_pat) > 0 then return end
+end
+local bare_pat = [[\<]] .. func .. [[\s*(]]
+vim.fn.search(bare_pat)
+)";
+            rpc_.notify("nvim_exec_lua",
+                { NvimRpc::make_str(kOpenAndSearchLua),
+                    NvimRpc::make_array({ NvimRpc::make_str(path), NvimRpc::make_str(qualified),
+                        NvimRpc::make_str(func) }) });
+        }
+        return true;
+    }
+
     if (action.starts_with("open_file:"))
     {
         const std::string path(action.substr(10));

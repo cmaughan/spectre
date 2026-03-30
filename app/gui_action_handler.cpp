@@ -30,6 +30,7 @@ const std::unordered_map<std::string_view, GuiActionHandler::ActionFn>& GuiActio
         {"open_file_dialog",   [](auto& h) { h.open_file_dialog(); }},
         {"split_vertical",     [](auto& h) { h.split_vertical(); }},
         {"split_horizontal",   [](auto& h) { h.split_horizontal(); }},
+        {"toggle_host_ui",     [](auto& h) { h.toggle_host_ui(); }},
     };
     // clang-format on
     return map;
@@ -110,6 +111,14 @@ void GuiActionHandler::split_horizontal() const
     PERF_MEASURE();
     if (deps_.on_split_horizontal)
         deps_.on_split_horizontal();
+}
+
+void GuiActionHandler::toggle_host_ui() const
+{
+    PERF_MEASURE();
+    IHost* host = deps_.focused_host ? deps_.focused_host() : nullptr;
+    if (host)
+        host->dispatch_action("toggle_ui_panels");
 }
 
 void GuiActionHandler::change_font_size(float new_size)

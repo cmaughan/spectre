@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <draxul/events.h>
 #include <glm/vec2.hpp>
 #include <optional>
@@ -40,6 +41,10 @@ public:
     // Consumes the click — subsequent calls return nullopt until the next click.
     std::optional<glm::ivec2> consume_click();
 
+    // Returns a double-click position if two clicks occurred within ~400ms and ~4px.
+    // Consumes the double-click — subsequent calls return nullopt until the next one.
+    std::optional<glm::ivec2> consume_double_click();
+
     // Apply pending drag smoothing for this frame tick.
     // Returns true if the camera was modified.
     bool apply_drag_smoothing(float dt, IsometricCamera& camera);
@@ -62,6 +67,10 @@ private:
     glm::ivec2 press_pos_{ 0 };
     bool was_dragged_ = false;
     std::optional<glm::ivec2> pending_click_;
+    std::optional<glm::ivec2> pending_double_click_;
+    std::chrono::steady_clock::time_point last_click_time_{};
+    glm::ivec2 last_click_pos_{ 0 };
+    bool has_last_click_ = false;
 };
 
 } // namespace draxul

@@ -22,6 +22,7 @@
 #include <draxul/perf_timing.h>
 #include <draxul/text_service.h>
 #include <filesystem>
+#include <fstream>
 #include <functional>
 #include <imgui.h>
 #include <unordered_map>
@@ -57,6 +58,99 @@ bool is_live_perf_overlay(OverlayMode mode)
 bool is_overlay_active(OverlayMode mode)
 {
     return mode != OverlayMode::None;
+}
+
+/// Check whether a file contains a given function name as a substring.
+bool file_contains_function(const std::filesystem::path& path, std::string_view function_name)
+{
+    std::ifstream ifs(path, std::ios::binary);
+    if (!ifs)
+        return false;
+    std::string line;
+    while (std::getline(ifs, line))
+    {
+        if (line.find(function_name) != std::string::npos)
+            return true;
+    }
+    return false;
+}
+
+/// Given a header path, return candidate implementation file paths.
+/// Covers common patterns: same-dir .cpp, include/→src/ swap, .hpp→.cpp.
+std::vector<std::filesystem::path> candidate_impl_files(const std::filesystem::path& header)
+{
+    std::vector<std::filesystem::path> candidates;
+    const auto ext = header.extension().string();
+    if (ext != ".h" && ext != ".hpp" && ext != ".hxx")
+        return candidates;
+
+    const std::string cpp_ext = ".cpp";
+    // Same directory, different extension.
+    candidates.push_back(std::filesystem::path(header).replace_extension(cpp_ext));
+
+    // include/.../*.h → src/*.cpp  (strip one level of include nesting)
+    const std::string generic = header.generic_string();
+    const auto include_pos = generic.find("/include/");
+    if (include_pos != std::string::npos)
+    {
+        // e.g. libs/foo/include/draxul/bar.h → libs/foo/src/bar.cpp
+        const std::string prefix = generic.substr(0, include_pos);
+        const std::string filename = header.stem().string() + cpp_ext;
+        candidates.push_back(std::filesystem::path(prefix + "/src/" + filename));
+    }
+
+    return candidates;
+}
+
+/// Find the best file to open for a given source_file_path and function_name.
+/// If source is a header, looks for a matching .cpp that contains the function.
+/// Returns {file_to_open, function_to_search}.
+struct ImplementationTarget
+{
+    std::filesystem::path file;
+    std::string function_name;
+};
+
+ImplementationTarget find_implementation_file(
+    const std::filesystem::path& scan_root,
+    std::string_view source_file_path,
+    std::string_view function_name)
+{
+    const std::filesystem::path abs_path = scan_root / source_file_path;
+    std::error_code ec;
+    const std::filesystem::path canonical_src = std::filesystem::canonical(abs_path, ec);
+    if (ec)
+        return { abs_path, std::string(function_name) };
+
+    // If it's not a header, just return it directly.
+    const auto ext = canonical_src.extension().string();
+    if (ext != ".h" && ext != ".hpp" && ext != ".hxx")
+        return { canonical_src, std::string(function_name) };
+
+    // It's a header. Try to find a .cpp that contains the function.
+    const auto candidates = candidate_impl_files(canonical_src);
+    std::filesystem::path best_cpp;
+    for (const auto& candidate : candidates)
+    {
+        std::error_code ec2;
+        if (!std::filesystem::exists(candidate, ec2))
+            continue;
+
+        const auto canonical_cpp = std::filesystem::canonical(candidate, ec2);
+        if (ec2)
+            continue;
+
+        if (!function_name.empty() && file_contains_function(canonical_cpp, function_name))
+        {
+            DRAXUL_LOG_DEBUG(LogCategory::App, "Found implementation: %s contains %.*s",
+                canonical_cpp.string().c_str(),
+                static_cast<int>(function_name.size()), function_name.data());
+            return { canonical_cpp, std::string(function_name) };
+        }
+    }
+
+    // No .cpp contained the function — fall back to the header.
+    return { canonical_src, std::string(function_name) };
 }
 
 MegaCityCodeConfig world_rebuild_signature(MegaCityCodeConfig config)
@@ -425,7 +519,8 @@ bool MegaCityHost::initialize(const HostContext& context, IHostCallbacks& callba
             city_db_path.string().c_str(), city_db_.last_error().c_str());
     }
     refresh_available_modules();
-    scanner_.start(DRAXUL_REPO_ROOT);
+    scan_root_ = std::filesystem::canonical(DRAXUL_REPO_ROOT);
+    scanner_.start(scan_root_);
     route_worker_stop_ = false;
     route_thread_ = std::thread([this]() { route_worker_loop(); });
     mark_scene_dirty();
@@ -1229,7 +1324,9 @@ void MegaCityHost::pump()
         if (input_->apply_drag_smoothing(dt, *camera_))
             camera_changed = true;
 
-        if (auto click = input_->consume_click())
+        if (auto dbl = input_->consume_double_click())
+            handle_double_click(*dbl);
+        else if (auto click = input_->consume_click())
             handle_click(*click);
     }
 
@@ -1843,6 +1940,93 @@ void MegaCityHost::handle_click(const glm::ivec2& screen_pos)
     else
     {
         clear_selection();
+    }
+}
+
+void MegaCityHost::handle_double_click(const glm::ivec2& screen_pos)
+{
+    PERF_MEASURE();
+    if (!camera_ || !semantic_model_ || !semantic_layout_ || !scene_pass_ || !callbacks_)
+        return;
+
+    const glm::ivec2 local_pos = screen_pos - viewport_.pixel_pos;
+    if (local_pos.x < 0 || local_pos.y < 0 || local_pos.x >= pixel_w_ || local_pos.y >= pixel_h_)
+        return;
+
+    auto hit = pick_building(
+        local_pos,
+        pixel_w_,
+        pixel_h_,
+        *camera_,
+        *semantic_layout_,
+        nullptr,
+        semantic_model_.get(),
+        &renderer_config_);
+    if (!hit)
+        return;
+
+    // Find the building in the semantic model to resolve source file and function layer.
+    for (const auto& mod : semantic_model_->modules)
+    {
+        if (mod.module_path != hit->module_path)
+            continue;
+        for (const auto& bldg : mod.buildings)
+        {
+            if (bldg.qualified_name != hit->qualified_name
+                || bldg.source_file_path != hit->source_file_path)
+                continue;
+
+            // Resolve which function layer was hit.
+            std::string function_name;
+            if (!bldg.layers.empty())
+            {
+                auto try_layer = [&](size_t idx) {
+                    if (idx < bldg.layers.size() && !bldg.layers[idx].function_name.empty())
+                        function_name = bldg.layers[idx].function_name;
+                };
+
+                if (hit->has_layer_index)
+                {
+                    try_layer(static_cast<size_t>(hit->layer_index));
+                }
+                else if (hit->hit_y >= 0.0f)
+                {
+                    float cumulative_y = 0.0f;
+                    for (size_t i = 0; i < bldg.layers.size(); ++i)
+                    {
+                        cumulative_y += bldg.layers[i].height;
+                        if (hit->hit_y <= cumulative_y)
+                        {
+                            try_layer(i);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            const auto target = find_implementation_file(
+                scan_root_, bldg.source_file_path, function_name);
+
+            DRAXUL_LOG_DEBUG(LogCategory::App,
+                "Double-click: opening %s, function=%s, qualified=%s (source was %s)",
+                target.file.string().c_str(),
+                target.function_name.empty() ? "(none)" : target.function_name.c_str(),
+                bldg.qualified_name.c_str(),
+                bldg.source_file_path.c_str());
+
+            if (!target.function_name.empty())
+            {
+                // Format: open_file_at_function:path|qualified_name|function_name
+                callbacks_->dispatch_to_nvim_host(
+                    "open_file_at_function:" + target.file.string() + "|"
+                    + bldg.qualified_name + "|" + target.function_name);
+            }
+            else
+            {
+                callbacks_->dispatch_to_nvim_host("open_file:" + target.file.string());
+            }
+            return;
+        }
     }
 }
 

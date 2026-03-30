@@ -61,6 +61,7 @@ private:
     void wake_window() override;
     void set_window_title(const std::string& title) override;
     void set_text_input_area(int x, int y, int w, int h) override;
+    bool dispatch_to_nvim_host(std::string_view action) override;
     void update_diagnostics_panel();
     void refresh_window_layout();
     // Converts a PaneDescriptor (pixel region from SplitTree) to a full HostViewport.

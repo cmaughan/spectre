@@ -64,6 +64,7 @@ std::vector<MenuItemDescriptor> MacOsMenu::default_menu_items()
 
         // View menu
         { "Toggle Diagnostics", "toggle_diagnostics", "d", kCmd, "View" },
+        { "Toggle Host UI", "toggle_host_ui", "u", kCmd, "View" },
         { nullptr, nullptr, nullptr, 0, "View" }, // separator
         { "Split Vertical", "split_vertical", "|", kCmdShift, "View" },
         { "Split Horizontal", "split_horizontal", "_", kCmdShift, "View" },

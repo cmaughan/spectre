@@ -138,6 +138,38 @@ LeafId HostManager::split_focused(SplitDirection dir, IHostCallbacks& callbacks)
     return new_id;
 }
 
+LeafId HostManager::split_focused(SplitDirection dir, HostKind kind, IHostCallbacks& callbacks)
+{
+    PERF_MEASURE();
+    LeafId focused = tree_.focused();
+    if (focused == kInvalidLeaf)
+        return kInvalidLeaf;
+
+    LeafId new_id = tree_.split_leaf(focused, dir);
+    if (new_id == kInvalidLeaf)
+        return kInvalidLeaf;
+
+    HostLaunchOptions launch;
+    launch.kind = kind;
+    launch.enable_ligatures = deps_.config->enable_ligatures;
+    if (!deps_.config->terminal.fg.empty())
+        launch.terminal_fg = parse_hex_color(deps_.config->terminal.fg);
+    if (!deps_.config->terminal.bg.empty())
+        launch.terminal_bg = parse_hex_color(deps_.config->terminal.bg);
+    if (deps_.options)
+        launch.working_dir = deps_.options->host_working_dir;
+
+    if (!create_host_for_leaf(new_id, callbacks, std::move(launch), false))
+    {
+        tree_.close_leaf(new_id);
+        return kInvalidLeaf;
+    }
+
+    update_all_viewports();
+    tree_.set_focused(new_id);
+    return new_id;
+}
+
 bool HostManager::close_leaf(LeafId id)
 {
     PERF_MEASURE();

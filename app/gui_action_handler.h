@@ -54,6 +54,7 @@ private:
     void open_file_dialog() const;
     void split_vertical() const;
     void split_horizontal() const;
+    void toggle_host_ui() const;
     void change_font_size(float new_size);
 
     Deps deps_;

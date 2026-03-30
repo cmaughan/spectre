@@ -72,6 +72,14 @@ public:
     virtual void wake_window() = 0;
     virtual void set_window_title(const std::string& title) = 0;
     virtual void set_text_input_area(int x, int y, int w, int h) = 0;
+
+    // Dispatch an action to a Neovim host. If one exists, dispatches to it and
+    // returns true. If none exists, creates a vertical split with a new NvimHost,
+    // dispatches the action, and returns true. Returns false on failure.
+    virtual bool dispatch_to_nvim_host(std::string_view /*action*/)
+    {
+        return false;
+    }
 };
 
 struct HostContext

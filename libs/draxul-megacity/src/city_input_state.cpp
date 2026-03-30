@@ -182,7 +182,29 @@ void CityInputState::on_mouse_button(const MouseButtonEvent& event)
     {
         dragging_scene_ = false;
         if (!was_dragged_)
+        {
+            constexpr float kDoubleClickMaxDistPx = 4.0f;
+            constexpr float kDoubleClickMaxTimeMs = 400.0f;
+
+            const auto now = std::chrono::steady_clock::now();
+            if (has_last_click_)
+            {
+                const float elapsed_ms = std::chrono::duration<float, std::milli>(now - last_click_time_).count();
+                const glm::ivec2 delta = event.pos - last_click_pos_;
+                const float dist = std::sqrt(static_cast<float>(delta.x * delta.x + delta.y * delta.y));
+                if (elapsed_ms <= kDoubleClickMaxTimeMs && dist <= kDoubleClickMaxDistPx)
+                {
+                    pending_double_click_ = event.pos;
+                    has_last_click_ = false;
+                    return;
+                }
+            }
+
             pending_click_ = event.pos;
+            last_click_time_ = now;
+            last_click_pos_ = event.pos;
+            has_last_click_ = true;
+        }
     }
 }
 
@@ -312,6 +334,13 @@ std::optional<glm::ivec2> CityInputState::consume_click()
     auto click = pending_click_;
     pending_click_.reset();
     return click;
+}
+
+std::optional<glm::ivec2> CityInputState::consume_double_click()
+{
+    auto dbl = pending_double_click_;
+    pending_double_click_.reset();
+    return dbl;
 }
 
 } // namespace draxul
