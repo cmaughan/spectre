@@ -28,3 +28,5 @@ draxul.log
 .a
 logs/**
 *.log
+*.profraw
+*.profdata
