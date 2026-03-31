@@ -781,7 +781,7 @@ bool render_renderer_controls(MegacityRendererControls& controls)
     }
 
     auto note_commit = [&]() {
-        if (changed && ImGui::IsItemDeactivatedAfterEdit())
+        if (ImGui::IsItemDeactivatedAfterEdit())
             controls.committed_edit = true;
     };
     auto edit_float = [&](const char* label, float& value, float speed, float min_value, float max_value, const char* format) {
