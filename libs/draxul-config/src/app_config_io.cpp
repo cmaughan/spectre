@@ -424,7 +424,7 @@ AppConfig::AppConfig()
     keybindings = {
         // Single-key bindings (prefix_key=0, prefix_modifiers=kModNone).
         { "toggle_diagnostics", 0, kModNone, static_cast<int32_t>(SDLK_F12), kModNone },
-        { "toggle_host_ui", 0, kModNone, static_cast<int32_t>(SDLK_F1), kModNone },
+        { "toggle_megacity_ui", 0, kModNone, static_cast<int32_t>(SDLK_F1), kModNone },
         { "copy", 0, kModNone, static_cast<int32_t>(SDLK_C), kModCtrl | kModShift },
         { "paste", 0, kModNone, static_cast<int32_t>(SDLK_V), kModCtrl | kModShift },
         { "font_increase", 0, kModNone, static_cast<int32_t>(SDLK_EQUALS), kModCtrl },
