@@ -1,0 +1,30 @@
+name: ASan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  asan-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Neovim
+        run: brew install neovim
+
+      - name: Configure (ASan + UBSan)
+        run: cmake --preset mac-asan
+
+      - name: Build
+        run: cmake --build build --target draxul-tests draxul-rpc-fake
+
+      - name: Run tests
+        env:
+          DRAXUL_RUN_SLOW_TESTS: "1"
+        run: ctest --test-dir build -R draxul-tests --output-on-failure

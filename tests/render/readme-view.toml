@@ -1,0 +1,11 @@
+name = "readme-view"
+width = 1440
+height = 900
+font_path = "${SCENARIO_DIR}/../../fonts/JetBrainsMonoNerdFont-Regular.ttf"
+font_size = 12
+timeout_ms = 8000
+settle_ms = 150
+pixel_tolerance = 8
+changed_pixels_threshold_pct = 0.10
+nvim_args = ["-u", "NONE", "--noplugin", "-n"]
+commands = ["filetype on", "syntax on", "set termguicolors", "set number", "set signcolumn=yes", "set cursorline", "set laststatus=3", "set guicursor=a:blinkon0", "set nowrap", "hi StatusLine gui=bold guifg=White guibg=DarkBlue", "hi StatusLineNC guifg=Gray85 guibg=Gray25", "hi CursorLine guibg=Gray13", "hi LineNr guifg=Gray50", "hi CursorLineNr gui=bold guifg=Yellow", "set statusline=\\ NORMAL\\ \\|\\ README.md\\ %=%l:%c\\ ", "edit ${PROJECT_ROOT}/README.md", "normal! 116Gzt"]

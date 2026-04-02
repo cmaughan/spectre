@@ -1,0 +1,217 @@
+/* Draxul Doxygen overrides: keep stock output, remove the dated blue chrome. */
+
+:root {
+  --draxul-bg: #f7f8fa;
+  --draxul-surface: #ffffff;
+  --draxul-surface-alt: #f1f4f8;
+  --draxul-text: #17212b;
+  --draxul-text-muted: #506173;
+  --draxul-border: #d6dee6;
+  --draxul-accent: #2f6f9f;
+  --draxul-accent-soft: #e6f0f7;
+  --draxul-code-bg: #f3f5f7;
+  --draxul-shadow: 0 8px 24px rgba(16, 24, 40, 0.06);
+}
+
+html,
+body {
+  background: var(--draxul-bg);
+  color: var(--draxul-text);
+  font-family: "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+#top,
+#side-nav,
+#nav-tree,
+.header,
+.contents,
+div.header,
+div.contents {
+  background: transparent;
+}
+
+#titlearea {
+  border-bottom: 1px solid var(--draxul-border);
+  background: linear-gradient(180deg, #fbfcfd 0%, #f2f6fa 100%);
+}
+
+#projectname {
+  color: var(--draxul-text);
+  font-size: 1.9rem;
+  font-weight: 700;
+}
+
+#projectbrief {
+  color: var(--draxul-text-muted);
+  font-size: 0.98rem;
+  margin-top: 0.2rem;
+}
+
+#main-nav,
+#nav-path ul,
+.tabs,
+.tabs2,
+.tabs3 {
+  background: transparent;
+  border: 0;
+}
+
+.tabs ul li a,
+.tabs2 ul li a,
+.tabs3 ul li a {
+  border-radius: 8px;
+  margin: 0 4px 8px 0;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--draxul-text-muted);
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.tabs ul li a:hover,
+.tabs2 ul li a:hover,
+.tabs3 ul li a:hover,
+.tabs ul li.current a,
+.tabs2 ul li.current a,
+.tabs3 ul li.current a {
+  background: var(--draxul-accent-soft);
+  border-color: #c7dced;
+  color: var(--draxul-accent);
+}
+
+#doc-content,
+.contents {
+  background: var(--draxul-surface);
+  border: 1px solid var(--draxul-border);
+  border-radius: 14px;
+  box-shadow: var(--draxul-shadow);
+  padding: 1.6rem 2rem;
+  margin-top: 1rem;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  color: var(--draxul-text);
+  font-weight: 700;
+}
+
+h1 {
+  border-bottom: 1px solid var(--draxul-border);
+  padding-bottom: 0.35rem;
+}
+
+a {
+  color: var(--draxul-accent);
+}
+
+a:hover {
+  color: #25597f;
+}
+
+table.memberdecls,
+table.fieldtable,
+table.directory,
+table.doxtable,
+table.params,
+.memberdecls td,
+.fieldtable td {
+  border-color: var(--draxul-border);
+}
+
+table.memberdecls,
+table.fieldtable,
+table.directory,
+table.doxtable {
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--draxul-surface);
+}
+
+.memitem,
+.fragment,
+div.fragment,
+pre.fragment {
+  border: 1px solid var(--draxul-border);
+  border-radius: 10px;
+  background: var(--draxul-code-bg);
+  box-shadow: none;
+}
+
+div.fragment,
+pre.fragment {
+  padding: 0.85rem 1rem;
+}
+
+.memproto,
+dl.reflist dt {
+  background: #eef4f8;
+  border: 1px solid var(--draxul-border);
+  border-radius: 10px;
+  color: var(--draxul-text);
+}
+
+.memdoc,
+dl.reflist dd {
+  border: 1px solid var(--draxul-border);
+  border-top: 0;
+  border-radius: 0 0 10px 10px;
+  background: var(--draxul-surface);
+}
+
+#side-nav {
+  border-right: 1px solid var(--draxul-border);
+  background: linear-gradient(180deg, #f7f9fb 0%, #eef3f7 100%);
+}
+
+#nav-tree .selected,
+.ui-resizable-handle {
+  background: var(--draxul-accent-soft);
+}
+
+#nav-tree .selected a {
+  color: var(--draxul-accent);
+}
+
+#nav-tree a,
+#nav-tree .label {
+  color: var(--draxul-text-muted);
+}
+
+#nav-tree a:hover {
+  color: var(--draxul-accent);
+}
+
+.summary,
+.ingroups,
+.levels,
+.navpath,
+.sm-dox {
+  color: var(--draxul-text-muted);
+}
+
+.qindex,
+.sdesc,
+.memname,
+.mlabel {
+  color: var(--draxul-text);
+}
+
+code,
+pre,
+.fragment,
+.memproto,
+.memname {
+  font-family: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+}
+
+@media (max-width: 980px) {
+  #doc-content,
+  .contents {
+    border-radius: 0;
+    margin-top: 0;
+    padding: 1.2rem;
+  }
+}

@@ -1,0 +1,159 @@
+{
+    "version": 6,
+    "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+    "configurePresets": [
+        {
+            "name": "default",
+            "displayName": "Default (Debug, MSVC)",
+            "binaryDir": "${sourceDir}/build",
+            "generator": "Visual Studio 17 2022",
+            "architecture": "x64",
+            "cacheVariables": {
+                "DRAXUL_ENABLE_RENDER_TESTS": "ON"
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            }
+        },
+        {
+            "name": "release",
+            "displayName": "Release (MSVC)",
+            "binaryDir": "${sourceDir}/build",
+            "generator": "Visual Studio 17 2022",
+            "architecture": "x64",
+            "cacheVariables": {
+                "DRAXUL_ENABLE_RENDER_TESTS": "ON"
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            }
+        },
+        {
+            "name": "win-ninja-debug",
+            "displayName": "Debug (Windows Ninja)",
+            "binaryDir": "${sourceDir}/build-ninja",
+            "generator": "Ninja Multi-Config",
+            "cacheVariables": {
+                "DRAXUL_ENABLE_RENDER_TESTS": "ON"
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            }
+        },
+        {
+            "name": "win-ninja-release",
+            "displayName": "Release (Windows Ninja)",
+            "binaryDir": "${sourceDir}/build-ninja",
+            "generator": "Ninja Multi-Config",
+            "cacheVariables": {
+                "DRAXUL_ENABLE_RENDER_TESTS": "ON"
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            }
+        },
+        {
+            "name": "mac-debug",
+            "displayName": "Debug (macOS)",
+            "binaryDir": "${sourceDir}/build",
+            "generator": "Unix Makefiles",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "DRAXUL_ENABLE_RENDER_TESTS": "ON"
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Darwin"
+            }
+        },
+        {
+            "name": "mac-release",
+            "displayName": "Release (macOS)",
+            "binaryDir": "${sourceDir}/build",
+            "generator": "Unix Makefiles",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "DRAXUL_ENABLE_RENDER_TESTS": "ON"
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Darwin"
+            }
+        },
+        {
+            "name": "mac-asan",
+            "displayName": "ASan/LSan Debug (macOS)",
+            "inherits": "mac-debug",
+            "cacheVariables": {
+                "DRAXUL_ENABLE_SANITIZERS": "ON"
+            }
+        },
+        {
+            "name": "mac-coverage",
+            "displayName": "Coverage Debug (macOS)",
+            "inherits": "mac-debug",
+            "cacheVariables": {
+                "DRAXUL_ENABLE_COVERAGE": "ON"
+            }
+        },
+        {
+            "name": "clang-tools",
+            "displayName": "Clang tools / compile_commands.json (Ninja)",
+            "binaryDir": "${sourceDir}/build-tools",
+            "generator": "Ninja",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+            },
+            "description": "Ninja build used only for generating compile_commands.json for clang-uml, clangd, etc. Not used for normal builds."
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "default",
+            "configurePreset": "default",
+            "configuration": "Debug"
+        },
+        {
+            "name": "release",
+            "configurePreset": "release",
+            "configuration": "Release"
+        },
+        {
+            "name": "win-ninja-debug",
+            "configurePreset": "win-ninja-debug",
+            "configuration": "Debug"
+        },
+        {
+            "name": "win-ninja-release",
+            "configurePreset": "win-ninja-release",
+            "configuration": "Release"
+        },
+        {
+            "name": "mac-debug",
+            "configurePreset": "mac-debug"
+        },
+        {
+            "name": "mac-release",
+            "configurePreset": "mac-release"
+        },
+        {
+            "name": "mac-asan",
+            "configurePreset": "mac-asan"
+        },
+        {
+            "name": "mac-coverage",
+            "configurePreset": "mac-coverage"
+        }
+    ]
+}
