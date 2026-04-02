@@ -69,6 +69,12 @@ public:
         deps_.pixel_scale = scale;
     }
 
+    void set_scroll_config(bool smooth_scroll, float scroll_speed)
+    {
+        deps_.smooth_scroll = smooth_scroll;
+        deps_.scroll_speed = scroll_speed;
+    }
+
     // Exposed for testing — checks if the key event matches any GUI keybinding.
     std::optional<std::string_view> gui_action_for_key_event(const KeyEvent& event) const;
 

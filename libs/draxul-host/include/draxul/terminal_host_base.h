@@ -45,6 +45,7 @@ public:
     void pump() override;
     void on_key(const KeyEvent& event) override;
     void on_text_input(const TextInputEvent& event) override;
+    void on_config_reloaded(const HostReloadConfig& config) override;
     bool dispatch_action(std::string_view action) override;
 
 protected:

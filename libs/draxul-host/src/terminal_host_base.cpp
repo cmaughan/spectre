@@ -88,6 +88,22 @@ void TerminalHostBase::on_text_input(const TextInputEvent& event)
         do_process_write(event.text);
 }
 
+void TerminalHostBase::on_config_reloaded(const HostReloadConfig& config)
+{
+    GridHostBase::on_config_reloaded(config);
+
+    launch_options().terminal_fg = config.terminal_fg;
+    launch_options().terminal_bg = config.terminal_bg;
+
+    highlights().set_default_fg(
+        launch_options().terminal_fg.value_or(Color(0.92f, 0.92f, 0.92f, 1.0f)));
+    highlights().set_default_bg(
+        launch_options().terminal_bg.value_or(Color(0.08f, 0.09f, 0.10f, 1.0f)));
+    force_full_redraw();
+    flush_grid();
+    update_cursor_style();
+}
+
 bool TerminalHostBase::dispatch_action(std::string_view action)
 {
     PERF_MEASURE();

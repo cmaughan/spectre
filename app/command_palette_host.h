@@ -49,6 +49,8 @@ public:
     bool is_active() const;
 
 private:
+    void refresh_open_palette();
+    PaneDescriptor palette_pane_descriptor() const;
     void flush_atlas_if_dirty();
 
     Deps deps_;
@@ -57,6 +59,8 @@ private:
     IHostCallbacks* callbacks_ = nullptr;
     IGridRenderer* renderer_ = nullptr;
     TextService* text_service_ = nullptr;
+    int pixel_x_ = 0;
+    int pixel_y_ = 0;
     int pixel_w_ = 0;
     int pixel_h_ = 0;
 };

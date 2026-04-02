@@ -16,7 +16,7 @@ namespace draxul
 namespace
 {
 
-constexpr std::array<std::string_view, 14> kCoreTopLevelKeys = {
+constexpr std::array<std::string_view, 15> kCoreTopLevelKeys = {
     "window_width",
     "window_height",
     "font_size",
@@ -24,6 +24,7 @@ constexpr std::array<std::string_view, 14> kCoreTopLevelKeys = {
     "enable_ligatures",
     "smooth_scroll",
     "scroll_speed",
+    "palette_bg_alpha",
     "font_path",
     "bold_font_path",
     "italic_font_path",

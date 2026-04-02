@@ -9,12 +9,16 @@
 
 #include "support/fake_renderer.h"
 #include "support/fake_window.h"
+#include "support/home_dir_redirect.h"
+#include "support/temp_dir.h"
 #include "support/test_host_callbacks.h"
 
+#include <SDL3/SDL.h>
 #include <catch2/catch_all.hpp>
 #include <draxul/app_config.h>
 #include <draxul/host.h>
 #include <filesystem>
+#include <fstream>
 
 #include "app.h"
 
@@ -146,6 +150,8 @@ std::filesystem::path canonical_path(const std::filesystem::path& path)
 // renderer/host state after App takes ownership.
 SmokeTestHost* g_last_smoke_host = nullptr;
 FakeTermRenderer* g_last_fake_renderer = nullptr;
+class ReloadTrackingHost;
+ReloadTrackingHost* g_last_reload_host = nullptr;
 
 RendererBundle make_fake_renderer(int /*atlas_size*/, RendererOptions /*renderer_options*/)
 {
@@ -238,6 +244,55 @@ private:
     bool initialized_ = false;
     bool running_ = true;
     int pump_count_ = 0;
+};
+
+class ReloadTrackingHost final : public SmokeTestHost
+{
+public:
+    void on_config_reloaded(const HostReloadConfig& config) override
+    {
+        ++reload_count_;
+        last_config_ = config;
+    }
+
+    void on_font_metrics_changed() override
+    {
+        ++font_metrics_changed_count_;
+    }
+
+    void set_imgui_font(const std::string&, float) override
+    {
+        ++imgui_font_update_count_;
+    }
+
+    void reset_tracking()
+    {
+        reload_count_ = 0;
+        font_metrics_changed_count_ = 0;
+        imgui_font_update_count_ = 0;
+        last_config_ = HostReloadConfig{};
+    }
+
+    int reload_count() const
+    {
+        return reload_count_;
+    }
+
+    int font_metrics_changed_count() const
+    {
+        return font_metrics_changed_count_;
+    }
+
+    const HostReloadConfig& last_config() const
+    {
+        return last_config_;
+    }
+
+private:
+    int reload_count_ = 0;
+    int font_metrics_changed_count_ = 0;
+    int imgui_font_update_count_ = 0;
+    HostReloadConfig last_config_;
 };
 
 // Constructs AppOptions for a fully-initializable App with all fakes.
@@ -444,6 +499,71 @@ TEST_CASE("app smoke: host death during pump_once causes clean exit", "[app_smok
     // With a dead host, it should time out (return false) rather than crash.
     const bool smoke_ok = app.run_smoke_test(std::chrono::milliseconds(200));
     REQUIRE_FALSE(smoke_ok);
+
+    app.shutdown();
+}
+
+TEST_CASE("app smoke: reload_config action reloads user config from disk", "[app_smoke][config]")
+{
+    const std::string font = bundled_font_path();
+    if (!std::filesystem::exists(font))
+        SKIP("bundled font not found");
+
+    TempDir temp("draxul-reload-config");
+    HomeDirRedirect redir(temp.path);
+    std::filesystem::create_directories(redir.config_path.parent_path());
+    {
+        std::ofstream out(redir.config_path, std::ios::trunc);
+        out << "font_size = 11.0\n"
+               "palette_bg_alpha = 0.9\n"
+               "smooth_scroll = true\n"
+               "scroll_speed = 1.0\n"
+               "[keybindings]\n"
+               "reload_config = \"Ctrl+Alt+R\"\n";
+    }
+
+    FakeWindow* created_window = nullptr;
+    g_last_reload_host = nullptr;
+
+    AppOptions opts = make_smoke_options();
+    opts.load_user_config = true;
+    opts.save_user_config = false;
+    opts.window_factory = [&created_window]() {
+        auto window = std::make_unique<FakeWindow>();
+        created_window = window.get();
+        return window;
+    };
+    opts.host_factory = [](HostKind) -> std::unique_ptr<IHost> {
+        auto host = std::make_unique<ReloadTrackingHost>();
+        g_last_reload_host = host.get();
+        return host;
+    };
+
+    App app(std::move(opts));
+    REQUIRE(app.initialize());
+    REQUIRE(created_window != nullptr);
+    REQUIRE(g_last_reload_host != nullptr);
+    g_last_reload_host->reset_tracking();
+
+    {
+        std::ofstream out(redir.config_path, std::ios::trunc);
+        out << "font_size = 14.5\n"
+               "palette_bg_alpha = 0.4\n"
+               "smooth_scroll = false\n"
+               "scroll_speed = 2.5\n"
+               "[keybindings]\n"
+               "reload_config = \"Ctrl+Alt+R\"\n";
+    }
+
+    REQUIRE(created_window->on_key != nullptr);
+    created_window->on_key(KeyEvent{ 0, SDLK_R, kModCtrl | kModAlt, true });
+
+    REQUIRE(g_last_reload_host->reload_count() == 1);
+    REQUIRE(g_last_reload_host->font_metrics_changed_count() > 0);
+    CHECK(g_last_reload_host->last_config().font_size == Catch::Approx(14.5f));
+    CHECK(g_last_reload_host->last_config().palette_bg_alpha == Catch::Approx(0.4f));
+    CHECK(g_last_reload_host->last_config().smooth_scroll == false);
+    CHECK(g_last_reload_host->last_config().scroll_speed == Catch::Approx(2.5f));
 
     app.shutdown();
 }

@@ -11,7 +11,10 @@ namespace draxul::tests
 class FakeGridPipelineHandle final : public IGridHandle
 {
 public:
-    void set_grid_size(int, int) override {}
+    void set_grid_size(int cols, int rows) override
+    {
+        last_grid_size = { cols, rows };
+    }
     void update_cells(std::span<const CellUpdate> updates) override
     {
         update_batches.emplace_back(updates.begin(), updates.end());
@@ -20,10 +23,16 @@ public:
     {
         last_overlay.assign(updates.begin(), updates.end());
     }
-    void set_cursor(int, int, const CursorStyle&) override {}
+    void set_cursor(int col, int row, const CursorStyle&) override
+    {
+        last_cursor = { col, row };
+    }
     void set_default_background(Color) override {}
     void set_scroll_offset(float) override {}
-    void set_viewport(const PaneDescriptor&) override {}
+    void set_viewport(const PaneDescriptor& desc) override
+    {
+        last_viewport = desc;
+    }
 
     size_t total_cell_updates() const
     {
@@ -37,10 +46,16 @@ public:
     {
         update_batches.clear();
         last_overlay.clear();
+        last_grid_size = { 0, 0 };
+        last_viewport = {};
+        last_cursor = { 0, 0 };
     }
 
     std::vector<std::vector<CellUpdate>> update_batches;
     std::vector<CellUpdate> last_overlay;
+    glm::ivec2 last_grid_size{ 0, 0 };
+    PaneDescriptor last_viewport;
+    glm::ivec2 last_cursor{ 0, 0 };
 };
 
 class FakeGridPipelineRenderer final : public IGridRenderer

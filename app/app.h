@@ -82,9 +82,10 @@ private:
     // Returns a TextServiceConfig populated from config_. Used by initialize_text_service() and
     // on_display_scale_changed() to avoid duplicating the field assignment at both call sites.
     TextServiceConfig make_text_service_config() const;
-    // Applies font metrics from text_service_ to the renderer, diagnostics host, and focused host.
+    // Applies font metrics from text_service_ to the renderer, diagnostics host, and all hosts.
     // Called after every TextService reinitialisation (startup, DPI change, size change).
     void apply_font_metrics();
+    void reload_config();
 
     bool pump_once(std::optional<std::chrono::steady_clock::time_point> wait_deadline = std::nullopt);
     void on_resize(int pixel_w, int pixel_h);

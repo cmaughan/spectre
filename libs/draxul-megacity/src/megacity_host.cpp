@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <draxul/config_document.h>
 #include <draxul/imgui_host.h>
 #include <draxul/log.h>
 #include <draxul/megacity_host.h>
@@ -48,6 +49,20 @@ constexpr int kHoverTooltipResetDistancePixels = 4;
 constexpr auto kMovementTick = std::chrono::milliseconds(16);
 constexpr auto kDragSmoothingTick = std::chrono::milliseconds(8);
 constexpr auto kLivePerfRefreshTick = std::chrono::milliseconds(100);
+
+void save_merged_megacity_config(
+    ConfigDocument* config_document,
+    const MegaCityCodeConfig& current,
+    const MegaCityCodeConfig& defaults)
+{
+    if (!config_document)
+        return;
+
+    ConfigDocument latest = ConfigDocument::load();
+    store_megacity_code_config(latest, current, defaults);
+    latest.save();
+    *config_document = std::move(latest);
+}
 
 /// Returns true for overlay modes that use the live runtime perf collector (Perf, Coverage).
 /// LcovCoverage uses a static import and does not need the runtime collector.
@@ -801,6 +816,20 @@ void MegaCityHost::on_key(const KeyEvent& event)
     }
 }
 
+void MegaCityHost::on_text_input(const TextInputEvent& event)
+{
+    PERF_MEASURE();
+    if (!imgui_context_ || event.text.empty())
+        return;
+
+    ImGui::SetCurrentContext(imgui_context_);
+    ImGuiIO& io = ImGui::GetIO();
+    io.AddInputCharactersUTF8(event.text.c_str());
+
+    if ((io.WantTextInput || io.WantCaptureKeyboard) && callbacks_)
+        callbacks_->request_frame();
+}
+
 void MegaCityHost::on_mouse_move(const MouseMoveEvent& event)
 {
     PERF_MEASURE();
@@ -912,6 +941,12 @@ void MegaCityHost::on_mouse_wheel(const MouseWheelEvent& event)
 
 void MegaCityHost::set_imgui_font(const std::string& path, float size_pixels)
 {
+    if (sign_font_path_ != path)
+    {
+        sign_font_path_ = path;
+        refresh_sign_text_service();
+        mark_scene_dirty();
+    }
     if (!imgui_context_)
         return;
     ImGui::SetCurrentContext(imgui_context_);
@@ -1036,10 +1071,7 @@ void MegaCityHost::render_host_imgui(float dt)
         pending_renderer_config_ = renderer_controls.config;
         renderer_defaults_ = renderer_controls.defaults;
         auto persist_renderer_config = [&]() {
-            if (!config_document_)
-                return;
-            store_megacity_code_config(*config_document_, pending_renderer_config_, renderer_defaults_);
-            config_document_->save();
+            save_merged_megacity_config(config_document_, pending_renderer_config_, renderer_defaults_);
         };
         const bool pending_changed = previous_pending != pending_renderer_config_;
         const bool coverage_mode_toggled
@@ -1164,6 +1196,9 @@ void MegaCityHost::shutdown()
     city_grid_.reset();
     semantic_layout_.reset();
 
+    // Destroy pass-owned Vulkan debug textures while this ImGui backend is still alive.
+    scene_pass_.reset();
+
     // Tear down our own ImGui context.
     if (imgui_context_)
     {
@@ -1178,11 +1213,7 @@ void MegaCityHost::shutdown()
     }
 
     pending_renderer_config_.show_ui_panels = show_ui_panels_;
-    if (config_document_)
-    {
-        store_megacity_code_config(*config_document_, pending_renderer_config_, renderer_defaults_);
-        config_document_->save();
-    }
+    save_merged_megacity_config(config_document_, pending_renderer_config_, renderer_defaults_);
     scanner_.stop();
     city_db_.close();
     if (tooltip_text_service_)
@@ -1199,7 +1230,6 @@ void MegaCityHost::shutdown()
     sign_label_atlas_.reset();
     live_metrics_.reset();
     semantic_model_.reset();
-    scene_pass_.reset();
     camera_.reset();
     world_.reset();
     running_ = false;

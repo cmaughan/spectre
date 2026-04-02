@@ -1,12 +1,44 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "command_palette.h"
+#include "command_palette_host.h"
 #include "fuzzy_match.h"
 #include "gui_action_handler.h"
 #include <SDL3/SDL.h>
+#include <draxul/app_config.h>
 #include <draxul/events.h>
+#include <draxul/text_service.h>
+#include <glm/glm.hpp>
+#include <algorithm>
+#include <array>
+#include <filesystem>
+
+#include "support/fake_grid_pipeline_renderer.h"
+#include "support/fake_window.h"
+#include "support/test_host_callbacks.h"
 
 using namespace draxul;
+
+namespace
+{
+
+std::filesystem::path bundled_font_path()
+{
+    return std::filesystem::path(DRAXUL_PROJECT_ROOT) / "fonts" / "JetBrainsMonoNerdFont-Regular.ttf";
+}
+
+bool init_text_service(TextService& text_service)
+{
+    const auto font_path = bundled_font_path();
+    if (!std::filesystem::exists(font_path))
+        return false;
+
+    TextServiceConfig config;
+    config.font_path = font_path.string();
+    return text_service.initialize(config, TextService::DEFAULT_POINT_SIZE, 96.0f);
+}
+
+} // namespace
 
 // ── Fuzzy match tests ──────────────────────────────────────────────────────
 
@@ -137,4 +169,85 @@ TEST_CASE("CommandPalette: action_names excludes command_palette", "[palette]")
     }
     CHECK(found_palette); // it exists in the registry
     CHECK(found_copy);
+}
+
+TEST_CASE("CommandPaletteHost: opening primes palette cells before first draw", "[palette]")
+{
+    tests::FakeWindow window;
+    tests::FakeGridPipelineRenderer renderer;
+    tests::TestHostCallbacks callbacks;
+    TextService text_service;
+    if (!init_text_service(text_service))
+        SKIP("bundled font not found");
+
+    CommandPaletteHost::Deps deps;
+    CommandPaletteHost host(std::move(deps));
+
+    HostViewport viewport;
+    viewport.pixel_size = { window.pixel_w_, window.pixel_h_ };
+    viewport.grid_size = { 1, 1 };
+
+    HostContext context{
+        .window = &window,
+        .grid_renderer = &renderer,
+        .text_service = &text_service,
+        .initial_viewport = viewport,
+        .display_ppi = window.display_ppi_,
+    };
+
+    REQUIRE(host.initialize(context, callbacks));
+    REQUIRE(host.dispatch_action("toggle"));
+    REQUIRE(host.is_active());
+    REQUIRE(renderer.last_handle != nullptr);
+    CHECK(renderer.last_handle->last_viewport.pixel_pos == glm::ivec2(200, 150));
+    CHECK(renderer.last_handle->last_viewport.pixel_size == glm::ivec2(400, 300));
+    CHECK(renderer.last_handle->last_grid_size == glm::ivec2(40, 15));
+    CHECK(renderer.last_handle->last_cursor == glm::ivec2(-1, -1));
+    CHECK_FALSE(renderer.last_handle->update_batches.empty());
+    CHECK(renderer.last_handle->total_cell_updates() > 0);
+    CHECK(renderer.region_uploads > 0);
+
+    host.shutdown();
+}
+
+TEST_CASE("render_palette: palette fills the host grid", "[palette]")
+{
+    TextService text_service;
+    if (!init_text_service(text_service))
+        SKIP("bundled font not found");
+
+    const std::array<gui::PaletteEntry, 1> entries{ {
+        { "copy", "Ctrl+C", {} },
+    } };
+
+    gui::PaletteViewState state;
+    state.grid_cols = 40;
+    state.grid_rows = 15;
+    state.query = "";
+    state.selected_index = 0;
+    state.entries = entries;
+
+    const auto cells = gui::render_palette(state, text_service);
+    REQUIRE_FALSE(cells.empty());
+
+    int min_col = cells.front().col;
+    int max_col = cells.front().col;
+    int min_row = cells.front().row;
+    int max_row = cells.front().row;
+    for (const auto& cell : cells)
+    {
+        min_col = std::min(min_col, cell.col);
+        max_col = std::max(max_col, cell.col);
+        min_row = std::min(min_row, cell.row);
+        max_row = std::max(max_row, cell.row);
+    }
+
+    CHECK(max_col - min_col + 1 == 40);
+    CHECK(max_row - min_row + 1 == 15);
+}
+
+TEST_CASE("app config default palette alpha is 0.9", "[config]")
+{
+    AppConfig config = AppConfig::parse("");
+    CHECK(config.palette_bg_alpha == 0.9f);
 }

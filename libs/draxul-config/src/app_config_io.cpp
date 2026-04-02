@@ -30,7 +30,7 @@ constexpr int kMaxAtlasSize = 8192;
 constexpr float kMinFontPointSize = 6.0f;
 constexpr float kMaxFontPointSize = 72.0f;
 // kGuiModifierMask is defined in input_types.h as kGuiModifierMask (same bit values).
-constexpr std::array<std::string_view, 10> kKnownGuiActions = {
+constexpr std::array<std::string_view, 13> kKnownGuiActions = {
     "toggle_diagnostics",
     "copy",
     "paste",
@@ -40,7 +40,10 @@ constexpr std::array<std::string_view, 10> kKnownGuiActions = {
     "open_file_dialog",
     "split_vertical",
     "split_horizontal",
+    "toggle_megacity_ui",
     "command_palette",
+    "edit_config",
+    "reload_config",
 };
 constexpr std::array<std::string_view, 15> kKnownTopLevelKeys = {
     "window_width",

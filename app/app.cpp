@@ -79,6 +79,45 @@ void normalize_render_target_window_size(IWindow& window, const AppOptions& opti
         options.render_target_pixel_height);
 }
 
+bool text_service_config_changed(const AppConfig& lhs, const AppConfig& rhs)
+{
+    return lhs.font_size != rhs.font_size
+        || lhs.enable_ligatures != rhs.enable_ligatures
+        || lhs.font_path != rhs.font_path
+        || lhs.bold_font_path != rhs.bold_font_path
+        || lhs.italic_font_path != rhs.italic_font_path
+        || lhs.bold_italic_font_path != rhs.bold_italic_font_path
+        || lhs.fallback_paths != rhs.fallback_paths;
+}
+
+void restore_text_service_config(AppConfig& target, const AppConfig& source)
+{
+    target.font_size = source.font_size;
+    target.enable_ligatures = source.enable_ligatures;
+    target.font_path = source.font_path;
+    target.bold_font_path = source.bold_font_path;
+    target.italic_font_path = source.italic_font_path;
+    target.bold_italic_font_path = source.bold_italic_font_path;
+    target.fallback_paths = source.fallback_paths;
+}
+
+HostReloadConfig host_reload_config_from_app_config(const AppConfig& config)
+{
+    HostReloadConfig reload;
+    reload.enable_ligatures = config.enable_ligatures;
+    reload.terminal_fg = config.terminal.fg.empty()
+        ? std::nullopt
+        : parse_hex_color(config.terminal.fg);
+    reload.terminal_bg = config.terminal.bg.empty()
+        ? std::nullopt
+        : parse_hex_color(config.terminal.bg);
+    reload.font_size = config.font_size;
+    reload.smooth_scroll = config.smooth_scroll;
+    reload.scroll_speed = config.scroll_speed;
+    reload.palette_bg_alpha = config.palette_bg_alpha;
+    return reload;
+}
+
 } // namespace
 
 AppDeps AppDeps::from_options(AppOptions opts)
@@ -338,15 +377,80 @@ void App::apply_font_metrics()
     const auto& metrics = text_service_.metrics();
     renderer_.grid()->set_cell_size(metrics.cell_width, metrics.cell_height);
     renderer_.grid()->set_ascender(metrics.ascender);
-    diagnostics_host_->set_imgui_font(text_service_.primary_font_path(),
-        static_cast<float>(metrics.cell_height)
-            * (text_service_.point_size() - 2)
-            / text_service_.point_size());
-    if (host_manager_.host())
-        host_manager_.host()->on_font_metrics_changed();
+    const float imgui_font_size = static_cast<float>(metrics.cell_height)
+        * (text_service_.point_size() - 2)
+        / text_service_.point_size();
+    diagnostics_host_->set_imgui_font(text_service_.primary_font_path(), imgui_font_size);
+    host_manager_.for_each_host([this, imgui_font_size](LeafId, IHost& host) {
+        host.set_imgui_font(text_service_.primary_font_path(), imgui_font_size);
+        host.on_font_metrics_changed();
+    });
     refresh_window_layout();
     host_manager_.recompute_viewports(window_->width_pixels(), diagnostics_host_->layout().terminal_height);
     request_frame();
+}
+
+void App::reload_config()
+{
+    PERF_MEASURE();
+    if (!options_.load_user_config)
+    {
+        DRAXUL_LOG_WARN(LogCategory::App,
+            "Ignoring reload_config because user config loading is disabled.");
+        return;
+    }
+
+    const AppConfig previous_config = config_;
+    AppConfig reloaded_config = AppConfig::load();
+    apply_overrides(reloaded_config, options_.config_overrides);
+    config_document_ = ConfigDocument::load();
+    config_ = std::move(reloaded_config);
+
+    const bool text_config_needs_reload = text_service_config_changed(previous_config, config_);
+    const bool scroll_config_changed = previous_config.smooth_scroll != config_.smooth_scroll
+        || previous_config.scroll_speed != config_.scroll_speed;
+
+    if (text_config_needs_reload)
+    {
+        if (const TextServiceConfig text_config = make_text_service_config();
+            text_service_.initialize(text_config, config_.font_size, display_ppi_))
+        {
+            if (renderer_.imgui())
+                renderer_.imgui()->rebuild_imgui_font_texture();
+            apply_font_metrics();
+        }
+        else
+        {
+            DRAXUL_LOG_WARN(LogCategory::App,
+                "Failed to apply reloaded font settings from %s; keeping the current font configuration.",
+                ConfigDocument::default_path().string().c_str());
+            restore_text_service_config(config_, previous_config);
+            const TextServiceConfig restored_text_config = make_text_service_config();
+            if (!text_service_.initialize(restored_text_config, config_.font_size, display_ppi_))
+            {
+                DRAXUL_LOG_ERROR(LogCategory::App,
+                    "Failed to restore the previous font configuration after reload_config.");
+            }
+            else
+            {
+                if (renderer_.imgui())
+                    renderer_.imgui()->rebuild_imgui_font_texture();
+                apply_font_metrics();
+            }
+        }
+    }
+
+    if (scroll_config_changed)
+        input_dispatcher_.set_scroll_config(config_.smooth_scroll, config_.scroll_speed);
+
+    const HostReloadConfig host_reload = host_reload_config_from_app_config(config_);
+    host_manager_.for_each_host([&host_reload](LeafId, IHost& host) {
+        host.on_config_reloaded(host_reload);
+    });
+
+    request_frame();
+    DRAXUL_LOG_INFO(LogCategory::App, "Reloaded config from %s",
+        ConfigDocument::default_path().string().c_str());
 }
 
 bool App::initialize_host()
@@ -436,6 +540,7 @@ void App::wire_gui_actions()
             request_frame();
         }
     };
+    gui_deps.on_reload_config = [this]() { reload_config(); };
     gui_action_handler_ = GuiActionHandler(std::move(gui_deps));
 
     // CommandPalette deps are now wired inside CommandPaletteHost::initialize().
@@ -1063,15 +1168,22 @@ void App::shutdown()
     if (options_.save_user_config && init_completed_)
     {
         init_completed_ = false; // prevent double-save on repeated shutdown() calls
+        AppConfig config_to_save = config_;
+        if (options_.load_user_config)
+        {
+            config_to_save = AppConfig::load();
+            config_document_ = ConfigDocument::load();
+        }
         auto [window_w, window_h] = window_->size_logical();
         if (window_w > 0 && window_h > 0)
         {
-            config_.window_width = window_w;
-            config_.window_height = window_h;
+            config_to_save.window_width = window_w;
+            config_to_save.window_height = window_h;
         }
-        config_.font_size = text_service_.point_size();
-        config_.font_path = text_service_.primary_font_path();
-        config_document_.merge_core_config(config_);
+        config_to_save.font_size = text_service_.point_size();
+        config_to_save.font_path = text_service_.primary_font_path();
+        config_ = config_to_save;
+        config_document_.merge_core_config(config_to_save);
         config_document_.save();
     }
 

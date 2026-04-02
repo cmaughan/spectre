@@ -16,7 +16,7 @@ namespace draxul
 namespace
 {
 
-constexpr std::array<std::string_view, 9> kKnownGuiActions = {
+constexpr std::array<std::string_view, 13> kKnownGuiActions = {
     "toggle_diagnostics",
     "copy",
     "paste",
@@ -26,6 +26,10 @@ constexpr std::array<std::string_view, 9> kKnownGuiActions = {
     "open_file_dialog",
     "split_vertical",
     "split_horizontal",
+    "toggle_megacity_ui",
+    "command_palette",
+    "edit_config",
+    "reload_config",
 };
 
 ModifierFlags normalize_gui_modifiers(ModifierFlags mod)

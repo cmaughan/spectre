@@ -19,6 +19,7 @@ public:
     bool initialize(const HostContext& context, IHostCallbacks& callbacks) override;
     void set_viewport(const HostViewport& viewport) override;
     void on_font_metrics_changed() override;
+    void on_config_reloaded(const HostReloadConfig& config) override;
     void set_scroll_offset(float px) override;
     void draw(IFrameContext& frame) override;
     std::optional<std::chrono::steady_clock::time_point> next_deadline() const override;
@@ -47,6 +48,10 @@ protected:
     IWindow& window() const;
     IGridRenderer& renderer() const;
     TextService& text_service() const;
+    HostLaunchOptions& launch_options()
+    {
+        return launch_options_;
+    }
     const HostLaunchOptions& launch_options() const
     {
         return launch_options_;

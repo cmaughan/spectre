@@ -961,6 +961,21 @@ struct IsometricScenePass::State
     VkSampler tooltip_sampler = VK_NULL_HANDLE;
     bool tooltip_initialized = false;
 
+    void wait_for_device_idle() const
+    {
+        if (device == VK_NULL_HANDLE)
+            return;
+
+        const VkResult result = vkDeviceWaitIdle(device);
+        if (result != VK_SUCCESS)
+        {
+            DRAXUL_LOG_WARN(
+                LogCategory::Renderer,
+                "MegaCity: vkDeviceWaitIdle before resource teardown returned %d",
+                static_cast<int>(result));
+        }
+    }
+
     static Buffer take_buffer(Buffer& buffer)
     {
         Buffer taken = buffer;
@@ -2618,6 +2633,7 @@ struct IsometricScenePass::State
             && buffered_frame_count == frame_count;
         if (!base_resources_ready)
         {
+            wait_for_device_idle();
             destroy_gbuffer();
             destroy();
             physical_device = ctx.physical_device();
@@ -2633,6 +2649,7 @@ struct IsometricScenePass::State
 
         if (ctx.render_pass() != VK_NULL_HANDLE && render_pass != ctx.render_pass())
         {
+            wait_for_device_idle();
             destroy_present_resources();
             render_pass = ctx.render_pass();
         }
@@ -2643,30 +2660,64 @@ struct IsometricScenePass::State
     void destroy_gbuffer_targets()
     {
         PERF_MEASURE();
+        const bool can_remove_imgui_textures = ImGui::GetCurrentContext() != nullptr
+            && ImGui::GetIO().BackendRendererUserData != nullptr;
         for (auto& t : gbuffer_targets)
         {
             if (t.imgui_normal_ds != VK_NULL_HANDLE)
-                ImGui_ImplVulkan_RemoveTexture(t.imgui_normal_ds);
+            {
+                if (can_remove_imgui_textures)
+                    ImGui_ImplVulkan_RemoveTexture(t.imgui_normal_ds);
+                t.imgui_normal_ds = VK_NULL_HANDLE;
+            }
             if (t.imgui_ao_raw_ds != VK_NULL_HANDLE)
-                ImGui_ImplVulkan_RemoveTexture(t.imgui_ao_raw_ds);
+            {
+                if (can_remove_imgui_textures)
+                    ImGui_ImplVulkan_RemoveTexture(t.imgui_ao_raw_ds);
+                t.imgui_ao_raw_ds = VK_NULL_HANDLE;
+            }
             if (t.imgui_ao_ds != VK_NULL_HANDLE)
-                ImGui_ImplVulkan_RemoveTexture(t.imgui_ao_ds);
+            {
+                if (can_remove_imgui_textures)
+                    ImGui_ImplVulkan_RemoveTexture(t.imgui_ao_ds);
+                t.imgui_ao_ds = VK_NULL_HANDLE;
+            }
             if (t.imgui_depth_ds != VK_NULL_HANDLE)
-                ImGui_ImplVulkan_RemoveTexture(t.imgui_depth_ds);
-            for (VkDescriptorSet shadow_ds : t.imgui_shadow_ds)
+            {
+                if (can_remove_imgui_textures)
+                    ImGui_ImplVulkan_RemoveTexture(t.imgui_depth_ds);
+                t.imgui_depth_ds = VK_NULL_HANDLE;
+            }
+            for (VkDescriptorSet& shadow_ds : t.imgui_shadow_ds)
             {
                 if (shadow_ds != VK_NULL_HANDLE)
-                    ImGui_ImplVulkan_RemoveTexture(shadow_ds);
+                {
+                    if (can_remove_imgui_textures)
+                        ImGui_ImplVulkan_RemoveTexture(shadow_ds);
+                    shadow_ds = VK_NULL_HANDLE;
+                }
             }
-            for (VkDescriptorSet point_shadow_ds : t.imgui_point_shadow_ds)
+            for (VkDescriptorSet& point_shadow_ds : t.imgui_point_shadow_ds)
             {
                 if (point_shadow_ds != VK_NULL_HANDLE)
-                    ImGui_ImplVulkan_RemoveTexture(point_shadow_ds);
+                {
+                    if (can_remove_imgui_textures)
+                        ImGui_ImplVulkan_RemoveTexture(point_shadow_ds);
+                    point_shadow_ds = VK_NULL_HANDLE;
+                }
             }
             if (t.imgui_scene_hdr_ds != VK_NULL_HANDLE)
-                ImGui_ImplVulkan_RemoveTexture(t.imgui_scene_hdr_ds);
+            {
+                if (can_remove_imgui_textures)
+                    ImGui_ImplVulkan_RemoveTexture(t.imgui_scene_hdr_ds);
+                t.imgui_scene_hdr_ds = VK_NULL_HANDLE;
+            }
             if (t.imgui_scene_final_ds != VK_NULL_HANDLE)
-                ImGui_ImplVulkan_RemoveTexture(t.imgui_scene_final_ds);
+            {
+                if (can_remove_imgui_textures)
+                    ImGui_ImplVulkan_RemoveTexture(t.imgui_scene_final_ds);
+                t.imgui_scene_final_ds = VK_NULL_HANDLE;
+            }
             if (t.framebuffer != VK_NULL_HANDLE)
                 vkDestroyFramebuffer(device, t.framebuffer, nullptr);
             if (t.ao_raw_framebuffer != VK_NULL_HANDLE)
@@ -3583,6 +3634,8 @@ struct IsometricScenePass::State
             && gbuffer_targets[0].height == height)
             return true;
 
+        if (!gbuffer_targets.empty())
+            wait_for_device_idle();
         destroy_gbuffer_targets();
         gbuffer_targets.resize(frame_count);
 
@@ -3971,6 +4024,7 @@ IsometricScenePass::IsometricScenePass(int grid_width, int grid_height, float ti
 IsometricScenePass::~IsometricScenePass()
 {
     PERF_MEASURE();
+    state_->wait_for_device_idle();
     state_->destroy_gbuffer();
     state_->destroy();
 }

@@ -305,11 +305,15 @@ TEST_CASE("app config serialize/parse round-trip preserves custom keybindings", 
     AppConfig original;
     original.keybindings = {
         { "toggle_diagnostics", 0, kModNone, static_cast<int32_t>(SDLK_D), kModCtrl },
+        { "toggle_megacity_ui", 0, kModNone, static_cast<int32_t>(SDLK_F2), kModNone },
         { "copy", 0, kModNone, static_cast<int32_t>(SDLK_C), kModCtrl | kModAlt },
         { "paste", 0, kModNone, static_cast<int32_t>(SDLK_V), kModCtrl | kModAlt },
         { "font_increase", 0, kModNone, static_cast<int32_t>(SDLK_EQUALS), kModCtrl },
         { "font_decrease", 0, kModNone, static_cast<int32_t>(SDLK_MINUS), kModCtrl },
         { "font_reset", 0, kModNone, static_cast<int32_t>(SDLK_0), kModAlt },
+        { "command_palette", 0, kModNone, static_cast<int32_t>(SDLK_P), kModCtrl | kModAlt },
+        { "edit_config", 0, kModNone, static_cast<int32_t>(SDLK_E), kModCtrl | kModAlt },
+        { "reload_config", 0, kModNone, static_cast<int32_t>(SDLK_R), kModCtrl | kModAlt },
     };
 
     AppConfig round_tripped = AppConfig::parse(original.serialize());
@@ -322,10 +326,26 @@ TEST_CASE("app config serialize/parse round-trip preserves custom keybindings", 
     REQUIRE(format_gui_keybinding_combo(find_keybinding(round_tripped, "copy")->key,
                 find_keybinding(round_tripped, "copy")->modifiers)
         == std::string("Ctrl+Alt+C"));
+    INFO("custom MegaCity toggle binding survives round-trip");
+    REQUIRE(format_gui_keybinding_combo(find_keybinding(round_tripped, "toggle_megacity_ui")->key,
+                find_keybinding(round_tripped, "toggle_megacity_ui")->modifiers)
+        == std::string("F2"));
     INFO("custom font reset binding survives round-trip");
     REQUIRE(format_gui_keybinding_combo(find_keybinding(round_tripped, "font_reset")->key,
                 find_keybinding(round_tripped, "font_reset")->modifiers)
         == std::string("Alt+0"));
+    INFO("custom command palette binding survives round-trip");
+    REQUIRE(format_gui_keybinding_combo(find_keybinding(round_tripped, "command_palette")->key,
+                find_keybinding(round_tripped, "command_palette")->modifiers)
+        == std::string("Ctrl+Alt+P"));
+    INFO("custom edit_config binding survives round-trip");
+    REQUIRE(format_gui_keybinding_combo(find_keybinding(round_tripped, "edit_config")->key,
+                find_keybinding(round_tripped, "edit_config")->modifiers)
+        == std::string("Ctrl+Alt+E"));
+    INFO("custom reload_config binding survives round-trip");
+    REQUIRE(format_gui_keybinding_combo(find_keybinding(round_tripped, "reload_config")->key,
+                find_keybinding(round_tripped, "reload_config")->modifiers)
+        == std::string("Ctrl+Alt+R"));
 }
 
 TEST_CASE("app config serialize clamps out-of-range values", "[config]")
@@ -639,7 +659,7 @@ TEST_CASE("config document merge preserves host-owned tables", "[config]")
     }
 
     ConfigDocument document = ConfigDocument::load_from_path(path);
-    AppConfig config = AppConfig::parse("window_width = 1600\nfont_size = 17\n");
+    AppConfig config = AppConfig::parse("window_width = 1600\nfont_size = 17\npalette_bg_alpha = 0.6\n");
     document.merge_core_config(config);
     document.save_to_path(path);
 
@@ -647,6 +667,7 @@ TEST_CASE("config document merge preserves host-owned tables", "[config]")
     INFO("core app keys should update");
     REQUIRE(saved.find("window_width = 1600") != std::string::npos);
     REQUIRE(saved.find("font_size = 17") != std::string::npos);
+    REQUIRE(saved.find("palette_bg_alpha = 0.6") != std::string::npos);
     INFO("host-owned tables should survive merge/save");
     REQUIRE(saved.find("[mega_city_code]") != std::string::npos);
     REQUIRE(saved.find("sign_text_px_range") != std::string::npos);

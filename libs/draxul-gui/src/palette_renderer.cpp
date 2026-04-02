@@ -21,7 +21,6 @@ constexpr Color kCursorBg{ 0.8f, 0.8f, 0.8f, 0.8f };
 constexpr Color kTransparent{ 0.0f, 0.0f, 0.0f, 0.0f };
 constexpr Color kPromptFg{ 0.6f, 0.6f, 0.65f, 1.0f };
 
-constexpr int kMinPanelCols = 30;
 constexpr int kPanelPadding = 1; // 1-cell padding inside panel edges
 
 struct PanelLayout
@@ -35,22 +34,13 @@ struct PanelLayout
 PanelLayout compute_layout(const PaletteViewState& state)
 {
     PanelLayout layout;
-    layout.cols = std::max(kMinPanelCols, state.grid_cols / 2);
-    if (layout.cols > state.grid_cols)
-        layout.cols = state.grid_cols;
-
-    const int max_panel_rows = std::max(4, state.grid_rows * 40 / 100);
-    layout.visible_entries = std::max(1, max_panel_rows - 2); // reserve separator + input
+    layout.cols = state.grid_cols;
+    layout.rows = state.grid_rows;
+    layout.visible_entries = std::max(1, layout.rows - 2); // reserve separator + input
     const int entry_count = static_cast<int>(state.entries.size());
-    const int shown = std::min(entry_count, layout.visible_entries);
-    layout.rows = shown + 2; // entries + separator + input line
 
-    layout.col0 = (state.grid_cols - layout.cols) / 2;
-    layout.row0 = state.grid_rows / 5;
-
-    // Clamp so panel fits on screen.
-    if (layout.row0 + layout.rows > state.grid_rows)
-        layout.row0 = std::max(0, state.grid_rows - layout.rows);
+    layout.col0 = 0;
+    layout.row0 = 0;
 
     // Compute scroll offset to keep selected_index visible.
     layout.scroll_offset = 0;

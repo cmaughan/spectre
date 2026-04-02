@@ -228,3 +228,22 @@ TEST_CASE("gui action handler: open_file_dialog does not crash when callback is 
     INFO("open_file_dialog action should still return true with null callback");
     REQUIRE(handled);
 }
+
+TEST_CASE("gui action handler: reload_config invokes on_reload_config", "[config]")
+{
+    TextService ts;
+    AppConfig config;
+    GuiActionHandler::Deps deps;
+    deps.text_service = &ts;
+    deps.config = &config;
+    int reload_count = 0;
+    deps.on_reload_config = [&reload_count]() { ++reload_count; };
+    GuiActionHandler handler(std::move(deps));
+
+    const bool handled = handler.execute("reload_config");
+
+    INFO("reload_config action should be recognised");
+    REQUIRE(handled);
+    INFO("on_reload_config should fire exactly once");
+    REQUIRE(reload_count == 1);
+}

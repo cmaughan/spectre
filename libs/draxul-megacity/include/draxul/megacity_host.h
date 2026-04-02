@@ -59,6 +59,7 @@ public:
     void set_viewport(const HostViewport& viewport) override;
     void on_focus_lost() override;
     void on_key(const KeyEvent& event) override;
+    void on_text_input(const TextInputEvent& event) override;
     // on_font_metrics_changed() — inherited no-op from IHost is correct;
     // MegaCityHost renders 3D geometry, not a text grid.
     void pump() override;

@@ -302,8 +302,15 @@ bool MetalRenderer::initialize(IWindow& window)
         desc.vertexFunction = vertFunc;
         desc.fragmentFunction = fragFunc;
         desc.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
-        // BG pass: no blending (opaque)
-        desc.colorAttachments[0].blendingEnabled = NO;
+        // BG pass: alpha blending so translucent background cells (e.g. command palette)
+        // actually blend with the scene beneath them.
+        desc.colorAttachments[0].blendingEnabled = YES;
+        desc.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorSourceAlpha;
+        desc.colorAttachments[0].destinationRGBBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+        desc.colorAttachments[0].rgbBlendOperation = MTLBlendOperationAdd;
+        desc.colorAttachments[0].sourceAlphaBlendFactor = MTLBlendFactorOne;
+        desc.colorAttachments[0].destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+        desc.colorAttachments[0].alphaBlendOperation = MTLBlendOperationAdd;
 
         id<MTLRenderPipelineState> pipeline = [device newRenderPipelineStateWithDescriptor:desc error:&error];
         if (!pipeline)

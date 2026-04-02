@@ -74,6 +74,13 @@ void GridHostBase::on_font_metrics_changed()
     update_text_input_area();
 }
 
+void GridHostBase::on_config_reloaded(const HostReloadConfig& config)
+{
+    launch_options_.enable_ligatures = config.enable_ligatures;
+    if (grid_pipeline_)
+        grid_pipeline_->set_enable_ligatures(config.enable_ligatures);
+}
+
 std::optional<std::chrono::steady_clock::time_point> GridHostBase::next_deadline() const
 {
     return cursor_blinker_.next_deadline();

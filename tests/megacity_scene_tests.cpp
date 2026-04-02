@@ -14,16 +14,22 @@
 #include "semantic_city_layout.h"
 #include "support/fake_renderer.h"
 #include "support/fake_window.h"
+#include "support/home_dir_redirect.h"
+#include "support/temp_dir.h"
 #include "support/test_host_callbacks.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
+#include <draxul/imgui_host.h>
 #include <draxul/building_generator.h>
+#include <draxul/config_document.h>
 #define private public
 #include <draxul/megacity_host.h>
 #undef private
 #include <draxul/roof_sign_generator.h>
 #include <draxul/text_service.h>
 #include <filesystem>
+#include <fstream>
+#include <imgui_internal.h>
 #include <numbers>
 #include <thread>
 
@@ -66,6 +72,33 @@ void pump_until_idle(MegaCityHost& host, int max_steps = 64)
         host.pump();
     }
 }
+
+std::string read_text_file(const std::filesystem::path& path)
+{
+    std::ifstream in(path, std::ios::binary);
+    if (!in)
+        return {};
+    return std::string(std::istreambuf_iterator<char>(in), {});
+}
+
+struct ShutdownOrderImGuiHost : IImGuiHost
+{
+    MegaCityHost* owner = nullptr;
+    bool scene_pass_alive_during_shutdown = false;
+
+    bool initialize_imgui_backend() override
+    {
+        return true;
+    }
+
+    void shutdown_imgui_backend() override
+    {
+        scene_pass_alive_during_shutdown = owner && static_cast<bool>(owner->scene_pass_);
+    }
+
+    void rebuild_imgui_font_texture() override {}
+    void begin_imgui_frame() override {}
+};
 
 struct TestLotRect
 {
@@ -2188,6 +2221,143 @@ TEST_CASE("megacity host honors fractional mouse delta for drag input", "[megaci
 
     host.on_mouse_button({ SDL_BUTTON_LEFT, false, kModAlt, { 400, 300 } });
     host.shutdown();
+}
+
+TEST_CASE("megacity host forwards text input into its ImGui context", "[megacity]")
+{
+    tests::FakeWindow window;
+    tests::TestHostCallbacks callbacks;
+    TextService text_service;
+    tests::FakeTermRenderer renderer;
+    MegaCityHost host;
+
+    HostLaunchOptions launch;
+    launch.kind = HostKind::MegaCity;
+
+    HostViewport viewport;
+    viewport.pixel_size = { 800, 600 };
+    viewport.grid_size = { 1, 1 };
+
+    HostContext context{
+        .window = &window,
+        .grid_renderer = &renderer,
+        .text_service = &text_service,
+        .launch_options = std::move(launch),
+        .initial_viewport = viewport,
+        .display_ppi = window.display_ppi_,
+    };
+
+    REQUIRE(host.initialize(context, callbacks));
+    REQUIRE(host.imgui_context_ != nullptr);
+
+    ImGui::SetCurrentContext(host.imgui_context_);
+    ImGuiIO& io = ImGui::GetIO();
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+    const int before_count = g.InputEventsQueue.Size;
+    io.WantTextInput = true;
+    callbacks.request_frame_calls = 0;
+
+    host.on_text_input({ "abc" });
+
+    REQUIRE(g.InputEventsQueue.Size >= before_count + 3);
+    CHECK(g.InputEventsQueue[before_count + 0].Type == ImGuiInputEventType_Text);
+    CHECK(g.InputEventsQueue[before_count + 0].Text.Char == unsigned('a'));
+    CHECK(g.InputEventsQueue[before_count + 1].Type == ImGuiInputEventType_Text);
+    CHECK(g.InputEventsQueue[before_count + 1].Text.Char == unsigned('b'));
+    CHECK(g.InputEventsQueue[before_count + 2].Type == ImGuiInputEventType_Text);
+    CHECK(g.InputEventsQueue[before_count + 2].Text.Char == unsigned('c'));
+    CHECK(callbacks.request_frame_calls == 1);
+
+    host.shutdown();
+}
+
+TEST_CASE("megacity host destroys scene pass before shutting down its imgui backend", "[megacity]")
+{
+    tests::FakeWindow window;
+    tests::TestHostCallbacks callbacks;
+    TextService text_service;
+    tests::FakeTermRenderer renderer;
+    MegaCityHost host;
+
+    HostLaunchOptions launch;
+    launch.kind = HostKind::MegaCity;
+
+    HostViewport viewport;
+    viewport.pixel_size = { 800, 600 };
+    viewport.grid_size = { 1, 1 };
+
+    HostContext context{
+        .window = &window,
+        .grid_renderer = &renderer,
+        .text_service = &text_service,
+        .launch_options = std::move(launch),
+        .initial_viewport = viewport,
+        .display_ppi = window.display_ppi_,
+    };
+
+    REQUIRE(host.initialize(context, callbacks));
+    REQUIRE(host.scene_pass_ != nullptr);
+
+    ShutdownOrderImGuiHost imgui_host;
+    imgui_host.owner = &host;
+    host.attach_imgui_host(imgui_host);
+
+    host.shutdown();
+
+    CHECK_FALSE(imgui_host.scene_pass_alive_during_shutdown);
+}
+
+TEST_CASE("megacity host preserves externally edited core config when saving megacity settings", "[megacity][config]")
+{
+    tests::TempDir temp("draxul-megacity-config-merge");
+    tests::HomeDirRedirect redir(temp.path);
+
+    std::filesystem::create_directories(redir.config_path.parent_path());
+    {
+        std::ofstream out(redir.config_path, std::ios::trunc);
+        out << "palette_bg_alpha = 0.9\n"
+               "[mega_city_code]\n"
+               "show_ui_panels = true\n";
+    }
+
+    ConfigDocument document = ConfigDocument::load();
+
+    tests::FakeWindow window;
+    tests::TestHostCallbacks callbacks;
+    TextService text_service;
+    tests::FakeTermRenderer renderer;
+    MegaCityHost host;
+
+    HostLaunchOptions launch;
+    launch.kind = HostKind::MegaCity;
+
+    HostViewport viewport;
+    viewport.pixel_size = { 800, 600 };
+    viewport.grid_size = { 1, 1 };
+
+    HostContext context{
+        .window = &window,
+        .grid_renderer = &renderer,
+        .text_service = &text_service,
+        .config_document = &document,
+        .launch_options = std::move(launch),
+        .initial_viewport = viewport,
+        .display_ppi = window.display_ppi_,
+    };
+
+    REQUIRE(host.initialize(context, callbacks));
+
+    {
+        std::ofstream out(redir.config_path, std::ios::trunc);
+        out << "palette_bg_alpha = 0.6\n"
+               "[mega_city_code]\n"
+               "show_ui_panels = false\n";
+    }
+
+    host.shutdown();
+
+    const std::string saved = read_text_file(redir.config_path);
+    REQUIRE(saved.find("palette_bg_alpha = 0.6") != std::string::npos);
 }
 
 TEST_CASE("megacity host keeps catching up between mouse samples", "[megacity]")

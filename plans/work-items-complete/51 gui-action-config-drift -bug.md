@@ -20,12 +20,12 @@ Runtime GUI actions and the serialisation list are maintained in two separate pl
 
 ## Tasks
 
-- [ ] Read `app/gui_action_handler.cpp` — list every action name in `action_map()`.
-- [ ] Read `libs/draxul-config/src/app_config_io.cpp` — find `kKnownGuiActions` and compare it against the runtime list.
-- [ ] Add every action that is in the runtime map but missing from `kKnownGuiActions` (at minimum: `toggle_megacity_ui`, `edit_config`; audit for any others).
-- [ ] Check whether any action in `kKnownGuiActions` no longer exists in the runtime map (stale entries can be left or removed — note the decision).
-- [ ] Verify `AppConfig::serialize()` / round-trip: write a config with a custom `toggle_megacity_ui` binding, save, reload, and confirm it survives.
-- [ ] Build and run: `cmake --build build --target draxul draxul-tests && py do.py smoke`
+- [x] Read `app/gui_action_handler.cpp` — list every action name in `action_map()`.
+- [x] Read `libs/draxul-config/src/app_config_io.cpp` — find `kKnownGuiActions` and compare it against the runtime list.
+- [x] Add every action that is in the runtime map but missing from `kKnownGuiActions` (at minimum: `toggle_megacity_ui`, `edit_config`; audit for any others).
+- [x] Check whether any action in `kKnownGuiActions` no longer exists in the runtime map (stale entries can be left or removed — note the decision).
+- [x] Verify `AppConfig::serialize()` / round-trip: write a config with a custom `toggle_megacity_ui` binding, save, reload, and confirm it survives.
+- [x] Build and run: `cmake --build build --target draxul draxul-tests && py do.py smoke`
 
 ---
 
@@ -48,4 +48,5 @@ Runtime GUI actions and the serialisation list are maintained in two separate pl
 
 - Do not restructure `kKnownGuiActions` into a different data structure; just add the missing entries.
 - If a future agent wants to unify the two lists, that belongs in a separate refactor work item.
-- After the fix, add a `static_assert` or a unit test that catches future drift (see WI 52/53/54 test batch for precedent).
+- Completed by extending the config/parser action lists to cover the runtime actions used by `GuiActionHandler`, including `toggle_megacity_ui`, `command_palette`, `edit_config`, and `reload_config`.
+- Verified with round-trip coverage in `tests/app_config_tests.cpp`, plus targeted config/app smoke coverage.

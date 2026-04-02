@@ -85,6 +85,7 @@ A standalone GUI library for rendering UI items that do not depend on ImGui. It 
 - **File drop**: Native drag-and-drop dispatched to host as `open_file:` action
 - **GUI keybindings**: Chord-style prefix bindings (e.g. `ctrl+s, |`)
 - **Command palette**: `Ctrl+P` opens a centered fuzzy-search overlay for all GUI actions with fzf-style scoring, `Ctrl+J/K` navigation, and keybinding hints
+- **Config reload**: `reload_config` rereads `config.toml` on demand so palette alpha, keybindings, scroll settings, ligatures, and font changes can be applied without a restart
 
 ---
 
@@ -116,6 +117,7 @@ Toggle with F12. Shows:
 | Action | Default Binding |
 |--------|-----------------|
 | `toggle_diagnostics` | `F12` |
+| `toggle_megacity_ui` | `F1` |
 | `copy` | `Ctrl + Shift + C` |
 | `paste` | `Ctrl + Shift + V` |
 | `font_increase` | `Ctrl + =` |
@@ -124,6 +126,8 @@ Toggle with F12. Shows:
 | `split_vertical` | `Ctrl + S, Shift + \` |
 | `split_horizontal` | `Ctrl + S, -` |
 | `command_palette` | `Ctrl + P` |
+| `edit_config` | (unbound) |
+| `reload_config` | (unbound) |
 | `open_file_dialog` | (unbound) |
 
 Customizable in `config.toml` under `[keybindings]`. Chord syntax: `"prefix, key"`. Set to empty string to unbind.

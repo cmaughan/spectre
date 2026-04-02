@@ -38,6 +38,17 @@ struct HostLaunchOptions
     std::optional<Color> terminal_bg;
 };
 
+struct HostReloadConfig
+{
+    bool enable_ligatures = true;
+    std::optional<Color> terminal_fg;
+    std::optional<Color> terminal_bg;
+    float font_size = 11.0f;
+    bool smooth_scroll = true;
+    float scroll_speed = 1.0f;
+    float palette_bg_alpha = 0.9f;
+};
+
 struct HostViewport
 {
     glm::ivec2 pixel_pos{ 0 };
@@ -107,6 +118,10 @@ public:
     virtual void on_font_metrics_changed()
     {
         // Default no-op; only grid-capable hosts need to respond to font metric changes.
+    }
+    virtual void on_config_reloaded(const HostReloadConfig& /*config*/)
+    {
+        // Default no-op; only hosts with cached config-driven state override this.
     }
     virtual void pump() = 0;
     virtual void draw(IFrameContext& /*frame*/)

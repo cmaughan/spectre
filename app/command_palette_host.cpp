@@ -65,18 +65,23 @@ std::string CommandPaletteHost::init_error() const
 
 void CommandPaletteHost::set_viewport(const HostViewport& viewport)
 {
-    pixel_w_ = viewport.pixel_size.x;
-    pixel_h_ = viewport.pixel_size.y;
+    pixel_w_ = std::max(1, viewport.pixel_size.x / 2);
+    pixel_h_ = std::max(1, viewport.pixel_size.y / 2);
+    pixel_x_ = viewport.pixel_pos.x + std::max(0, (viewport.pixel_size.x - pixel_w_) / 2);
+    pixel_y_ = viewport.pixel_pos.y + std::max(0, (viewport.pixel_size.y - pixel_h_) / 2);
     if (handle_)
-    {
-        PaneDescriptor desc;
-        desc.pixel_pos = viewport.pixel_pos;
-        desc.pixel_size = viewport.pixel_size;
-        handle_->set_viewport(desc);
-    }
+        handle_->set_viewport(palette_pane_descriptor());
 }
 
 void CommandPaletteHost::pump()
+{
+    if (!handle_ || !renderer_ || !text_service_ || !palette_.is_open())
+        return;
+
+    refresh_open_palette();
+}
+
+void CommandPaletteHost::refresh_open_palette()
 {
     if (!handle_ || !renderer_ || !text_service_ || !palette_.is_open())
         return;
@@ -85,8 +90,9 @@ void CommandPaletteHost::pump()
     const int grid_cols = cw > 0 ? pixel_w_ / cw : 0;
     const int grid_rows = ch > 0 ? pixel_h_ / ch : 0;
     handle_->set_grid_size(std::max(1, grid_cols), std::max(1, grid_rows));
+    handle_->set_cursor(-1, -1, CursorStyle{});
 
-    const float bg_alpha = deps_.palette_bg_alpha ? *deps_.palette_bg_alpha : 1.0f;
+    const float bg_alpha = deps_.palette_bg_alpha ? *deps_.palette_bg_alpha : 0.9f;
     auto vs = palette_.view_state(grid_cols, grid_rows, bg_alpha);
     auto cells = gui::render_palette(vs, *text_service_);
     handle_->update_cells(cells);
@@ -98,6 +104,14 @@ void CommandPaletteHost::draw(IFrameContext& frame)
 {
     if (handle_ && palette_.is_open())
         frame.draw_grid_handle(*handle_);
+}
+
+PaneDescriptor CommandPaletteHost::palette_pane_descriptor() const
+{
+    PaneDescriptor desc;
+    desc.pixel_pos = { pixel_x_, pixel_y_ };
+    desc.pixel_size = { pixel_w_, pixel_h_ };
+    return desc;
 }
 
 std::optional<std::chrono::steady_clock::time_point> CommandPaletteHost::next_deadline() const
@@ -126,15 +140,9 @@ bool CommandPaletteHost::dispatch_action(std::string_view action)
         else
         {
             handle_ = renderer_->create_grid_handle();
-            // Set the viewport on the new handle so it covers the full window.
-            if (pixel_w_ > 0 && pixel_h_ > 0)
-            {
-                PaneDescriptor desc;
-                desc.pixel_pos = { 0, 0 };
-                desc.pixel_size = { pixel_w_, pixel_h_ };
-                handle_->set_viewport(desc);
-            }
+            handle_->set_viewport(palette_pane_descriptor());
             palette_.open();
+            refresh_open_palette();
         }
         if (callbacks_)
             callbacks_->request_frame();
@@ -193,6 +201,11 @@ void CommandPaletteHost::flush_atlas_if_dirty()
     renderer_->update_atlas_region(
         dirty.pos.x, dirty.pos.y, dirty.size.x, dirty.size.y, scratch.data());
     text_service_->clear_atlas_dirty();
+
+    // Atlas uploads are recorded in begin_frame(), so glyphs resolved during this
+    // pump need one follow-up frame unless the palette was primed before frame start.
+    if (callbacks_ && palette_.is_open())
+        callbacks_->request_frame();
 }
 
 } // namespace draxul
