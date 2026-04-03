@@ -1,5 +1,6 @@
 #include "chrome_host.h"
 
+#include <algorithm>
 #include <cmath>
 #include <nanovg.h>
 
@@ -52,6 +53,103 @@ bool ChromeHost::create_initial_workspace(IHostCallbacks& callbacks, int pixel_w
     active_workspace_ = ws->id;
     workspaces_.push_back(std::move(ws));
     return true;
+}
+
+int ChromeHost::add_workspace(IHostCallbacks& callbacks, int pixel_w, int pixel_h)
+{
+    auto ws = std::make_unique<Workspace>(next_workspace_id_++, make_host_manager_deps());
+    if (!ws->host_manager.create(callbacks, pixel_w, pixel_h))
+    {
+        last_create_error_ = ws->host_manager.error();
+        return -1;
+    }
+    ws->initialized = true;
+    ws->name = "Tab " + std::to_string(workspaces_.size() + 1);
+    int id = ws->id;
+    workspaces_.push_back(std::move(ws));
+    activate_workspace(id);
+    return id;
+}
+
+bool ChromeHost::close_workspace(int workspace_id, IHostCallbacks& /*callbacks*/)
+{
+    if (workspaces_.size() <= 1)
+        return false;
+
+    auto it = std::find_if(workspaces_.begin(), workspaces_.end(),
+        [workspace_id](const auto& ws) { return ws->id == workspace_id; });
+    if (it == workspaces_.end())
+        return false;
+
+    (*it)->host_manager.shutdown();
+
+    bool was_active = (workspace_id == active_workspace_);
+    workspaces_.erase(it);
+
+    if (was_active)
+        activate_workspace(workspaces_.front()->id);
+
+    return true;
+}
+
+void ChromeHost::activate_workspace(int workspace_id)
+{
+    if (workspace_id == active_workspace_)
+        return;
+
+    // Notify old workspace's focused host of focus loss.
+    for (auto& ws : workspaces_)
+    {
+        if (ws->id == active_workspace_)
+        {
+            if (IHost* h = ws->host_manager.focused_host())
+                h->on_focus_lost();
+            break;
+        }
+    }
+
+    active_workspace_ = workspace_id;
+
+    // Notify new workspace's focused host of focus gain.
+    for (auto& ws : workspaces_)
+    {
+        if (ws->id == active_workspace_)
+        {
+            if (IHost* h = ws->host_manager.focused_host())
+                h->on_focus_gained();
+            break;
+        }
+    }
+}
+
+void ChromeHost::next_workspace()
+{
+    if (workspaces_.size() <= 1)
+        return;
+    for (size_t i = 0; i < workspaces_.size(); ++i)
+    {
+        if (workspaces_[i]->id == active_workspace_)
+        {
+            size_t next = (i + 1) % workspaces_.size();
+            activate_workspace(workspaces_[next]->id);
+            return;
+        }
+    }
+}
+
+void ChromeHost::prev_workspace()
+{
+    if (workspaces_.size() <= 1)
+        return;
+    for (size_t i = 0; i < workspaces_.size(); ++i)
+    {
+        if (workspaces_[i]->id == active_workspace_)
+        {
+            size_t prev = (i == 0) ? workspaces_.size() - 1 : i - 1;
+            activate_workspace(workspaces_[prev]->id);
+            return;
+        }
+    }
 }
 
 HostManager& ChromeHost::active_host_manager()

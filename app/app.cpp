@@ -598,6 +598,33 @@ void App::wire_gui_actions()
     gui_deps.on_focus_right = [focus_pane]() { focus_pane(FocusDirection::Right); };
     gui_deps.on_focus_up = [focus_pane]() { focus_pane(FocusDirection::Up); };
     gui_deps.on_focus_down = [focus_pane]() { focus_pane(FocusDirection::Down); };
+    gui_deps.on_new_tab = [this]() {
+        int id = chrome_host_->add_workspace(*this, window_->width_pixels(), diagnostics_host_->layout().terminal_height);
+        if (id >= 0)
+        {
+            input_dispatcher_.set_host(chrome_host_->active_host_manager().focused_host());
+            request_frame();
+        }
+    };
+    gui_deps.on_close_tab = [this]() {
+        if (chrome_host_->workspace_count() <= 1)
+            return;
+        int closing = chrome_host_->active_workspace_id();
+        input_dispatcher_.set_host(nullptr);
+        chrome_host_->close_workspace(closing, *this);
+        input_dispatcher_.set_host(chrome_host_->active_host_manager().focused_host());
+        request_frame();
+    };
+    gui_deps.on_next_tab = [this]() {
+        chrome_host_->next_workspace();
+        input_dispatcher_.set_host(chrome_host_->active_host_manager().focused_host());
+        request_frame();
+    };
+    gui_deps.on_prev_tab = [this]() {
+        chrome_host_->prev_workspace();
+        input_dispatcher_.set_host(chrome_host_->active_host_manager().focused_host());
+        request_frame();
+    };
     gui_action_handler_ = GuiActionHandler(std::move(gui_deps));
 
     // CommandPalette deps are now wired inside CommandPaletteHost::initialize().
@@ -614,7 +641,7 @@ void App::wire_window_callbacks()
     };
     disp_deps.ui_panel = diagnostics_host_ ? &diagnostics_host_->panel() : nullptr;
     disp_deps.host = chrome_host_->active_host_manager().host();
-    disp_deps.host_manager = &chrome_host_->active_host_manager();
+    disp_deps.host_manager = [this]() -> HostManager* { return &chrome_host_->active_host_manager(); };
     disp_deps.smooth_scroll = config_.smooth_scroll;
     disp_deps.scroll_speed = config_.scroll_speed;
     disp_deps.pixel_scale = PixelScale::from_window(window_->width_pixels(), window_->width_logical());

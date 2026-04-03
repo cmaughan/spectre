@@ -42,7 +42,8 @@ public:
         UiPanel* ui_panel = nullptr;
         IHost* host = nullptr;
         // Multi-pane: if set, mouse events are hit-tested via HostManager's SplitTree.
-        HostManager* host_manager = nullptr;
+        // Function-based so it always returns the active workspace's HostManager.
+        std::function<HostManager*()> host_manager;
         bool smooth_scroll = false;
         float scroll_speed = 1.0f;
         // Ratio of physical pixels to logical pixels (1.0 on non-HiDPI, 2.0 on Retina).

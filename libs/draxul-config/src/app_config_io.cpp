@@ -466,6 +466,19 @@ AppConfig::AppConfig()
         { "focus_down", 0, kModNone, static_cast<int32_t>(SDLK_J), kModCtrl },
         { "focus_up", 0, kModNone, static_cast<int32_t>(SDLK_K), kModCtrl },
         { "focus_right", 0, kModNone, static_cast<int32_t>(SDLK_L), kModCtrl },
+        // Tab/workspace management: Ctrl+S chord prefix (tmux-style)
+        // new_tab = Ctrl+S, C
+        { "new_tab", static_cast<int32_t>(SDLK_S), kModCtrl,
+            static_cast<int32_t>(SDLK_C), kModNone },
+        // close_tab = Ctrl+S, & (Shift+7)
+        { "close_tab", static_cast<int32_t>(SDLK_S), kModCtrl,
+            static_cast<int32_t>(SDLK_7), kModShift },
+        // next_tab = Ctrl+S, N
+        { "next_tab", static_cast<int32_t>(SDLK_S), kModCtrl,
+            static_cast<int32_t>(SDLK_N), kModNone },
+        // prev_tab = Ctrl+S, P
+        { "prev_tab", static_cast<int32_t>(SDLK_S), kModCtrl,
+            static_cast<int32_t>(SDLK_P), kModNone },
     };
 }
 

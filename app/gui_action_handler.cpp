@@ -43,6 +43,10 @@ const std::unordered_map<std::string_view, GuiActionHandler::ActionFn>& GuiActio
         {"focus_right",        [](auto& h, auto) { h.focus_right(); }},
         {"focus_up",           [](auto& h, auto) { h.focus_up(); }},
         {"focus_down",         [](auto& h, auto) { h.focus_down(); }},
+        {"new_tab",            [](auto& h, auto) { h.new_tab(); }},
+        {"close_tab",          [](auto& h, auto) { h.close_tab(); }},
+        {"next_tab",           [](auto& h, auto) { h.next_tab(); }},
+        {"prev_tab",           [](auto& h, auto) { h.prev_tab(); }},
     };
     // clang-format on
     return map;
@@ -198,6 +202,30 @@ void GuiActionHandler::focus_down() const
     PERF_MEASURE();
     if (deps_.on_focus_down)
         deps_.on_focus_down();
+}
+
+void GuiActionHandler::new_tab() const
+{
+    if (deps_.on_new_tab)
+        deps_.on_new_tab();
+}
+
+void GuiActionHandler::close_tab() const
+{
+    if (deps_.on_close_tab)
+        deps_.on_close_tab();
+}
+
+void GuiActionHandler::next_tab() const
+{
+    if (deps_.on_next_tab)
+        deps_.on_next_tab();
+}
+
+void GuiActionHandler::prev_tab() const
+{
+    if (deps_.on_prev_tab)
+        deps_.on_prev_tab();
 }
 
 void GuiActionHandler::change_font_size(float new_size)

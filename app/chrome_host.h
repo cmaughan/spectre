@@ -75,6 +75,20 @@ public:
     // Creates the first workspace with a primary host. Called once during init.
     bool create_initial_workspace(IHostCallbacks& callbacks, int pixel_w, int pixel_h);
 
+    // Creates a new workspace, initializes its primary host, and activates it.
+    // Returns the workspace ID, or -1 on failure.
+    int add_workspace(IHostCallbacks& callbacks, int pixel_w, int pixel_h);
+
+    // Closes a workspace by ID. Returns false if it's the last workspace or ID not found.
+    bool close_workspace(int workspace_id, IHostCallbacks& callbacks);
+
+    // Activates a workspace by ID.
+    void activate_workspace(int workspace_id);
+
+    // Cycle to the next or previous workspace.
+    void next_workspace();
+    void prev_workspace();
+
     // Access the active workspace's HostManager.
     HostManager& active_host_manager();
     const HostManager& active_host_manager() const;

@@ -25,11 +25,12 @@ InputDispatcher::InputDispatcher(Deps deps)
 IHost* InputDispatcher::host_for_mouse_pos(int px, int py)
 {
     PERF_MEASURE();
-    if (deps_.host_manager)
+    HostManager* hm = deps_.host_manager ? deps_.host_manager() : nullptr;
+    if (hm)
     {
         const int phys_x = deps_.pixel_scale.to_physical(px);
         const int phys_y = deps_.pixel_scale.to_physical(py);
-        IHost* target = deps_.host_manager->host_at_point(phys_x, phys_y);
+        IHost* target = hm->host_at_point(phys_x, phys_y);
         if (target)
         {
             deps_.host = target;
