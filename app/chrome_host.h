@@ -1,25 +1,41 @@
 #pragma once
 
-#include "split_tree.h"
+#include "workspace.h"
 
 #include <draxul/base_renderer.h>
 #include <draxul/host.h>
 #include <draxul/nanovg_pass.h>
+#include <vector>
 
 struct NVGcontext;
 
 namespace draxul
 {
 
-// ChromeHost draws window chrome (pane dividers, future tab bar) using NanoVG.
-// It is drawn first each frame, before content hosts, over the full window viewport.
-// It does not own a grid or any subprocess — just vector graphics.
+// ChromeHost is the central layout manager. It owns one or more Workspaces
+// (each with its own SplitTree + hosts) and draws window chrome (pane dividers,
+// focus indicator, future tab bar) using NanoVG.
 class ChromeHost final : public IHost
 {
 public:
-    // The ChromeHost reads divider positions from the split tree each frame.
-    explicit ChromeHost(const SplitTree& tree);
+    // Shared dependencies passed to every workspace's HostManager.
+    struct Deps
+    {
+        const AppOptions* options = nullptr;
+        AppConfig* config = nullptr;
+        ConfigDocument* config_document = nullptr;
+        IWindow* window = nullptr;
+        IGridRenderer* grid_renderer = nullptr;
+        IImGuiHost* imgui_host = nullptr;
+        TextService* text_service = nullptr;
+        const float* display_ppi = nullptr;
+        std::weak_ptr<void> owner_lifetime;
+        std::function<HostViewport(const PaneDescriptor&)> compute_viewport;
+    };
 
+    explicit ChromeHost(Deps deps);
+
+    // IHost overrides
     bool initialize(const HostContext& context, IHostCallbacks& callbacks) override;
     void shutdown() override;
     bool is_running() const override;
@@ -54,11 +70,43 @@ public:
         return { "chrome" };
     }
 
+    // --- Workspace / Tab API ---
+
+    // Creates the first workspace with a primary host. Called once during init.
+    bool create_initial_workspace(IHostCallbacks& callbacks, int pixel_w, int pixel_h);
+
+    // Access the active workspace's HostManager.
+    HostManager& active_host_manager();
+    const HostManager& active_host_manager() const;
+
+    // The active workspace's SplitTree (convenience).
+    const SplitTree& active_tree() const;
+
+    // Tab bar height in pixels. Returns 0 when there is only one workspace.
+    int tab_bar_height() const;
+
+    int workspace_count() const
+    {
+        return static_cast<int>(workspaces_.size());
+    }
+    int active_workspace_id() const;
+    const std::string& last_create_error() const
+    {
+        return last_create_error_;
+    }
+
 private:
-    const SplitTree& tree_;
+    HostManager::Deps make_host_manager_deps() const;
+
+    Deps deps_;
+    std::vector<std::unique_ptr<Workspace>> workspaces_;
+    int active_workspace_ = -1;
+    int next_workspace_id_ = 0;
+
     std::unique_ptr<INanoVGPass> nanovg_pass_;
     HostViewport viewport_{};
     bool running_ = false;
+    std::string last_create_error_;
 };
 
 } // namespace draxul

@@ -105,7 +105,7 @@ LeafId SplitTree::split_leaf(LeafId id, SplitDirection dir)
     split_data.second = std::move(second_child);
     target->data = std::move(split_data);
 
-    recompute(total_w_, total_h_);
+    recompute(origin_x_, origin_y_, total_w_, total_h_);
     return new_id;
 }
 
@@ -156,17 +156,24 @@ bool SplitTree::close_leaf(LeafId id)
     }
 
     focused_id_ = new_focus;
-    recompute(total_w_, total_h_);
+    recompute(origin_x_, origin_y_, total_w_, total_h_);
     return true;
 }
 
 void SplitTree::recompute(int pixel_w, int pixel_h)
 {
+    recompute(0, 0, pixel_w, pixel_h);
+}
+
+void SplitTree::recompute(int origin_x, int origin_y, int pixel_w, int pixel_h)
+{
     PERF_MEASURE();
+    origin_x_ = origin_x;
+    origin_y_ = origin_y;
     total_w_ = pixel_w;
     total_h_ = pixel_h;
     if (root_)
-        recompute_node(root_.get(), 0, 0, pixel_w, pixel_h, kDividerWidth);
+        recompute_node(root_.get(), origin_x, origin_y, pixel_w, pixel_h, kDividerWidth);
 }
 
 SplitTree::HitResult SplitTree::hit_test(int px, int py) const
@@ -193,7 +200,7 @@ void SplitTree::set_divider_ratio(DividerId id, float ratio)
         return;
     else
         node->split().ratio = std::clamp(ratio, 0.1f, 0.9f);
-    recompute(total_w_, total_h_);
+    recompute(origin_x_, origin_y_, total_w_, total_h_);
 }
 
 void SplitTree::set_focused(LeafId id)

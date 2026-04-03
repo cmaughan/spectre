@@ -271,8 +271,13 @@ bool HostManager::swap_focused_with_next()
 
 void HostManager::recompute_viewports(int pixel_w, int pixel_h)
 {
+    recompute_viewports(0, 0, pixel_w, pixel_h);
+}
+
+void HostManager::recompute_viewports(int origin_x, int origin_y, int pixel_w, int pixel_h)
+{
     PERF_MEASURE();
-    tree_.recompute(pixel_w, pixel_h);
+    tree_.recompute(origin_x, origin_y, pixel_w, pixel_h);
     if (zoomed_)
     {
         zoom_pixel_w_ = pixel_w;

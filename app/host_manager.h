@@ -78,6 +78,7 @@ public:
 
     // Recomputes the tree layout and updates all host viewports.
     void recompute_viewports(int pixel_w, int pixel_h);
+    void recompute_viewports(int origin_x, int origin_y, int pixel_w, int pixel_h);
 
     // Toggles pane zoom: expands the focused pane to fill the full window,
     // or restores the previous split layout if already zoomed.

@@ -1,12 +1,13 @@
 #include "chrome_host.h"
 
+#include <cmath>
 #include <nanovg.h>
 
 namespace draxul
 {
 
-ChromeHost::ChromeHost(const SplitTree& tree)
-    : tree_(tree)
+ChromeHost::ChromeHost(Deps deps)
+    : deps_(std::move(deps))
 {
 }
 
@@ -20,6 +21,10 @@ bool ChromeHost::initialize(const HostContext& context, IHostCallbacks& /*callba
 
 void ChromeHost::shutdown()
 {
+    for (auto& ws : workspaces_)
+        ws->host_manager.shutdown();
+    workspaces_.clear();
+    active_workspace_ = -1;
     nanovg_pass_.reset();
     running_ = false;
 }
@@ -34,19 +39,93 @@ void ChromeHost::set_viewport(const HostViewport& viewport)
     viewport_ = viewport;
 }
 
+bool ChromeHost::create_initial_workspace(IHostCallbacks& callbacks, int pixel_w, int pixel_h)
+{
+    auto ws = std::make_unique<Workspace>(next_workspace_id_++, make_host_manager_deps());
+    if (!ws->host_manager.create(callbacks, pixel_w, pixel_h))
+    {
+        last_create_error_ = ws->host_manager.error();
+        return false;
+    }
+    ws->initialized = true;
+    ws->name = "Tab 1";
+    active_workspace_ = ws->id;
+    workspaces_.push_back(std::move(ws));
+    return true;
+}
+
+HostManager& ChromeHost::active_host_manager()
+{
+    for (auto& ws : workspaces_)
+    {
+        if (ws->id == active_workspace_)
+            return ws->host_manager;
+    }
+    // Should never happen — caller must ensure at least one workspace exists.
+    static HostManager dummy(HostManager::Deps{});
+    return dummy;
+}
+
+const HostManager& ChromeHost::active_host_manager() const
+{
+    for (const auto& ws : workspaces_)
+    {
+        if (ws->id == active_workspace_)
+            return ws->host_manager;
+    }
+    static const HostManager dummy(HostManager::Deps{});
+    return dummy;
+}
+
+const SplitTree& ChromeHost::active_tree() const
+{
+    return active_host_manager().tree();
+}
+
+int ChromeHost::tab_bar_height() const
+{
+    // Single workspace: no tab bar.
+    return 0;
+}
+
+int ChromeHost::active_workspace_id() const
+{
+    return active_workspace_;
+}
+
+HostManager::Deps ChromeHost::make_host_manager_deps() const
+{
+    HostManager::Deps hm_deps;
+    hm_deps.options = deps_.options;
+    hm_deps.config = deps_.config;
+    hm_deps.config_document = deps_.config_document;
+    hm_deps.window = deps_.window;
+    hm_deps.grid_renderer = deps_.grid_renderer;
+    hm_deps.imgui_host = deps_.imgui_host;
+    hm_deps.text_service = deps_.text_service;
+    hm_deps.display_ppi = deps_.display_ppi;
+    hm_deps.owner_lifetime = deps_.owner_lifetime;
+    hm_deps.compute_viewport = deps_.compute_viewport;
+    return hm_deps;
+}
+
 void ChromeHost::draw(IFrameContext& frame)
 {
-    if (!nanovg_pass_ || tree_.leaf_count() < 2)
+    if (!nanovg_pass_)
         return;
 
-    // Collect divider rects from the split tree.
+    const auto& tree = active_tree();
+    if (tree.leaf_count() < 2)
+        return;
+
+    // Collect divider rects from the active workspace's split tree.
     struct Divider
     {
         float x, y, w, h;
         SplitDirection dir;
     };
     std::vector<Divider> dividers;
-    tree_.for_each_divider([&](const SplitTree::DividerRect& r) {
+    tree.for_each_divider([&](const SplitTree::DividerRect& r) {
         dividers.push_back({ static_cast<float>(r.x), static_cast<float>(r.y),
             static_cast<float>(r.w), static_cast<float>(r.h), r.direction });
     });
@@ -60,10 +139,10 @@ void ChromeHost::draw(IFrameContext& frame)
         float x, y, w, h;
     };
     std::optional<FocusRect> focus_rect;
-    const LeafId focused = tree_.focused();
+    const LeafId focused = tree.focused();
     if (focused != kInvalidLeaf)
     {
-        const auto desc = tree_.descriptor_for(focused);
+        const auto desc = tree.descriptor_for(focused);
         if (desc.pixel_size.x > 0 && desc.pixel_size.y > 0)
         {
             focus_rect = FocusRect{
@@ -99,8 +178,8 @@ void ChromeHost::draw(IFrameContext& frame)
             }
 
             // Focus indicator — muted burgundy on right and bottom edges only.
-            // At divider boundaries, draw on the divider centre line.
-            // At window edges, inset by half the stroke so it stays visible.
+            // At divider boundaries, draw on the divider centre line;
+            // at window edges, inset so the stroke stays visible.
             if (focus_rect)
             {
                 constexpr float border = 2.0f;
@@ -110,9 +189,6 @@ void ChromeHost::draw(IFrameContext& frame)
                 const float pane_right = focus_rect->x + focus_rect->w;
                 const float pane_bottom = focus_rect->y + focus_rect->h;
 
-                // Check whether a divider sits on the right / bottom edge of
-                // the focused pane.  If so, draw on the divider centre line;
-                // if not (window edge), inset so the stroke stays visible.
                 bool has_right_divider = false;
                 bool has_bottom_divider = false;
                 for (const auto& d : dividers)

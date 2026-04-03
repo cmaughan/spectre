@@ -292,11 +292,11 @@ bool App::initialize()
         }))
         return false;
 
-    if (!time_step("Host", [this]() { return initialize_host(); }))
+    if (!time_step("Host", [this]() { return initialize_chrome_host(); }))
         return false;
 
-    if (host_manager_.host())
-        diagnostics_collector_.amend_last_step_label("Host (" + host_manager_.host()->debug_state().name + ")");
+    if (chrome_host_->active_host_manager().host())
+        diagnostics_collector_.amend_last_step_label("Host (" + chrome_host_->active_host_manager().host()->debug_state().name + ")");
 
     diagnostics_collector_.set_startup_total_ms(Ms(Clock::now() - init_start).count());
 
@@ -334,15 +334,6 @@ bool App::initialize()
     // Render one initial composite frame after init so hosts that only request
     // redraws on state changes do not start on a blank window.
     request_frame();
-
-    // ChromeHost draws pane dividers (and later tabs) using NanoVG.
-    chrome_host_ = std::make_unique<ChromeHost>(host_manager_.tree());
-    {
-        HostContext chrome_ctx{};
-        chrome_ctx.window = window_.get();
-        chrome_ctx.initial_viewport.pixel_size = { last_pixel_w_, last_pixel_h_ };
-        chrome_host_->initialize(chrome_ctx, *this);
-    }
 
     init_completed_ = true;
     rollback.armed = false;
@@ -392,12 +383,12 @@ void App::apply_font_metrics()
         * (text_service_.point_size() - 2)
         / text_service_.point_size();
     diagnostics_host_->set_imgui_font(text_service_.primary_font_path(), imgui_font_size);
-    host_manager_.for_each_host([this, imgui_font_size](LeafId, IHost& host) {
+    chrome_host_->active_host_manager().for_each_host([this, imgui_font_size](LeafId, IHost& host) {
         host.set_imgui_font(text_service_.primary_font_path(), imgui_font_size);
         host.on_font_metrics_changed();
     });
     refresh_window_layout();
-    host_manager_.recompute_viewports(window_->width_pixels(), diagnostics_host_->layout().terminal_height);
+    chrome_host_->active_host_manager().recompute_viewports(window_->width_pixels(), diagnostics_host_->layout().terminal_height);
     request_frame();
 }
 
@@ -455,7 +446,7 @@ void App::reload_config()
         input_dispatcher_.set_scroll_config(config_.smooth_scroll, config_.scroll_speed);
 
     const HostReloadConfig host_reload = host_reload_config_from_app_config(config_);
-    host_manager_.for_each_host([&host_reload](LeafId, IHost& host) {
+    chrome_host_->active_host_manager().for_each_host([&host_reload](LeafId, IHost& host) {
         host.on_config_reloaded(host_reload);
     });
 
@@ -464,28 +455,36 @@ void App::reload_config()
         ConfigDocument::default_path().string().c_str());
 }
 
-bool App::initialize_host()
+bool App::initialize_chrome_host()
 {
     PERF_MEASURE();
     host_owner_lifetime_ = std::make_shared<int>(0);
-    HostManager::Deps host_deps;
-    host_deps.options = &options_;
-    host_deps.config = &config_;
-    host_deps.config_document = &config_document_;
-    host_deps.window = window_.get();
-    host_deps.grid_renderer = renderer_.grid();
-    host_deps.imgui_host = renderer_.imgui();
-    host_deps.text_service = &text_service_;
-    host_deps.display_ppi = &display_ppi_;
-    host_deps.owner_lifetime = host_owner_lifetime_;
-    host_deps.compute_viewport = [this](const PaneDescriptor& desc) {
+
+    ChromeHost::Deps chrome_deps;
+    chrome_deps.options = &options_;
+    chrome_deps.config = &config_;
+    chrome_deps.config_document = &config_document_;
+    chrome_deps.window = window_.get();
+    chrome_deps.grid_renderer = renderer_.grid();
+    chrome_deps.imgui_host = renderer_.imgui();
+    chrome_deps.text_service = &text_service_;
+    chrome_deps.display_ppi = &display_ppi_;
+    chrome_deps.owner_lifetime = host_owner_lifetime_;
+    chrome_deps.compute_viewport = [this](const PaneDescriptor& desc) {
         return viewport_from_descriptor(desc);
     };
-    host_manager_ = HostManager(std::move(host_deps));
+    chrome_host_ = std::make_unique<ChromeHost>(std::move(chrome_deps));
 
-    if (!host_manager_.create(*this, window_->width_pixels(), diagnostics_host_->layout().terminal_height))
     {
-        last_init_error_ = host_manager_.error();
+        HostContext chrome_ctx{};
+        chrome_ctx.window = window_.get();
+        chrome_ctx.initial_viewport.pixel_size = { last_pixel_w_, last_pixel_h_ };
+        chrome_host_->initialize(chrome_ctx, *this);
+    }
+
+    if (!chrome_host_->create_initial_workspace(*this, window_->width_pixels(), diagnostics_host_->layout().terminal_height))
+    {
+        last_init_error_ = chrome_host_->last_create_error();
         return false;
     }
 
@@ -493,7 +492,7 @@ bool App::initialize_host()
     const float font_size = static_cast<float>(metrics.cell_height)
         * (text_service_.point_size() - 2)
         / text_service_.point_size();
-    host_manager_.host()->set_imgui_font(text_service_.primary_font_path(), font_size);
+    chrome_host_->active_host_manager().host()->set_imgui_font(text_service_.primary_font_path(), font_size);
 
     request_frame();
     return true;
@@ -505,34 +504,34 @@ void App::wire_gui_actions()
     GuiActionHandler::Deps gui_deps;
     gui_deps.text_service = &text_service_;
     gui_deps.ui_panel = diagnostics_host_ ? &diagnostics_host_->panel() : nullptr;
-    gui_deps.focused_host = [this]() { return host_manager_.focused_host(); };
+    gui_deps.focused_host = [this]() { return chrome_host_->active_host_manager().focused_host(); };
     gui_deps.imgui_host = renderer_.imgui();
     gui_deps.config = &config_;
     gui_deps.on_font_changed = [this]() { apply_font_metrics(); };
     gui_deps.on_open_file_dialog = [this]() { window_->show_open_file_dialog(); };
     gui_deps.on_split_vertical = [this](std::optional<HostKind> kind) {
         LeafId new_leaf = kind
-            ? host_manager_.split_focused(SplitDirection::Vertical, *kind, *this)
-            : host_manager_.split_focused(SplitDirection::Vertical, *this);
+            ? chrome_host_->active_host_manager().split_focused(SplitDirection::Vertical, *kind, *this)
+            : chrome_host_->active_host_manager().split_focused(SplitDirection::Vertical, *this);
         if (new_leaf != kInvalidLeaf)
         {
-            input_dispatcher_.set_host(host_manager_.focused_host());
+            input_dispatcher_.set_host(chrome_host_->active_host_manager().focused_host());
             request_frame();
         }
     };
     gui_deps.on_split_horizontal = [this](std::optional<HostKind> kind) {
         LeafId new_leaf = kind
-            ? host_manager_.split_focused(SplitDirection::Horizontal, *kind, *this)
-            : host_manager_.split_focused(SplitDirection::Horizontal, *this);
+            ? chrome_host_->active_host_manager().split_focused(SplitDirection::Horizontal, *kind, *this)
+            : chrome_host_->active_host_manager().split_focused(SplitDirection::Horizontal, *this);
         if (new_leaf != kInvalidLeaf)
         {
-            input_dispatcher_.set_host(host_manager_.focused_host());
+            input_dispatcher_.set_host(chrome_host_->active_host_manager().focused_host());
             request_frame();
         }
     };
     gui_deps.on_panel_toggled = [this]() {
         refresh_window_layout();
-        host_manager_.recompute_viewports(window_->width_pixels(), diagnostics_host_->layout().terminal_height);
+        chrome_host_->active_host_manager().recompute_viewports(window_->width_pixels(), diagnostics_host_->layout().terminal_height);
         update_diagnostics_panel();
         request_frame();
     };
@@ -544,54 +543,54 @@ void App::wire_gui_actions()
         HostLaunchOptions launch;
         launch.kind = HostKind::Nvim;
         launch.args = { ConfigDocument::default_path().string() };
-        LeafId new_leaf = host_manager_.split_focused(SplitDirection::Vertical, std::move(launch), *this);
+        LeafId new_leaf = chrome_host_->active_host_manager().split_focused(SplitDirection::Vertical, std::move(launch), *this);
         if (new_leaf != kInvalidLeaf)
         {
-            input_dispatcher_.set_host(host_manager_.focused_host());
+            input_dispatcher_.set_host(chrome_host_->active_host_manager().focused_host());
             request_frame();
         }
     };
     gui_deps.on_reload_config = [this]() { reload_config(); };
     gui_deps.on_toggle_zoom = [this]() {
-        host_manager_.toggle_zoom(window_->width_pixels(), diagnostics_host_->layout().terminal_height);
-        input_dispatcher_.set_host(host_manager_.focused_host());
+        chrome_host_->active_host_manager().toggle_zoom(window_->width_pixels(), diagnostics_host_->layout().terminal_height);
+        input_dispatcher_.set_host(chrome_host_->active_host_manager().focused_host());
         request_frame();
     };
     gui_deps.on_close_pane = [this]() {
-        if (host_manager_.host_count() <= 1)
+        if (chrome_host_->active_host_manager().host_count() <= 1)
         {
             // Last pane — exit the application.
             running_ = false;
             return;
         }
         input_dispatcher_.set_host(nullptr);
-        host_manager_.close_focused();
-        input_dispatcher_.set_host(host_manager_.focused_host());
+        chrome_host_->active_host_manager().close_focused();
+        input_dispatcher_.set_host(chrome_host_->active_host_manager().focused_host());
         request_frame();
     };
     gui_deps.on_restart_host = [this]() {
         input_dispatcher_.set_host(nullptr);
-        if (host_manager_.restart_focused(*this))
+        if (chrome_host_->active_host_manager().restart_focused(*this))
         {
-            input_dispatcher_.set_host(host_manager_.focused_host());
+            input_dispatcher_.set_host(chrome_host_->active_host_manager().focused_host());
             request_frame();
         }
         else
         {
-            input_dispatcher_.set_host(host_manager_.focused_host());
+            input_dispatcher_.set_host(chrome_host_->active_host_manager().focused_host());
         }
     };
     gui_deps.on_swap_pane = [this]() {
-        if (host_manager_.swap_focused_with_next())
+        if (chrome_host_->active_host_manager().swap_focused_with_next())
         {
-            input_dispatcher_.set_host(host_manager_.focused_host());
+            input_dispatcher_.set_host(chrome_host_->active_host_manager().focused_host());
             request_frame();
         }
     };
     auto focus_pane = [this](FocusDirection dir) {
-        if (host_manager_.focus_direction(dir))
+        if (chrome_host_->active_host_manager().focus_direction(dir))
         {
-            input_dispatcher_.set_host(host_manager_.focused_host());
+            input_dispatcher_.set_host(chrome_host_->active_host_manager().focused_host());
             request_frame();
         }
     };
@@ -614,8 +613,8 @@ void App::wire_window_callbacks()
         return (palette_host_ && palette_host_->is_active()) ? palette_host_.get() : nullptr;
     };
     disp_deps.ui_panel = diagnostics_host_ ? &diagnostics_host_->panel() : nullptr;
-    disp_deps.host = host_manager_.host();
-    disp_deps.host_manager = &host_manager_;
+    disp_deps.host = chrome_host_->active_host_manager().host();
+    disp_deps.host_manager = &chrome_host_->active_host_manager();
     disp_deps.smooth_scroll = config_.smooth_scroll;
     disp_deps.scroll_speed = config_.scroll_speed;
     disp_deps.pixel_scale = PixelScale::from_window(window_->width_pixels(), window_->width_logical());
@@ -640,7 +639,7 @@ bool App::run_smoke_test(std::chrono::milliseconds timeout)
     while (running_ && std::chrono::steady_clock::now() < deadline)
     {
         pump_once(deadline);
-        if (host_manager_.host() && host_manager_.host()->runtime_state().content_ready && saw_frame_)
+        if (chrome_host_->active_host_manager().host() && chrome_host_->active_host_manager().host()->runtime_state().content_ready && saw_frame_)
             return true;
     }
     return false;
@@ -722,10 +721,10 @@ std::optional<CapturedFrame> App::run_render_test(std::chrono::milliseconds time
         if (auto captured = renderer_.capture()->take_captured_frame())
             return captured;
 
-        if (!host_manager_.host())
+        if (!chrome_host_->active_host_manager().host())
             continue;
 
-        const HostRuntimeState host_state = host_manager_.host()->runtime_state();
+        const HostRuntimeState host_state = chrome_host_->active_host_manager().host()->runtime_state();
         const auto now = std::chrono::steady_clock::now();
         const bool content_ready = host_state.content_ready && saw_frame_;
         const bool content_quiet = content_ready && !frame_requested_;
@@ -757,7 +756,7 @@ std::optional<CapturedFrame> App::run_render_test(std::chrono::milliseconds time
                     // Enable the diagnostics panel and wait for it to render.
                     diagnostics_host_->set_visible(true);
                     refresh_window_layout();
-                    host_manager_.recompute_viewports(
+                    chrome_host_->active_host_manager().recompute_viewports(
                         window_->width_pixels(), diagnostics_host_->layout().terminal_height);
                     update_diagnostics_panel();
                     request_frame();
@@ -827,9 +826,9 @@ std::optional<CapturedFrame> App::run_render_test(std::chrono::milliseconds time
     }
 
     // Timeout — build a diagnostic error message.
-    if (host_manager_.host())
+    if (chrome_host_->active_host_manager().host())
     {
-        const HostRuntimeState host_state = host_manager_.host()->runtime_state();
+        const HostRuntimeState host_state = chrome_host_->active_host_manager().host()->runtime_state();
         const bool post_diagnostics_frame = ctx.diagnostics_enabled_at
             && diagnostics_host_ && diagnostics_host_->last_render_time()
             && *diagnostics_host_->last_render_time() > *ctx.diagnostics_enabled_at;
@@ -862,7 +861,7 @@ bool App::close_dead_panes()
 {
     PERF_MEASURE();
     std::vector<LeafId> dead;
-    host_manager_.for_each_host([&dead](LeafId id, const IHost& h) {
+    chrome_host_->active_host_manager().for_each_host([&dead](LeafId id, const IHost& h) {
         if (!h.is_running())
             dead.push_back(id);
     });
@@ -874,14 +873,14 @@ bool App::close_dead_panes()
     }
     for (LeafId id : dead)
     {
-        if (host_manager_.host_count() == 1)
+        if (chrome_host_->active_host_manager().host_count() == 1)
         {
             running_ = false;
             return false;
         }
-        host_manager_.close_leaf(id);
+        chrome_host_->active_host_manager().close_leaf(id);
     }
-    return host_manager_.host() != nullptr;
+    return chrome_host_->active_host_manager().host() != nullptr;
 }
 
 void App::render_imgui_overlay(IFrameContext& frame, float /*delta_seconds*/)
@@ -913,7 +912,7 @@ bool App::render_frame()
     update_diagnostics_panel();
 
     const auto [cw, ch] = renderer_.grid()->cell_size_pixels();
-    if (auto* host = host_manager_.focused_host())
+    if (auto* host = chrome_host_->active_host_manager().focused_host())
         host->set_scroll_offset(input_dispatcher_.scroll_fraction() * static_cast<float>(ch));
     input_dispatcher_.clear_scroll_event();
 
@@ -926,17 +925,17 @@ bool App::render_frame()
     }
 
     // ChromeHost draws pane dividers first (underneath content hosts).
-    if (chrome_host_ && chrome_host_->is_running() && !host_manager_.is_zoomed())
+    if (chrome_host_ && chrome_host_->is_running() && !chrome_host_->active_host_manager().is_zoomed())
     {
         chrome_host_->draw(*frame);
         frame->flush_submit_chunk();
     }
 
-    host_manager_.for_each_host([frame, this](LeafId id, IHost& h) {
+    chrome_host_->active_host_manager().for_each_host([frame, this](LeafId id, IHost& h) {
         if (!h.is_running())
             return;
         // When zoomed, only draw the zoomed pane.
-        if (host_manager_.is_zoomed() && id != host_manager_.zoomed_leaf())
+        if (chrome_host_->active_host_manager().is_zoomed() && id != chrome_host_->active_host_manager().zoomed_leaf())
             return;
         h.draw(*frame);
         frame->flush_submit_chunk();
@@ -984,10 +983,10 @@ bool App::pump_once(std::optional<std::chrono::steady_clock::time_point> wait_de
             runtime_perf_collector().cancel_frame();
             return false;
         }
-        input_dispatcher_.set_host(host_manager_.focused_host());
+        input_dispatcher_.set_host(chrome_host_->active_host_manager().focused_host());
 
         // Pump all hosts
-        host_manager_.for_each_host([](LeafId, IHost& h) {
+        chrome_host_->active_host_manager().for_each_host([](LeafId, IHost& h) {
             if (h.is_running())
                 h.pump();
         });
@@ -998,7 +997,7 @@ bool App::pump_once(std::optional<std::chrono::steady_clock::time_point> wait_de
             runtime_perf_collector().cancel_frame();
             return false;
         }
-        input_dispatcher_.set_host(host_manager_.focused_host());
+        input_dispatcher_.set_host(chrome_host_->active_host_manager().focused_host());
 
         if (frame_requested_)
         {
@@ -1031,7 +1030,7 @@ void App::on_resize(int pixel_w, int pixel_h)
     last_pixel_h_ = pixel_h;
     renderer_.grid()->resize(pixel_w, pixel_h);
     refresh_window_layout();
-    host_manager_.recompute_viewports(pixel_w, diagnostics_host_->layout().terminal_height);
+    chrome_host_->active_host_manager().recompute_viewports(pixel_w, diagnostics_host_->layout().terminal_height);
     if (chrome_host_)
     {
         HostViewport vp;
@@ -1076,7 +1075,7 @@ void App::request_frame()
 
 void App::request_quit()
 {
-    host_manager_.for_each_host([](LeafId, IHost& h) {
+    chrome_host_->active_host_manager().for_each_host([](LeafId, IHost& h) {
         h.request_close();
     });
     running_ = false;
@@ -1105,7 +1104,7 @@ bool App::dispatch_to_nvim_host(std::string_view action)
     // Find an existing NvimHost (identified by debug name, no side effects).
     IHost* nvim_host = nullptr;
     LeafId nvim_leaf = kInvalidLeaf;
-    host_manager_.for_each_host([&nvim_host, &nvim_leaf](LeafId id, IHost& host) {
+    chrome_host_->active_host_manager().for_each_host([&nvim_host, &nvim_leaf](LeafId id, IHost& host) {
         if (!nvim_host && host.debug_state().name == "nvim")
         {
             nvim_host = &host;
@@ -1116,20 +1115,20 @@ bool App::dispatch_to_nvim_host(std::string_view action)
     if (nvim_host)
     {
         nvim_host->dispatch_action(action);
-        host_manager_.set_focused(nvim_leaf);
+        chrome_host_->active_host_manager().set_focused(nvim_leaf);
         request_frame();
         return true;
     }
 
     // No existing NvimHost — create a vertical split with one.
-    LeafId new_leaf = host_manager_.split_focused(SplitDirection::Vertical, HostKind::Nvim, *this);
+    LeafId new_leaf = chrome_host_->active_host_manager().split_focused(SplitDirection::Vertical, HostKind::Nvim, *this);
     if (new_leaf == kInvalidLeaf)
         return false;
 
     refresh_window_layout();
     request_frame();
 
-    IHost* new_host = host_manager_.host_for(new_leaf);
+    IHost* new_host = chrome_host_->active_host_manager().host_for(new_leaf);
     if (new_host)
         new_host->dispatch_action(action);
 
@@ -1153,9 +1152,9 @@ void App::update_diagnostics_panel()
     panel.startup_steps = diagnostics_collector_.startup_steps();
     panel.startup_total_ms = diagnostics_collector_.startup_total_ms();
 
-    if (host_manager_.host())
+    if (chrome_host_->active_host_manager().host())
     {
-        const HostDebugState host_state = host_manager_.host()->debug_state();
+        const HostDebugState host_state = chrome_host_->active_host_manager().host()->debug_state();
         panel.grid_size = { host_state.grid_cols, host_state.grid_rows };
         panel.dirty_cells = host_state.dirty_cells;
     }
@@ -1206,7 +1205,7 @@ int App::wait_timeout_ms(std::optional<std::chrono::steady_clock::time_point> wa
 
     std::optional<std::chrono::steady_clock::time_point> deadline;
     bool any_host_running = false;
-    host_manager_.for_each_host([&deadline, &any_host_running](LeafId, const IHost& host) {
+    chrome_host_->active_host_manager().for_each_host([&deadline, &any_host_running](LeafId, const IHost& host) {
         if (host.is_running())
             any_host_running = true;
         auto d = host.next_deadline();
@@ -1236,7 +1235,8 @@ void App::shutdown()
     macos_menu_.reset(); // tear down menu before handler goes away
 #endif
 
-    host_manager_.shutdown();
+    if (chrome_host_)
+        chrome_host_->shutdown();
     host_owner_lifetime_.reset();
 
     if (options_.save_user_config && init_completed_)
