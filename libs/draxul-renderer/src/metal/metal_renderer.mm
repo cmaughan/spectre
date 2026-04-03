@@ -880,8 +880,9 @@ bool MetalRenderer::record_render_pass_now(IRenderPass& pass, const RenderViewpo
     const int vw = viewport.width > 0 ? viewport.width : pixel_w_;
     const int vh = viewport.height > 0 ? viewport.height : pixel_h_;
 
+    id<MTLTexture> drawable_tex = current_drawable_.get() ? [current_drawable_.get() texture] : nil;
     MetalRenderContext prepass_ctx(active_command_buffer_.get(), nil, current_frame_, MAX_FRAMES_IN_FLIGHT,
-        pixel_w_, pixel_h_, vx, vy, vw, vh);
+        pixel_w_, pixel_h_, vx, vy, vw, vh, device_.get(), drawable_tex);
     pass.record_prepass(prepass_ctx);
 
     if (!ensure_main_render_encoder(pass.requires_main_depth_attachment()))

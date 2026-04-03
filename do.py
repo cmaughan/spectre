@@ -128,6 +128,8 @@ Bless render references:
   blessunicode Bless unicode-view
   blesspanel   Bless panel-view
   blessligatures Bless ligatures-view
+  nanovg       Run nanovg-demo render test
+  blessnanovg  Bless nanovg-demo
   blessall     Bless all five deterministic references
 
 Examples:
@@ -345,6 +347,8 @@ def main() -> int:
         "blessunicode": ("unicode-view", True),
         "blesspanel": ("panel-view", True),
         "blessligatures": ("ligatures-view", True),
+        "nanovg": ("nanovg-demo", False),
+        "blessnanovg": ("nanovg-demo", True),
     }
 
     if command in render_map:

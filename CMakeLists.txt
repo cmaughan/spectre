@@ -96,6 +96,7 @@ add_subdirectory(libs/draxul-runtime-support)
 add_subdirectory(libs/draxul-render-test)
 add_subdirectory(libs/draxul-app-support)
 add_subdirectory(libs/draxul-host)
+add_subdirectory(libs/draxul-nanovg)
 if(DRAXUL_ENABLE_MEGACITY)
     add_subdirectory(libs/draxul-geometry)
     add_subdirectory(libs/draxul-treesitter)
@@ -180,6 +181,7 @@ target_link_libraries(draxul-app PUBLIC
     draxul-grid
     draxul-nvim
     draxul-host
+    draxul-nanovg
 )
 if(DRAXUL_ENABLE_MEGACITY)
     target_link_libraries(draxul-app PUBLIC draxul-megacity)
@@ -325,6 +327,7 @@ if(BUILD_TESTING)
             unicode-view
             panel-view
             ligatures-view
+            nanovg-demo
         )
         foreach(DRAXUL_RENDER_NAME IN LISTS DRAXUL_RENDER_SCENARIOS)
             set(DRAXUL_RENDER_SCENARIO ${CMAKE_SOURCE_DIR}/tests/render/${DRAXUL_RENDER_NAME}.toml)

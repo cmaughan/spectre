@@ -120,6 +120,15 @@ FetchContent_MakeAvailable(tomlplusplus)
 get_target_property(_toml_inc tomlplusplus_tomlplusplus INTERFACE_INCLUDE_DIRECTORIES)
 set_target_properties(tomlplusplus_tomlplusplus PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_toml_inc}")
 
+# NanoVG (antialiased 2D vector graphics — core library only, custom backends)
+FetchContent_Declare(
+    nanovg
+    GIT_REPOSITORY https://github.com/memononen/nanovg.git
+    GIT_TAG master
+    GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(nanovg)
+
 # GLM (OpenGL Mathematics — header-only vector/matrix library)
 FetchContent_Declare(
     glm

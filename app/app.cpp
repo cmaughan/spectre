@@ -17,6 +17,7 @@
 #include <draxul/pixel_scale.h>
 #include <draxul/sdl_window.h>
 #include <imgui.h>
+#include <nanovg.h>
 #include <sstream>
 #include <utility>
 
@@ -333,6 +334,11 @@ bool App::initialize()
     // Render one initial composite frame after init so hosts that only request
     // redraws on state changes do not start on a blank window.
     request_frame();
+
+    // Create NanoVG demo overlay if requested via --nanovg-demo flag
+    if (options_.nanovg_demo)
+        nanovg_demo_pass_ = create_nanovg_pass();
+
     init_completed_ = true;
     rollback.armed = false;
     return true;
@@ -923,6 +929,95 @@ bool App::render_frame()
         h.draw(*frame);
         frame->flush_submit_chunk();
     });
+
+    // NanoVG demo overlay: draws test shapes over the full window
+    if (nanovg_demo_pass_)
+    {
+        nanovg_demo_pass_->set_draw_callback([](NVGcontext* vg, int w, int h) {
+            const float fw = static_cast<float>(w);
+            const float fh = static_cast<float>(h);
+
+            // Semi-transparent panel background
+            nvgBeginPath(vg);
+            nvgRoundedRect(vg, 20, 20, fw - 40, fh - 40, 12);
+            nvgFillColor(vg, nvgRGBA(28, 30, 34, 200));
+            nvgFill(vg);
+
+            // Title bar
+            nvgBeginPath(vg);
+            nvgRoundedRect(vg, 20, 20, fw - 40, 50, 12);
+            nvgFillColor(vg, nvgRGBA(40, 42, 54, 240));
+            nvgFill(vg);
+
+            // Colored rectangles row
+            const float boxY = 90;
+            const float boxSize = 60;
+            const float gap = 15;
+            float bx = 40;
+            NVGcolor colors[] = {
+                nvgRGBA(255, 80, 80, 220), // red
+                nvgRGBA(80, 200, 120, 220), // green
+                nvgRGBA(80, 120, 255, 220), // blue
+                nvgRGBA(255, 200, 40, 220), // yellow
+                nvgRGBA(200, 80, 255, 220), // purple
+                nvgRGBA(80, 220, 220, 220), // cyan
+            };
+            for (int i = 0; i < 6; i++)
+            {
+                nvgBeginPath(vg);
+                nvgRoundedRect(vg, bx, boxY, boxSize, boxSize, 8);
+                nvgFillColor(vg, colors[i]);
+                nvgFill(vg);
+
+                // Border
+                nvgBeginPath(vg);
+                nvgRoundedRect(vg, bx, boxY, boxSize, boxSize, 8);
+                nvgStrokeColor(vg, nvgRGBA(255, 255, 255, 80));
+                nvgStrokeWidth(vg, 1.5f);
+                nvgStroke(vg);
+
+                bx += boxSize + gap;
+            }
+
+            // Gradient circle
+            float cx = fw / 2;
+            float cy = fh / 2 + 40;
+            float r = 80;
+            NVGpaint bg = nvgRadialGradient(vg, cx, cy, 0, r,
+                nvgRGBA(100, 180, 255, 200), nvgRGBA(20, 40, 80, 0));
+            nvgBeginPath(vg);
+            nvgCircle(vg, cx, cy, r);
+            nvgFillPaint(vg, bg);
+            nvgFill(vg);
+
+            // Stroked lines
+            nvgBeginPath(vg);
+            nvgMoveTo(vg, 40, fh - 80);
+            nvgLineTo(vg, fw / 3, fh - 120);
+            nvgLineTo(vg, fw * 2 / 3, fh - 60);
+            nvgLineTo(vg, fw - 40, fh - 100);
+            nvgStrokeColor(vg, nvgRGBA(200, 200, 200, 180));
+            nvgStrokeWidth(vg, 2.5f);
+            nvgStroke(vg);
+
+            // Nested rounded rectangles (alpha blending test)
+            for (int i = 0; i < 5; i++)
+            {
+                float inset = static_cast<float>(i) * 20;
+                nvgBeginPath(vg);
+                nvgRoundedRect(vg, fw - 240 + inset, 90 + inset, 200 - inset * 2, 150 - inset * 2, 10 - static_cast<float>(i));
+                nvgFillColor(vg, nvgRGBA(60 + i * 30, 80, 180, static_cast<unsigned char>(150 - i * 25)));
+                nvgFill(vg);
+            }
+        });
+
+        RenderViewport vp;
+        vp.width = last_pixel_w_;
+        vp.height = last_pixel_h_;
+        frame->record_render_pass(*nanovg_demo_pass_, vp);
+        frame->flush_submit_chunk();
+    }
+
     render_imgui_overlay(*frame, 0.0f);
 
     saw_frame_ = true;
