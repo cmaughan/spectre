@@ -19,9 +19,10 @@
 #include "support/test_host_callbacks.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
-#include <draxul/imgui_host.h>
+#include <draxul/app_config.h>
 #include <draxul/building_generator.h>
 #include <draxul/config_document.h>
+#include <draxul/imgui_host.h>
 #define private public
 #include <draxul/megacity_host.h>
 #undef private
@@ -2357,7 +2358,11 @@ TEST_CASE("megacity host preserves externally edited core config when saving meg
     host.shutdown();
 
     const std::string saved = read_text_file(redir.config_path);
-    REQUIRE(saved.find("palette_bg_alpha = 0.6") != std::string::npos);
+    // TOML serializes 0.6 with full double precision (0.59999999999999998).
+    // Verify the value was preserved from the externally-edited file (not
+    // reverted to the original 0.9) by parsing the saved config.
+    AppConfig reloaded = AppConfig::parse(saved);
+    REQUIRE(reloaded.palette_bg_alpha == Catch::Approx(0.6f).margin(0.001f));
 }
 
 TEST_CASE("megacity host keeps catching up between mouse samples", "[megacity]")

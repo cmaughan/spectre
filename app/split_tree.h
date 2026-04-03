@@ -19,6 +19,14 @@ enum class SplitDirection
     Horizontal
 };
 
+enum class FocusDirection
+{
+    Left,
+    Right,
+    Up,
+    Down
+};
+
 class SplitTree
 {
 public:
@@ -51,6 +59,15 @@ public:
     // Returns false if this is the last leaf.
     bool close_leaf(LeafId id);
 
+    // Swap the content identity of two leaves in the tree.
+    // The tree structure and descriptors are unchanged — only the leaf IDs swap.
+    // Returns false if either ID is not found.
+    bool swap_leaves(LeafId a, LeafId b);
+
+    // Returns the next leaf after |id| in spatial order (wraps around).
+    // Returns kInvalidLeaf if the tree has fewer than 2 leaves.
+    LeafId next_leaf_after(LeafId id) const;
+
     // Recompute all PaneDescriptors from root dimensions.
     void recompute(int pixel_w, int pixel_h);
 
@@ -67,6 +84,9 @@ public:
         return focused_id_;
     }
     void set_focused(LeafId id);
+
+    // Find the adjacent leaf in the given direction, or kInvalidLeaf if none exists.
+    LeafId find_neighbor(LeafId id, FocusDirection direction) const;
 
     // Get the computed descriptor for a leaf.
     PaneDescriptor descriptor_for(LeafId id) const;
@@ -98,6 +118,7 @@ private:
         const Node* node, const std::function<void(LeafId, const PaneDescriptor&)>& fn);
     static int count_leaves(const Node* node);
     static LeafId first_leaf(const Node* node);
+    static LeafId last_leaf(const Node* node);
 };
 
 } // namespace draxul

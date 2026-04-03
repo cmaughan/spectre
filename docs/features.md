@@ -95,6 +95,11 @@ A standalone GUI library for rendering UI items that do not depend on ImGui. It 
 - Draggable dividers with ratio-based sizing
 - Per-pane host instance with independent lifecycle
 - Focus tracking and pane-aware input routing
+- Keyboard-driven pane focus navigation (`Ctrl+H/J/K/L` vim-style) via `focus_left`, `focus_right`, `focus_up`, `focus_down` actions
+- **Pane zoom**: `toggle_zoom` action (default `Ctrl+S, z`) expands the focused pane to fill the full window; toggling again restores the previous split layout exactly (like tmux `Ctrl+B z`)
+- **Close pane**: Closes the focused pane and its host; if last pane, exits the app
+- **Restart host**: Kills the current host in the focused pane and relaunches with the same arguments
+- **Swap pane**: Swaps the focused pane with the next pane in spatial order
 
 ---
 
@@ -128,6 +133,14 @@ Toggle with F12. Shows:
 | `command_palette` | `Ctrl + P` |
 | `edit_config` | (unbound) |
 | `reload_config` | (unbound) |
+| `toggle_zoom` | `Ctrl + S, Z` |
+| `close_pane` | `Ctrl + S, X` |
+| `restart_host` | `Ctrl + S, R` |
+| `swap_pane` | `Ctrl + S, O` |
+| `focus_left` | `Ctrl + H` |
+| `focus_down` | `Ctrl + J` |
+| `focus_up` | `Ctrl + K` |
+| `focus_right` | `Ctrl + L` |
 | `open_file_dialog` | (unbound) |
 
 Customizable in `config.toml` under `[keybindings]`. Chord syntax: `"prefix, key"`. Set to empty string to unbind.

@@ -805,6 +805,11 @@ bool MetalRenderer::draw_grid_handle_now(IGridHandle& handle)
     if (!ensure_main_render_encoder(false))
         return false;
 
+    const PaneDescriptor& desc = metal_handle->descriptor_;
+    // Skip drawing entirely when the viewport has zero area (e.g. zoomed-out panes).
+    if (desc.pixel_size.x <= 0 || desc.pixel_size.y <= 0)
+        return true;
+
     const int bg_instances = metal_handle->state_.bg_instances();
     const int fg_instances = metal_handle->state_.fg_instances();
     id<MTLBuffer> grid_buf = metal_handle->current_buffer(current_frame_);
@@ -813,8 +818,6 @@ bool MetalRenderer::draw_grid_handle_now(IGridHandle& handle)
 
     reset_full_window_viewport();
 
-    const PaneDescriptor& desc = metal_handle->descriptor_;
-    if (desc.pixel_size.x > 0 && desc.pixel_size.y > 0)
     {
         MTLScissorRect scissor;
         scissor.x = static_cast<NSUInteger>(std::max(0, desc.pixel_pos.x));
@@ -824,10 +827,6 @@ bool MetalRenderer::draw_grid_handle_now(IGridHandle& handle)
         scissor.height = static_cast<NSUInteger>(std::min(desc.pixel_size.y,
             pixel_h_ - std::max(0, desc.pixel_pos.y)));
         [active_encoder_.get() setScissorRect:scissor];
-    }
-    else
-    {
-        reset_full_window_scissor();
     }
 
     struct

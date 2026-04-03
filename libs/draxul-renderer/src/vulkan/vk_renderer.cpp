@@ -978,6 +978,11 @@ bool VkRenderer::draw_grid_handle_now(IGridHandle& handle)
     if (!vk_handle || !frame_active_)
         return false;
 
+    const PaneDescriptor& desc = vk_handle->descriptor_;
+    // Skip drawing entirely when the viewport has zero area (e.g. zoomed-out panes).
+    if (desc.pixel_size.x <= 0 || desc.pixel_size.y <= 0)
+        return true;
+
     vk_handle->state_.apply_cursor();
     if (!vk_handle->upload_state(current_frame_))
     {
@@ -999,21 +1004,13 @@ bool VkRenderer::draw_grid_handle_now(IGridHandle& handle)
     viewport.maxDepth = 1.0f;
     vkCmdSetViewport(active_cmd_buffer_, 0, 1, &viewport);
 
-    const PaneDescriptor& desc = vk_handle->descriptor_;
     VkRect2D pane_scissor = {};
-    if (desc.pixel_size.x > 0 && desc.pixel_size.y > 0)
-    {
-        pane_scissor.offset.x = std::max(0, desc.pixel_pos.x);
-        pane_scissor.offset.y = std::max(0, desc.pixel_pos.y);
-        pane_scissor.extent.width = static_cast<uint32_t>(std::max(0,
-            std::min(desc.pixel_size.x, pixel_w_ - pane_scissor.offset.x)));
-        pane_scissor.extent.height = static_cast<uint32_t>(std::max(0,
-            std::min(desc.pixel_size.y, pixel_h_ - pane_scissor.offset.y)));
-    }
-    else
-    {
-        pane_scissor.extent = ctx_.swapchain().extent;
-    }
+    pane_scissor.offset.x = std::max(0, desc.pixel_pos.x);
+    pane_scissor.offset.y = std::max(0, desc.pixel_pos.y);
+    pane_scissor.extent.width = static_cast<uint32_t>(std::max(0,
+        std::min(desc.pixel_size.x, pixel_w_ - pane_scissor.offset.x)));
+    pane_scissor.extent.height = static_cast<uint32_t>(std::max(0,
+        std::min(desc.pixel_size.y, pixel_h_ - pane_scissor.offset.y)));
     vkCmdSetScissor(active_cmd_buffer_, 0, 1, &pane_scissor);
 
     float push_data[7] = {

@@ -72,6 +72,7 @@ bool HostManager::create(IHostCallbacks& callbacks, int pixel_w, int pixel_h)
     PERF_MEASURE();
     error_.clear();
     hosts_.clear();
+    launch_options_.clear();
 
     LeafId root_id = tree_.reset(pixel_w, pixel_h);
 
@@ -185,10 +186,18 @@ bool HostManager::close_leaf(LeafId id)
     if (it == hosts_.end())
         return false;
 
+    // Cancel zoom if the zoomed pane is being closed, or if closing reduces to one leaf.
+    if (zoomed_ && (id == zoomed_leaf_ || tree_.leaf_count() <= 2))
+    {
+        zoomed_ = false;
+        zoomed_leaf_ = kInvalidLeaf;
+    }
+
     // Shut down the host
     if (it->second)
         it->second->shutdown();
     hosts_.erase(it);
+    launch_options_.erase(id);
 
     // Collapse the tree (this also updates focus if needed)
     if (!tree_.close_leaf(id))
@@ -203,11 +212,101 @@ bool HostManager::close_focused()
     return close_leaf(tree_.focused());
 }
 
+bool HostManager::restart_focused(IHostCallbacks& callbacks)
+{
+    PERF_MEASURE();
+    LeafId id = tree_.focused();
+    if (id == kInvalidLeaf)
+        return false;
+
+    auto it = hosts_.find(id);
+    if (it == hosts_.end())
+        return false;
+
+    // Retrieve saved launch options for this leaf.
+    auto opts_it = launch_options_.find(id);
+    if (opts_it == launch_options_.end())
+    {
+        error_ = "No launch options recorded for focused pane.";
+        return false;
+    }
+    HostLaunchOptions launch = opts_it->second;
+
+    // Shut down the current host.
+    if (it->second)
+        it->second->shutdown();
+    hosts_.erase(it);
+
+    // Relaunch the same host in the same pane slot.
+    if (!create_host_for_leaf(id, callbacks, std::move(launch), false))
+        return false;
+
+    update_all_viewports();
+    return true;
+}
+
+bool HostManager::swap_focused_with_next()
+{
+    PERF_MEASURE();
+    LeafId focused = tree_.focused();
+    if (focused == kInvalidLeaf)
+        return false;
+
+    LeafId next = tree_.next_leaf_after(focused);
+    if (next == kInvalidLeaf)
+        return false;
+
+    // swap_leaves swaps the IDs stored in the tree nodes: the node at
+    // position-A now holds ID B and vice versa.  update_all_viewports()
+    // iterates the tree in spatial order, so hosts_[B] will receive
+    // position-A's viewport — effectively swapping the two hosts'
+    // on-screen positions.  The hosts_ and launch_options_ maps stay
+    // unchanged because the keys still match the (now relocated) IDs.
+    if (!tree_.swap_leaves(focused, next))
+        return false;
+
+    update_all_viewports();
+    return true;
+}
+
 void HostManager::recompute_viewports(int pixel_w, int pixel_h)
 {
     PERF_MEASURE();
     tree_.recompute(pixel_w, pixel_h);
+    if (zoomed_)
+    {
+        zoom_pixel_w_ = pixel_w;
+        zoom_pixel_h_ = pixel_h;
+    }
     update_all_viewports();
+}
+
+void HostManager::toggle_zoom(int pixel_w, int pixel_h)
+{
+    PERF_MEASURE();
+    if (tree_.leaf_count() <= 1)
+        return; // Nothing to zoom with a single pane.
+
+    if (zoomed_)
+    {
+        // Unzoom: restore normal viewports.
+        zoomed_ = false;
+        zoomed_leaf_ = kInvalidLeaf;
+        update_all_viewports();
+    }
+    else
+    {
+        // Zoom: focused pane fills the full window.
+        LeafId focused = tree_.focused();
+        if (focused == kInvalidLeaf)
+            return;
+
+        zoomed_ = true;
+        zoomed_leaf_ = focused;
+        zoom_pixel_w_ = pixel_w;
+        zoom_pixel_h_ = pixel_h;
+        update_all_viewports();
+    }
 }
 
 void HostManager::shutdown()
@@ -222,6 +321,7 @@ void HostManager::shutdown()
         }
     }
     hosts_.clear();
+    launch_options_.clear();
 }
 
 IHost* HostManager::focused_host() const
@@ -232,6 +332,21 @@ IHost* HostManager::focused_host() const
 void HostManager::set_focused(LeafId id)
 {
     tree_.set_focused(id);
+}
+
+bool HostManager::focus_direction(FocusDirection direction)
+{
+    PERF_MEASURE();
+    LeafId current = tree_.focused();
+    if (current == kInvalidLeaf)
+        return false;
+
+    LeafId neighbor = tree_.find_neighbor(current, direction);
+    if (neighbor == kInvalidLeaf)
+        return false;
+
+    tree_.set_focused(neighbor);
+    return true;
 }
 
 IHost* HostManager::host_for(LeafId id) const
@@ -295,6 +410,9 @@ bool HostManager::create_host_for_leaf(LeafId id, IHostCallbacks& callbacks,
     PaneDescriptor desc = tree_.descriptor_for(id);
     HostViewport viewport = deps_.compute_viewport ? deps_.compute_viewport(desc) : HostViewport{};
 
+    // Save launch options before moving them into the context.
+    HostLaunchOptions saved_launch = launch;
+
     if (HostContext context{
             .window = deps_.window,
             .grid_renderer = &grid_renderer,
@@ -329,6 +447,7 @@ bool HostManager::create_host_for_leaf(LeafId id, IHostCallbacks& callbacks,
         grid_renderer.set_default_background(new_host->default_background());
 
     hosts_[id] = std::move(new_host);
+    launch_options_[id] = std::move(saved_launch);
     return true;
 }
 
@@ -338,11 +457,26 @@ void HostManager::update_all_viewports()
     if (!deps_.compute_viewport)
         return;
 
-    tree_.for_each_leaf([this](LeafId id, const PaneDescriptor& desc) {
-        auto it = hosts_.find(id);
+    if (zoomed_)
+    {
+        // When zoomed, only the focused pane gets a viewport update.
+        // Hidden panes are left untouched — calling set_viewport({0,0})
+        // would trigger a grid resize to 1x1 in the child process
+        // (nvim, shell) which is both wasteful and disruptive.
+        PaneDescriptor full_desc{ { 0, 0 }, { zoom_pixel_w_, zoom_pixel_h_ } };
+
+        auto it = hosts_.find(zoomed_leaf_);
         if (it != hosts_.end() && it->second)
-            it->second->set_viewport(deps_.compute_viewport(desc));
-    });
+            it->second->set_viewport(deps_.compute_viewport(full_desc));
+    }
+    else
+    {
+        tree_.for_each_leaf([this](LeafId id, const PaneDescriptor& desc) {
+            auto it = hosts_.find(id);
+            if (it != hosts_.end() && it->second)
+                it->second->set_viewport(deps_.compute_viewport(desc));
+        });
+    }
 }
 
 } // namespace draxul

@@ -13,6 +13,23 @@
 
 This affects every macOS Retina display and every Windows HiDPI setup. The bug is latent on 1× displays.
 
+## Investigation (2026-04-02)
+
+**Bug confirmed via deep code trace.** The full coordinate flow:
+
+1. **SDL3 mouse events** provide **logical** coordinates (`sdl_event_translator.cpp` lines 50, 65, 82)
+2. **InputDispatcher** explicitly converts logical→physical via `deps_.pixel_scale.to_physical()` before calling `contains_panel_point()` (lines 153, 177, 200 — comment at lines 22-24 documents this intent)
+3. **`contains_panel_point()`** then multiplies by `pixel_scale` again (lines 53-54 of `ui_panel.h`)
+4. The bounds it checks against (`window_size`, `panel_y`, `panel_height`) are all in **physical pixels** (set from `window_->size_pixels()` in `app.cpp` lines 1096-1101)
+
+**Result on 2× display:** coordinate `100` → `200` (physical) → `400` (double-scaled) — quadruple-scaled vs. the physical bounds. **On 1× display:** `100 × 1 × 1 = 100` — no visible effect, which is why it works on 1× laptops.
+
+All three call sites (`on_mouse_button_event`, `on_mouse_move_event`, `on_mouse_wheel_event`) pass physical coordinates. No callers pass logical coordinates.
+
+Existing unit tests (`tests/ui_panel_layout_tests.cpp` lines 43-45) implicitly assume logical coordinates, which masks the issue because the test's `pixel_scale` interaction cancels out.
+
+**Recommended fix:** Remove the `pixel_scale` multiplication from `contains_panel_point()` and add a clear coordinate-space contract comment. The function should expect physical pixel coordinates (matching what all callers provide).
+
 ---
 
 ## Tasks

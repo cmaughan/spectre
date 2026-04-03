@@ -30,7 +30,7 @@ constexpr int kMaxAtlasSize = 8192;
 constexpr float kMinFontPointSize = 6.0f;
 constexpr float kMaxFontPointSize = 72.0f;
 // kGuiModifierMask is defined in input_types.h as kGuiModifierMask (same bit values).
-constexpr std::array<std::string_view, 13> kKnownGuiActions = {
+constexpr std::array<std::string_view, 21> kKnownGuiActions = {
     "toggle_diagnostics",
     "copy",
     "paste",
@@ -44,6 +44,14 @@ constexpr std::array<std::string_view, 13> kKnownGuiActions = {
     "command_palette",
     "edit_config",
     "reload_config",
+    "toggle_zoom",
+    "close_pane",
+    "restart_host",
+    "swap_pane",
+    "focus_left",
+    "focus_right",
+    "focus_up",
+    "focus_down",
 };
 constexpr std::array<std::string_view, 15> kKnownTopLevelKeys = {
     "window_width",
@@ -441,6 +449,23 @@ AppConfig::AppConfig()
         // split_horizontal = Ctrl+S, -
         { "split_horizontal", static_cast<int32_t>(SDLK_S), kModCtrl,
             static_cast<int32_t>(SDLK_MINUS), kModNone },
+        // toggle_zoom = Ctrl+S, z (tmux-style pane zoom)
+        { "toggle_zoom", static_cast<int32_t>(SDLK_S), kModCtrl,
+            static_cast<int32_t>(SDLK_Z), kModNone },
+        // close_pane = Ctrl+S, X
+        { "close_pane", static_cast<int32_t>(SDLK_S), kModCtrl,
+            static_cast<int32_t>(SDLK_X), kModNone },
+        // restart_host = Ctrl+S, R
+        { "restart_host", static_cast<int32_t>(SDLK_S), kModCtrl,
+            static_cast<int32_t>(SDLK_R), kModNone },
+        // swap_pane = Ctrl+S, O
+        { "swap_pane", static_cast<int32_t>(SDLK_S), kModCtrl,
+            static_cast<int32_t>(SDLK_O), kModNone },
+        // Pane focus navigation: Ctrl+H/J/K/L (vim-style)
+        { "focus_left", 0, kModNone, static_cast<int32_t>(SDLK_H), kModCtrl },
+        { "focus_down", 0, kModNone, static_cast<int32_t>(SDLK_J), kModCtrl },
+        { "focus_up", 0, kModNone, static_cast<int32_t>(SDLK_K), kModCtrl },
+        { "focus_right", 0, kModNone, static_cast<int32_t>(SDLK_L), kModCtrl },
     };
 }
 

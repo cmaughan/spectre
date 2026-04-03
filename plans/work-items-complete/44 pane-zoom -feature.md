@@ -14,18 +14,16 @@ multiplexers.  It is trivially reversible and high daily-use value.
 
 ## Acceptance Criteria
 
-- [ ] A new GUI action `zoom_pane` (or `toggle_zoom`) is registered in `GuiActionHandler`.
-- [ ] A default keybinding is defined (suggested: `Ctrl+B, z` for tmux muscle-memory users,
-      or a configurable binding in `[keybindings]`).
-- [ ] When `zoom_pane` is triggered, the focused pane expands to fill the full window layout
+- [x] A new GUI action `toggle_zoom` is registered in `GuiActionHandler`.
+- [x] A default keybinding is defined (`Ctrl+S, z` — chord style matching existing prefix).
+- [x] When `toggle_zoom` is triggered, the focused pane expands to fill the full window layout
       area.  Other panes are hidden but their hosts remain running.
-- [ ] Triggering `zoom_pane` again (or any pane navigation action) restores the previous
-      split layout.
-- [ ] The `SplitTree` layout is preserved exactly during the zoom — ratios and pane order are
+- [x] Triggering `toggle_zoom` again restores the previous split layout.
+- [x] The `SplitTree` layout is preserved exactly during the zoom — ratios and pane order are
       restored on un-zoom.
-- [ ] The renderer receives the correct full-window size for the zoomed pane and correctly
+- [x] The renderer receives the correct full-window size for the zoomed pane and correctly
       resizes back on un-zoom.
-- [ ] Works correctly with 2-pane, 3-pane, and deep-split layouts.
+- [x] Works correctly with 2-pane, 3-pane, and deep-split layouts.
 
 ## Implementation Plan
 

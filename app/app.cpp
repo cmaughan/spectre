@@ -541,6 +541,53 @@ void App::wire_gui_actions()
         }
     };
     gui_deps.on_reload_config = [this]() { reload_config(); };
+    gui_deps.on_toggle_zoom = [this]() {
+        host_manager_.toggle_zoom(window_->width_pixels(), diagnostics_host_->layout().terminal_height);
+        input_dispatcher_.set_host(host_manager_.focused_host());
+        request_frame();
+    };
+    gui_deps.on_close_pane = [this]() {
+        if (host_manager_.host_count() <= 1)
+        {
+            // Last pane — exit the application.
+            running_ = false;
+            return;
+        }
+        input_dispatcher_.set_host(nullptr);
+        host_manager_.close_focused();
+        input_dispatcher_.set_host(host_manager_.focused_host());
+        request_frame();
+    };
+    gui_deps.on_restart_host = [this]() {
+        input_dispatcher_.set_host(nullptr);
+        if (host_manager_.restart_focused(*this))
+        {
+            input_dispatcher_.set_host(host_manager_.focused_host());
+            request_frame();
+        }
+        else
+        {
+            input_dispatcher_.set_host(host_manager_.focused_host());
+        }
+    };
+    gui_deps.on_swap_pane = [this]() {
+        if (host_manager_.swap_focused_with_next())
+        {
+            input_dispatcher_.set_host(host_manager_.focused_host());
+            request_frame();
+        }
+    };
+    auto focus_pane = [this](FocusDirection dir) {
+        if (host_manager_.focus_direction(dir))
+        {
+            input_dispatcher_.set_host(host_manager_.focused_host());
+            request_frame();
+        }
+    };
+    gui_deps.on_focus_left = [focus_pane]() { focus_pane(FocusDirection::Left); };
+    gui_deps.on_focus_right = [focus_pane]() { focus_pane(FocusDirection::Right); };
+    gui_deps.on_focus_up = [focus_pane]() { focus_pane(FocusDirection::Up); };
+    gui_deps.on_focus_down = [focus_pane]() { focus_pane(FocusDirection::Down); };
     gui_action_handler_ = GuiActionHandler(std::move(gui_deps));
 
     // CommandPalette deps are now wired inside CommandPaletteHost::initialize().
@@ -867,12 +914,14 @@ bool App::render_frame()
         return false;
     }
 
-    host_manager_.for_each_host([frame](LeafId, IHost& h) {
-        if (h.is_running())
-        {
-            h.draw(*frame);
-            frame->flush_submit_chunk();
-        }
+    host_manager_.for_each_host([frame, this](LeafId id, IHost& h) {
+        if (!h.is_running())
+            return;
+        // When zoomed, only draw the zoomed pane.
+        if (host_manager_.is_zoomed() && id != host_manager_.zoomed_leaf())
+            return;
+        h.draw(*frame);
+        frame->flush_submit_chunk();
     });
     render_imgui_overlay(*frame, 0.0f);
 

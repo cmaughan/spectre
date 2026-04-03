@@ -416,4 +416,94 @@ LeafId SplitTree::first_leaf(const Node* node)
     return first_leaf(node->split().first.get());
 }
 
+bool SplitTree::swap_leaves(LeafId a, LeafId b)
+{
+    if (a == b)
+        return true;
+    Node* node_a = find_leaf_node(a);
+    Node* node_b = find_leaf_node(b);
+    if (!node_a || !node_b)
+        return false;
+
+    // Swap the leaf IDs — the tree structure and descriptors stay the same.
+    std::swap(node_a->leaf().id, node_b->leaf().id);
+
+    // Update focus to follow the swap.
+    if (focused_id_ == a)
+        focused_id_ = b;
+    else if (focused_id_ == b)
+        focused_id_ = a;
+
+    return true;
+}
+
+LeafId SplitTree::next_leaf_after(LeafId id) const
+{
+    if (leaf_count() < 2)
+        return kInvalidLeaf;
+
+    // Collect all leaf IDs in spatial order.
+    std::vector<LeafId> ids;
+    for_each_leaf([&ids](LeafId lid, const PaneDescriptor&) { ids.push_back(lid); });
+
+    for (size_t i = 0; i < ids.size(); ++i)
+    {
+        if (ids[i] == id)
+            return ids[(i + 1) % ids.size()];
+    }
+    return kInvalidLeaf;
+}
+
+LeafId SplitTree::last_leaf(const Node* node)
+{
+    if (!node)
+        return kInvalidLeaf;
+    if (node->is_leaf())
+        return node->leaf().id;
+    return last_leaf(node->split().second.get());
+}
+
+LeafId SplitTree::find_neighbor(LeafId id, FocusDirection direction) const
+{
+    PERF_MEASURE();
+    const Node* target = find_leaf_node(id);
+    if (!target)
+        return kInvalidLeaf;
+
+    // Determine which split direction and which child side we need.
+    // Left/Right navigate across Vertical splits; Up/Down across Horizontal splits.
+    const SplitDirection relevant_split = (direction == FocusDirection::Left || direction == FocusDirection::Right)
+        ? SplitDirection::Vertical
+        : SplitDirection::Horizontal;
+    // "want_first_child" means we want to move left/up (toward the first child).
+    const bool want_first_child = (direction == FocusDirection::Left || direction == FocusDirection::Up);
+
+    // Walk up the tree to find an ancestor split where:
+    // - the split direction matches the navigation direction
+    // - the target is in the child on the side we're moving away from
+    const Node* child = target;
+    const Node* parent = find_parent_of(child);
+    while (parent)
+    {
+        if (!parent->is_leaf())
+        {
+            const auto& s = parent->split();
+            if (s.direction == relevant_split)
+            {
+                const bool child_is_first = (s.first.get() == child);
+                // If moving left/up and child is in second, the neighbor is in first.
+                // If moving right/down and child is in first, the neighbor is in second.
+                if (want_first_child && !child_is_first)
+                    return last_leaf(s.first.get());
+                if (!want_first_child && child_is_first)
+                    return first_leaf(s.second.get());
+            }
+        }
+        child = parent;
+        parent = find_parent_of(child);
+    }
+
+    return kInvalidLeaf;
+}
+
 } // namespace draxul

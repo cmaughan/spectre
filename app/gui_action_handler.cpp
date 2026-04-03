@@ -35,6 +35,14 @@ const std::unordered_map<std::string_view, GuiActionHandler::ActionFn>& GuiActio
         {"command_palette",    [](auto& h, auto) { if (h.deps_.on_command_palette) h.deps_.on_command_palette(); }},
         {"edit_config",        [](auto& h, auto) { if (h.deps_.on_edit_config) h.deps_.on_edit_config(); }},
         {"reload_config",      [](auto& h, auto) { if (h.deps_.on_reload_config) h.deps_.on_reload_config(); }},
+        {"toggle_zoom",        [](auto& h, auto) { h.toggle_zoom(); }},
+        {"close_pane",         [](auto& h, auto) { h.close_pane(); }},
+        {"restart_host",       [](auto& h, auto) { h.restart_host(); }},
+        {"swap_pane",          [](auto& h, auto) { h.swap_pane(); }},
+        {"focus_left",         [](auto& h, auto) { h.focus_left(); }},
+        {"focus_right",        [](auto& h, auto) { h.focus_right(); }},
+        {"focus_up",           [](auto& h, auto) { h.focus_up(); }},
+        {"focus_down",         [](auto& h, auto) { h.focus_down(); }},
     };
     // clang-format on
     return map;
@@ -134,6 +142,62 @@ void GuiActionHandler::toggle_megacity_ui() const
     IHost* host = deps_.focused_host ? deps_.focused_host() : nullptr;
     if (host)
         host->dispatch_action("toggle_ui_panels");
+}
+
+void GuiActionHandler::toggle_zoom() const
+{
+    PERF_MEASURE();
+    if (deps_.on_toggle_zoom)
+        deps_.on_toggle_zoom();
+}
+
+void GuiActionHandler::close_pane() const
+{
+    PERF_MEASURE();
+    if (deps_.on_close_pane)
+        deps_.on_close_pane();
+}
+
+void GuiActionHandler::restart_host() const
+{
+    PERF_MEASURE();
+    if (deps_.on_restart_host)
+        deps_.on_restart_host();
+}
+
+void GuiActionHandler::swap_pane() const
+{
+    PERF_MEASURE();
+    if (deps_.on_swap_pane)
+        deps_.on_swap_pane();
+}
+
+void GuiActionHandler::focus_left() const
+{
+    PERF_MEASURE();
+    if (deps_.on_focus_left)
+        deps_.on_focus_left();
+}
+
+void GuiActionHandler::focus_right() const
+{
+    PERF_MEASURE();
+    if (deps_.on_focus_right)
+        deps_.on_focus_right();
+}
+
+void GuiActionHandler::focus_up() const
+{
+    PERF_MEASURE();
+    if (deps_.on_focus_up)
+        deps_.on_focus_up();
+}
+
+void GuiActionHandler::focus_down() const
+{
+    PERF_MEASURE();
+    if (deps_.on_focus_down)
+        deps_.on_focus_down();
 }
 
 void GuiActionHandler::change_font_size(float new_size)

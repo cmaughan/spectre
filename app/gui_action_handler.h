@@ -40,6 +40,14 @@ public:
         std::function<void()> on_command_palette; // toggle command palette
         std::function<void()> on_edit_config; // open config in nvim side split
         std::function<void()> on_reload_config; // reload config.toml from disk
+        std::function<void()> on_toggle_zoom; // zoom/unzoom the focused pane
+        std::function<void()> on_close_pane; // close the focused pane
+        std::function<void()> on_restart_host; // restart the host in the focused pane
+        std::function<void()> on_swap_pane; // swap focused pane with the next one
+        std::function<void()> on_focus_left; // move focus to left pane
+        std::function<void()> on_focus_right; // move focus to right pane
+        std::function<void()> on_focus_up; // move focus to upper pane
+        std::function<void()> on_focus_down; // move focus to lower pane
     };
 
     explicit GuiActionHandler(Deps deps);
@@ -66,6 +74,14 @@ private:
     void split_vertical(std::string_view args) const;
     void split_horizontal(std::string_view args) const;
     void toggle_megacity_ui() const;
+    void toggle_zoom() const;
+    void close_pane() const;
+    void restart_host() const;
+    void swap_pane() const;
+    void focus_left() const;
+    void focus_right() const;
+    void focus_up() const;
+    void focus_down() const;
     void change_font_size(float new_size);
 
     Deps deps_;

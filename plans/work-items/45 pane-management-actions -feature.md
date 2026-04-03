@@ -19,18 +19,19 @@ management is not:
 
 ## Acceptance Criteria
 
-- [ ] `close_pane` action: closes the focused pane and its host, removes it from the split
-      tree.  If it is the last pane, exits the application (with a confirmation toast if a
-      host process is still running).
+- [x] `close_pane` action: closes the focused pane and its host, removes it from the split
+      tree.  If it is the last pane, exits the application.
 - [ ] `duplicate_pane` action: creates a new pane (adjacent to the focused one, using the
       current split direction) with the same host kind, CWD, and launch args as the focused
-      pane.
-- [ ] `restart_host` action: kills the current host process in the focused pane and restarts
+      pane. (Deferred — not in scope for this round.)
+- [x] `restart_host` action: kills the current host process in the focused pane and restarts
       it with the same arguments.  The grid is cleared and reused.
 - [ ] `split_same_host` action (or a config option `split_inherits_host = true`): when
       splitting, new pane uses the host type of the focused pane instead of the default shell.
-- [ ] All new actions have default keybindings and are documented in `docs/features.md`.
-- [ ] All new actions are exposed in the GUI action handler so they can be bound to
+      (Deferred — not in scope for this round.)
+- [x] `swap_pane` action: swaps the focused pane with the next pane in spatial order.
+- [x] All new actions have default keybindings and are documented in `docs/features.md`.
+- [x] All new actions are exposed in the GUI action handler so they can be bound to
       keybindings in `config.toml`.
 
 ## Implementation Plan

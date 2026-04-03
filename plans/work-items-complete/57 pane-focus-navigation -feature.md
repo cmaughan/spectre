@@ -21,16 +21,16 @@ The split pane tree is managed by `HostManager` and/or the split-tree code. Focu
 
 ## Tasks
 
-- [ ] Read `app/host_manager.cpp` and `app/host_manager.h` — understand how focus is tracked and how the split tree is navigated. Identify the data structure for the pane tree.
-- [ ] Read `app/gui_action_handler.cpp` — understand how to register a new GUI action.
-- [ ] Read `app/app.cpp` — understand how existing pane actions (e.g., split, close) are implemented; use this as the model for focus navigation.
-- [ ] Design the focus navigation algorithm: given the focused pane and a direction (left/right/up/down), find the adjacent pane in the split tree. For a binary split tree, "left/right" corresponds to horizontal splits and "up/down" to vertical splits; navigate to the sibling subtree's deepest same-side leaf.
-- [ ] Implement `focus_left`, `focus_right`, `focus_up`, `focus_down` in `HostManager` (or wherever pane focus is set).
-- [ ] Register the four actions in `GuiActionHandler::action_map()`.
-- [ ] Add entries to `kKnownGuiActions` in `app_config_io.cpp` (avoid repeating the WI 51 bug).
-- [ ] Add default keybindings (suggested: `Alt+Left/Right/Up/Down` or `Ctrl+W, h/j/k/l` vim-style — check `docs/features.md` for conflicts before choosing).
-- [ ] Update `docs/features.md` — add the new actions to the default keybindings table and the Split Panes section.
-- [ ] Build and run smoke test: `cmake --build build --target draxul draxul-tests && py do.py smoke`
+- [x] Read `app/host_manager.cpp` and `app/host_manager.h` — understand how focus is tracked and how the split tree is navigated. Identify the data structure for the pane tree.
+- [x] Read `app/gui_action_handler.cpp` — understand how to register a new GUI action.
+- [x] Read `app/app.cpp` — understand how existing pane actions (e.g., split, close) are implemented; use this as the model for focus navigation.
+- [x] Design the focus navigation algorithm: given the focused pane and a direction (left/right/up/down), find the adjacent pane in the split tree. For a binary split tree, "left/right" corresponds to horizontal splits and "up/down" to vertical splits; navigate to the sibling subtree's deepest same-side leaf.
+- [x] Implement `focus_left`, `focus_right`, `focus_up`, `focus_down` in `HostManager` (or wherever pane focus is set).
+- [x] Register the four actions in `GuiActionHandler::action_map()`.
+- [x] Add entries to `kKnownGuiActions` in `app_config_io.cpp` (avoid repeating the WI 51 bug).
+- [x] Add default keybindings: `Ctrl+H/J/K/L` vim-style (Ctrl+H=focus_left, Ctrl+J=focus_down, Ctrl+K=focus_up, Ctrl+L=focus_right).
+- [x] Update `docs/features.md` — add the new actions to the default keybindings table and the Split Panes section.
+- [x] Build and run smoke test: `cmake --build build --target draxul draxul-tests && py do.py smoke`
 
 ---
 
