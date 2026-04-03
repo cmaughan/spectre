@@ -1,41 +1,55 @@
-Everything is written. Here's the summary:
+All 21 work items and the consensus file are written. Here's a summary of what was produced:
 
 ---
 
-## What was produced
+## `plans/reviews/review-consensus.md` — Full Replacement
 
-### `plans/reviews/review-consensus.md` — full replacement
-
-The new consensus synthesises all three agents ([C] Claude, [G] Gemini, [P] GPT) with:
-- **9 sections**: bugs (full agreement vs. partial/covered), tests, refactors, features, disagreements+resolutions, strengths to protect, recommended fix order, and an interdependency table
-- Every finding attributed by agent tag
-- Stale/already-covered items called out explicitly so they are not re-planned
-- Signed by `claude-sonnet-4-6`
+9-section synthesis covering bugs, smells, tests, features, genuine disagreements (especially Megacity: remove vs. fix vs. ignore), strengths to protect, recommended fix order, and an interdependency table. Every finding attributed to `[C]`, `[G]`, or `[P]`.
 
 ---
 
-### 13 new work items (WI 48–60)
+## 21 New Work Items (WI 61–81)
 
-| # | File | Type | Summary |
-|---|------|------|---------|
-| 48 | `48 vk-null-grid-handle-dereference -bug.md` | **bug** | Null dereference crash when `create_grid_handle()` returns nullptr |
-| 49 | `49 hidpi-panel-hittest-double-scale -bug.md` | **bug** | Panel hit-test double-scales on Retina; wrong mouse routing |
-| 50 | `50 overlay-input-incomplete-interception -bug.md` | **bug** | Command palette leaks mouse/wheel/IME to underlying host |
-| 51 | `51 gui-action-config-drift -bug.md` | **bug** | `toggle_megacity_ui`/`edit_config` absent from `kKnownGuiActions` → silent config data loss |
-| 52 | `52 hidpi-panel-hittest-unit-tests -test.md` | **test** | Unit tests for `contains_panel_point()` at 1× and 2× scale (needs WI 49 first) |
-| 53 | `53 overlay-input-routing-tests -test.md` | **test** | Overlay blocks mouse/wheel/IME traffic (needs WI 50 first) |
-| 54 | `54 grid-handle-null-init-test -test.md` | **test** | Null-handle early-return tests for GridHostBase + CommandPaletteHost (needs WI 48 first) |
-| 55 | `55 megacity-grid-build-blocking-join -refactor.md` | **refactor** | Replace blocking `join()` in `launch_grid_build()` with cancellation flag |
-| 56 | `56 library-boundary-renderer-includes -refactor.md` | **refactor** | Fix relative-path renderer reach-through in `draxul-ui`; remove private-dir includes from `draxul-megacity` |
-| 57 | `57 pane-focus-navigation -feature.md` | **feature** | `focus_left/right/up/down` GUI actions with default bindings |
-| 58 | `58 command-palette-mru -feature.md` | **feature** | Session-local MRU sorting in the command palette (needs WI 25) |
-| 59 | `59 copy-on-select -feature.md` | **feature** | Optional `copy_on_select = true` config key |
-| 60 | `60 double-triple-click-selection -feature.md` | **feature** | Double-click word / triple-click line selection |
+### Bugs (3)
+| # | File | Summary |
+|---|------|---------|
+| 61 | `61 types-h-duplicate-include -bug` | Duplicate `#include <glm/glm.hpp>` in types.h |
+| 62 | `62 selection-limit-no-user-feedback -bug` | 8192-cell selection silently truncates with no warning — **all 3 agents** |
+| 63 | `63 imgui-font-formula-magic-number -bug` | Font formula duplicated 3× with undocumented magic `2` |
 
-### Key interdependencies flagged
+### Tests (7)
+| # | File | Summary |
+|---|------|---------|
+| 64 | `64 fuzzy-match-scoring-tests -test` | CommandPalette fuzzy match correctness and position accuracy |
+| 65 | `65 hostmanager-zoom-close-tests -test` | Pane zoom + close interaction |
+| 66 | `66 config-reload-multi-pane -test` | Font reload propagates to all panes; rollback coherence |
+| 67 | `67 gui-action-registry-parity -test` | **Prerequisite for WI 71** — enforces 3-registry parity |
+| 68 | `68 split-tree-zero-dimension -test` | SplitTree handles `recompute(0,0)` safely |
+| 69 | `69 concurrent-host-shutdown -test` | Host exits between pump and close; no dangling pointer |
+| 70 | `70 command-palette-host-lifecycle -test` | Atlas state clean across open/close/reopen cycles |
 
-- **WI 48 → WI 54**, **WI 49 → WI 52**, **WI 50 → WI 53** — each bug has a paired test; same agent pass recommended
-- **WI 51** → do before WI 57 (establishes `kKnownGuiActions` discipline)
-- **WI 25** → must land before WI 58 (MRU extends the palette)
-- **WI 57 + WI 45** — both touch `HostManager`; sequence or coordinate
-- **WI 59 + WI 60** — same selection code; same agent pass is efficient
+### Refactors (6)
+| # | File | Summary |
+|---|------|---------|
+| 71 | `71 gui-action-single-source-of-truth -refactor` | **HIGH** — centralise 3 action registries into one table |
+| 72 | `72 input-dispatcher-mouse-helper -refactor` | 3 identical 7-step mouse handler patterns → private helper |
+| 73 | `73 shader-quad-vertex-dedup -refactor` | Quad offset table hardcoded in 4 shaders → shared include |
+| 74 | `74 megacity-private-build-includes -refactor` | **HIGH (GPT)** — fix CMake private-include leakage |
+| 75 | `75 utf8-header-extraction -refactor` | Move 100+ lines of `detail::` UTF-8 out of `grid.h` |
+| 76 | `76 cli-parsing-exit-separation -refactor` | Remove `std::exit()` from inside argument parser |
+
+### Features (5)
+| # | File | Summary |
+|---|------|---------|
+| 77 | `77 split-divider-drag-feedback -feature` | Visible divider + resize cursor + mouse drag to resize |
+| 78 | `78 pane-status-bar -feature` | Per-pane status strip showing host type, dims, cwd |
+| 79 | `79 config-error-line-numbers -feature` | TOML parse errors include line number |
+| 80 | `80 multi-cell-ligature -feature` | Expand ligature lookahead beyond 2 cells (`===`, `!==`, etc.) |
+| 81 | `81 selection-limit-raise -feature` | Raise `kSelectionMaxCells` from 8192 to 65536 |
+
+### Key interdependencies
+- **WI 67 → WI 71** (parity test must land before the SSOT refactor)
+- **WI 62 ↔ WI 81** (warning + raise are companion items; can batch)
+- **WI 59 ↔ WI 60** (copy-on-select + double-click touch same selection code)
+- **WI 77 → WI 78** (divider drag and status bar both affect pane chrome layout)
+- **WI 74** unblocks any future renderer refactor that touches megacity

@@ -1,212 +1,256 @@
-# DRAXUL CODE REVIEW REPORT
+# Draxul Comprehensive Code Review
 
-## Executive Summary
+## Per-Module Observations
 
-Draxul is a sophisticated, multi-agent-authored Neovim GUI frontend with cross-platform GPU rendering (Vulkan/Metal), terminal emulation, and an innovative 3D code city visualization. The codebase spans ~44K lines of C++20 across 18 modular libraries, with 82 test files containing 937 test cases. The project demonstrates strong architectural discipline, comprehensive testing, and agent-friendly organization, though some areas show signs of rapid agentic development that could benefit from consolidation.
+### app/ — The Orchestrator Layer
 
----
+**Files:** `app.h/.cpp`, `main.cpp`, `input_dispatcher.h/.cpp`, `split_tree.h/.cpp`, `host_manager.h/.cpp`, `gui_action_handler.h/.cpp`, `command_palette.h/.cpp`, `command_palette_host.h/.cpp`, `diagnostics_panel_host.h/.cpp`, `frame_timer.h`, `fuzzy_match.h`
 
-## MODULE-BY-MODULE ANALYSIS
+**Strengths:**
+- Clean dependency injection via `Deps` structs on nearly every component (`InputDispatcher::Deps`, `HostManager::Deps`, `GuiActionHandler::Deps`, `AppDeps`). This makes every component testable in isolation without mocking frameworks.
+- `SplitTree` is a self-contained binary-tree data structure with no external dependencies on rendering, hosting, or config. Pure algorithmic code.
+- The `RenderTestPhase` state machine in `app.cpp` is a clean enum-based design with a named context struct and clear phase transitions.
+- `InitRollback` RAII guard in `App::initialize()` ensures the app shuts down even if initialization fails partway.
+- `CommandPalette` and `DiagnosticsPanel` are properly implemented as `IHost` instances, giving them consistent lifecycle management.
 
-### `libs/draxul-types` (Header-Only)
-- **Strengths**: Clean separation of POD types, logging abstractions, and utility functions
-- **Issues**:
-  - Large header files (`unicode.h` 506 lines, `perf_timing.cpp` 387 lines)
-  - Complex bitwise operations in Unicode validation could be extracted to a separate validation module
-  - Thread checking macros mixed with core types
-
-### `libs/draxul-window` (SDL3 Wrapper)
-- **Strengths**: Good abstraction layer over SDL3; platform detection is clean
-- **Issues**:
-  - `sdl_window.cpp` (516 lines) with complex DPI calculation logic inlined
-  - Extensive platform-specific `#ifdef` chains for Windows/macOS/Linux DPI detection
-  - No separate DPI calculator utility; logic is duplicated per platform
-
-### `libs/draxul-renderer` (GPU Backend)
-- **Strengths**: Clean public interface (`IBaseRenderer` → `I3DRenderer` → `IGridRenderer` hierarchy)
-- **Issues**:
-  - `megacity_render_vk.cpp` at ~4,878 lines is unmaintainable as a single file
-  - Tight coupling between grid rendering and MegaCity 3D rendering
-  - `dynamic_cast<I3DHost*>` in `HostManager` breaks interface purity
-  - Metal and Vulkan implementations share no common backend utilities; duplicated buffer management patterns
-
-### `libs/draxul-font` (FreeType + HarfBuzz)
-- **Strengths**: Clean text pipeline with font fallback chain; ligature support
-- **Issues**:
-  - Font resolver (388 lines) handles multiple concerns: loading, style detection, fallback chain
-  - Glyph cache (384 lines) mixes atlas management with caching logic
-  - No separation between font selection caching and ligature analysis caching
-  - `font_choice_cache_limit` hardcoded in multiple places
-
-### `libs/draxul-grid` (Cell Grid Model)
-- **Strengths**: Excellent UTF-8 validation in `detail` namespace; solid attribute cache design
-- **Issues**:
-  - TODO in `grid.h`: "consider `std::string` for >32-byte clusters instead of truncating" — currently silently drops data
-  - No benchmarks for grid mutation performance on large scrollback
-  - Dirty cell tracking lacks range coalescing
-
-### `libs/draxul-host` (Host Abstraction)
-- **Strengths**: Clean interface hierarchy; good separation of terminal emulation into base classes
-- **Issues**:
-  - `terminal_host_base_csi.cpp` (587 lines) handles VT escape sequence parsing as a monolith
-  - Mouse reporting (151 lines) tightly coupled to terminal state
-  - Heavy `#ifdef` platform branching for PTY vs ConPTY differences
-  - `NvimHost` (427 lines) mixes RPC communication with UI event handling
-
-### `libs/draxul-nvim` (Neovim Integration)
-- **Strengths**: Thread-safe RPC transport with backpressure handling; message timeout management
-- **Issues**:
-  - `rpc.cpp` (421 lines) mixes message routing with response correlation
-  - `ui_events.cpp` (486 lines) is a massive state machine for Neovim UI redraw parsing with minimal test coverage for partial or out-of-order sequences
-  - No version abstraction over the Neovim msgpack UI protocol
-
-### `libs/draxul-megacity` (3D Code City)
-- **Strengths**: Ambitious visualization of code as interactive city; TreeSitter integration for semantic analysis
-- **Issues**:
-  - **CRITICAL**: `megacity_host.cpp` (~2,293 lines) handles initialization, UI, rendering, input, and analytics in one class
-  - `megacity_render_vk.cpp` (~4,878 lines) — should be split into multiple renderer backend files
-  - `semantic_city_layout.cpp` (~1,772 lines) has no unit tests and depends on TreeSitter at runtime
-  - Tight coupling between visualization, code analysis, and performance metrics
-  - Live metrics collection lacks documented thread safety
-
-### `libs/draxul-config` (Configuration)
-- **Strengths**: TOML parser with rollback safety; keybinding parser with chord support
-- **Issues**:
-  - `app_config_io.cpp` (602 lines) handles I/O, validation, migration, and defaults in one place
-  - `toml_support.h` (165 lines) mixes macros with inline implementations
-  - No schema validation layer separate from parsing
-
-### `libs/draxul-ui` (ImGui Wrapper)
-- **Strengths**: Metrics panel is polished; input translation is clean
-- **Issues**:
-  - `ui_panel.cpp` (435 lines) mixes layout, input handling, and rendering
-  - Panel styling code duplicated between diagnostics and MegaCity panels
-  - ImGui context lifecycle was recently fixed (hosts now own it) but global state assumptions may remain elsewhere
-
-### `app/` (Main Application)
-- **Strengths**: Thin orchestration layer; good use of dependency injection (`AppDeps`)
-- **Issues**:
-  - `app.cpp` initialization is complex and contains a render-test state machine inline
-  - `host_manager.cpp` contains two `dynamic_cast<MegaCityHost*>` calls (type coupling leak)
-  - Input dispatch chain (key → GUI action → host) is complex and hard to trace
+**Issues:**
+- **`App::wire_gui_actions()` is a 100-line lambda factory.** Every GUI action is wired via a lambda closure capturing `this`. Dense and error-prone — adding a new action requires touching four places: `Deps`, `GuiActionHandler` method, static `action_map()`, and `wire_gui_actions()`.
+- **`GuiActionHandler::Deps` has 19 `std::function` fields.** Approaching the point where the Deps pattern works against readability. A registration-based approach would scale better.
+- **`InputDispatcher` mouse handler code is repetitive.** Three handlers (`on_mouse_button_event`, `on_mouse_move_event`, `on_mouse_wheel_event`) repeat the same pattern: forward to UiPanel, check `wants_mouse()`, check `contains_panel_point()`, scale coordinates, forward to host.
+- **ImGui font size formula duplicated three times** (`App::initialize()`, `App::apply_font_metrics()`, `App::initialize_host()`). The expression `float(cell_height) * (point_size - 2) / point_size` includes an unexplained magic number `2`.
+- **`host_owner_lifetime_` is `std::shared_ptr<int>(0)`.** The sentinel value `0` is never read. This would be clearer as a named type or at minimum documented.
+- **`types.h` has a duplicate `#include <glm/glm.hpp>`** on two lines.
 
 ---
 
-## Multi-Agent Development Friction Points
+### libs/draxul-types/ — Header-Only Shared Types
 
-1. **Monolithic MegaCity files** — 2K+ / 4.8K+ line files are nearly impossible to distribute to separate agents without merge conflicts
-2. **Interface versioning missing** — Updating `IHost` requires coordinated changes across all host implementations
-3. **No clear ownership** — Large files have no code owner markers
-4. **Shader compilation is opaque** — Errors buried in CMake build log; agents can't iterate shaders in isolation
-5. **Implicit CMake dependencies** — Adding a library dependency requires all agents to rebuild
+**Files:** `types.h`, `events.h`, `input_types.h`, `highlight.h`, `log.h`, `thread_check.h`, `perf_timing.h`
 
----
+**Strengths:**
+- `ModifierFlags` aligns SDL3 modifier constants directly, avoiding conversion at runtime.
+- `MainThreadChecker` is a zero-cost debug-only utility that compiles to nothing in release.
+- `HlAttrHash` uses the boost hash-combine pattern correctly and covers all fields.
+- The style flags (`STYLE_FLAG_BOLD`, etc.) match the shader constants in `decoration_constants_shared.h` — a single source of truth for shader/CPU flag values.
+- `DRAXUL_LOG_DEBUG`/`DRAXUL_LOG_TRACE` strip in release builds.
 
-## TOP 10 GOOD THINGS
-
-1. **Modular Library Architecture** — 18 independent libraries with well-defined public APIs; tests depend on individual libraries without dragging in all dependencies
-2. **Comprehensive Test Suite** — 82 test files, 937 test cases, covering config, terminal emulation, grid rendering, RPC backpressure, font fallback, keyboard/mouse, render snapshots, and shutdown races
-3. **Dependency Injection Pattern** — `AppDeps`, `HostManager::Deps`, `InputDispatcher::Deps` allow fakes to be injected without modifying production code — excellent for multi-agent development
-4. **Consistent Error Handling** — No exceptions in production paths; errors bubble via return values with string messages; failure reasons stay visible
-5. **Cross-Platform Abstraction** — `IWindow`, `IRenderer`, `IHost` successfully hide Windows/macOS differences; platform-specific code isolated to `src/` impl files
-6. **Logging Infrastructure** — Structured logging with categories, levels, file/console routing; `DRAXUL_LOG_DEBUG()` macros only compile in debug builds; CLI flags for log control
-7. **Smart Pointer Discipline** — Extensive `unique_ptr`/`shared_ptr` usage; minimal raw pointers; non-owning pointers clearly marked as such
-8. **Font Pipeline Polish** — FreeType + HarfBuzz with ligatures, emoji (ZWJ, variation selectors), wide chars (CJK), fallback chains, and bold/italic/bold-italic variants all working
-9. **Render Test Infrastructure** — Pixel-diff snapshot testing with tolerance controls, platform-specific reference images, bless commands — catches visual regressions early
-10. **Performance Instrumentation** — `PerfTiming` macros throughout; startup profiling; frame timing; MegaCity live perf overlays with heatmaps for profiling execution patterns
+**Issues:**
+- **`Color` is a type alias for `glm::vec4`, not a distinct type.** Any `glm::vec4` (e.g. a position or UV coordinate) can be silently passed where a `Color` is expected. A strong type would catch misuse at compile time.
+- **`kAtlasSize = 2048` is defined in `types.h`** but the actual atlas size is configurable. This constant is misleading — it is a default, not a compile-time invariant.
+- **`CellUpdate` uses plain `int col, row`** with no validation. Negative values or out-of-range cells would pass silently.
 
 ---
 
-## TOP 10 BAD THINGS / PROBLEMS
+### libs/draxul-grid/ — 2D Cell Grid
 
-1. **Monolithic MegaCity Files** — `megacity_host.cpp` (~2,293 lines) + `megacity_render_vk.cpp` (~4,878 lines) = ~7,171 lines in two files; should be split by responsibility (scene building, input handling, rendering, metrics). No unit tests for `semantic_city_layout.cpp` (~1,772 lines).
+**Files:** `grid.h`
 
-2. **Type Coupling via `dynamic_cast`** — `HostManager` contains `dynamic_cast<MegaCityHost*>` twice. This breaks interface abstraction; MegaCity should register renderer-specific behavior via an interface method, not be downcast at runtime.
+**Strengths:**
+- `CellText` is a fixed-size inline buffer (32 bytes) with UTF-8-aware truncation. Avoids heap allocation per cell.
+- UTF-8 validation in `detail::utf8_valid_prefix_length` is thorough — handles 2/3/4 byte sequences with proper overlong and surrogate checking.
+- `IGridSink` interface allows the grid to be driven by different hosts without coupling.
+- Dirty-cell tracking with a parallel `dirty_marks_` vector and `dirty_cells_` list is efficient for incremental rendering.
 
-3. **VT Escape Sequence Parser Monolith** — `terminal_host_base_csi.cpp` (587 lines) is a state machine with no separate parser object. Tests must instantiate a full `TerminalHostBase`. Edge-case coverage and mutation testing are both impractical.
-
-4. **Neovim UI Event Parsing State Machine** — `ui_events.cpp` (486 lines) decodes redraw events (`mode_info_set`, `hl_attr_define`, `grid_line`, etc.) with no formal error handling for out-of-order events or missing initialization. Changes to Neovim's UI protocol could silently break compatibility.
-
-5. **DPI Logic Scattered Across Platforms** — SDL/CoreGraphics/GetDeviceCaps DPI logic inlined in `sdl_window.cpp` (516 lines total). No separate utility or unit tests for DPI edge cases; multi-monitor corner cases are hard to reason about.
-
-6. **Config Monolith** — `app_config_io.cpp` (602 lines) does parsing, validation, defaults, and migration in one file. TOML macros pollute the namespace. Keybinding and config parsers should share a validation layer.
-
-7. **Font Style Detection via Filename Pattern Matching** — `font_resolver.cpp` detects bold/italic by checking for `*Bold*`/`*Italic*` in the filename. If fonts use different naming conventions, bold/italic variants silently fail. No explicit API to register which file is the bold variant.
-
-8. **Renderer Backend Duplication** — Metal and Vulkan renderers duplicate atlas management, buffer update patterns, and viewport handling. Despite ~80% code similarity, there are no shared backend utilities. Adding a third backend would require another full copy.
-
-9. **Threading Model Undocumented** — `std::mutex` and `std::atomic` usage throughout `NvimRpc` but no threading model documented at the module level. Main thread mutation of grid state happens without explicit locking — requires careful reading to verify correctness.
-
-10. **Silent Failure for Missing Dependencies** — MegaCity fails silently if TreeSitter grammar files are missing (just logs `LCOV file not found`). No clear user-facing error messages. Font fallback chain doesn't report which fonts failed when all fallbacks are exhausted.
+**Issues:**
+- **UTF-8 parsing inlined in `grid.h`.** Over 100 lines of `detail::` functions are in a header included by many translation units. Increases compile time unnecessarily; these belong in a `.cpp` or dedicated utility header.
+- **`CellText::kMaxLen = 32` with a `TODO` for `std::string`.** The ZWJ emoji family sequence (25 bytes) barely fits. Two concatenated sequences would be truncated silently.
 
 ---
 
-## BEST 10 FEATURES TO ADD (Quality of Life)
+### libs/draxul-host/ — Terminal Hosting Layer
 
-1. **Config Hot-Reload** — File watcher for `config.toml`; reload keybindings, font, and colors on save without restarting. Most requested QoL for iterative config tuning.
+**Files:** `vt_parser.h`, `vt_state.h`, `selection_manager.h`, `terminal_sgr.h`, `terminal_key_encoder.h`, `mouse_reporter.h`, `alt_screen_manager.h`, `clipboard_util.h`
 
-2. **Shader Hot-Reload** — Recompile SPIR-V (Vulkan) or metallib (Metal) from source on change and reload the pipeline without restarting. Critical for visual effect iteration.
+**Strengths:**
+- `VtParser` is a clean character-at-a-time state machine with bounded buffers (`kMaxPlainTextBuffer = 64K`, `kMaxCsiBuffer = 4K`, `kMaxOscBuffer = 8K`). This prevents OOM from pathological terminal output.
+- `SelectionManager` is fully decoupled from rendering via callbacks (`set_overlay_cells`, `get_cell`, `grid_cols`, `grid_rows`, `request_frame`).
 
-3. **Input Event Recorder/Playback** — Record SDL input events to JSON, replay deterministically for regression testing. Extends existing render-test infrastructure. Would eliminate flaky manual repro steps.
-
-4. **Unified Error Toast** — Show recoverable errors (font not found, config parse failure, shader compile failure) as in-app toast/modal rather than console-only. Non-technical users don't watch logs.
-
-5. **Performance Profiler UI Panel** — Leverage existing `PerfTiming` infrastructure to show an in-app flame graph of per-frame costs (grid update, RPC drain, ImGui, render). Add `--perf-capture` flag to save binary profile for offline analysis.
-
-6. **Incremental/Lazy Asset Loading** — Defer MegaCity, TreeSitter grammar, and heavy font variants until first use. Reduces startup time for pure terminal usage.
-
-7. **Config Schema Validation** — JSON Schema (or equivalent) for `config.toml`. Catch unknown keys at parse time instead of silently ignoring them. Generate CLI help text from schema.
-
-8. **Native Theme Integration** — Detect macOS Dark/Light mode changes (via `NSAppearance` notifications) and sync Neovim background/colorscheme. On Windows, hook system accent color changes.
-
-9. **Benchmark Suite with CI Regression Gating** — Automated benchmarks for grid mutation (cells/sec), font rasterization (glyphs/sec), RPC roundtrip latency, and frame time. Alert (fail CI) if any metric regresses >10% vs. baseline.
-
-10. **Split Layout Persistence** — Save and restore the pane split layout (positions, hosts, file paths) across restarts via a session file. Currently all layout is ephemeral.
+**Issues:**
+- **`SelectionManager::kSelectionMaxCells = 8192`** is a hard limit. On a 200-column terminal, this is only ~40 rows. No user-visible warning is given when the limit is hit.
+- **`VtState` is a plain struct with no save/restore methods.** The saved cursor (DECSC/DECRC) is a pair of raw fields (`saved_col`, `saved_row`) that callers manually copy. A `save()` / `restore()` method pair would be cleaner.
 
 ---
 
-## BEST 10 TESTS TO ADD (Stability)
+### libs/draxul-font/ — Font Pipeline
 
-1. **Rapid Window Resize Stress Test** — Resize window 50 times in 100ms; verify no buffer overflows, correct final viewport, no renderer/ImGui deadlocks. Existing resize tests likely don't cover pathological rates.
+**Files:** `text_service.h`, `font_metrics.h`
 
-2. **Fuzz Test: Malformed Config TOML** — Feed 10K randomly-generated TOML snippets; must never crash, must always return a parse error or valid config. Extends `corrupt_config_recovery_tests.cpp`.
+**Strengths:**
+- Pimpl idiom keeps FreeType/HarfBuzz dependencies out of the public header.
+- `IGlyphAtlas` interface allows the text service to be faked in tests.
+- Clear constants (`DEFAULT_POINT_SIZE = 11.0f`, `MIN_POINT_SIZE = 6.0f`, `MAX_POINT_SIZE = 72.0f`).
 
-3. **Fuzz Test: RPC Message Boundary Corruption** — Inject bit flips and truncations into the msgpack stream before decoding. Should handle gracefully or close connection. Extends `mpack_fuzz_tests.cpp`.
-
-4. **Unicode Property Coverage** — Generate 100K random UTF-8 byte sequences; validate against reference implementation, check cell width, check combining character detection. Extends `celltext_unicode_corpus_tests.cpp`.
-
-5. **Grid Mutation Stress Test** — Allocate a 200×100 grid, perform 10K random cell writes (random position, text, colors). Assert no memory leak, no segfault, no corruption on out-of-order updates. No equivalent currently exists.
-
-6. **Multi-Pane Lifecycle Torture Test** — Create 8 panes, split/close in random order, resize each, verify tree structure, verify focus tracking. Check for dangling pointers or dropped updates.
-
-7. **Font Atlas Exhaustion Test** — Render a sweep of all assigned Unicode codepoints to trigger multiple atlas reallocations. Verify previously-rasterized glyphs still render correctly after reallocation.
-
-8. **RPC Timeout + Recovery Test** — Simulate a 6-second RPC stall (exceeds `kRpcRequestTimeout` = 5s). Verify requests time out cleanly, subsequent requests succeed, no orphaned message IDs remain.
-
-9. **Command Palette Keyboard Navigation** — Test that arrow keys, Enter, Escape, and search filtering all work correctly in the command palette. Currently there are no unit tests for `command_palette_host.cpp`.
-
-10. **Keybinding Dispatch Edge Cases** — Test chord timeout (press prefix key, wait, press key while app is busy), rapid modifier changes, and text input suppression. Currently `input_dispatcher_routing_tests.cpp` has only ~20 test cases covering the happy path.
+**Issues:**
+- **No centralized atlas upload path.** Atlas upload logic exists in `CommandPaletteHost::flush_atlas_if_dirty()` and the main grid render path. A new host needing glyph rasterization must re-implement the same dirty-rect-to-staging-buffer copy. This should be a `TextService` or `IGridRenderer` responsibility.
+- **`atlas_dirty()` + `clear_atlas_dirty()` leaks internal lifecycle responsibility** to callers. This should be encapsulated.
 
 ---
 
-## WORST 10 EXISTING FEATURES (Fragile / Poorly Implemented / Problematic)
+### libs/draxul-config/ — Configuration
 
-1. **MegaCity Initialization** — All-or-nothing init; if TreeSitter grammar is missing, the entire feature silently fails. No degraded mode (e.g., city without semantic coloring). Generic error strings make diagnosis difficult.
+**Files:** `app_config.h`, `app_config_io.h`, `keybinding_parser.h`, `app_options.h`, `config_document.h`, `toml_support.h`
 
-2. **VT Mouse Reporting** — `mouse_reporter.cpp` (151 lines) handles basic click/drag but not: rapid motion at high DPI, button state edge cases, or interaction with scrollback offset. Known scroll-wheel granularity difference from xterm; no tests cover these paths.
+**Strengths:**
+- `app_config.h` is a facade header with clear guidance on which narrower headers to prefer.
+- `ConfigDocument` separates TOML round-trip fidelity from the typed `AppConfig` struct. User comments and unknown keys are preserved on save.
+- Config schema is well-documented inline.
 
-3. **Neovim UI Event Parsing** — `ui_events.cpp` decodes `grid_line`, `hl_attr_define`, `mode_info_set` with no error handling for out-of-order events or missing initialization. Undefined behavior if Neovim changes event ordering.
+---
 
-4. **Scrollback Ring Buffer Offset Tracking** — Buffer wraps but offset arithmetic is complex. Tests exist but there is no exhaustive validation that all historical positions map correctly. Suspected off-by-one risks at wrap boundary.
+### libs/draxul-renderer/ — GPU Rendering
 
-5. **Font Style Detection by Filename Pattern** — Checking for `*Bold*`/`*Italic*` in filenames is fragile and breaks for fonts using non-English weight names or numerical weight suffixes. No fallback to OpenType font metadata.
+**Strengths:**
+- Renderer hierarchy (`IBaseRenderer -> I3DRenderer -> IGridRenderer`) is well-layered.
+- `IRenderPass` / `IRenderContext` abstraction allows subsystems to register custom render passes without knowing the backend.
+- `decoration_constants_shared.h` is the single source of truth for style flag values shared between CPU and shader code.
 
-6. **Keybinding Chord Timeout** — There is no timeout on the prefix-active state. A user who presses the chord prefix, is interrupted, then presses a key 30 seconds later will still trigger the bound action. Surprising and unreliable UX.
+**Issues:**
+- **The Cell struct is defined three times**: `grid_bg.vert`, `grid_fg.vert`, and `grid.metal`. Any field change must be applied to all three plus the CPU-side layout. This is the highest structural risk in the codebase.
+- **`dynamic_cast<MegaCityHost*>` in `host_manager.cpp`** (behind `#ifdef DRAXUL_ENABLE_MEGACITY`) breaks the host abstraction boundary. The `I3DHost` interface should expose `set_continuous_refresh_enabled()` and `set_ui_panels_visible()` as virtual methods.
 
-7. **LCOV Coverage Import** — `lcov_coverage.cpp` reads a static `.lcov` file and maps coverage to city buildings. No validation that the coverage report matches the current codebase. Stale reports silently mislead the visualization.
+---
 
-8. **Grid Cell Cluster Truncation** — Clusters >32 bytes are truncated (`grid.h` TODO). Rare but possible with long combining sequences or CJK clusters. Truncation is silent — no warning, no visible indication.
+### shaders/
 
-9. **Selection Size Hard Cap** — `selection_manager.cpp` truncates selection at 8,192 cells with no documented reason and no user-visible warning. Silently loses data for large selections.
+**Strengths:**
+- `decoration_constants_shared.h` works in both GLSL and Metal.
+- Instanced rendering (generating quads from vertex index) is efficient and avoids vertex buffers.
+- Clear BG/FG pass separation.
 
-10. **Render Test Tolerance Hardcoding** — `render_test.cpp` uses hardcoded pixel diff tolerance and changed-pixel thresholds. Different GPUs, drivers, or OS font rendering stacks may produce slightly different pixels, causing intermittent test failures that are painful to diagnose and bless.
+**Issues:**
+- **The 6-vertex quad offset array is hardcoded in every vertex shader** — `grid_bg.vert`, `grid_fg.vert`, BG Metal vertex, FG Metal vertex. Four copies of the same array. A shared include would eliminate this.
+- **`PushConstants` / uniform layout is defined separately** in each GLSL vertex shader and again in Metal. Another divergence risk.
+
+---
+
+### tests/
+
+**Strengths:**
+- 80 test files with strong coverage across grid, split tree, config, VT parser, font, RPC, keybinding, input dispatch, rendering state.
+- Test support infrastructure (`fake_window.h`, `fake_glyph_atlas.h`, `fake_rpc_channel.h`, `replay_fixture.h`, `temp_dir.h`, `scoped_env_var.h`) is well-organized.
+- Fuzz tests for VT parser and MPack.
+- The render test framework with TOML scenario files and platform-specific BMP references is mature.
+
+**Issues:**
+- **No unit tests for the `RenderTestPhase` state machine** in `app.cpp` (tracked as work item 04). The five-phase state machine has no tests for phase transitions, timeout behavior, or edge cases.
+- **No dedicated tests for `CommandPalette` fuzzy match scoring** — match position correctness and score ordering deserve their own test file.
+
+---
+
+## Top 10 Good Things
+
+1. **Consistent dependency injection via `Deps` structs.** Every major component uses an explicit dependency bundle. This makes the codebase highly testable without mocking frameworks and enables components to be worked on in isolation.
+
+2. **Strong test coverage.** 80 test files with ~24,000 lines. Fuzz testing for VT parser and MPack. Platform-specific render test infrastructure with TOML scenarios and BMP comparison. Well above average for a C++ project of this size.
+
+3. **Clean library layering with no circular dependencies.** The dependency graph flows strictly downward through `draxul-types -> grid/font/renderer/window -> nvim/host -> app-support -> app`. Libraries link only downward.
+
+4. **Shader constant single source of truth.** `decoration_constants_shared.h` is valid in both GLSL and Metal, and style flag values match the C++ `STYLE_FLAG_*` constants. This eliminates a common class of shader/CPU mismatch bugs.
+
+5. **Robust VT parser design.** Bounded buffers prevent OOM. Explicit state machine with clear states (`Ground/Escape/Csi/Osc/OscEsc`). Pure parsing with callbacks — no coupling to grid or rendering.
+
+6. **`InitRollback` RAII guard.** `App::initialize()` uses a scoped rollback object that calls `shutdown()` on partial init failure. This prevents resource leaks.
+
+7. **Well-structured work items.** Each item in `plans/work-items/` has a problem statement, investigation steps, test design, and acceptance criteria. Machine-parseable naming convention. Excellent for multi-agent/multi-developer workflows.
+
+8. **`CellText` inline buffer with UTF-8-aware truncation.** Avoiding heap allocation per cell while correctly handling multi-byte UTF-8 boundaries is non-trivial and done correctly.
+
+9. **`PERF_MEASURE()` instrumentation throughout.** Every non-trivial function is instrumented. `RuntimePerfCollector` provides live per-function timing with zero cost when disabled.
+
+10. **Config round-trip fidelity.** `ConfigDocument` preserves user comments and unknown TOML keys on save. Typed `AppConfig` and serialization-faithful `ConfigDocument` are properly separated.
+
+---
+
+## Top 10 Bad Things
+
+1. **`GuiActionHandler::Deps` has 19 `std::function` fields.** Adding one GUI action requires touching four places. Does not scale, and every new action is a parallel-development conflict point.
+
+2. **ImGui font size formula duplicated three times with an unexplained magic number.** The expression `float(cell_height) * (point_size - 2) / point_size` appears in three methods. The `2` is undocumented.
+
+3. **Cell struct defined in three shader files independently.** `grid_bg.vert`, `grid_fg.vert`, and `grid.metal` each contain the full 112-byte Cell layout. Any field change must be applied to all three plus the CPU side.
+
+4. **UTF-8 parsing inlined in `grid.h`.** Over 100 lines of `detail::` helper functions in a widely-included header. This inflates compile time for every translation unit that touches the grid.
+
+5. **`InputDispatcher` mouse handler triplication.** The same 7-step pattern is repeated in three handlers. A private `dispatch_mouse_to_host()` helper would make this 5 lines each.
+
+6. **`dynamic_cast<MegaCityHost*>` in `host_manager.cpp`.** Two downcasts behind `#ifdef DRAXUL_ENABLE_MEGACITY` break the host abstraction. The capability should be expressed via `I3DHost` virtual methods.
+
+7. **`App::wire_gui_actions()` is the highest-conflict function in the codebase.** Any feature adding a GUI action must touch this 100-line function of nothing but lambda assignments. Multiple agents working on new features will conflict here constantly.
+
+8. **`Color` is a type alias for `glm::vec4`, not a distinct type.** Positions, UVs, and colors are all the same type. Any `glm::vec4` can be silently passed as a color.
+
+9. **`types.h` has a duplicate `#include <glm/glm.hpp>`.** Minor but signals the file has been modified without careful review.
+
+10. **No centralized atlas upload path.** Each host re-implements the dirty-atlas-to-GPU upload logic. Adding a new host type that renders glyphs requires re-implementing this plumbing.
+
+---
+
+## Top 10 Quality-of-Life Features to Add
+
+1. **Config validation with user-visible error messages.** Invalid config values currently log a WARN silently. A startup toast or statusbar message ("Invalid font_size in config.toml — using default 11pt") would help users debug config issues without reading logs.
+
+2. **Session save/restore.** Saving the split layout and host types to a file and restoring them on next launch. Users who configure specific pane arrangements must re-do them manually every launch.
+
+3. **Mouse-drag divider resizing with visual feedback.** SplitTree supports `set_divider_ratio()` and InputDispatcher detects divider hits, but there is no cursor-change on hover or drag feedback. The 4-pixel hit zone is invisible to users.
+
+4. **Status bar showing current host and pane layout.** A lightweight footer showing "nvim | 2 panes | 80×24" would reduce the need to open the diagnostics panel just to check what is running.
+
+5. **Tab completion in the command palette with argument hints.** The palette accepts `split_vertical zsh` syntax but this is not discoverable. Showing available host names after typing the action name would close the discoverability gap.
+
+6. **Double/triple-click selection.** Word-select (double-click) and line-select (triple-click) are standard terminal emulator behaviors. Currently only click-and-drag is supported.
+
+7. **Copy-on-select.** Many terminal emulators copy to clipboard on mouse-up. Draxul requires explicit `Ctrl+Shift+C`. This breaks the workflow of users coming from xterm, iTerm2, or Alacritty.
+
+8. **Configurable ANSI color palette.** The `[terminal]` config section supports only `fg` and `bg`. The 16 ANSI colors (`color0`–`color15`) are not configurable, blocking users from setting their preferred terminal color scheme.
+
+9. **Font fallback chain display in diagnostics.** When a glyph falls through to a fallback font or fails entirely, the diagnostics panel should show which font was used and how many fallback lookups occurred per frame.
+
+10. **Config file syntax error line numbers.** When `config.toml` has a parse error, the current error message omits the line number. TOML parse errors include position information that should be surfaced to the user.
+
+---
+
+## Top 10 Tests to Add for Stability
+
+1. **`RenderTestPhase` state machine unit tests.** The five-phase state machine (`kWaitingForContent` through `kCapturing`) has no unit tests. Phase transitions, timeout behavior, and edge cases (content lost during settle, diagnostics panel timing) should be tested with a fake clock and fake renderer.
+
+2. **`InputDispatcher` chord binding edge cases.** Test: prefix key pressed, then modifier-only key (should not cancel prefix); prefix key pressed, then unrelated key (should cancel prefix and forward both). The current code has a comment "For now just keep prefix_active_ until the next key-down" which signals incomplete behavior.
+
+3. **`CommandPalette` fuzzy match scoring correctness.** Test that exact matches score higher than substring matches, shorter targets win ties, and match positions are correct for highlighting. The `fuzzy_match.cpp` implementation should have its own test file.
+
+4. **`HostManager` zoom + close interaction.** Test: zoom a pane, then close the zoomed pane. Test: zoom a pane, then close a different pane. Verify viewport recomputation is correct in each case.
+
+5. **`SplitTree` with zero-dimension window.** Test `reset(0, 0)` and `recompute(0, 0)`. The code uses `std::max(0, w - div_w)` but a zero-dimension window may still produce unexpected viewport calculations downstream.
+
+6. **Atlas overflow during multi-host rendering.** When two hosts rasterize glyphs simultaneously and the atlas fills up, the reset should not lose glyphs from one host while updating the other. The interaction with `CommandPaletteHost::flush_atlas_if_dirty()` especially needs coverage.
+
+7. **Config reload with active split panes.** Test: load config, split into 3 panes, change font size via `reload_config()`, verify all three panes receive new font metrics. The `for_each_host()` call in reload is not tested with multiple live panes.
+
+8. **VT parser partial-sequence boundary spanning.** Test: feed the first byte of a CSI or OSC sequence in one `feed()` call and remaining bytes in the next. The parser should resume correctly from `Csi` or `Osc` state across feed boundaries.
+
+9. **`DiagnosticsPanelHost` visibility toggle during render test.** The render test enables diagnostics mid-run. Test that `last_render_time()` advances correctly and the `EnablingDiagnostics` → `SettlingForCapture` transition fires only after the panel has actually rendered.
+
+10. **Concurrent host shutdown and event dispatch.** Test: host process exits between `pump()` and `close_dead_panes()`. The input dispatcher's host pointer must not be a dangling pointer. Verify `set_host(nullptr)` is called before any pane is destroyed.
+
+---
+
+## Top 10 Worst Existing Features
+
+1. **Selection limited to 8,192 cells with no user feedback.** On a 200-column terminal this is only ~40 rows. Users selecting large code blocks are silently truncated. The limit should be raised or a visible warning shown.
+
+2. **No OSC 52 clipboard read support.** The terminal supports clipboard write but not read. Programs that use OSC 52 to read the clipboard (tmux, neovim clipboard integration in remote sessions) fail silently.
+
+3. **No hyperlink support (OSC 8).** Modern CLI tools (ls, git, cargo) emit OSC 8 hyperlinks. Draxul silently strips or misrenders them.
+
+4. **No double/triple-click selection.** Click-and-drag selection exists but word-select and line-select are absent. This is a baseline terminal usability expectation.
+
+5. **No copy-on-select.** Requires explicit `Ctrl+Shift+C` after selection. Breaks the muscle memory of users from xterm, iTerm2, Alacritty, or any X11 terminal.
+
+6. **ANSI color palette not configurable.** Only `fg` and `bg` are configurable in `[terminal]`. The 16 ANSI named colors cannot be themed. Users cannot apply their preferred color scheme.
+
+7. **No named launch profiles.** Users who want different host configurations for different workflows must use CLI flags every launch. Named profiles in `config.toml` would be far more practical.
+
+8. **No toast notifications for runtime errors.** When config reload fails, font loading fails, or a host crashes, the only feedback is a log line. Users not watching the log have no idea why something changed.
+
+9. **No scroll position indicator.** Terminal hosts with scrollback buffer have no visual indicator of scroll position (scrollbar or "N lines above" status). Users cannot tell how far they have scrolled.
+
+10. **MegaCity feature descriptions in `docs/features.md` are impenetrable.** Entries like "MegaCity dependency routing" are 68–92-word technical implementation sentences. A user reading the feature list cannot understand what these features do or why they would want them.
