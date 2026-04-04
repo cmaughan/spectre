@@ -30,14 +30,12 @@ namespace
 {
 
 constexpr glm::vec4 kSidewalkSurfaceColor(0.72f, 0.72f, 0.74f, 1.0f);
-constexpr float kRoadSurfaceTextureLift = 0.002f;
 constexpr float kRoadMaterialUvScale = 0.28f;
 constexpr float kModuleSurfaceHeight = 0.018f;
 constexpr float kModuleSurfaceLift = 0.003f;
 constexpr float kDependencyRouteWidthScale = 0.27f;
 constexpr float kDependencyRouteMinWidth = 0.135f;
 constexpr float kDependencyRouteHeight = 0.045f;
-constexpr float kDependencyRouteLift = 0.01f;
 constexpr int kHexBuildingIncidentConnectionThreshold = 6;
 constexpr float kPointShadowDebugSceneHalfExtent = 9.0f;
 constexpr float kPointShadowDebugPrimaryFootprint = 2.5f;
@@ -1020,26 +1018,6 @@ void emit_route_entities(
     const float route_width = std::max(
         config.placement_step * kDependencyRouteWidthScale,
         kDependencyRouteMinWidth);
-    const float route_elevation = std::max(
-                                      kRoadSurfaceTextureLift + config.road_surface_height,
-                                      config.sidewalk_surface_lift + config.sidewalk_surface_height)
-        + kDependencyRouteLift;
-
-    // Assign per-side layer indices so each building side's routes stack from the bottom.
-    // Key: source building name + departure side → next layer index.
-    std::unordered_map<std::string, int> side_layer_counters;
-    const auto side_key = [](const CityGrid::RoutePolyline& route) -> std::string {
-        if (route.world_points.size() < 2)
-            return {};
-        const glm::vec2 edge = route.world_points.front();
-        const glm::vec2 road = route.world_points[1];
-        const glm::vec2 dir = road - edge;
-        // Classify departure direction into N/S/E/W.
-        char side = std::abs(dir.x) > std::abs(dir.y)
-            ? (dir.x > 0.0f ? 'E' : 'W')
-            : (dir.y > 0.0f ? 'N' : 'S');
-        return route.source_file_path + "#" + route.source_module_path + "#" + route.source_qualified_name + '#' + side;
-    };
 
     for (size_t route_index = 0; route_index < routes.size(); ++route_index)
     {
@@ -1053,9 +1031,7 @@ void emit_route_entities(
         if (total_length <= 1e-4f)
             continue;
 
-        const int side_layer = side_layer_counters[side_key(route)]++;
-        const float layered_route_elevation
-            = route_elevation + static_cast<float>(side_layer) * std::max(config.dependency_route_layer_step, 0.0f);
+        const float layered_route_elevation = route.elevation;
         float traversed_length = 0.0f;
         for (size_t point_index = 1; point_index < route.world_points.size(); ++point_index)
         {
@@ -1066,30 +1042,45 @@ void emit_route_entities(
             if (length <= 1e-4f)
                 continue;
 
-            const float segment_mid_length = traversed_length + length * 0.5f;
-            const float color_t = std::clamp(segment_mid_length / total_length, 0.0f, 1.0f);
-            const glm::vec4 color = glm::mix(route.source_color, route.target_color, color_t);
+            // Subdivide the segment so the color gradient is smooth rather than
+            // stepping at each bend point.
+            const float color_t_start = std::clamp(traversed_length / total_length, 0.0f, 1.0f);
+            const float color_t_end = std::clamp((traversed_length + length) / total_length, 0.0f, 1.0f);
+            constexpr float kMaxSubSegmentLength = 0.5f;
+            const int sub_count = std::max(1, static_cast<int>(std::ceil(length / kMaxSubSegmentLength)));
+            const float sub_length = length / static_cast<float>(sub_count);
+            const glm::vec2 dir = delta / length;
 
-            world.create_route_segment(
-                (a.x + b.x) * 0.5f,
-                (a.y + b.y) * 0.5f,
-                RouteSegmentMetrics{
-                    std::max(length, route_width),
-                    route_width,
-                    kDependencyRouteHeight,
-                    -std::atan2(delta.y, delta.x),
-                },
-                color,
-                SourceSymbol{},
-                layered_route_elevation,
-                RouteLink{
-                    route.source_file_path,
-                    route.source_module_path,
-                    route.source_qualified_name,
-                    route.target_file_path,
-                    route.target_module_path,
-                    route.target_qualified_name,
-                });
+            for (int sub = 0; sub < sub_count; ++sub)
+            {
+                const float frac0 = static_cast<float>(sub) / static_cast<float>(sub_count);
+                const float frac1 = static_cast<float>(sub + 1) / static_cast<float>(sub_count);
+                const glm::vec2 sub_a = a + dir * (frac0 * length);
+                const glm::vec2 sub_b = a + dir * (frac1 * length);
+                const float sub_mid_t = glm::mix(color_t_start, color_t_end, (frac0 + frac1) * 0.5f);
+                const glm::vec4 color = glm::mix(route.source_color, route.target_color, sub_mid_t);
+
+                world.create_route_segment(
+                    (sub_a.x + sub_b.x) * 0.5f,
+                    (sub_a.y + sub_b.y) * 0.5f,
+                    RouteSegmentMetrics{
+                        std::max(sub_length, route_width),
+                        route_width,
+                        kDependencyRouteHeight,
+                        -std::atan2(delta.y, delta.x),
+                    },
+                    color,
+                    SourceSymbol{},
+                    layered_route_elevation,
+                    RouteLink{
+                        route.source_file_path,
+                        route.source_module_path,
+                        route.source_qualified_name,
+                        route.target_file_path,
+                        route.target_module_path,
+                        route.target_qualified_name,
+                    });
+            }
 
             traversed_length += length;
         }

@@ -1,96 +1,96 @@
-# Draxul Static Review
+# Draxul Repository Review
 
-Static inspection only. I scanned the requested tree under `app/`, `libs/`, `shaders/`, `tests/`, `scripts/`, `plans/`, plus [`docs/features.md`](/Users/cmaughan/dev/Draxul/docs/features.md). I did not build, run binaries, or execute tests.
+Static review only. I did not build, run tests, or execute project binaries.
+
+## Summary
+
+The codebase is better structured than most fast-moving C++ desktop apps: the library split is real, test coverage is broad, and there is clear planning discipline. The main architectural debt is now concentrated rather than hidden: `app/` is still a coordination choke point, `draxul-config` still knows too much about runtime/UI concerns, and Megacity continues to punch holes through otherwise good module boundaries.
 
 ## Findings
 
-1. **High: Vulkan grid-handle allocation failure now turns into a null dereference instead of a recoverable init failure.** [`VkRenderer::create_grid_handle()`](/Users/cmaughan/dev/Draxul/libs/draxul-renderer/src/vulkan/vk_renderer.cpp#L612) can return `nullptr` on descriptor-set allocation failure, but [`GridHostBase::initialize()`](/Users/cmaughan/dev/Draxul/libs/draxul-host/src/grid_host_base.cpp#L14) and [`CommandPaletteHost::dispatch_action()`](/Users/cmaughan/dev/Draxul/app/command_palette_host.cpp#L118) dereference the result unconditionally. One backend resource hiccup becomes a hard crash during host startup or palette open.
+- **High:** Megacity still bypasses renderer encapsulation by adding private backend include paths directly in build wiring, which means renderer refactors will keep spilling across target boundaries and forcing coordination across unrelated work. See [libs/draxul-megacity/CMakeLists.txt](/Users/cmaughan/dev/Draxul/libs/draxul-megacity/CMakeLists.txt#L80) and [libs/draxul-megacity/CMakeLists.txt](/Users/cmaughan/dev/Draxul/libs/draxul-megacity/CMakeLists.txt#L89).
 
-2. **High: diagnostics-panel hit-testing is inconsistent on HiDPI because the coordinate contract is split across two places.** [`PanelLayout::contains_panel_point()`](/Users/cmaughan/dev/Draxul/libs/draxul-ui/include/draxul/ui_panel.h#L51) multiplies by `pixel_scale`, while [`InputDispatcher`](/Users/cmaughan/dev/Draxul/app/input_dispatcher.cpp#L153) already passes physical coordinates. On Retina/2x displays this double-scales panel hit tests, so mouse routing around the diagnostics panel is wrong.
+- **High:** Tests also depend on Megacity private internals by adding `libs/draxul-megacity/src` to the test include path. That makes tests part of the implementation surface and weakens the repo’s ability to refactor safely with multiple agents in parallel. See [tests/CMakeLists.txt](/Users/cmaughan/dev/Draxul/tests/CMakeLists.txt#L19).
 
-3. **Medium: “overlay host intercepts all input” is not actually true.** The comment in [`InputDispatcher::on_key_event()`](/Users/cmaughan/dev/Draxul/app/input_dispatcher.cpp#L71) says the overlay intercepts all input, but mouse button/move/wheel paths ignore `overlay_host` entirely ([`app/input_dispatcher.cpp:144`](/Users/cmaughan/dev/Draxul/app/input_dispatcher.cpp#L144), [`app/input_dispatcher.cpp:168`](/Users/cmaughan/dev/Draxul/app/input_dispatcher.cpp#L168), [`app/input_dispatcher.cpp:191`](/Users/cmaughan/dev/Draxul/app/input_dispatcher.cpp#L191)), and text-editing events still go straight to the underlying host ([`app/input_dispatcher.cpp:267`](/Users/cmaughan/dev/Draxul/app/input_dispatcher.cpp#L267)). That means the command palette can leak wheel/click/IME traffic to the active pane.
+- **High:** GUI action definitions are duplicated across three separate registries instead of one source of truth: config parsing, keybinding parsing, and runtime dispatch. Every new action requires synchronized edits in different libraries, which is exactly the kind of drift-prone work that causes coordination bugs. See [libs/draxul-config/src/app_config_io.cpp](/Users/cmaughan/dev/Draxul/libs/draxul-config/src/app_config_io.cpp#L33), [libs/draxul-config/src/keybinding_parser.cpp](/Users/cmaughan/dev/Draxul/libs/draxul-config/src/keybinding_parser.cpp#L19), and [app/gui_action_handler.cpp](/Users/cmaughan/dev/Draxul/app/gui_action_handler.cpp#L21).
 
-4. **Medium: MegaCity can still stall the UI thread by joining worker work synchronously.** [`MegaCityHost::launch_grid_build()`](/Users/cmaughan/dev/Draxul/libs/draxul-megacity/src/megacity_host.cpp#L1341) does `grid_thread_.join()` on the caller thread before starting a new build. If the previous grid build is slow, a rebuild path blocks `pump()`/interaction instead of canceling or superseding stale work.
+- **Medium:** `draxul-config` is still not a clean config library. Its public `AppOptions` type exposes renderer and window types, and the target links renderer/window publicly, so “config” consumers inherit UI/runtime baggage and rebuild fan-out. See [libs/draxul-config/include/draxul/app_options.h](/Users/cmaughan/dev/Draxul/libs/draxul-config/include/draxul/app_options.h#L3) and [libs/draxul-config/CMakeLists.txt](/Users/cmaughan/dev/Draxul/libs/draxul-config/CMakeLists.txt#L15).
 
-5. **Medium: GUI action definitions have already drifted between runtime dispatch and config persistence.** Runtime actions live in [`GuiActionHandler::action_map()`](/Users/cmaughan/dev/Draxul/app/gui_action_handler.cpp#L21), but persisted/supported config actions are hardcoded separately in [`kKnownGuiActions`](/Users/cmaughan/dev/Draxul/libs/draxul-config/src/app_config_io.cpp#L33). `toggle_megacity_ui` and `edit_config` exist at runtime but not in the serialization list used by [`AppConfig::serialize()`](/Users/cmaughan/dev/Draxul/libs/draxul-config/src/app_config_io.cpp#L481), so custom bindings/unbinds for those actions will not round-trip cleanly.
+- **Medium:** `App` remains a 1,249-line change magnet that owns startup, shutdown, the main loop, render-test orchestration, config reload, overlay composition, viewport logic, and cross-subsystem callbacks. The code is readable, but it is still a conflict hotspot that limits parallel work. See [app/app.cpp](/Users/cmaughan/dev/Draxul/app/app.cpp#L152), [app/app.cpp](/Users/cmaughan/dev/Draxul/app/app.cpp#L671), [app/app.cpp](/Users/cmaughan/dev/Draxul/app/app.cpp#L894), and [app/app.cpp](/Users/cmaughan/dev/Draxul/app/app.cpp#L1207).
 
-6. **Medium: library boundaries are good on paper but still porous in practice.** [`draxul-ui`](/Users/cmaughan/dev/Draxul/libs/draxul-ui/CMakeLists.txt#L1) does not declare a renderer dependency, yet [`ui_panel.cpp`](/Users/cmaughan/dev/Draxul/libs/draxul-ui/src/ui_panel.cpp#L4) reaches into renderer headers via a relative path. [`draxul-megacity`](/Users/cmaughan/dev/Draxul/libs/draxul-megacity/CMakeLists.txt#L80) explicitly includes renderer-private backend directories, and backend-specific files include private render-context headers ([`megacity_render_vk.cpp`](/Users/cmaughan/dev/Draxul/libs/draxul-megacity/src/megacity_render_vk.cpp#L5), [`megacity_render.mm`](/Users/cmaughan/dev/Draxul/libs/draxul-megacity/src/megacity_render.mm#L5)). That makes private renderer refactors expensive and coordination-heavy.
+- **Medium:** `CommandPaletteHost` reimplements atlas dirty-rect upload logic instead of sharing the same upload path used by the normal grid rendering pipeline. That creates two subtly different atlas-update code paths to maintain. See [app/command_palette_host.cpp](/Users/cmaughan/dev/Draxul/app/command_palette_host.cpp#L181) and [libs/draxul-runtime-support/src/grid_rendering_pipeline.cpp](/Users/cmaughan/dev/Draxul/libs/draxul-runtime-support/src/grid_rendering_pipeline.cpp#L227).
 
-## Architecture Notes
+- **Medium:** CLI parsing in `main.cpp` mixes pure parsing with process termination via `std::exit()`. That makes argument handling harder to unit test and harder to reuse cleanly from other entrypoints or tooling. See [app/main.cpp](/Users/cmaughan/dev/Draxul/app/main.cpp#L93).
 
-The broad library split is strong: 17 focused `libs/` targets, clear renderer/window/host seams, and a large test corpus. The main collaboration hotspots are still [`app/app.cpp`](/Users/cmaughan/dev/Draxul/app/app.cpp), [`libs/draxul-megacity/src/megacity_host.cpp`](/Users/cmaughan/dev/Draxul/libs/draxul-megacity/src/megacity_host.cpp), and the backend renderers, which concentrate a lot of responsibility and make concurrent edits riskier than the rest of the tree.
+- **Medium:** The agent helper scripts are copy-pasted variants with repeated path resolution, prepend-file handling, dry-run output, and subprocess setup. This is classic tooling drift territory and there are no tests around it. See [scripts/ask_agent.py](/Users/cmaughan/dev/Draxul/scripts/ask_agent.py#L12), [scripts/ask_agent_gpt.py](/Users/cmaughan/dev/Draxul/scripts/ask_agent_gpt.py#L11), [scripts/ask_agent_claude.py](/Users/cmaughan/dev/Draxul/scripts/ask_agent_claude.py#L11), and [scripts/ask_agent_gemini.py](/Users/cmaughan/dev/Draxul/scripts/ask_agent_gemini.py#L11).
 
-The test suite is broad, but the newest failure surfaces are under-covered: HiDPI panel routing, overlay interception, frame-context ordering, and backend allocation-failure paths.
+- **Low:** `CellText` still hard-truncates clusters at 32 bytes in a core shared type. The warning and tests are better than silent corruption, but this is still a permanent representational limit in a Unicode-heavy product. See [libs/draxul-grid/include/draxul/grid.h](/Users/cmaughan/dev/Draxul/libs/draxul-grid/include/draxul/grid.h#L124).
 
-## Top 10 Good Things
+## Top 10 Good
 
-1. The repo is genuinely modular: 17 libraries with mostly clear intent boundaries.
-2. The project has an unusually strong test surface for a GUI/renderer codebase: 80 `*_tests.cpp` files.
-3. The fake-window/fake-renderer/test-support infrastructure is practical and reused well.
-4. `docs/features.md` is current enough to be operationally useful instead of aspirational.
-5. The plans/reviews/work-items discipline is excellent and improves multi-agent collaboration.
-6. The renderer API split around frame lifecycle, grid handles, and capture support is easy to reason about.
-7. Main-thread assertions and explicit reader-thread/main-thread separation show good defensive engineering.
-8. Config parsing is careful about types, clamping, and warning on bad user input.
-9. Render-test/snapshot infrastructure gives the project a real regression net for visuals.
-10. The codebase has many targeted regression tests around bugs that would normally go untested in UI apps.
+- The library split is real enough that most subsystems have a visible home and a named responsibility.
+- Test coverage is unusually broad for a native GUI/terminal app.
+- The replay fixture approach for redraw bugs is a strong investment in regression testing.
+- Fake window/renderer/host seams make the app layer much more testable than average.
+- Planning hygiene is good: active, icebox, complete, prompt, and review folders are clear and usable.
+- The codebase documents implemented features explicitly in [docs/features.md](/Users/cmaughan/dev/Draxul/docs/features.md).
+- Cross-platform abstractions are present instead of being scattered through the whole tree.
+- Logging and perf instrumentation are consistent and widespread.
+- The render test and snapshot infrastructure gives the project a useful visual regression safety net.
+- Recent refactors have clearly reduced some earlier monoliths; the repo is trending in the right direction.
 
-## Top 10 Bad Things
+## Top 10 Bad
 
-1. MegaCity complexity dominates too much of the maintenance budget for a terminal/Neovim frontend.
-2. Private-header reach-through still weakens the otherwise solid module split.
-3. Several new APIs have missing failure-path handling.
-4. Input routing mixes logical and physical coordinates in ways that are easy to break.
-5. Action definitions are duplicated across runtime, config, menus, docs, and tests.
-6. A few files remain too large to parallelize safely without merge friction.
-7. UI-thread blocking joins still exist in performance-sensitive paths.
-8. Overlay behavior is only partially modeled in the input layer.
-9. Some architectural docs and completed work-item narratives no longer match the live code shape.
-10. The code is strong on happy paths and regressions, but weaker on degraded-mode behavior and resource exhaustion.
+- Megacity consumes too much architectural budget for an optional demo host.
+- `App` is still the dominant merge-conflict zone.
+- `draxul-config` is still partly a runtime/UI library in disguise.
+- GUI action metadata is duplicated instead of centralized.
+- Private implementation boundaries are still leaking into builds and tests.
+- Tooling scripts are duplicated and mostly untested.
+- Several important flows still rely on stringly-typed action protocols.
+- Core text storage still embeds a hard 32-byte truncation limit.
+- `SdlWindow` and `InputDispatcher` are still large mixed-responsibility classes.
+- Some low-level hygiene drift is visible, such as duplicated includes in [libs/draxul-types/include/draxul/types.h](/Users/cmaughan/dev/Draxul/libs/draxul-types/include/draxul/types.h#L1).
 
 ## Best 10 QoL Features To Add
 
-Filtered to avoid features already implemented in [`docs/features.md`](/Users/cmaughan/dev/Draxul/docs/features.md) and items already parked in `work-items-complete/` or `work-items-icebox/`.
-
-1. Pane focus navigation actions (`focus_left/right/up/down`) with default shortcuts.
-2. Optional `copy_on_select` behavior for terminal panes.
-3. Double-click word selection and triple-click line selection.
-4. Right-click context menu for copy/paste/open-file/split/close actions.
-5. Command-palette MRU sorting so recent actions rise to the top.
-6. “Open recent file/directory” command-palette source backed by drop/open history.
-7. Optional focus-follows-mouse for split panes.
-8. User-defined command-palette aliases/macros for common multi-step actions.
-9. Open selected filesystem paths with the system opener when the selection resolves to a path.
-10. Quick theme/font profile switching without editing `config.toml`.
+- Command palette descriptions, examples, and argument hints so actions are discoverable without source knowledge.
+- A searchable keybinding help screen that explains current bindings and conflicts.
+- Per-pane titles and status badges showing host type, cwd, and busy state.
+- Clipboard history with palette-driven paste selection.
+- Recent files support, especially for dropped/opened paths.
+- Clone/duplicate focused pane with the same host kind and working directory.
+- Quick layout presets for common setups like editor-plus-shell or three-pane review mode.
+- Safe close/restart prompts when a pane appears to have running work or dirty editor state.
+- Theme preset import/export with live preview.
+- Palette actions for “copy cwd”, “copy current file path”, and “open cwd in Finder/Explorer”.
 
 ## Best 10 Tests To Add
 
-1. HiDPI unit test for [`PanelLayout::contains_panel_point()`](/Users/cmaughan/dev/Draxul/libs/draxul-ui/include/draxul/ui_panel.h#L51) at `pixel_scale=2`.
-2. Input-routing test that a visible diagnostics panel blocks host mouse input correctly on HiDPI.
-3. Overlay-routing test that an active command palette blocks underlying mouse button events.
-4. Overlay-routing test that an active command palette blocks wheel events.
-5. Overlay-routing test that `TextEditingEvent` goes to the overlay instead of the host.
-6. Host-init test for `create_grid_handle()==nullptr` in [`GridHostBase`](/Users/cmaughan/dev/Draxul/libs/draxul-host/src/grid_host_base.cpp#L14).
-7. Palette test for `create_grid_handle()==nullptr` in [`CommandPaletteHost`](/Users/cmaughan/dev/Draxul/app/command_palette_host.cpp#L118).
-8. Config round-trip test for custom `toggle_megacity_ui` bindings.
-9. Config round-trip test for unbinding `toggle_megacity_ui`.
-10. Renderer frame-context ordering test that records grid, render-pass, diagnostics ImGui, and palette draws in the expected order.
+- A parity test that enforces one-to-one agreement between GUI action dispatch, config parsing, and keybinding parsing.
+- Dry-run tests for the `ask_agent*` and `do_review*` scripts so the review tooling stops depending on manual verification.
+- A repeated open/close/reopen lifecycle test for `CommandPaletteHost` to catch leaked handles or stale atlas state.
+- Command palette tests for whitespace-heavy queries, argument passing, and tab-completion edge cases.
+- An `App::dispatch_to_nvim_host` test covering both reuse of an existing Nvim pane and fallback creation of a new one.
+- A `reload_config` rollback test that verifies failed font reloads leave host state and config state coherent.
+- A `HostManager::split_host_kind_for()` matrix test across primary host kinds and platform defaults.
+- `NvimHost::dispatch_action("open_file_at_function:...")` tests for spaces, unicode, and delimiter-like characters.
+- `RendererBundle` tests that verify capability pointers are set and cleared correctly across reset paths.
+- Logging configuration tests for environment precedence, category masks, and stderr/file behavior.
 
 ## Worst 10 Features
 
-1. **MegaCity host**: impressive technically, but it is still the least maintainable and least core-to-purpose feature in the product.
-2. **Split panes opening the platform default shell**: this breaks user intent when the active pane is `nvim` or another non-shell host.
-3. **Diagnostics panel as a bottom dock only**: it consumes precious terminal height and has no export/share workflow.
-4. **Command palette**: useful, but too flat; it lacks recency, categories, and argument discoverability.
-5. **Selection with an 8192-cell cap**: practical but surprisingly limiting for a terminal frontend.
-6. **Mouse-only terminal selection workflow**: still awkward for keyboard-heavy users.
-7. **Open-file dialog integration**: present, but unbound by default and still routed through a stringly `open_file:` action contract.
-8. **MegaCity UI toggle persistence**: currently vulnerable to config round-trip drift.
-9. **Diagnostics-panel mouse routing on HiDPI**: current behavior is fragile enough to count as a weak feature experience.
-10. **Command-palette overlay input model**: currently leaky enough that it does not feel like a fully modal overlay.
+- The MegaCity host.
+- The MegaCity debug-view matrix.
+- The MegaCity LCOV/perf coverage visualization layer.
+- The MegaCity city-map dependency routing surface.
+- The MegaCity tree and park tuning surface.
+- The global diagnostics panel as a runtime-coupled control hub.
+- The `edit_config` action opening a new Nvim split instead of offering structured settings UX.
+- The `open_file:` and `open_file_at_function:` string action protocol.
+- The screenshot/render-test/bless flags living in the main app binary instead of a thinner external harness.
+- The platform-default split-host behavior, which is convenient but not very intentional from a workflow perspective.
 
-## Bottom Line
+## Overall
 
-Draxul’s foundations are much better than average for a cross-platform GUI frontend: modular layout, real tests, solid planning hygiene, and good regression discipline. The main current risks are not “lack of architecture”, but contract drift and edge-path correctness in the newest refactors: allocation failure, HiDPI routing, overlay input semantics, and boundary leakage between libraries.
-
-If you want the next cleanup wave to pay off fastest, I would fix the two crash/input bugs first, then tighten the action registry and renderer/UI module boundaries.
+The repo is in better shape than the feature count suggests. The next real gains will not come from more surface area; they will come from finishing the boundary cleanup that the architecture already points toward: centralize action metadata, finish purifying config/runtime seams, stop private-source includes in Megacity and tests, and keep shrinking the responsibilities of `App`.

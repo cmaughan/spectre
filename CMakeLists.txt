@@ -96,6 +96,7 @@ add_subdirectory(libs/draxul-runtime-support)
 add_subdirectory(libs/draxul-render-test)
 add_subdirectory(libs/draxul-app-support)
 add_subdirectory(libs/draxul-host)
+add_subdirectory(libs/draxul-nanovg)
 if(DRAXUL_ENABLE_MEGACITY)
     add_subdirectory(libs/draxul-geometry)
     add_subdirectory(libs/draxul-treesitter)
@@ -154,6 +155,7 @@ endif()
 
 add_library(draxul-app
     app/app.cpp
+    app/chrome_host.cpp
     app/command_palette.cpp
     app/command_palette_host.cpp
     app/diagnostics_panel_host.cpp
@@ -180,6 +182,7 @@ target_link_libraries(draxul-app PUBLIC
     draxul-grid
     draxul-nvim
     draxul-host
+    draxul-nanovg
 )
 if(DRAXUL_ENABLE_MEGACITY)
     target_link_libraries(draxul-app PUBLIC draxul-megacity)

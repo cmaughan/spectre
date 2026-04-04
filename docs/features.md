@@ -103,6 +103,17 @@ A standalone GUI library for rendering UI items that do not depend on ImGui. It 
 
 ---
 
+## Workspace Tabs
+
+- Multiple workspaces, each with its own independent split tree and host set
+- `new_tab` (`Ctrl+S, C`): Create a new workspace tab
+- `close_tab` (`Ctrl+S, &`): Close the active workspace tab (disabled when only one tab remains)
+- `next_tab` (`Ctrl+S, N`): Cycle to the next workspace
+- `prev_tab` (`Ctrl+S, P`): Cycle to the previous workspace
+- Tab switching preserves focus state per workspace (focus lost/gained notifications)
+
+---
+
 ## Diagnostics Panel (ImGui)
 
 Toggle with F12. Shows:
@@ -142,6 +153,10 @@ Toggle with F12. Shows:
 | `focus_up` | `Ctrl + K` |
 | `focus_right` | `Ctrl + L` |
 | `open_file_dialog` | (unbound) |
+| `new_tab` | `Ctrl + S, C` |
+| `close_tab` | `Ctrl + S, &` |
+| `next_tab` | `Ctrl + S, N` |
+| `prev_tab` | `Ctrl + S, P` |
 
 Customizable in `config.toml` under `[keybindings]`. Chord syntax: `"prefix, key"`. Set to empty string to unbind.
 

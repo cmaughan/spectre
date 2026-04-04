@@ -5,6 +5,7 @@
 #include <draxul/host_kind.h>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 
@@ -48,7 +49,9 @@ public:
 
     // Creates and initialises the primary host, resetting the tree to a single leaf.
     // Returns false on failure; error() contains the reason.
-    bool create(IHostCallbacks& callbacks, int pixel_w, int pixel_h);
+    // If host_kind_override is set, it overrides the AppOptions host_kind.
+    bool create(IHostCallbacks& callbacks, int pixel_w, int pixel_h,
+        std::optional<HostKind> host_kind_override = std::nullopt);
 
     // Splits the focused leaf in the given direction and launches a new host.
     // Returns the new leaf's ID, or kInvalidLeaf on failure.
@@ -78,6 +81,7 @@ public:
 
     // Recomputes the tree layout and updates all host viewports.
     void recompute_viewports(int pixel_w, int pixel_h);
+    void recompute_viewports(int origin_x, int origin_y, int pixel_w, int pixel_h);
 
     // Toggles pane zoom: expands the focused pane to fill the full window,
     // or restores the previous split layout if already zoomed.
@@ -151,6 +155,7 @@ private:
     bool create_host_for_leaf(LeafId id, IHostCallbacks& callbacks,
         HostLaunchOptions launch, bool is_primary);
     void update_all_viewports();
+    void update_focus(LeafId new_id);
 
     Deps deps_;
     SplitTree tree_;

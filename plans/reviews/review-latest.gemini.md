@@ -1,68 +1,78 @@
-I will begin by listing the files in the core directories to establish a baseline for my exploration.
-I will begin my in-depth review by examining the core architectural components, starting with the main application orchestrator, the host abstraction, and the renderer interface. I'll also consult the feature documentation to contextualize the current state of the project.
-I've examined the initial set of core files, noting that `App` in `app/app.cpp` is a significant class likely containing key implementation details. To further my understanding and identify potential code smells, I'll now investigate the implementations of `App`, `HostManager`, and `InputDispatcher`. I'm also interested in `GridHostBase`, which was referenced in the `IGridRenderer` comments, so I'll explore the `libs/draxul-host` directory to locate it.
-I've observed some positive patterns, such as dependency injection through `AppDeps` and a clear separation of concerns in `HostManager` and `InputDispatcher`. However, `App::initialize` is somewhat of a "god method," despite the use of `time_step` lambdas, and the `App` class itself is quite large at over 1,000 lines. I also noticed that `InputDispatcher` performs frequent manual coordinate translations, which could be fragile. To gain a deeper understanding, I'll now examine the Neovim integration in `libs/draxul-host/src/nvim_host.cpp` and investigate the renderer backend implementation, starting with an exploration of the `libs/draxul-renderer` directory structure.
-I've gathered a solid understanding of the codebase: it's a modern C++20 project with a well-defined library structure and a robust Neovim integration via msgpack-RPC. While the `App` class acts as a central hub and shows some "god class" tendencies, and the MegaCity demo introduces numerous `#ifdef`s, the overall architecture—including a dedicated input handler and pane management—is sound. I've also noted extensive testing, which I'll now examine more closely by reviewing `tests/app_smoke_tests.cpp` and `tests/grid_tests.cpp` to assess the quality and depth of coverage.
-I have completed my review of the Draxul codebase. This report synthesizes my findings across architecture, implementation, testing, and feature sets.
+# Draxul Codebase Review and Analysis Report
 
-# Draxul Codebase Review Report
+This report provides a comprehensive review of the Draxul project, a high-performance Neovim GUI and terminal emulator built with C++20 and native GPU rendering.
+
+---
 
 ## 1. Top 10 Good Things
-1.  **Clean Abstractions:** The project features a well-defined separation of concerns through `IHost`, `IGridRenderer`, `IWindow`, and `IGridHandle` interfaces, facilitating modular development and testing.
-2.  **Modern C++20 Adoption:** Idiomatic use of modern features such as `std::span`, concepts, and structured bindings ensures type safety and performance.
-3.  **Exemplary Testing Culture:** A comprehensive suite of unit, integration, and render/snapshot tests. The use of injectable fakes for core subsystems allows for robust isolation.
-4.  **Platform-Native Performance:** Dual-backend support for Vulkan (Windows) and Metal (macOS) with optimized glyph atlas management and instanced rendering.
-5.  **Sophisticated Font Pipeline:** Advanced text shaping via HarfBuzz and FreeType, with first-class support for programming ligatures and color emoji.
-6.  **Dependency Management:** The use of CMake `FetchContent` ensures a reproducible and frictionless build process across different developer environments.
-7.  **Extensible Host Architecture:** The system easily accommodates diverse host types, from Neovim and shell PTYs to the impressive MegaCity 3D visualization.
-8.  **Real-time Diagnostics:** The ImGui-based diagnostics panel provides invaluable visibility into GPU state, atlas usage, and frame timing.
-9.  **Robust Build Tooling:** High-quality scripts for documentation generation, dependency mapping, and "blessing" of render test references.
-10. **Surgical Input Routing:** A dedicated `InputDispatcher` manages the complex interaction between GUI actions, chorded keybindings, and host-specific protocols.
 
-## 2. Top 10 Bad Things
-1.  **"God Class" Accumulation:** The `App` class (over 1000 lines) is taking on too many responsibilities, from low-level subsystem initialization to high-level run-loop orchestration.
-2.  **Preprocessor Fragmentation:** Heavy reliance on `#ifdef` blocks for MegaCity and platform-specific logic makes the core application code harder to read and verify.
-3.  **Coordinate Translation Fragility:** Frequent manual scaling between logical, physical, and grid coordinates across `InputDispatcher` and `HostManager` is a potential source of bugs.
-4.  **Tightly Coupled 3D Demo:** While impressive, MegaCity is deeply integrated into core classes, making it difficult to treat as a truly optional plugin.
-5.  **Initialization Monolith:** `App::initialize` is a long, sequential method; despite the `time_step` lambdas, the recovery/rollback logic for partial failures is complex.
-6.  **Implicit Global State:** Some subsystems rely on semi-global state within `App` (like window dimensions or PPI), complicating isolated unit testing.
-7.  **Input Logic Scattering:** The decision-making process for input priority (ImGui vs. Command Palette vs. Host) is split across multiple layers.
-8.  **Build Preset Proliferation:** The increasing number of CMake presets and the divergence between Ninja and Visual Studio generators can be confusing for new contributors.
-9.  **Documentation/Code Drift:** Some architectural comments (e.g., in `IGridRenderer`) have started to drift from the actual implementation details of ownership and lifecycle.
-10. **Fragile Clipboard Integration:** The Neovim clipboard provider relies on injecting Lua code strings, which may conflict with complex user configurations.
+1.  **Strict Modularity**: The codebase is exceptionally well-structured into focused libraries (`draxul-renderer`, `draxul-font`, `draxul-grid`, etc.), ensuring clear boundaries and high maintainability.
+2.  **Comprehensive Testing**: A multi-layered test strategy including unit tests (Catch2), integration tests (RPC fakes), smoke tests, and platform-specific render/snapshot tests ensures high stability.
+3.  **Dependency Injection**: The `App` class uses an `AppDeps` bundle for subsystem factories, making the core orchestration logic highly testable and decoupled from concrete platform implementations.
+4.  **Native GPU Performance**: The two-pass instanced rendering architecture (background quads + alpha-blended foreground glyphs) provides low-latency updates with efficient Vulkan and Metal backends.
+5.  **Robust Text Shaping**: Deep integration with HarfBuzz and FreeType allows for excellent support of programming ligatures, complex Unicode clusters, and emojis.
+6.  **Advanced 3D Visualization**: The `MegaCity` host is a standout feature, providing a sophisticated semantic code visualization environment with PBR materials, shadows, and AO.
+7.  **Clean Abstractions**: Interfaces like `IWindow`, `IGridRenderer`, and `IHost` provide a stable foundation that hides platform-specific or backend-specific complexity from the application logic.
+8.  **Multi-Host Architecture**: The binary split tree and `HostManager` allow for independent lifecycles and viewports for multiple Neovim or shell instances in a single window.
+9.  **Developer Experience**: The `do.py` utility script, extensive `CMakePresets.json`, and clear documentation (`GEMINI.md`, `FEATURES.md`) make the project accessible and easy to build.
+10. **Live Configuration**: Support for runtime `config.toml` reloading allows for immediate feedback when adjusting keybindings, fonts, or rendering settings without restarting.
 
-## 3. Top 10 Quality of Life Features to Add
-1.  **Tabbed Workspace:** Support for multiple host tabs alongside the existing binary split system.
-2.  **Hot Configuration Reloading:** Live-reload `config.toml` changes (especially keybindings and colors) without restarting the application.
-3.  **Thematic Preset Gallery:** Built-in color scheme presets (e.g., Solarized, Nord, Gruvbox) for shell and Neovim hosts.
-4.  **Persistent Command History:** Searchable history for the Command Palette across application sessions.
-5.  **Remote Neovim Attachment:** A UI flow to connect to a remote Neovim instance via `nvim --listen`.
-6.  **Session Snapshot/Restore:** Save and automatically restore the current split layout and open files.
-7.  **Native Touchpad Gestures:** Implementation of pinch-to-zoom for font size and smooth momentum scrolling using native OS APIs.
-8.  **Project-Wide Global Search:** An integrated search tool in the Command Palette that leverages Neovim's searching capabilities across the workspace.
-9.  **Visual Configuration Editor:** A simple GUI overlay for modifying `config.toml` settings with real-time previews.
-10. **Integrated Task Runner:** A dedicated panel or palette action for running project-specific scripts (like `scripts/run_tests.sh`) with output capturing.
+---
 
-## 4. Top 10 Stability Tests to Add
-1.  **Dynamic High-DPI Stress:** Simulation of window movement between monitors with drastically different DPI scales during active host output.
-2.  **Resource Leak Longevity Test:** Automated scripts that repeatedly open and close dozens of hosts to verify zero GPU memory and handle leaks.
-3.  **RPC Fragmentation Fuzzing:** Testing the msgpack-RPC layer with fragmented, delayed, or malformed messages.
-4.  **Input Latency Regression Suite:** Automated benchmarks measuring the "photon-to-key" latency from input events to frame presentation.
-5.  **Massive Scrollback Pressure:** Performance testing with terminal scrollback buffers exceeding 100,000 lines to verify ring-buffer stability.
-6.  **Unicode Boundary Fuzzing:** Focused testing on complex ZWJ sequences and combining characters that span or break cell boundaries.
-7.  **OS Signal Resilience:** Verification of clean shutdown and process cleanup when the application receives `SIGTERM` or `SIGINT`.
-8.  **Config Version Migration:** Tests for loading deprecated or corrupted `config.toml` files to ensure graceful recovery.
-9.  **Concurrent Host Saturation:** Stress testing multiple simultaneous active hosts (e.g., 4 Neovim instances) to identify main-thread bottlenecks.
-10. **Renderer Device Loss Recovery:** Simulation of GPU device loss or driver reset to verify the renderer can re-initialize without a crash.
+## 2. Top 10 Bad Things (Code Smells & Technical Debt)
 
-## 5. Top 10 "Worst" Existing Features
-1.  **Binary Split Navigation:** The strict binary tree makes complex layouts (like a 3x3 grid) unintuitive to create and manage.
-2.  **Manual Scroll Accumulation:** The `smooth_scroll` logic is implemented manually in `InputDispatcher`, which can feel less responsive than native OS momentum.
-3.  **Overlay Input Interception:** The Command Palette and other overlays use an all-or-nothing input intercept, preventing interaction with the background.
-4.  **MegaCity Shader Complexity:** The 3D shaders are becoming monolithic, potentially impacting startup times and driver compatibility.
-5.  **Arbitrary Config Ranges:** Many configuration limits (like scroll speed) use "magic" ranges that don't always map to intuitive user experiences.
-6.  **Diagnostic Panel Coupling:** The panel's layout and rendering are too tightly coupled to the main `App` run loop.
-7.  **Linear Font Fallback Scanning:** Startup performance can degrade linearly with the number of fallback fonts configured.
-8.  **Mouse Protocol Fragmentation:** Maintaining support for four different mouse reporting modes adds significant complexity to the input layer.
-9.  **Synchronous Renderer Shutdown:** The application occasionally hangs on exit if the GPU is busy, due to the synchronous `wait_idle` call.
-10. **Lua-Based Clipboard Bridge:** The dependency on Neovim's Lua environment for clipboard operations is a potential point of failure for minimal Neovim installs.
+1.  **"God Object" Tendency in `App`**: While `App` delegates well, `App.cpp` is still a very large (44KB) central hub that handles windowing, input routing, config, and rendering orchestration.
+2.  **Limited Ligature Lookahead**: The `GridRenderingPipeline` is currently limited to 2-cell ligature combinations, missing longer common sequences like `===` or `!==`.
+3.  **Zombie Library Structure**: `libs/draxul-app-support` is nearly empty (containing only a `CMakeLists.txt`), suggesting a refactoring that left a structural "ghost."
+4.  **Redundant Dirty Tracking**: The `Grid` class maintains both a `dirty_marks_` bitset and a `dirty_cells_` vector, which may introduce overhead or synchronization risks.
+5.  **Fixed-Size `CellText` Buffer**: The 32-byte limit in `CellText` for UTF-8 clusters might be insufficient for rare but valid long ZWJ emoji sequences or very complex ligatures.
+6.  **Manual Synchronization in Tests**: Several tests and the render-test state machine rely on "settle periods" or timeouts, which can lead to flakiness or slow CI runs.
+7.  **Switch-Based Dispatch Bloat**: Core event handlers like `UiEventHandler` use large switch statements that are starting to become "maintenance hotspots" as more events are added.
+8.  **Hardcoded Shader Layouts**: While shared headers help, the tight coupling between C++ vertex structures and GLSL/Metal shader inputs is a potential source of "silent" GPU crashes if mismatched.
+9.  **Wait-State Micro-Stutters**: The synchronous nature of `pump_once` with deadlines can lead to frame-time jitter if background tasks (like RPC processing) take longer than expected.
+10. **Inconsistent Error Propagation**: Many critical subsystems return boolean success/failure with a side-channel `last_error()` string, which is less robust than structured result types or exceptions.
+
+---
+
+## 3. Best 10 QoL Features to Add
+
+1.  **Multi-Cell Ligature Support**: Expand the rendering pipeline to support 3+ cell ligatures (e.g., `===`, `>>=`, `/***/`).
+2.  **Native Plugin/Scripting API**: Allow users to write small Lua or Python scripts to extend the GUI or automate pane layouts.
+3.  **Neovim Theme Sync**: Automatically extract Neovim's highlight table colors to skin the native Draxul UI elements (Palette, Toasts).
+4.  **Full GPU Scroll Buffer**: Move the entire terminal/grid scrollback into a GPU buffer to allow for perfectly smooth, non-CPU-bound scrolling.
+5.  **Integrated Find Overlay**: A native, high-performance "find in buffer" overlay that highlights matches across the entire grid using the GPU.
+6.  **Interactive Split Resizing**: Enhance the current split management to allow intuitive mouse-drag resizing of any pane boundary.
+7.  **GPU Resource Monitor**: Add a live graph of atlas occupancy, VRAM usage, and draw call counts to the diagnostics panel.
+8.  **Floating Window Composition**: Native rendering for Neovim floating windows that allows for true transparency and shadows independent of the main grid.
+9.  **Custom Effect Shaders**: Support for user-provided post-processing shaders (e.g., scanlines, bloom, or color grading).
+10. **Smart Search in Palette**: Enhance the Command Palette with MRU (Most Recently Used) sorting and command history.
+
+---
+
+## 4. Best 10 Tests to Add for Stability
+
+1.  **Ligature Edge-Case Corpus**: A specific suite for 2, 3, and 4-cell ligatures across line boundaries and highlight changes.
+2.  **VRAM/Atlas Pressure Stress**: A test that intentionally fills the glyph atlas to verify the "reset and retry" logic works without visual glitches.
+3.  **High-Frequency Input Flood**: Stress test the `InputDispatcher` with thousands of simulated events per second to find race conditions or bottlenecks.
+4.  **DPI Hot-Swap Stress**: Rapidly toggle the display scale in a loop to ensure all subsystems (Font, Renderer, Window) stay synchronized.
+5.  **Malformed Font Fuzzing**: Verify that the `TextService` handles corrupted or non-standard font files without crashing the process.
+6.  **Large-Volume RPC Backpressure**: Flood the RPC channel with massive redraw batches to verify that the UI remains responsive and memory stays bounded.
+7.  **Concurrent Host Lifecycle**: Rapidly open and close multiple split panes with different host types (Nvim, Shell, MegaCity) in parallel.
+8.  **PTY Allocation Failure Recovery**: Simulate OS-level PTY exhaustion to ensure shell hosts fail gracefully with a user-friendly error.
+9.  **Shader Cross-Compilation Verification**: A CI step that verifies all GLSL/Metal shaders compile against multiple versions of the SDKs.
+10. **Large Clipboard Stress**: Performance test for copying/pasting 10MB+ blocks of text to ensure no main-thread hangs.
+
+---
+
+## 5. Worst 10 Features (Current Weak Points)
+
+1.  **2-Cell Ligature Limit**: The most significant functional gap in the otherwise excellent text engine.
+2.  **ImGui-Only Diagnostics**: The diagnostics panel feels like a "developer debug" tool rather than a polished part of the app.
+3.  **Manual Window Activation Logic**: The complex state machine for window activation and "saw frame" tracking in `App` is prone to bugs.
+4.  **Redundant Dirty Vectors**: As noted, the dual-path dirty tracking in `Grid` is a potential optimization target.
+5.  **Fixed 32-byte `CellText`**: A hard limit that might eventually bite users of complex international text or emoji.
+6.  **PIMPL in `TextService`**: While standard, it complicates the inspection of font engine state during debugging.
+7.  **Synchronous `pump_once` Loop**: The core loop's reliance on a single-thread "pump" makes it susceptible to stalling from any heavy CPU task.
+8.  **Hardcoded Terminal Palette**: The terminal host's reliance on a fixed (though configurable) palette is less flexible than a full true-color implementation.
+9.  **MegaCity's Manual Asset Paths**: The dependency on specific folder structures for 3D assets makes the binary less portable.
+10. **Minimal Error Dialogs**: Most initialization errors are only visible if the app is launched from a console, leaving GUI-only users in the dark on failure.

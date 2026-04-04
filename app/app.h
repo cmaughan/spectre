@@ -77,7 +77,7 @@ public:
 
 private:
     bool initialize_text_service();
-    bool initialize_host();
+    bool initialize_chrome_host();
     void wire_window_callbacks();
     // Returns a TextServiceConfig populated from config_. Used by initialize_text_service() and
     // on_display_scale_changed() to avoid duplicating the field assignment at both call sites.
@@ -117,7 +117,6 @@ private:
     std::unique_ptr<IWindow> window_;
     RendererBundle renderer_;
     TextService text_service_;
-    HostManager host_manager_{ HostManager::Deps{} };
 
     GuiActionHandler gui_action_handler_{ GuiActionHandler::Deps{} };
     std::unique_ptr<DiagnosticsPanelHost> diagnostics_host_;
@@ -139,6 +138,7 @@ private:
     std::chrono::steady_clock::time_point last_activity_time_ = std::chrono::steady_clock::now();
     std::string last_render_test_error_;
     std::string last_init_error_;
+    std::unique_ptr<class ChromeHost> chrome_host_;
     DiagnosticsCollector diagnostics_collector_;
 };
 

@@ -32,6 +32,15 @@ class SplitTree
 public:
     static constexpr int kDividerWidth = 4;
 
+    struct DividerRect
+    {
+        int x = 0;
+        int y = 0;
+        int w = 0;
+        int h = 0;
+        SplitDirection direction = SplitDirection::Vertical;
+    };
+
     struct LeafHit
     {
         LeafId id;
@@ -69,7 +78,9 @@ public:
     LeafId next_leaf_after(LeafId id) const;
 
     // Recompute all PaneDescriptors from root dimensions.
+    // origin_x/origin_y offset all pane positions (e.g. to reserve space for a tab bar).
     void recompute(int pixel_w, int pixel_h);
+    void recompute(int origin_x, int origin_y, int pixel_w, int pixel_h);
 
     // Hit-test a point in physical pixels.
     HitResult hit_test(int px, int py) const;
@@ -96,6 +107,9 @@ public:
 
     int leaf_count() const;
 
+    // Visit all dividers in the tree. Only called when there are splits.
+    void for_each_divider(const std::function<void(const DividerRect&)>& fn) const;
+
 private:
     struct Node;
 
@@ -103,6 +117,8 @@ private:
     LeafId next_id_ = 0;
     DividerId next_divider_id_ = 0;
     LeafId focused_id_ = kInvalidLeaf;
+    int origin_x_ = 0;
+    int origin_y_ = 0;
     int total_w_ = 0;
     int total_h_ = 0;
 
