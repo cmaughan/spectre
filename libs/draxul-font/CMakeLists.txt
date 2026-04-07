@@ -1,0 +1,9 @@
+add_library(draxul-font
+    src/font_manager.cpp
+    src/font_resolver.cpp
+    src/glyph_cache.cpp
+    src/text_shaper.cpp
+    src/text_service.cpp
+)
+target_include_directories(draxul-font PUBLIC include)
+target_link_libraries(draxul-font PUBLIC draxul-types freetype harfbuzz)

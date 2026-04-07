@@ -1,0 +1,50 @@
+#pragma once
+
+#include <draxul/host_kind.h>
+#include <filesystem>
+#include <optional>
+#include <string>
+#include <vector>
+
+namespace draxul
+{
+
+struct ParsedArgs
+{
+    bool want_console = false;
+    bool smoke_test = false;
+    bool continuous_refresh = false;
+    bool no_vblank = false;
+    bool no_ui = false;
+#ifdef DRAXUL_ENABLE_RENDER_TESTS
+    bool bless_render_test = false;
+    bool show_render_test_window = false;
+    std::filesystem::path render_test_path;
+    std::filesystem::path export_render_test_path;
+#endif
+    std::optional<HostKind> host_kind;
+    std::string host_command;
+    std::filesystem::path host_source_path;
+    std::string log_file;
+    std::string log_level;
+    std::filesystem::path screenshot_path;
+    int screenshot_delay_ms = 6000;
+    int screenshot_width = 0;
+    int screenshot_height = 0;
+};
+
+struct ParseArgsResult
+{
+    ParsedArgs args;
+    // When set, parsing failed; the message is the error to display to the user.
+    // The caller is responsible for printing it and exiting non-zero.
+    std::optional<std::string> error;
+};
+
+// Parses CLI arguments. Numeric / format errors are returned via
+// `result.error` rather than calling std::exit, so the parser is testable
+// without spawning a subprocess. The first element of `args` (program name)
+// is ignored, mirroring argv[0].
+ParseArgsResult parse_args(const std::vector<std::string>& args);
+
+} // namespace draxul

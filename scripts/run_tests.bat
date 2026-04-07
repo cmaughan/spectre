@@ -1,0 +1,95 @@
+@echo off
+setlocal EnableDelayedExpansion
+
+set "MODE=debug"
+set "FORCE_RECONFIGURE=0"
+
+:parse_args
+if "%~1"=="" goto :args_done
+if /i "%~1"=="debug" (
+    set "MODE=debug"
+    shift
+    goto :parse_args
+)
+if /i "%~1"=="release" (
+    set "MODE=release"
+    shift
+    goto :parse_args
+)
+if /i "%~1"=="both" (
+    set "MODE=both"
+    shift
+    goto :parse_args
+)
+if /i "%~1"=="--reconfigure" (
+    set "FORCE_RECONFIGURE=1"
+    shift
+    goto :parse_args
+)
+echo Usage: %~nx0 [debug^|release^|both] [--reconfigure]
+exit /b 2
+
+:args_done
+
+for %%I in ("%~dp0.") do set "SCRIPT_DIR=%%~fI"
+if exist "%SCRIPT_DIR%\CMakePresets.json" (
+    set "ROOT=%SCRIPT_DIR%"
+) else (
+    for %%I in ("%SCRIPT_DIR%\..") do set "ROOT=%%~fI"
+)
+pushd "%ROOT%" >nul || exit /b 1
+
+if /i "%MODE%"=="release" goto :run_release_only
+if /i "%MODE%"=="both" goto :run_both
+
+call :run_config Debug || goto :fail
+goto :success
+
+:run_release_only
+call :run_config Release || goto :fail
+goto :success
+
+:run_both
+call :run_config Debug || goto :fail
+call :run_config Release || goto :fail
+goto :success
+
+:run_config
+set "CONFIG=%~1"
+set "PRESET=default"
+if /i "%CONFIG%"=="Release" set "PRESET=release"
+set "CACHE_FILE=build\CMakeCache.txt"
+echo.
+echo === %CONFIG% ===
+if "%FORCE_RECONFIGURE%"=="1" (
+    call :run cmake --preset %PRESET%
+    if errorlevel 1 exit /b !errorlevel!
+) else if not exist "%CACHE_FILE%" (
+    call :run cmake --preset %PRESET%
+    if errorlevel 1 exit /b !errorlevel!
+) else (
+    echo.
+    echo ^> using existing CMake cache: %CACHE_FILE%
+)
+call :run cmake --build build --config %CONFIG% --parallel
+if errorlevel 1 exit /b !errorlevel!
+call :run ctest --test-dir build --build-config %CONFIG% --verbose
+if errorlevel 1 exit /b !errorlevel!
+exit /b 0
+
+:run
+echo.
+echo ^> %*
+%*
+exit /b %errorlevel%
+
+:success
+echo.
+echo All requested tests passed.
+popd >nul
+exit /b 0
+
+:fail
+set "STATUS=%errorlevel%"
+popd >nul
+exit /b %STATUS%

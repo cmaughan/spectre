@@ -1,0 +1,11 @@
+ASCII baseline
+Combining: café naivë coöperate
+Emoji: 😀 👍🏽 👨‍👩‍👧‍👦 🚀 ✨
+Wide: こんにちは 世界 漢字かな交じり文
+Nerd Font: 󰒲 󰀘 󰌌 󰎈
+Mixed: λ Δ Σ → ← ⇧ ⌘
+Ligature baseline
+-> => == != <= >=
+lhs->rhs  lhs=>rhs  lhs<=rhs  lhs>=rhs
+alpha!=beta  total==2  next->node  opt=>value
+

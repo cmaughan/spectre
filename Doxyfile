@@ -1,0 +1,64 @@
+PROJECT_NAME           = Draxul
+PROJECT_BRIEF          = Cross-platform Neovim GUI frontend with native GPU rendering
+OUTPUT_LANGUAGE        = English
+MARKDOWN_SUPPORT       = YES
+AUTOLINK_SUPPORT       = YES
+TOC_INCLUDE_HEADINGS   = 3
+USE_MDFILE_AS_MAINPAGE = README.md
+
+INPUT                  = README.md \
+                         docs/module-map.md \
+                         docs/learnings.md \
+                         plans/work-items \
+                         app \
+                         libs
+FILE_PATTERNS          = *.h \
+                         *.hpp \
+                         *.md
+RECURSIVE              = YES
+EXCLUDE_PATTERNS       = */build/* \
+                         */build-tools/* \
+                         */tests/* \
+                         */docs/api/*
+
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_PRIV_VIRTUAL   = NO
+EXTRACT_STATIC         = NO
+EXTRACT_LOCAL_CLASSES  = NO
+HIDE_UNDOC_MEMBERS     = NO
+HIDE_UNDOC_CLASSES     = NO
+WARN_IF_UNDOCUMENTED   = NO
+WARN_IF_DOC_ERROR      = YES
+QUIET                  = YES
+JAVADOC_AUTOBRIEF      = YES
+MULTILINE_CPP_IS_BRIEF = YES
+
+SOURCE_BROWSER         = YES
+INLINE_SOURCES         = NO
+VERBATIM_HEADERS       = YES
+REFERENCES_RELATION    = YES
+REFERENCED_BY_RELATION = YES
+
+GENERATE_HTML          = YES
+HTML_DYNAMIC_MENUS     = YES
+GENERATE_TREEVIEW      = YES
+FULL_SIDEBAR           = NO
+HTML_COLORSTYLE        = LIGHT
+HTML_COLORSTYLE_HUE    = 210
+HTML_COLORSTYLE_SAT    = 28
+HTML_COLORSTYLE_GAMMA  = 95
+HTML_EXTRA_STYLESHEET  = docs/doxygen/custom.css
+
+GENERATE_LATEX         = NO
+GENERATE_XML           = NO
+
+HAVE_DOT               = NO
+CALL_GRAPH             = YES
+CALLER_GRAPH           = YES
+INCLUDE_GRAPH          = YES
+INCLUDED_BY_GRAPH      = YES
+DOT_IMAGE_FORMAT       = svg
+INTERACTIVE_SVG        = YES
+UML_LOOK               = YES
+DOT_UML_DETAILS        = NO

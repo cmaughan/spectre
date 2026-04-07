@@ -1,0 +1,90 @@
+name: Build
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    env:
+      VULKAN_SDK_VERSION: 1.3.283.0
+      BUILD_MODE: debug
+      BUILD_CONFIG: Debug
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Vulkan SDK
+        id: cache-vulkan
+        uses: actions/cache@v4
+        with:
+          path: C:\VulkanSDK
+          key: vulkan-sdk-${{ env.VULKAN_SDK_VERSION }}-windows
+
+      - name: Install Vulkan SDK
+        if: steps.cache-vulkan.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $url = "https://sdk.lunarg.com/sdk/download/${{ env.VULKAN_SDK_VERSION }}/windows/VulkanSDK-${{ env.VULKAN_SDK_VERSION }}-Installer.exe"
+          Invoke-WebRequest -Uri $url -OutFile VulkanSDK.exe
+          .\VulkanSDK.exe --root C:\VulkanSDK\${{ env.VULKAN_SDK_VERSION }} --accept-licenses --default-answer --confirm-command install
+
+      - name: Set Vulkan environment
+        shell: pwsh
+        run: |
+          echo "VULKAN_SDK=C:\VulkanSDK\${{ env.VULKAN_SDK_VERSION }}" >> $env:GITHUB_ENV
+          echo "C:\VulkanSDK\${{ env.VULKAN_SDK_VERSION }}\Bin" >> $env:GITHUB_PATH
+
+      - name: Install Neovim
+        shell: pwsh
+        run: choco install neovim -y
+
+      - name: Build and test
+        env:
+          DRAXUL_RUN_SLOW_TESTS: "1"
+        run: cmd /c scripts\run_tests.bat %BUILD_MODE%
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: draxul-windows-${{ env.BUILD_MODE }}
+          path: |
+            build/${{ env.BUILD_CONFIG }}/draxul.exe
+            build/${{ env.BUILD_CONFIG }}/draxul.pdb
+            build/${{ env.BUILD_CONFIG }}/shaders/
+            build/${{ env.BUILD_CONFIG }}/fonts/
+          if-no-files-found: error
+
+      - name: Upload render test outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: render-test-out-windows
+          path: tests/render/out/
+          if-no-files-found: ignore
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Neovim
+        run: brew install neovim
+
+      - name: Build and test
+        env:
+          DRAXUL_RUN_SLOW_TESTS: "1"
+        run: bash scripts/run_tests.sh
+
+      - name: Upload render test outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: render-test-out-macos
+          path: tests/render/out/
+          if-no-files-found: ignore
