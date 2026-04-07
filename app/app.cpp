@@ -507,6 +507,7 @@ bool App::initialize_chrome_host()
 {
     PERF_MEASURE();
     host_owner_lifetime_ = std::make_shared<int>(0);
+    refresh_system_resource_snapshot(std::chrono::steady_clock::now());
 
     ChromeHost::Deps chrome_deps;
     chrome_deps.options = &options_;
@@ -523,6 +524,7 @@ bool App::initialize_chrome_host()
     };
     chrome_deps.workspaces = &workspaces_;
     chrome_deps.active_workspace_id = &active_workspace_;
+    chrome_deps.system_resource_snapshot = &system_resource_snapshot_;
     chrome_host_ = std::make_unique<ChromeHost>(std::move(chrome_deps));
 
     {
@@ -542,6 +544,12 @@ bool App::initialize_chrome_host()
 
     if (!create_initial_workspace(window_->width_pixels(), diagnostics_host_->layout().terminal_height))
         return false;
+
+    {
+        const int tab_y = chrome_host_->tab_bar_height();
+        active_host_manager().recompute_viewports(
+            0, tab_y, window_->width_pixels(), diagnostics_host_->layout().terminal_height - tab_y);
+    }
 
     const float font_size = imgui_font_size_from_metrics(text_service_.metrics());
     active_host_manager().host()->set_imgui_font(text_service_.primary_font_path(), font_size);
@@ -1172,6 +1180,7 @@ bool App::pump_once(std::optional<std::chrono::steady_clock::time_point> wait_de
         // Pump all visible hosts via tree walk.
         rebuild_render_tree();
         walk_pump(render_root_);
+        refresh_system_resource_snapshot(std::chrono::steady_clock::now());
 
         // Re-check after pumping (hosts can die during pump).
         if (!close_dead_panes())
@@ -1201,6 +1210,15 @@ bool App::pump_once(std::optional<std::chrono::steady_clock::time_point> wait_de
     }
 
     return false;
+}
+
+void App::refresh_system_resource_snapshot(std::chrono::steady_clock::time_point now)
+{
+    if (!system_resource_monitor_.refresh(now))
+        return;
+
+    system_resource_snapshot_ = system_resource_monitor_.snapshot();
+    request_frame();
 }
 
 void App::on_resize(int pixel_w, int pixel_h)

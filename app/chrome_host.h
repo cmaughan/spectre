@@ -7,6 +7,7 @@
 #include <draxul/host_kind.h>
 #include <draxul/nanovg_pass.h>
 #include <draxul/renderer.h>
+#include <draxul/system_resource_monitor.h>
 #include <optional>
 #include <span>
 #include <unordered_map>
@@ -40,6 +41,7 @@ public:
         // Read-only workspace info for tab bar / divider rendering (owned by App).
         const std::vector<std::unique_ptr<Workspace>>* workspaces = nullptr;
         const int* active_workspace_id = nullptr;
+        const SystemResourceSnapshot* system_resource_snapshot = nullptr;
     };
 
     explicit ChromeHost(Deps deps);
@@ -79,7 +81,7 @@ public:
         return { "chrome" };
     }
 
-    // Tab bar height in pixels. Returns 0 when there is only one workspace.
+    // Tab bar height in pixels. Remains visible even with a single workspace.
     int tab_bar_height() const;
 
     // Hit-test a point (physical pixels) against the tab bar.
@@ -99,6 +101,21 @@ public:
         std::string label;
     };
 
+    struct LabelCluster
+    {
+        std::string text;
+        int width = 1;
+        Color fg{};
+    };
+
+    struct ResourcePillLayout
+    {
+        int col_begin = 0;
+        int col_end = 0;
+        int text_col = 0;
+        std::vector<LabelCluster> clusters;
+    };
+
 private:
     struct PaneStatusEntry
     {
@@ -106,12 +123,13 @@ private:
         int pane_y = 0;
         int pane_w = 0;
         int pane_h = 0;
-        std::string text;
+        int index = 0; // 1-based pane number for the "N: " label prefix
+        std::string text; // raw status text from host (no number prefix)
         bool focused = false;
         LeafId leaf = kInvalidLeaf;
     };
 
-    void update_tab_grid(std::span<const TabLayout> tabs);
+    void update_tab_grid(std::span<const TabLayout> tabs, const ResourcePillLayout* resource_pill);
     void update_pane_status_grids(IFrameContext& frame, std::span<const PaneStatusEntry> entries);
     void flush_atlas_if_dirty();
 

@@ -114,6 +114,7 @@ A standalone GUI library for rendering UI items that do not depend on ImGui. It 
 ## Workspace Tabs
 
 - Multiple workspaces, each with its own independent split tree and host set
+- The top tab bar remains visible even with a single workspace and shows a right-aligned system usage pill with live CPU and memory percentages
 - `new_tab` (`Ctrl+S, C`): Create a new workspace tab
 - `close_tab` (`Ctrl+S, &`): Close the active workspace tab (disabled when only one tab remains)
 - `next_tab` (`Ctrl+S, N`): Cycle to the next workspace

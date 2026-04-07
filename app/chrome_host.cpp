@@ -4,11 +4,14 @@
 #include "workspace.h"
 
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <draxul/app_config.h>
 #include <draxul/log.h>
 #include <draxul/text_service.h>
+#include <draxul/unicode.h>
 #include <nanovg.h>
+#include <string_view>
 #include <unordered_set>
 
 namespace draxul
@@ -62,8 +65,6 @@ const SplitTree& ChromeHost::active_tree() const
 
 int ChromeHost::tab_bar_height() const
 {
-    if (!deps_.workspaces || deps_.workspaces->size() <= 1)
-        return 0;
     if (!deps_.grid_renderer)
         return 0;
     const auto [cw, ch] = deps_.grid_renderer->cell_size_pixels();
@@ -82,24 +83,120 @@ constexpr Color kActiveTabBg{ 0.796f, 0.651f, 0.969f, 1.0f }; // #cba6f7 Mauve
 constexpr Color kInactiveTabBg{ 0.271f, 0.278f, 0.353f, 1.0f }; // #45475a Surface1
 constexpr Color kActiveTabFg{ 0.118f, 0.118f, 0.180f, 1.0f }; // #1e1e2e Base (dark on bright)
 constexpr Color kInactiveTabFg{ 0.651f, 0.678f, 0.780f, 1.0f }; // #a6adc8 Subtext0
+constexpr Color kResourcePillBg{ 0.976f, 0.886f, 0.686f, 1.0f }; // #f9e2af Yellow
+constexpr Color kResourcePillFg{ 0.118f, 0.118f, 0.180f, 1.0f }; // #1e1e2e Base
+constexpr Color kResourcePillLabelFg{ 0.118f, 0.118f, 0.180f, 0.68f }; // muted label tint
+constexpr Color kResourcePillWarnBg{ 0.973f, 0.761f, 0.510f, 1.0f }; // orange
+constexpr Color kResourcePillHotBg{ 0.957f, 0.337f, 0.337f, 1.0f }; // red
 
-// Pane status bar (WI 78)
-constexpr Color kStatusBarBgFocused{ 0.180f, 0.184f, 0.247f, 0.85f }; // #2d2f3f darker overlay
-constexpr Color kStatusBarBgUnfocused{ 0.118f, 0.118f, 0.180f, 0.75f }; // #1e1e2e Base
-constexpr Color kStatusBarFgFocused{ 0.918f, 0.929f, 0.984f, 1.0f }; // #eaeafc near-white
-constexpr Color kStatusBarFgUnfocused{ 0.498f, 0.518f, 0.620f, 1.0f }; // #7f849e Overlay1
 constexpr int kTabPadCols = 1; // padding cells on each side of tab label
+// Pane status pill margin from the right edge of the pane (in cells).
+constexpr int kPaneStatusRightMarginCols = 1;
+
+// Pane status accent: Catppuccin-tinted green, same brightness/alpha as the
+// burgundy used for active workspace tabs so the two pill kinds visually rhyme
+// without being confusable.
+constexpr unsigned char kPaneAccentR = 60;
+constexpr unsigned char kPaneAccentG = 165;
+constexpr unsigned char kPaneAccentB = 95;
+constexpr unsigned char kPaneAccentA = 220;
+constexpr unsigned char kPaneDimR = 80;
+constexpr unsigned char kPaneDimG = 110;
+constexpr unsigned char kPaneDimB = 90;
+constexpr unsigned char kPaneDimA = 200;
 constexpr int kGridPadding = 4; // renderer internal cell padding
 
 std::string tab_label(size_t index, const std::string& name)
 {
     return std::to_string(index + 1) + ": " + name;
 }
+
+std::vector<std::string> split_display_clusters(std::string_view text)
+{
+    std::vector<std::string> clusters;
+    size_t offset = 0;
+    while (offset < text.size())
+    {
+        const size_t cluster_begin = offset;
+        uint32_t cp = 0;
+        if (!utf8_decode_next(text, offset, cp))
+            break;
+
+        bool previous_was_zwj = (cp == 0x200D);
+        while (offset < text.size())
+        {
+            size_t next = offset;
+            uint32_t next_cp = 0;
+            if (!utf8_decode_next(text, next, next_cp))
+                break;
+
+            const bool joins_cluster = previous_was_zwj || next_cp == 0x200D || is_width_ignorable(next_cp)
+                || is_emoji_modifier(next_cp);
+            if (!joins_cluster)
+                break;
+
+            previous_was_zwj = (next_cp == 0x200D);
+            offset = next;
+        }
+
+        clusters.emplace_back(text.substr(cluster_begin, offset - cluster_begin));
+    }
+    return clusters;
+}
+
+void append_label_clusters(std::vector<ChromeHost::LabelCluster>& out, std::string_view text, const Color& fg)
+{
+    for (const auto& cluster_text : split_display_clusters(text))
+    {
+        ChromeHost::LabelCluster cluster;
+        cluster.text = cluster_text;
+        cluster.width = std::max(1, cluster_cell_width(cluster_text));
+        cluster.fg = fg;
+        out.push_back(std::move(cluster));
+    }
+}
+
+int label_cluster_columns(std::span<const ChromeHost::LabelCluster> clusters)
+{
+    int total = 0;
+    for (const auto& cluster : clusters)
+        total += std::max(1, cluster.width);
+    return total;
+}
+
+std::string format_resource_percent_value(int percent)
+{
+    char buffer[16];
+    if (percent < 0)
+        std::snprintf(buffer, sizeof(buffer), "--%%");
+    else
+        std::snprintf(buffer, sizeof(buffer), "%3d%%", percent);
+    return std::string(buffer);
+}
+
+Color resource_pill_background_color(const SystemResourceSnapshot& snapshot)
+{
+    if (snapshot.cpu_percent >= 100)
+        return kResourcePillHotBg;
+    if (snapshot.cpu_percent >= 90 || snapshot.memory_percent >= 90)
+        return kResourcePillWarnBg;
+    return kResourcePillBg;
+}
+
+void append_resource_metric(std::vector<ChromeHost::LabelCluster>& out, const char* label, int percent,
+    bool append_separator)
+{
+    append_label_clusters(out, label, kResourcePillLabelFg);
+    append_label_clusters(out, " ", kResourcePillLabelFg);
+    append_label_clusters(out, format_resource_percent_value(percent), kResourcePillFg);
+    if (append_separator)
+        append_label_clusters(out, "  ", kResourcePillFg);
+}
 } // namespace
 
 int ChromeHost::hit_test_tab(int px, int py) const
 {
-    if (!deps_.workspaces || deps_.workspaces->size() <= 1 || !deps_.grid_renderer)
+    if (!deps_.workspaces || deps_.workspaces->empty() || !deps_.grid_renderer)
         return 0;
     const auto& workspaces = *deps_.workspaces;
     const auto [cw, ch] = deps_.grid_renderer->cell_size_pixels();
@@ -128,7 +225,9 @@ void ChromeHost::draw(IFrameContext& frame)
     static const std::vector<std::unique_ptr<Workspace>> kEmpty;
     const auto& workspaces = deps_.workspaces ? *deps_.workspaces : kEmpty;
     const int active_ws_id = deps_.active_workspace_id ? *deps_.active_workspace_id : -1;
-    const bool show_tabs = workspaces.size() > 1;
+    const bool show_tabs = !workspaces.empty();
+    const bool show_resource_pill = deps_.system_resource_snapshot && deps_.system_resource_snapshot->available();
+    const bool show_top_bar = deps_.grid_renderer && (show_tabs || show_resource_pill);
     const bool show_dividers = active_tree().leaf_count() >= 2;
     const bool show_status = deps_.config && deps_.config->show_pane_status;
 
@@ -156,6 +255,7 @@ void ChromeHost::draw(IFrameContext& frame)
             {
                 const SplitTree& tree = active_hm->tree();
                 const LeafId focused_leaf = tree.focused();
+                int next_index = 1;
                 tree.for_each_leaf([&](LeafId id, const PaneDescriptor& desc) {
                     IHost* h = active_hm->host_for(id);
                     if (!h || desc.pixel_size.x <= 0 || desc.pixel_size.y <= ch)
@@ -165,6 +265,7 @@ void ChromeHost::draw(IFrameContext& frame)
                     e.pane_y = desc.pixel_pos.y;
                     e.pane_w = desc.pixel_size.x;
                     e.pane_h = desc.pixel_size.y;
+                    e.index = next_index++;
                     e.text = h->status_text();
                     e.focused = (id == focused_leaf);
                     e.leaf = id;
@@ -174,19 +275,20 @@ void ChromeHost::draw(IFrameContext& frame)
         }
     }
 
-    if (!show_tabs && !show_dividers && status_entries.empty())
+    if (!show_top_bar && !show_dividers && status_entries.empty())
         return;
 
     // --- Shared tab layout (used by both NanoVG and grid) ---
     // Grid cells are positioned at: pixel_x = col * cw + padding.
     // We compute tab spans in column space, then derive NanoVG pill pixel coords.
     std::vector<TabLayout> tabs;
+    std::optional<ResourcePillLayout> resource_pill;
     int bar_w = viewport_.pixel_size.x;
     int bar_h = 0;
     int cw_shared = 0;
     int ch_shared = 0;
 
-    if (show_tabs && deps_.grid_renderer)
+    if (show_top_bar)
     {
         const auto [cw, ch] = deps_.grid_renderer->cell_size_pixels();
         cw_shared = cw;
@@ -194,13 +296,30 @@ void ChromeHost::draw(IFrameContext& frame)
         if (cw > 0 && ch > 0)
         {
             bar_h = tab_bar_height();
+            const int grid_cols = std::max(0, bar_w / cw);
+            if (show_resource_pill && grid_cols > 0)
+            {
+                ResourcePillLayout layout;
+                append_resource_metric(layout.clusters, "CPU", deps_.system_resource_snapshot->cpu_percent, true);
+                append_resource_metric(layout.clusters, "RAM", deps_.system_resource_snapshot->memory_percent, false);
+
+                const int total_cols = label_cluster_columns(layout.clusters) + kTabPadCols * 2;
+                layout.col_end = grid_cols;
+                layout.col_begin = std::max(0, grid_cols - total_cols);
+                layout.text_col = layout.col_begin + kTabPadCols;
+                resource_pill = std::move(layout);
+            }
+
             int col_cursor = 0; // start at column 0
+            const int tabs_end_col = resource_pill ? std::max(0, resource_pill->col_begin - 1) : grid_cols;
             for (size_t wi = 0; wi < workspaces.size(); ++wi)
             {
                 const auto& ws = workspaces[wi];
                 const std::string label = tab_label(wi, ws->name);
                 const int label_cols = static_cast<int>(label.size());
                 const int total_cols = label_cols + kTabPadCols * 2;
+                if (tabs_end_col > 0 && col_cursor + total_cols > tabs_end_col)
+                    break;
 
                 TabLayout tl;
                 tl.col_begin = col_cursor;
@@ -244,6 +363,25 @@ void ChromeHost::draw(IFrameContext& frame)
         }
     }
 
+    struct ResourcePillRect
+    {
+        float x = 0.0f;
+        float y = 0.0f;
+        float w = 0.0f;
+        float h = 0.0f;
+        Color bg = kResourcePillBg;
+    };
+    std::optional<ResourcePillRect> resource_pill_rect;
+    if (resource_pill && cw_shared > 0 && ch_shared > 0)
+    {
+        const int total_cols = std::max(1, resource_pill->col_end - resource_pill->col_begin);
+        const float pill_h = static_cast<float>(ch_shared) - 4.0f;
+        const float pill_y = 2.0f;
+        const float pill_x = std::max(0.0f, static_cast<float>(bar_w - total_cols * cw_shared));
+        resource_pill_rect = ResourcePillRect{ pill_x, pill_y, static_cast<float>(bar_w) - pill_x, pill_h,
+            resource_pill_background_color(*deps_.system_resource_snapshot) };
+    }
+
     // Divider geometry.
     struct Divider
     {
@@ -281,25 +419,59 @@ void ChromeHost::draw(IFrameContext& frame)
         }
     }
 
-    // Status bar background rects (one per pane).
-    struct StatusBgRect
+    // Pane status pills: one rounded rect per pane, right-aligned in the
+    // reserved bottom strip and styled to match the workspace tab pills.
+    struct StatusPillRect
     {
         float x, y, w, h;
+        float accent_w; // burgundy "number" portion (only drawn when focused)
         bool focused;
     };
-    std::vector<StatusBgRect> status_bg_rects;
-    if (status_strip_h > 0)
+    std::vector<StatusPillRect> status_pill_rects;
+    if (status_strip_h > 0 && deps_.grid_renderer)
     {
-        status_bg_rects.reserve(status_entries.size());
-        for (const auto& e : status_entries)
+        const auto [cw, ch] = deps_.grid_renderer->cell_size_pixels();
+        if (cw > 0 && ch > 0)
         {
-            StatusBgRect r;
-            r.x = static_cast<float>(e.pane_x);
-            r.y = static_cast<float>(e.pane_y + e.pane_h - status_strip_h);
-            r.w = static_cast<float>(e.pane_w);
-            r.h = static_cast<float>(status_strip_h);
-            r.focused = e.focused;
-            status_bg_rects.push_back(r);
+            status_pill_rects.reserve(status_entries.size());
+            for (const auto& e : status_entries)
+            {
+                // Label = "<index>: <text>" — same prefix scheme as tabs.
+                const std::string num_str = std::to_string(e.index);
+                const int label_cols = static_cast<int>(num_str.size()) + 2 // "N:"
+                    + 1 // space after colon
+                    + static_cast<int>(e.text.size());
+                const int total_cols = label_cols + kTabPadCols * 2;
+
+                // Right-align: pill ends one cell from the pane's right edge.
+                // Mirror the workspace tab pill math: pill is inset by half_gap
+                // on each side of the column span so the visual padding around
+                // the text is symmetric (~0.75 cell on each side).
+                const float half_gap = static_cast<float>(cw) * 0.25f;
+                const float pill_w = static_cast<float>(total_cols * cw) - half_gap * 2.0f;
+                const float pill_h = static_cast<float>(ch) - 4.0f; // 2px margin top/bottom
+                const float right_edge = static_cast<float>(e.pane_x + e.pane_w
+                    - kPaneStatusRightMarginCols * cw);
+                const float pill_x = right_edge - pill_w;
+                const float strip_top = static_cast<float>(e.pane_y + e.pane_h - status_strip_h);
+                const float pill_y = strip_top + 2.0f;
+
+                // Accent covers left padding + number digits + ":". Match the
+                // workspace-tab math exactly: no half_gap inset, so the colon's
+                // right edge sits ~0.25 cells inside the accent's right edge
+                // (otherwise the ":" jams up against the green-to-grey seam).
+                const int accent_cols = kTabPadCols + static_cast<int>(num_str.size()) + 1;
+                const float accent_w = static_cast<float>(accent_cols * cw);
+
+                StatusPillRect r;
+                r.x = pill_x;
+                r.y = pill_y;
+                r.w = pill_w;
+                r.h = pill_h;
+                r.accent_w = accent_w;
+                r.focused = e.focused;
+                status_pill_rects.push_back(r);
+            }
         }
     }
 
@@ -307,60 +479,87 @@ void ChromeHost::draw(IFrameContext& frame)
     const float focus_border = deps_.config ? deps_.config->focus_border_width : 3.0f;
     nanovg_pass_->set_draw_callback(
         [tab_rects = std::move(tab_rects), bar_w, bar_h,
+            resource_pill_rect,
             dividers = std::move(dividers), focus_rect, focus_border,
-            status_bg_rects = std::move(status_bg_rects)](NVGcontext* vg, int /*w*/, int /*h*/) {
-            // --- Pane status bar backgrounds (drawn first so dividers/focus go on top) ---
-            for (const auto& s : status_bg_rects)
+            status_pill_rects = std::move(status_pill_rects)](NVGcontext* vg, int /*w*/, int /*h*/) {
+            // --- Pane status pills (drawn first so dividers/focus border go on top) ---
+            for (const auto& s : status_pill_rects)
             {
-                const Color& bg = s.focused ? kStatusBarBgFocused : kStatusBarBgUnfocused;
+                const float radius = s.h * 0.5f; // pill shape
+
+                // Pill body — same inactive grey background as workspace tabs.
                 nvgBeginPath(vg);
-                nvgRect(vg, s.x, s.y, s.w, s.h);
-                nvgFillColor(vg, nvgRGBAf(bg.r, bg.g, bg.b, bg.a));
+                nvgRoundedRect(vg, s.x, s.y, s.w, s.h, radius);
+                nvgFillColor(vg, nvgRGBAf(kInactiveTabBg.r, kInactiveTabBg.g, kInactiveTabBg.b, kInactiveTabBg.a));
                 nvgFill(vg);
+
+                // Number-prefix accent — bright green when focused, dimmed
+                // green-grey otherwise. Distinguishes pane pills from the
+                // burgundy-accented workspace tab pills.
+                nvgSave(vg);
+                nvgIntersectScissor(vg, s.x, s.y, s.w, s.h);
+                nvgBeginPath(vg);
+                nvgRoundedRect(vg, s.x, s.y, s.accent_w, s.h, radius);
+                if (s.focused)
+                    nvgFillColor(vg, nvgRGBA(kPaneAccentR, kPaneAccentG, kPaneAccentB, kPaneAccentA));
+                else
+                    nvgFillColor(vg, nvgRGBA(kPaneDimR, kPaneDimG, kPaneDimB, kPaneDimA));
+                nvgFill(vg);
+                nvgRestore(vg);
             }
 
             // --- Tab bar ---
-            if (!tab_rects.empty())
+            if (bar_h > 0)
             {
                 // Bar background
                 nvgBeginPath(vg);
                 nvgRect(vg, 0, 0, static_cast<float>(bar_w), static_cast<float>(bar_h));
                 nvgFillColor(vg, nvgRGBAf(kTabBarBg.r, kTabBarBg.g, kTabBarBg.b, kTabBarBg.a));
                 nvgFill(vg);
+            }
 
-                for (const auto& tab : tab_rects)
+            for (const auto& tab : tab_rects)
+            {
+                const float radius = tab.h * 0.5f; // pill shape
+
+                // Full pill body — inactive bg for all tabs.
+                nvgBeginPath(vg);
+                nvgRoundedRect(vg, tab.x, tab.y, tab.w, tab.h, radius);
+                nvgFillColor(vg, nvgRGBAf(kInactiveTabBg.r, kInactiveTabBg.g, kInactiveTabBg.b, kInactiveTabBg.a));
+                nvgFill(vg);
+
+                if (tab.active)
                 {
-                    const float radius = tab.h * 0.5f; // pill shape
-
-                    // Full pill body — inactive bg for all tabs.
+                    // Active tab: bright red accent on the number portion (left side).
+                    nvgSave(vg);
+                    nvgIntersectScissor(vg, tab.x, tab.y, tab.w, tab.h);
                     nvgBeginPath(vg);
-                    nvgRoundedRect(vg, tab.x, tab.y, tab.w, tab.h, radius);
-                    nvgFillColor(vg, nvgRGBAf(kInactiveTabBg.r, kInactiveTabBg.g, kInactiveTabBg.b, kInactiveTabBg.a));
+                    nvgRoundedRect(vg, tab.x, tab.y, tab.accent_w, tab.h, radius);
+                    nvgFillColor(vg, nvgRGBA(185, 60, 60, 220));
                     nvgFill(vg);
-
-                    if (tab.active)
-                    {
-                        // Active tab: bright red accent on the number portion (left side).
-                        nvgSave(vg);
-                        nvgIntersectScissor(vg, tab.x, tab.y, tab.w, tab.h);
-                        nvgBeginPath(vg);
-                        nvgRoundedRect(vg, tab.x, tab.y, tab.accent_w, tab.h, radius);
-                        nvgFillColor(vg, nvgRGBA(185, 60, 60, 220));
-                        nvgFill(vg);
-                        nvgRestore(vg);
-                    }
-                    else
-                    {
-                        // Inactive tab: dimmed accent on the number portion only.
-                        nvgSave(vg);
-                        nvgIntersectScissor(vg, tab.x, tab.y, tab.w, tab.h);
-                        nvgBeginPath(vg);
-                        nvgRoundedRect(vg, tab.x, tab.y, tab.accent_w, tab.h, radius);
-                        nvgFillColor(vg, nvgRGBA(110, 115, 140, 200));
-                        nvgFill(vg);
-                        nvgRestore(vg);
-                    }
+                    nvgRestore(vg);
                 }
+                else
+                {
+                    // Inactive tab: dimmed accent on the number portion only.
+                    nvgSave(vg);
+                    nvgIntersectScissor(vg, tab.x, tab.y, tab.w, tab.h);
+                    nvgBeginPath(vg);
+                    nvgRoundedRect(vg, tab.x, tab.y, tab.accent_w, tab.h, radius);
+                    nvgFillColor(vg, nvgRGBA(110, 115, 140, 200));
+                    nvgFill(vg);
+                    nvgRestore(vg);
+                }
+            }
+
+            if (resource_pill_rect)
+            {
+                const float radius = resource_pill_rect->h * 0.5f;
+                nvgBeginPath(vg);
+                nvgRoundedRectVarying(vg, resource_pill_rect->x, resource_pill_rect->y,
+                    resource_pill_rect->w, resource_pill_rect->h, radius, 0.0f, 0.0f, radius);
+                nvgFillColor(vg, nvgRGBAf(resource_pill_rect->bg.r, resource_pill_rect->bg.g, resource_pill_rect->bg.b, resource_pill_rect->bg.a));
+                nvgFill(vg);
             }
 
             // --- Divider lines ---
@@ -429,10 +628,10 @@ void ChromeHost::draw(IFrameContext& frame)
     vp.height = viewport_.pixel_size.y;
     frame.record_render_pass(*nanovg_pass_, vp);
 
-    // Grid handle draws tab label text on top of NanoVG shapes.
-    if (show_tabs && !tabs.empty())
+    // Grid handle draws top-bar label text on top of NanoVG shapes.
+    if (bar_h > 0 && (!tabs.empty() || resource_pill))
     {
-        update_tab_grid(tabs);
+        update_tab_grid(tabs, resource_pill ? &*resource_pill : nullptr);
         if (tab_handle_)
             frame.draw_grid_handle(*tab_handle_);
     }
@@ -471,13 +670,53 @@ void ChromeHost::update_pane_status_grids(IFrameContext& frame, std::span<const 
     if (entries.empty())
         return;
 
-    constexpr int kStatusPadCols = 1;
+    // Match the workspace tab text colors:
+    //   - light fg on the burgundy "number" accent
+    //   - kInactiveTabFg on the rest of the label
+    constexpr Color kAccentFg{ 0.85f, 0.85f, 0.90f, 1.0f }; // light text on burgundy
 
     for (const auto& e : entries)
     {
+        // Build the same "N: <text>" label the pill geometry was sized for.
+        const std::string num_str = std::to_string(e.index);
+        std::string label = num_str + ": " + e.text;
+
+        const int label_cols = static_cast<int>(label.size());
+        const int total_cols = label_cols + kTabPadCols * 2;
+        // Cap pill width to the pane width so a long label cannot escape.
+        const int max_cols = std::max(1, e.pane_w / cw - kPaneStatusRightMarginCols);
+        const int pill_cols = std::min(total_cols, max_cols);
+
+        // If the label was clamped, truncate the visible text portion (keep the
+        // "N: " prefix intact) and append an ellipsis.
+        const int prefix_cols = static_cast<int>(num_str.size()) + 2; // "N: "
+        const int usable_label_cols = std::max(0, pill_cols - kTabPadCols * 2);
+        if (label_cols > usable_label_cols)
+        {
+            const int text_room = std::max(0, usable_label_cols - prefix_cols);
+            std::string truncated = num_str + ": ";
+            if (text_room >= 1 && !e.text.empty())
+            {
+                if (static_cast<int>(e.text.size()) > text_room)
+                {
+                    truncated += e.text.substr(0, static_cast<size_t>(text_room - 1));
+                    truncated += "…";
+                }
+                else
+                {
+                    truncated += e.text;
+                }
+            }
+            label = std::move(truncated);
+        }
+
+        // Pill placement (must mirror the StatusPillRect math in draw()):
+        // total column span minus the half_gap inset on each side.
+        const int half_gap = cw / 4;
+        const int pill_w_px = pill_cols * cw - half_gap * 2;
         const int strip_y = e.pane_y + e.pane_h - ch;
-        const int strip_w = e.pane_w;
-        const int grid_cols = std::max(1, strip_w / cw);
+        const int right_edge = e.pane_x + e.pane_w - kPaneStatusRightMarginCols * cw;
+        const int pill_x_px = right_edge - pill_w_px;
 
         auto& handle = pane_status_handles_[e.leaf];
         if (!handle)
@@ -493,24 +732,23 @@ void ChromeHost::update_pane_status_grids(IFrameContext& frame, std::span<const 
             handle->set_cursor_visible(false);
         }
 
-        // Viewport: a strip aligned exactly with the reserved status row.
-        // Use kGridPadding-style offset trick from update_tab_grid: shift the
-        // grid rect upward by the renderer's internal cell padding so the
-        // single grid row centers vertically inside the strip.
+        // Viewport: shift the grid up by the renderer's internal padding so the
+        // single row centers vertically (same trick as update_tab_grid), AND
+        // shift it LEFT by (padding + half_gap) so column 1 (the digit) lands
+        // ~0.75 cells inside the pill — matching how update_tab_grid positions
+        // the digit inside its tab pills.
         const int padding = deps_.grid_renderer->padding();
         PaneDescriptor desc;
-        desc.pixel_pos = { e.pane_x, strip_y - padding };
-        desc.pixel_size = { strip_w, ch + padding };
+        desc.pixel_pos = { pill_x_px - padding - half_gap, strip_y - padding };
+        desc.pixel_size = { pill_w_px + padding * 2, ch + padding };
         handle->set_viewport(desc);
-        handle->set_grid_size(grid_cols, 1);
+        handle->set_grid_size(pill_cols, 1);
 
-        // Build cell list. Background and foreground come from focused state.
-        const Color& fg = e.focused ? kStatusBarFgFocused : kStatusBarFgUnfocused;
+        // Cells start fully transparent — the NanoVG pill provides the bg.
         const Color transparent{ 0.0f, 0.0f, 0.0f, 0.0f };
-
         std::vector<CellUpdate> cells;
-        cells.reserve(static_cast<size_t>(grid_cols));
-        for (int c = 0; c < grid_cols; ++c)
+        cells.reserve(static_cast<size_t>(pill_cols));
+        for (int c = 0; c < pill_cols; ++c)
         {
             CellUpdate cell{};
             cell.col = c;
@@ -520,32 +758,22 @@ void ChromeHost::update_pane_status_grids(IFrameContext& frame, std::span<const 
             cells.push_back(cell);
         }
 
-        // Truncate the status text so it fits within (grid_cols - 2 * pad) columns.
-        const int usable_cols = std::max(0, grid_cols - kStatusPadCols * 2);
-        std::string text = e.text;
-        if (static_cast<int>(text.size()) > usable_cols)
+        // Number prefix length: digits + ":" (the trailing space is name territory),
+        // matching update_tab_grid's accent rule.
+        const int num_prefix_len = static_cast<int>(num_str.size()) + 1; // digits + ":"
+        for (int ci = 0; ci < static_cast<int>(label.size()); ++ci)
         {
-            if (usable_cols >= 1)
-            {
-                text = text.substr(0, static_cast<size_t>(usable_cols - 1));
-                text += "…";
-            }
-            else
-            {
-                text.clear();
-            }
-        }
-
-        for (int ci = 0; ci < static_cast<int>(text.size()); ++ci)
-        {
-            const int col = kStatusPadCols + ci;
-            if (col < 0 || col >= grid_cols)
+            const int col = kTabPadCols + ci;
+            if (col < 0 || col >= pill_cols)
                 continue;
-            const std::string cluster(1, text[static_cast<size_t>(ci)]);
+            const Color& fg = (ci < num_prefix_len) ? kAccentFg : kInactiveTabFg;
+            const std::string cluster(1, label[static_cast<size_t>(ci)]);
             AtlasRegion glyph = deps_.text_service->resolve_cluster(cluster);
             auto& cell = cells[static_cast<size_t>(col)];
             cell.fg = fg;
             cell.glyph = glyph;
+            if (glyph.is_color)
+                cell.style_flags |= STYLE_FLAG_COLOR_GLYPH;
         }
 
         handle->update_cells(cells);
@@ -561,7 +789,7 @@ void ChromeHost::update_pane_status_grids(IFrameContext& frame, std::span<const 
     }
 }
 
-void ChromeHost::update_tab_grid(std::span<const TabLayout> tabs)
+void ChromeHost::update_tab_grid(std::span<const TabLayout> tabs, const ResourcePillLayout* resource_pill)
 {
     if (!deps_.grid_renderer || !deps_.text_service)
         return;
@@ -618,24 +846,53 @@ void ChromeHost::update_tab_grid(std::span<const TabLayout> tabs)
     for (size_t ti = 0; ti < tabs.size(); ++ti)
     {
         const auto& tl = tabs[ti];
-        // Number prefix length: digits of (index+1) + ":" (the space after is name territory).
-        const int num_prefix_len = static_cast<int>(std::to_string(ti + 1).size()) + 1; // digits + ":"
-
-        for (int ci = 0; ci < tl.text_len; ++ci)
+        // Number prefix width: digits of (index+1) + ":" (the space after is name territory).
+        const int num_prefix_cols = static_cast<int>(std::to_string(ti + 1).size()) + 1; // digits + ":"
+        int label_col = tl.text_col;
+        int consumed_cols = 0;
+        for (const auto& cluster_text : split_display_clusters(tl.label))
         {
-            const int col = tl.text_col + ci;
+            const int col = label_col;
             if (col < 0 || col >= grid_cols)
+            {
+                label_col += std::max(1, cluster_cell_width(cluster_text));
+                consumed_cols += std::max(1, cluster_cell_width(cluster_text));
                 continue;
+            }
 
             // Active tab: number chars on burgundy get light fg, rest gets inactive fg.
-            const Color& fg = (tl.active && ci < num_prefix_len) ? kAccentFg : kInactiveTabFg;
-
-            const std::string cluster(1, tl.label[static_cast<size_t>(ci)]);
-            AtlasRegion glyph = deps_.text_service->resolve_cluster(cluster);
+            const int cluster_width = std::max(1, cluster_cell_width(cluster_text));
+            const Color& fg = (tl.active && consumed_cols < num_prefix_cols) ? kAccentFg : kInactiveTabFg;
+            AtlasRegion glyph = deps_.text_service->resolve_cluster(cluster_text);
 
             auto& cell = cells[static_cast<size_t>(col)];
             cell.fg = fg;
             cell.glyph = glyph;
+            if (glyph.is_color)
+                cell.style_flags |= STYLE_FLAG_COLOR_GLYPH;
+            label_col += cluster_width;
+            consumed_cols += cluster_width;
+        }
+    }
+
+    if (resource_pill)
+    {
+        int col = resource_pill->text_col;
+        for (const auto& cluster : resource_pill->clusters)
+        {
+            if (col < 0 || col >= grid_cols)
+            {
+                col += std::max(1, cluster.width);
+                continue;
+            }
+
+            AtlasRegion glyph = deps_.text_service->resolve_cluster(cluster.text);
+            auto& cell = cells[static_cast<size_t>(col)];
+            cell.fg = cluster.fg;
+            cell.glyph = glyph;
+            if (glyph.is_color)
+                cell.style_flags |= STYLE_FLAG_COLOR_GLYPH;
+            col += std::max(1, cluster.width);
         }
     }
 

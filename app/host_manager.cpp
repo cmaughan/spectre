@@ -61,6 +61,11 @@ void apply_terminal_config(HostLaunchOptions& launch, const AppConfig& config)
     launch.paste_confirm_lines = config.terminal.paste_confirm_lines;
 }
 
+float imgui_font_size_from_metrics(const FontMetrics& metrics)
+{
+    return static_cast<float>(metrics.ascender + metrics.descender);
+}
+
 } // namespace
 
 HostManager::HostManager(Deps deps)
@@ -469,6 +474,12 @@ bool HostManager::create_host_for_leaf(LeafId id, IHostCallbacks& callbacks,
             megacity->set_ui_panels_visible(false);
     }
 #endif
+
+    if (deps_.text_service)
+    {
+        const float imgui_font_size = imgui_font_size_from_metrics(deps_.text_service->metrics());
+        new_host->set_imgui_font(deps_.text_service->primary_font_path(), imgui_font_size);
+    }
 
     if (deps_.imgui_host)
         new_host->attach_imgui_host(*deps_.imgui_host);

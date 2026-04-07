@@ -14,6 +14,7 @@
 #include <draxul/diagnostics_collector.h>
 #include <draxul/host.h>
 #include <draxul/renderer.h>
+#include <draxul/system_resource_monitor.h>
 #include <draxul/text_service.h>
 #include <draxul/window.h>
 #include <memory>
@@ -109,6 +110,7 @@ private:
     void rebuild_render_tree();
     bool render_frame();
     int wait_timeout_ms(std::optional<std::chrono::steady_clock::time_point> wait_deadline) const;
+    void refresh_system_resource_snapshot(std::chrono::steady_clock::time_point now);
 
     // --- Workspace management (moved from ChromeHost) ---
     HostManager::Deps make_host_manager_deps();
@@ -156,6 +158,8 @@ private:
     FrameTimer frame_timer_;
     float display_ppi_ = 96.0f;
     std::shared_ptr<void> host_owner_lifetime_;
+    SystemResourceMonitor system_resource_monitor_;
+    SystemResourceSnapshot system_resource_snapshot_{};
     std::chrono::steady_clock::time_point last_activity_time_ = std::chrono::steady_clock::now();
     std::string last_render_test_error_;
     std::string last_init_error_;
