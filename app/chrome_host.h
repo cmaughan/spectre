@@ -42,6 +42,7 @@ public:
         const std::vector<std::unique_ptr<Workspace>>* workspaces = nullptr;
         const int* active_workspace_id = nullptr;
         const SystemResourceSnapshot* system_resource_snapshot = nullptr;
+        std::function<std::optional<std::pair<std::string, float>>()> chord_indicator = nullptr;
     };
 
     explicit ChromeHost(Deps deps);
@@ -108,11 +109,13 @@ public:
         Color fg{};
     };
 
-    struct ResourcePillLayout
+    struct RightPillLayout
     {
         int col_begin = 0;
         int col_end = 0;
         int text_col = 0;
+        Color bg{};
+        bool flat_right_edge = false;
         std::vector<LabelCluster> clusters;
     };
 
@@ -129,7 +132,7 @@ private:
         LeafId leaf = kInvalidLeaf;
     };
 
-    void update_tab_grid(std::span<const TabLayout> tabs, const ResourcePillLayout* resource_pill);
+    void update_tab_grid(std::span<const TabLayout> tabs, std::span<const RightPillLayout> right_pills);
     void update_pane_status_grids(IFrameContext& frame, std::span<const PaneStatusEntry> entries);
     void flush_atlas_if_dirty();
 

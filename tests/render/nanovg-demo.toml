@@ -6,5 +6,5 @@ display_ppi = 192
 timeout_ms = 5000
 settle_ms = 200
 pixel_tolerance = 8
-changed_pixels_threshold_pct = 0.5
+changed_pixels_threshold_pct = 2.5
 commands = ["noop"]

@@ -121,6 +121,7 @@ private:
     void next_workspace();
     void prev_workspace();
     void activate_workspace_by_index(int one_based_index);
+    void activate_pane_by_index(int one_based_index);
     void recompute_all_viewports(int origin_x, int origin_y, int pixel_w, int pixel_h);
     HostManager& active_host_manager();
     const HostManager& active_host_manager() const;

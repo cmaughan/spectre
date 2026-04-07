@@ -291,10 +291,6 @@ void LocalTerminalHost::on_mouse_wheel(const MouseWheelEvent& event)
 std::string LocalTerminalHost::status_text() const
 {
     std::string result(host_name());
-    result += " | ";
-    result += std::to_string(grid_cols());
-    result += "x";
-    result += std::to_string(grid_rows());
     if (!current_cwd_.empty())
     {
         result += " | ";

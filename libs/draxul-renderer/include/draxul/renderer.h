@@ -88,16 +88,12 @@ struct RendererBundle
         requires std::derived_from<T, IGridRenderer>
     void reset(std::unique_ptr<T> renderer)
     {
-        T* raw = renderer.get();
         impl = std::move(renderer);
-        if constexpr (std::derived_from<T, IImGuiHost>)
-            imgui_host = raw;
-        else
-            imgui_host = nullptr;
-        if constexpr (std::derived_from<T, ICaptureRenderer>)
-            capture_renderer = raw;
-        else
-            capture_renderer = nullptr;
+        // Use dynamic_cast so the side capabilities are detected even when T
+        // is the IGridRenderer base (e.g. when constructed from a factory
+        // that returns std::unique_ptr<IGridRenderer>).
+        imgui_host = dynamic_cast<IImGuiHost*>(impl.get());
+        capture_renderer = dynamic_cast<ICaptureRenderer*>(impl.get());
     }
 
     void reset()

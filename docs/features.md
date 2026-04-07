@@ -114,7 +114,7 @@ A standalone GUI library for rendering UI items that do not depend on ImGui. It 
 ## Workspace Tabs
 
 - Multiple workspaces, each with its own independent split tree and host set
-- The top tab bar remains visible even with a single workspace and shows a right-aligned system usage pill with live CPU and memory percentages
+- The top tab bar remains visible even with a single workspace and shows right-aligned pills for live system usage and active chord prefixes
 - `new_tab` (`Ctrl+S, C`): Create a new workspace tab
 - `close_tab` (`Ctrl+S, &`): Close the active workspace tab (disabled when only one tab remains)
 - `next_tab` (`Ctrl+S, N`): Cycle to the next workspace
@@ -215,6 +215,8 @@ Customizable in `config.toml` under `[keybindings]`. Chord syntax: `"prefix, key
 |-----|---------|-------|-------|
 | `enable_toast_notifications` | true | | Master switch for toast overlay |
 | `toast_duration_s` | 4.0 | 0.5--60.0 | Seconds each toast remains on screen before fading |
+| `chord_timeout_ms` | 1500 | `>= 100` | How long a chord prefix stays armed while waiting for the next key |
+| `chord_indicator_fade_ms` | 2500 | `>= 100` | How long the top-bar chord indicator takes to fade after a chord completes or times out |
 
 ### Pane Status Bar
 

@@ -1,8 +1,11 @@
 #pragma once
 
+#include <algorithm>
+#include <chrono>
 #include <draxul/pixel_scale.h>
 #include <functional>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -32,6 +35,17 @@ struct MouseWheelEvent;
 class InputDispatcher
 {
 public:
+    struct ChordIndicatorState
+    {
+        std::string text;
+        float alpha = 0.0f;
+
+        [[nodiscard]] bool visible() const
+        {
+            return !text.empty() && alpha > 0.0f;
+        }
+    };
+
     struct Deps
     {
         const std::vector<GuiKeybinding>* keybindings = nullptr;
@@ -58,6 +72,8 @@ public:
         std::function<int(int, int)> hit_test_tab;
         // Activate tab by 1-based index.
         std::function<void(int)> activate_tab;
+        // Activate pane by 1-based visual index within the active workspace.
+        std::function<void(int)> activate_pane;
     };
 
     explicit InputDispatcher(Deps deps);
@@ -80,8 +96,12 @@ public:
         deps_.scroll_speed = scroll_speed;
     }
 
+    void set_chord_indicator_fade_ms(int fade_ms);
+
     // Exposed for testing — checks if the key event matches any GUI keybinding.
     std::optional<std::string_view> gui_action_for_key_event(const KeyEvent& event) const;
+    [[nodiscard]] ChordIndicatorState chord_indicator_state(std::chrono::steady_clock::time_point now) const;
+    bool update(std::chrono::steady_clock::time_point now, int chord_timeout_ms);
 
     // The fractional portion of accumulated scroll (in cells) not yet committed to the host.
     // Only valid if had_scroll_event() is true; returns 0 when no wheel event arrived this frame.
@@ -106,6 +126,7 @@ public:
     }
 
 private:
+    void start_indicator_fade(std::chrono::steady_clock::time_point now);
     void on_key_event(const KeyEvent& event);
     void on_mouse_button_event(const MouseButtonEvent& event);
     void on_mouse_move_event(const MouseMoveEvent& event);
@@ -122,6 +143,12 @@ private:
     // Set when a chord action fires; causes the immediately following text-input event
     // (SDL_EVENT_TEXT_INPUT for the chord's second key) to be suppressed.
     bool suppress_next_text_input_ = false;
+    bool pane_select_active_ = false;
+    std::string indicator_text_;
+    std::optional<std::chrono::steady_clock::time_point> prefix_started_at_;
+    std::optional<std::chrono::steady_clock::time_point> fade_started_at_;
+    std::optional<std::chrono::steady_clock::time_point> fade_ends_at_;
+    int chord_indicator_fade_ms_ = 2500;
 };
 
 } // namespace draxul

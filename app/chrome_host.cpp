@@ -3,6 +3,7 @@
 #include "host_manager.h"
 #include "workspace.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -88,6 +89,8 @@ constexpr Color kResourcePillFg{ 0.118f, 0.118f, 0.180f, 1.0f }; // #1e1e2e Base
 constexpr Color kResourcePillLabelFg{ 0.118f, 0.118f, 0.180f, 0.68f }; // muted label tint
 constexpr Color kResourcePillWarnBg{ 0.973f, 0.761f, 0.510f, 1.0f }; // orange
 constexpr Color kResourcePillHotBg{ 0.957f, 0.337f, 0.337f, 1.0f }; // red
+constexpr Color kChordPillBg{ 0.271f, 0.278f, 0.353f, 0.95f }; // inactive-tab grey
+constexpr Color kChordPillFg{ 0.808f, 0.839f, 0.957f, 1.0f }; // lighter text for quick scan
 
 constexpr int kTabPadCols = 1; // padding cells on each side of tab label
 // Pane status pill margin from the right edge of the pane (in cells).
@@ -100,10 +103,10 @@ constexpr unsigned char kPaneAccentR = 60;
 constexpr unsigned char kPaneAccentG = 165;
 constexpr unsigned char kPaneAccentB = 95;
 constexpr unsigned char kPaneAccentA = 220;
-constexpr unsigned char kPaneDimR = 80;
-constexpr unsigned char kPaneDimG = 110;
-constexpr unsigned char kPaneDimB = 90;
-constexpr unsigned char kPaneDimA = 200;
+constexpr unsigned char kInactiveAccentR = 110;
+constexpr unsigned char kInactiveAccentG = 115;
+constexpr unsigned char kInactiveAccentB = 140;
+constexpr unsigned char kInactiveAccentA = 200;
 constexpr int kGridPadding = 4; // renderer internal cell padding
 
 std::string tab_label(size_t index, const std::string& name)
@@ -162,6 +165,12 @@ int label_cluster_columns(std::span<const ChromeHost::LabelCluster> clusters)
     for (const auto& cluster : clusters)
         total += std::max(1, cluster.width);
     return total;
+}
+
+Color apply_alpha(Color color, float alpha)
+{
+    color.a *= std::clamp(alpha, 0.0f, 1.0f);
+    return color;
 }
 
 std::string format_resource_percent_value(int percent)
@@ -282,7 +291,7 @@ void ChromeHost::draw(IFrameContext& frame)
     // Grid cells are positioned at: pixel_x = col * cw + padding.
     // We compute tab spans in column space, then derive NanoVG pill pixel coords.
     std::vector<TabLayout> tabs;
-    std::optional<ResourcePillLayout> resource_pill;
+    std::vector<RightPillLayout> right_pills;
     int bar_w = viewport_.pixel_size.x;
     int bar_h = 0;
     int cw_shared = 0;
@@ -297,21 +306,43 @@ void ChromeHost::draw(IFrameContext& frame)
         {
             bar_h = tab_bar_height();
             const int grid_cols = std::max(0, bar_w / cw);
+            int right_col_cursor = grid_cols;
             if (show_resource_pill && grid_cols > 0)
             {
-                ResourcePillLayout layout;
+                RightPillLayout layout;
+                layout.bg = resource_pill_background_color(*deps_.system_resource_snapshot);
+                layout.flat_right_edge = true;
                 append_resource_metric(layout.clusters, "CPU", deps_.system_resource_snapshot->cpu_percent, true);
                 append_resource_metric(layout.clusters, "RAM", deps_.system_resource_snapshot->memory_percent, false);
 
                 const int total_cols = label_cluster_columns(layout.clusters) + kTabPadCols * 2;
-                layout.col_end = grid_cols;
-                layout.col_begin = std::max(0, grid_cols - total_cols);
+                layout.col_end = right_col_cursor;
+                layout.col_begin = std::max(0, right_col_cursor - total_cols);
                 layout.text_col = layout.col_begin + kTabPadCols;
-                resource_pill = std::move(layout);
+                right_col_cursor = std::max(0, layout.col_begin - 1);
+                right_pills.push_back(std::move(layout));
+            }
+
+            if (deps_.chord_indicator && grid_cols > 0)
+            {
+                if (auto state = deps_.chord_indicator(); state && state->second > 0.0f)
+                {
+                    RightPillLayout layout;
+                    layout.bg = apply_alpha(kChordPillBg, state->second);
+                    layout.flat_right_edge = false;
+                    append_label_clusters(layout.clusters, state->first, apply_alpha(kChordPillFg, state->second));
+
+                    const int total_cols = label_cluster_columns(layout.clusters) + kTabPadCols * 2;
+                    layout.col_end = right_col_cursor;
+                    layout.col_begin = std::max(0, right_col_cursor - total_cols);
+                    layout.text_col = layout.col_begin + kTabPadCols;
+                    right_col_cursor = std::max(0, layout.col_begin - 1);
+                    right_pills.push_back(std::move(layout));
+                }
             }
 
             int col_cursor = 0; // start at column 0
-            const int tabs_end_col = resource_pill ? std::max(0, resource_pill->col_begin - 1) : grid_cols;
+            const int tabs_end_col = right_pills.empty() ? grid_cols : std::max(0, right_col_cursor);
             for (size_t wi = 0; wi < workspaces.size(); ++wi)
             {
                 const auto& ws = workspaces[wi];
@@ -363,23 +394,30 @@ void ChromeHost::draw(IFrameContext& frame)
         }
     }
 
-    struct ResourcePillRect
+    struct RightPillRect
     {
         float x = 0.0f;
         float y = 0.0f;
         float w = 0.0f;
         float h = 0.0f;
-        Color bg = kResourcePillBg;
+        Color bg{};
+        bool flat_right_edge = false;
     };
-    std::optional<ResourcePillRect> resource_pill_rect;
-    if (resource_pill && cw_shared > 0 && ch_shared > 0)
+    std::vector<RightPillRect> right_pill_rects;
+    if (!right_pills.empty() && cw_shared > 0 && ch_shared > 0)
     {
-        const int total_cols = std::max(1, resource_pill->col_end - resource_pill->col_begin);
-        const float pill_h = static_cast<float>(ch_shared) - 4.0f;
-        const float pill_y = 2.0f;
-        const float pill_x = std::max(0.0f, static_cast<float>(bar_w - total_cols * cw_shared));
-        resource_pill_rect = ResourcePillRect{ pill_x, pill_y, static_cast<float>(bar_w) - pill_x, pill_h,
-            resource_pill_background_color(*deps_.system_resource_snapshot) };
+        right_pill_rects.reserve(right_pills.size());
+        for (const auto& pill : right_pills)
+        {
+            const int total_cols = std::max(1, pill.col_end - pill.col_begin);
+            const float pill_h = static_cast<float>(ch_shared) - 4.0f;
+            const float pill_y = 2.0f;
+            const float pill_x = std::max(0.0f, static_cast<float>(pill.col_begin * cw_shared));
+            const float pill_w = pill.flat_right_edge && pill.col_end >= bar_w / cw_shared
+                ? static_cast<float>(bar_w) - pill_x
+                : static_cast<float>(total_cols * cw_shared);
+            right_pill_rects.push_back(RightPillRect{ pill_x, pill_y, pill_w, pill_h, pill.bg, pill.flat_right_edge });
+        }
     }
 
     // Divider geometry.
@@ -456,10 +494,8 @@ void ChromeHost::draw(IFrameContext& frame)
                 const float strip_top = static_cast<float>(e.pane_y + e.pane_h - status_strip_h);
                 const float pill_y = strip_top + 2.0f;
 
-                // Accent covers left padding + number digits + ":". Match the
-                // workspace-tab math exactly: no half_gap inset, so the colon's
-                // right edge sits ~0.25 cells inside the accent's right edge
-                // (otherwise the ":" jams up against the green-to-grey seam).
+                // Match the workspace-tab accent width: left padding + digits + ":".
+                // The trailing space after the colon sits outside the accent.
                 const int accent_cols = kTabPadCols + static_cast<int>(num_str.size()) + 1;
                 const float accent_w = static_cast<float>(accent_cols * cw);
 
@@ -479,7 +515,7 @@ void ChromeHost::draw(IFrameContext& frame)
     const float focus_border = deps_.config ? deps_.config->focus_border_width : 3.0f;
     nanovg_pass_->set_draw_callback(
         [tab_rects = std::move(tab_rects), bar_w, bar_h,
-            resource_pill_rect,
+            right_pill_rects = std::move(right_pill_rects),
             dividers = std::move(dividers), focus_rect, focus_border,
             status_pill_rects = std::move(status_pill_rects)](NVGcontext* vg, int /*w*/, int /*h*/) {
             // --- Pane status pills (drawn first so dividers/focus border go on top) ---
@@ -503,7 +539,7 @@ void ChromeHost::draw(IFrameContext& frame)
                 if (s.focused)
                     nvgFillColor(vg, nvgRGBA(kPaneAccentR, kPaneAccentG, kPaneAccentB, kPaneAccentA));
                 else
-                    nvgFillColor(vg, nvgRGBA(kPaneDimR, kPaneDimG, kPaneDimB, kPaneDimA));
+                    nvgFillColor(vg, nvgRGBA(kInactiveAccentR, kInactiveAccentG, kInactiveAccentB, kInactiveAccentA));
                 nvgFill(vg);
                 nvgRestore(vg);
             }
@@ -552,13 +588,20 @@ void ChromeHost::draw(IFrameContext& frame)
                 }
             }
 
-            if (resource_pill_rect)
+            for (const auto& pill : right_pill_rects)
             {
-                const float radius = resource_pill_rect->h * 0.5f;
+                const float radius = pill.h * 0.5f;
                 nvgBeginPath(vg);
-                nvgRoundedRectVarying(vg, resource_pill_rect->x, resource_pill_rect->y,
-                    resource_pill_rect->w, resource_pill_rect->h, radius, 0.0f, 0.0f, radius);
-                nvgFillColor(vg, nvgRGBAf(resource_pill_rect->bg.r, resource_pill_rect->bg.g, resource_pill_rect->bg.b, resource_pill_rect->bg.a));
+                if (pill.flat_right_edge)
+                {
+                    nvgRoundedRectVarying(
+                        vg, pill.x, pill.y, pill.w, pill.h, radius, 0.0f, 0.0f, radius);
+                }
+                else
+                {
+                    nvgRoundedRect(vg, pill.x, pill.y, pill.w, pill.h, radius);
+                }
+                nvgFillColor(vg, nvgRGBAf(pill.bg.r, pill.bg.g, pill.bg.b, pill.bg.a));
                 nvgFill(vg);
             }
 
@@ -629,9 +672,9 @@ void ChromeHost::draw(IFrameContext& frame)
     frame.record_render_pass(*nanovg_pass_, vp);
 
     // Grid handle draws top-bar label text on top of NanoVG shapes.
-    if (bar_h > 0 && (!tabs.empty() || resource_pill))
+    if (bar_h > 0 && (!tabs.empty() || !right_pills.empty()))
     {
-        update_tab_grid(tabs, resource_pill ? &*resource_pill : nullptr);
+        update_tab_grid(tabs, right_pills);
         if (tab_handle_)
             frame.draw_grid_handle(*tab_handle_);
     }
@@ -744,6 +787,15 @@ void ChromeHost::update_pane_status_grids(IFrameContext& frame, std::span<const 
         handle->set_viewport(desc);
         handle->set_grid_size(pill_cols, 1);
 
+        // Warm any uncached glyphs before updating the handle so newly typed
+        // chord/pane-status characters do not appear a frame late.
+        for (int ci = 0; ci < static_cast<int>(label.size()); ++ci)
+        {
+            const std::string cluster(1, label[static_cast<size_t>(ci)]);
+            deps_.text_service->resolve_cluster(cluster);
+        }
+        flush_atlas_if_dirty();
+
         // Cells start fully transparent — the NanoVG pill provides the bg.
         const Color transparent{ 0.0f, 0.0f, 0.0f, 0.0f };
         std::vector<CellUpdate> cells;
@@ -758,12 +810,13 @@ void ChromeHost::update_pane_status_grids(IFrameContext& frame, std::span<const 
             cells.push_back(cell);
         }
 
-        // Number prefix length: digits + ":" (the trailing space is name territory),
-        // matching update_tab_grid's accent rule.
+        // Pane-status text sits one cell tighter than workspace tabs so the
+        // number aligns with the accent block instead of leaving a blank
+        // leading cell inside the pill.
         const int num_prefix_len = static_cast<int>(num_str.size()) + 1; // digits + ":"
         for (int ci = 0; ci < static_cast<int>(label.size()); ++ci)
         {
-            const int col = kTabPadCols + ci;
+            const int col = ci;
             if (col < 0 || col >= pill_cols)
                 continue;
             const Color& fg = (ci < num_prefix_len) ? kAccentFg : kInactiveTabFg;
@@ -789,7 +842,7 @@ void ChromeHost::update_pane_status_grids(IFrameContext& frame, std::span<const 
     }
 }
 
-void ChromeHost::update_tab_grid(std::span<const TabLayout> tabs, const ResourcePillLayout* resource_pill)
+void ChromeHost::update_tab_grid(std::span<const TabLayout> tabs, std::span<const RightPillLayout> right_pills)
 {
     if (!deps_.grid_renderer || !deps_.text_service)
         return;
@@ -840,6 +893,20 @@ void ChromeHost::update_tab_grid(std::span<const TabLayout> tabs, const Resource
         cells.push_back(cell);
     }
 
+    // Warm any uncached glyphs before the grid handle consumes them so the
+    // chord pill does not reveal late-arriving characters over multiple frames.
+    for (const auto& tl : tabs)
+    {
+        for (const auto& cluster_text : split_display_clusters(tl.label))
+            deps_.text_service->resolve_cluster(cluster_text);
+    }
+    for (const auto& pill : right_pills)
+    {
+        for (const auto& cluster : pill.clusters)
+            deps_.text_service->resolve_cluster(cluster.text);
+    }
+    flush_atlas_if_dirty();
+
     // Write text into grid cells using the shared column-based layout.
     // Light text on burgundy accent (number portion), standard text elsewhere.
     constexpr Color kAccentFg{ 0.85f, 0.85f, 0.90f, 1.0f }; // light text on burgundy
@@ -875,10 +942,10 @@ void ChromeHost::update_tab_grid(std::span<const TabLayout> tabs, const Resource
         }
     }
 
-    if (resource_pill)
+    for (const auto& pill : right_pills)
     {
-        int col = resource_pill->text_col;
-        for (const auto& cluster : resource_pill->clusters)
+        int col = pill.text_col;
+        for (const auto& cluster : pill.clusters)
         {
             if (col < 0 || col >= grid_cols)
             {

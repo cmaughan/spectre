@@ -72,6 +72,8 @@ TEST_CASE("app config parse reads all fields", "[config]")
     const char* content = "window_width = 1920\n"
                           "window_height = 1080\n"
                           "font_size = 14\n"
+                          "chord_timeout_ms = 1200\n"
+                          "chord_indicator_fade_ms = 2800\n"
                           "enable_ligatures = false\n"
                           "font_path = \"/usr/share/fonts/mono.ttf\"\n"
                           "fallback_paths = [\"/fonts/a.ttf\", \"/fonts/b.ttf\"]\n";
@@ -83,6 +85,10 @@ TEST_CASE("app config parse reads all fields", "[config]")
     REQUIRE(config.window_height == 1080);
     INFO("font_size parsed");
     REQUIRE(config.font_size == 14.0f);
+    INFO("chord timeout parsed");
+    REQUIRE(config.chord_timeout_ms == 1200);
+    INFO("chord fade parsed");
+    REQUIRE(config.chord_indicator_fade_ms == 2800);
     INFO("enable_ligatures parsed");
     REQUIRE(config.enable_ligatures == false);
     INFO("font_path parsed");

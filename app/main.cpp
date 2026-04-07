@@ -227,7 +227,7 @@ static int draxul_main(std::vector<std::string> args)
 
     if (!app.initialize())
     {
-        DRAXUL_LOG_ERROR(draxul::LogCategory::App, "Failed to initialize draxul");
+        DRAXUL_LOG_ERROR(draxul::LogCategory::App, "Failed to initialize draxul: %s", app.init_error().c_str());
 #ifdef DRAXUL_ENABLE_RENDER_TESTS
         const bool ci_mode = parsed.smoke_test || !parsed.render_test_path.empty() || !parsed.screenshot_path.empty();
 #else

@@ -83,7 +83,7 @@ bool NvimHost::is_running() const
 
 std::string NvimHost::status_text() const
 {
-    return "nvim | " + std::to_string(grid_cols()) + "x" + std::to_string(grid_rows());
+    return "nvim";
 }
 
 std::string NvimHost::init_error() const

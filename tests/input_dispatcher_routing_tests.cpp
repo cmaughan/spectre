@@ -592,11 +592,12 @@ TEST_CASE("overlay: when cleared, all event types reach the underlying host agai
 // tmux-style prefix path in InputDispatcher::on_key_event).
 // ---------------------------------------------------------------------------
 //
-// The chord state machine has no timeout: prefix_active_ is set on a matching
-// prefix key-down and only cleared by the next non-modifier key-down. These
-// tests pin down the surprising edges (modifier-during-prefix, prefix-then-
-// unrecognised-key, prefix-then-prefix-again, focus-change-during-prefix) so
-// regressions are caught at the routing layer rather than via QA.
+// The chord state machine supports a timeout-backed visual indicator and a
+// pane-select submode (`prefix, 0, 1..9`) on top of the existing two-step
+// tmux-style prefix flow. These tests pin down the surprising edges
+// (modifier-during-prefix, prefix-then-unrecognised-key, prefix-then-prefix-
+// again, focus-change-during-prefix) so regressions are caught at the routing
+// layer rather than via QA.
 
 namespace
 {
@@ -611,6 +612,7 @@ struct ChordE2ESetup
     std::unique_ptr<GuiActionHandler> action_handler;
     std::unique_ptr<InputDispatcher> dispatcher;
     int split_vertical_calls = 0;
+    std::vector<int> activate_pane_calls;
 
     ChordE2ESetup()
     {
@@ -634,6 +636,7 @@ struct ChordE2ESetup
         deps.ui_panel = &panel;
         deps.host = &host;
         deps.pixel_scale = 1.0f;
+        deps.activate_pane = [this](int index) { activate_pane_calls.push_back(index); };
         dispatcher = std::make_unique<InputDispatcher>(std::move(deps));
         dispatcher->connect(window);
     }
@@ -741,4 +744,54 @@ TEST_CASE("chord: switching focused host mid-chord does NOT clear prefix state",
     REQUIRE(setup.split_vertical_calls == 1);
     REQUIRE(setup.other_host.key_events.empty());
     REQUIRE(setup.host.key_events.empty());
+}
+
+TEST_CASE("chord: prefix then zero enters pane-select submode and updates indicator",
+    "[input_dispatcher][chord]")
+{
+    ChordE2ESetup setup;
+
+    setup.window.on_key(KeyEvent{ 0, SDLK_B, kModCtrl, true });
+    setup.window.on_key(KeyEvent{ 0, SDLK_0, kModNone, true });
+
+    REQUIRE(setup.activate_pane_calls.empty());
+    REQUIRE(setup.host.key_events.empty());
+
+    const auto state = setup.dispatcher->chord_indicator_state(std::chrono::steady_clock::now());
+    REQUIRE(state.visible());
+    REQUIRE(state.text == "Ctrl+B 0");
+}
+
+TEST_CASE("chord: prefix then zero then digit activates pane and starts fade-out",
+    "[input_dispatcher][chord]")
+{
+    ChordE2ESetup setup;
+
+    setup.window.on_key(KeyEvent{ 0, SDLK_B, kModCtrl, true });
+    setup.window.on_key(KeyEvent{ 0, SDLK_0, kModNone, true });
+    setup.window.on_key(KeyEvent{ 0, SDLK_3, kModNone, true });
+
+    REQUIRE(setup.activate_pane_calls == std::vector<int>{ 3 });
+    REQUIRE(setup.host.key_events.empty());
+
+    const auto state = setup.dispatcher->chord_indicator_state(std::chrono::steady_clock::now());
+    REQUIRE(state.visible());
+    REQUIRE(state.text == "Ctrl+B 0 3");
+}
+
+TEST_CASE("chord: pending prefix times out and indicator eventually clears",
+    "[input_dispatcher][chord]")
+{
+    ChordE2ESetup setup;
+
+    setup.window.on_key(KeyEvent{ 0, SDLK_B, kModCtrl, true });
+    const auto now = std::chrono::steady_clock::now();
+
+    setup.dispatcher->set_chord_indicator_fade_ms(700);
+
+    REQUIRE(setup.dispatcher->update(now + std::chrono::milliseconds(1600), 1500));
+    REQUIRE(setup.dispatcher->chord_indicator_state(now + std::chrono::milliseconds(1600)).visible());
+
+    REQUIRE(setup.dispatcher->update(now + std::chrono::milliseconds(2400), 1500));
+    REQUIRE_FALSE(setup.dispatcher->chord_indicator_state(now + std::chrono::milliseconds(2400)).visible());
 }

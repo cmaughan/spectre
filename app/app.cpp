@@ -489,6 +489,7 @@ void App::reload_config()
 
     if (scroll_config_changed)
         input_dispatcher_.set_scroll_config(config_.smooth_scroll, config_.scroll_speed);
+    input_dispatcher_.set_chord_indicator_fade_ms(config_.chord_indicator_fade_ms);
 
     const HostReloadConfig host_reload = host_reload_config_from_app_config(config_);
     for (auto& ws : workspaces_)
@@ -525,6 +526,12 @@ bool App::initialize_chrome_host()
     chrome_deps.workspaces = &workspaces_;
     chrome_deps.active_workspace_id = &active_workspace_;
     chrome_deps.system_resource_snapshot = &system_resource_snapshot_;
+    chrome_deps.chord_indicator = [this]() -> std::optional<std::pair<std::string, float>> {
+        const auto state = input_dispatcher_.chord_indicator_state(std::chrono::steady_clock::now());
+        if (!state.visible())
+            return std::nullopt;
+        return std::make_pair(state.text, state.alpha);
+    };
     chrome_host_ = std::make_unique<ChromeHost>(std::move(chrome_deps));
 
     {
@@ -795,7 +802,13 @@ void App::wire_window_callbacks()
         input_dispatcher_.set_host(active_host_manager().focused_host());
         request_frame();
     };
+    disp_deps.activate_pane = [this](int index) {
+        activate_pane_by_index(index);
+        input_dispatcher_.set_host(active_host_manager().focused_host());
+        request_frame();
+    };
     input_dispatcher_ = InputDispatcher(std::move(disp_deps));
+    input_dispatcher_.set_chord_indicator_fade_ms(config_.chord_indicator_fade_ms);
     input_dispatcher_.connect(*window_);
 }
 
@@ -1180,7 +1193,10 @@ bool App::pump_once(std::optional<std::chrono::steady_clock::time_point> wait_de
         // Pump all visible hosts via tree walk.
         rebuild_render_tree();
         walk_pump(render_root_);
-        refresh_system_resource_snapshot(std::chrono::steady_clock::now());
+        const auto now = std::chrono::steady_clock::now();
+        refresh_system_resource_snapshot(now);
+        if (input_dispatcher_.update(now, config_.chord_timeout_ms))
+            request_frame();
 
         // Re-check after pumping (hosts can die during pump).
         if (!close_dead_panes())
@@ -1617,6 +1633,25 @@ void App::activate_workspace_by_index(int one_based_index)
     if (idx < 0 || idx >= static_cast<int>(workspaces_.size()))
         return;
     activate_workspace(workspaces_[static_cast<size_t>(idx)]->id);
+}
+
+void App::activate_pane_by_index(int one_based_index)
+{
+    if (one_based_index <= 0)
+        return;
+
+    LeafId target = kInvalidLeaf;
+    int current_index = 1;
+    active_tree().for_each_leaf([&](LeafId id, const PaneDescriptor&) {
+        if (target != kInvalidLeaf)
+            return;
+        if (current_index == one_based_index)
+            target = id;
+        ++current_index;
+    });
+
+    if (target != kInvalidLeaf)
+        active_host_manager().set_focused(target);
 }
 
 void App::recompute_all_viewports(int origin_x, int origin_y, int pixel_w, int pixel_h)

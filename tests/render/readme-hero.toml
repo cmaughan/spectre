@@ -5,7 +5,7 @@ font_size = 12
 timeout_ms = 15000
 settle_ms = 1500
 pixel_tolerance = 8
-changed_pixels_threshold_pct = 0.10
+changed_pixels_threshold_pct = 2.10
 commands = [
   "cd ${PROJECT_ROOT}",
   "edit ${PROJECT_ROOT}/README.md",

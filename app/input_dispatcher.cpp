@@ -3,10 +3,12 @@
 #include "gui_action_handler.h"
 #include "host_manager.h"
 #include <SDL3/SDL.h>
+#include <algorithm>
 #include <cmath>
 #include <draxul/app_config.h>
 #include <draxul/events.h>
 #include <draxul/host.h>
+#include <draxul/keybinding_parser.h>
 #include <draxul/perf_timing.h>
 #include <draxul/ui_panel.h>
 #include <draxul/window.h>
@@ -17,6 +19,18 @@ namespace draxul
 InputDispatcher::InputDispatcher(Deps deps)
     : deps_(std::move(deps))
 {
+}
+
+void InputDispatcher::set_chord_indicator_fade_ms(int fade_ms)
+{
+    chord_indicator_fade_ms_ = std::max(100, fade_ms);
+}
+
+void InputDispatcher::start_indicator_fade(std::chrono::steady_clock::time_point now)
+{
+    const auto fade_duration = std::chrono::milliseconds(chord_indicator_fade_ms_);
+    fade_started_at_ = now;
+    fade_ends_at_ = now + fade_duration;
 }
 
 // Returns the host that should receive a mouse event at (px, py).
@@ -58,6 +72,52 @@ static bool is_modifier_only_key(const KeyEvent& event)
     }
 }
 
+std::optional<int> digit_from_keycode(int32_t keycode)
+{
+    switch (keycode)
+    {
+    case SDLK_1:
+        return 1;
+    case SDLK_2:
+        return 2;
+    case SDLK_3:
+        return 3;
+    case SDLK_4:
+        return 4;
+    case SDLK_5:
+        return 5;
+    case SDLK_6:
+        return 6;
+    case SDLK_7:
+        return 7;
+    case SDLK_8:
+        return 8;
+    case SDLK_9:
+        return 9;
+    default:
+        return std::nullopt;
+    }
+}
+
+ModifierFlags normalize_modifiers(ModifierFlags mod)
+{
+    ModifierFlags result = kModNone;
+    if (mod & kModShift)
+        result |= kModShift;
+    if (mod & kModCtrl)
+        result |= kModCtrl;
+    if (mod & kModAlt)
+        result |= kModAlt;
+    if (mod & kModSuper)
+        result |= kModSuper;
+    return result;
+}
+
+std::string chord_step_display(const KeyEvent& event)
+{
+    return format_gui_keybinding_combo(event.keycode, event.mod);
+}
+
 template <typename Deps>
 void request_imgui_frame_if_needed(const Deps& deps)
 {
@@ -68,6 +128,7 @@ void request_imgui_frame_if_needed(const Deps& deps)
 void InputDispatcher::on_key_event(const KeyEvent& event)
 {
     PERF_MEASURE();
+    const auto now = std::chrono::steady_clock::now();
 
     // Overlay host (e.g. command palette) intercepts all input when active.
     if (deps_.overlay_host)
@@ -94,7 +155,44 @@ void InputDispatcher::on_key_event(const KeyEvent& event)
                 return;
             }
             // We consumed the prefix key; now look for a chord match.
+            const std::string prefix_text = indicator_text_;
             prefix_active_ = false;
+            prefix_started_at_.reset();
+            if (pane_select_active_)
+            {
+                pane_select_active_ = false;
+                const std::string final_text = prefix_text + " " + chord_step_display(event);
+                if (auto digit = digit_from_keycode(event.keycode);
+                    digit.has_value() && normalize_modifiers(event.mod) == kModNone && deps_.activate_pane)
+                {
+                    suppress_next_text_input_ = true;
+                    indicator_text_ = final_text;
+                    start_indicator_fade(now);
+                    deps_.activate_pane(*digit);
+                    if (deps_.request_frame)
+                        deps_.request_frame();
+                    return;
+                }
+
+                indicator_text_ = final_text;
+                start_indicator_fade(now);
+                if (deps_.request_frame)
+                    deps_.request_frame();
+                // No pane matched — fall through and forward to host normally.
+            }
+            else if (event.keycode == SDLK_0 && normalize_modifiers(event.mod) == kModNone && deps_.activate_pane)
+            {
+                pane_select_active_ = true;
+                prefix_active_ = true;
+                prefix_started_at_ = now;
+                indicator_text_ = prefix_text + " 0";
+                fade_started_at_.reset();
+                fade_ends_at_.reset();
+                suppress_next_text_input_ = true;
+                if (deps_.request_frame)
+                    deps_.request_frame();
+                return;
+            }
             if (deps_.keybindings && deps_.gui_action_handler)
             {
                 for (const auto& binding : *deps_.keybindings)
@@ -102,11 +200,19 @@ void InputDispatcher::on_key_event(const KeyEvent& event)
                     if (binding.prefix_key != 0 && gui_keybinding_matches(binding, event))
                     {
                         suppress_next_text_input_ = true;
+                        indicator_text_ = prefix_text + " " + chord_step_display(event);
+                        start_indicator_fade(now);
                         deps_.gui_action_handler->execute(binding.action);
+                        if (deps_.request_frame)
+                            deps_.request_frame();
                         return; // chord consumed — do not forward to host
                     }
                 }
             }
+            indicator_text_ = prefix_text + " " + chord_step_display(event);
+            start_indicator_fade(now);
+            if (deps_.request_frame)
+                deps_.request_frame();
             // No chord matched — fall through and forward to host normally.
         }
         else
@@ -119,6 +225,13 @@ void InputDispatcher::on_key_event(const KeyEvent& event)
                     if (gui_prefix_matches(binding, event))
                     {
                         prefix_active_ = true;
+                        pane_select_active_ = false;
+                        prefix_started_at_ = now;
+                        indicator_text_ = format_gui_keybinding_combo(binding.prefix_key, binding.prefix_modifiers);
+                        fade_started_at_.reset();
+                        fade_ends_at_.reset();
+                        if (deps_.request_frame)
+                            deps_.request_frame();
                         return; // swallow the prefix key
                     }
                 }
@@ -322,6 +435,67 @@ void InputDispatcher::connect(IWindow& window)
         if (deps_.host)
             deps_.host->dispatch_action(std::string("open_file:") + std::string(path));
     };
+}
+
+InputDispatcher::ChordIndicatorState InputDispatcher::chord_indicator_state(
+    std::chrono::steady_clock::time_point now) const
+{
+    ChordIndicatorState state;
+    state.text = indicator_text_;
+    if (state.text.empty())
+        return state;
+
+    if (fade_started_at_ && fade_ends_at_)
+    {
+        const auto total = std::chrono::duration_cast<std::chrono::milliseconds>(*fade_ends_at_ - *fade_started_at_);
+        const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - *fade_started_at_);
+        if (total.count() <= 0)
+        {
+            state.alpha = 0.0f;
+            return state;
+        }
+        const float t = std::clamp(static_cast<float>(elapsed.count()) / static_cast<float>(total.count()), 0.0f, 1.0f);
+        state.alpha = 1.0f - t;
+        return state;
+    }
+
+    state.alpha = 1.0f;
+    return state;
+}
+
+bool InputDispatcher::update(std::chrono::steady_clock::time_point now, int chord_timeout_ms)
+{
+    bool changed = false;
+
+    if (prefix_active_ && prefix_started_at_)
+    {
+        const auto timeout = std::chrono::milliseconds(std::max(100, chord_timeout_ms));
+        if (now - *prefix_started_at_ >= timeout)
+        {
+            prefix_active_ = false;
+            pane_select_active_ = false;
+            prefix_started_at_.reset();
+            start_indicator_fade(now);
+            changed = true;
+        }
+    }
+
+    if (fade_ends_at_)
+    {
+        if (now >= *fade_ends_at_)
+        {
+            indicator_text_.clear();
+            fade_started_at_.reset();
+            fade_ends_at_.reset();
+            changed = true;
+        }
+        else if (deps_.request_frame)
+        {
+            deps_.request_frame();
+        }
+    }
+
+    return changed;
 }
 
 std::optional<std::string_view> InputDispatcher::gui_action_for_key_event(const KeyEvent& event) const

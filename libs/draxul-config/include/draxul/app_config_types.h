@@ -73,6 +73,13 @@ struct AppConfig
     bool enable_toast_notifications = true; // master enable for non-blocking toast popups
     float toast_duration_s = 4.0f; // how long each toast remains visible before fading out
     bool show_pane_status = true; // per-pane status bar (host kind | dims | cwd) below each pane
+    // How long a chord prefix (e.g. Ctrl+S) stays "armed" while waiting for the
+    // second key. After this many milliseconds the chord is silently dropped
+    // and any visual indicator clears. Clamped to >= 100 ms on parse.
+    int chord_timeout_ms = 1500;
+    // How long the top-bar chord indicator remains visible while fading out
+    // after a chord completes or times out. Clamped to >= 100 ms on parse.
+    int chord_indicator_fade_ms = 2500;
     std::vector<GuiKeybinding> keybindings = {}; // populated by AppConfig()
     TerminalConfig terminal; // [terminal] section -- fg/bg hex colors
 
