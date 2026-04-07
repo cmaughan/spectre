@@ -19,9 +19,9 @@ Claude flagged this as an active hazard: "If a new Metal handle is added to the 
 
 ## Investigation Steps
 
-- [ ] Open `libs/draxul-renderer/src/metal/metal_renderer.h`
-- [ ] Count the `#ifdef __OBJC__` vs bare-C++ member declarations
-- [ ] Check which TUs include this header as plain C++ (not ObjC++) — these are at risk
+- [x] Open `libs/draxul-renderer/src/metal/metal_renderer.h`
+- [x] Count the `#ifdef __OBJC__` vs bare-C++ member declarations
+- [x] Check which TUs include this header as plain C++ (not ObjC++) — these are at risk
 - [ ] Run with AddressSanitizer to check for any current corruption
 
 ---
@@ -38,10 +38,34 @@ Either option eliminates the layout bifurcation.
 
 ## Acceptance Criteria
 
-- [ ] `metal_renderer.h` contains no `#ifdef __OBJC__` member declarations.
-- [ ] Build succeeds for both ObjC++ and plain C++ TUs that include the header.
+- [x] `metal_renderer.h` contains no `#ifdef __OBJC__` member declarations.
+- [x] Build succeeds for both ObjC++ and plain C++ TUs that include the header.
 - [ ] ASan build (`mac-asan` preset) shows no new errors.
 - [ ] CI green.
+
+## Status
+
+Fixed by making `metal_renderer.h` ObjC++-only and routing the plain-C++
+factory through a new free function.
+
+Changes:
+- Added `libs/draxul-renderer/src/metal/metal_renderer_factory.h` declaring
+  `create_metal_renderer(int, RendererOptions)` which returns
+  `std::unique_ptr<IGridRenderer>`. This header is plain-C++ safe.
+- `libs/draxul-renderer/src/metal/metal_renderer.h`: removed both
+  `#ifdef __OBJC__` / `#else void*` member blocks. The header now has a
+  single set of `ObjCRef<...>`-typed members and a `#error` guard that
+  prevents accidental inclusion from plain C++ TUs.
+- `libs/draxul-renderer/src/metal/metal_renderer.mm`: defines
+  `create_metal_renderer()` next to the `MetalRenderer` constructor.
+- `libs/draxul-renderer/src/renderer_factory.cpp`: now includes
+  `metal_renderer_factory.h` and calls `create_metal_renderer(...)`
+  instead of `std::make_unique<MetalRenderer>(...)`. This TU no longer
+  sees the `MetalRenderer` class definition at all, so the dual-layout
+  hazard is structurally eliminated.
+
+Build: `cmake --build build --target draxul draxul-tests` succeeds.
+ASan preset not re-run as part of this change (noted as unchecked).
 
 ---
 

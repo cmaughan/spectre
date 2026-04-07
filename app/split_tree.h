@@ -128,6 +128,11 @@ private:
     const Node* find_divider_node(DividerId id) const;
     Node* find_parent_of(const Node* child);
     const Node* find_parent_of(const Node* child) const;
+    static const Node* find_leaf_impl(const Node* node, LeafId id);
+    static const Node* find_divider_impl(const Node* node, DividerId id);
+    static const Node* find_parent_impl(const Node* node, const Node* child);
+    static void visit_dividers(
+        const Node* node, const std::function<void(const DividerRect&)>& fn);
     static void recompute_node(Node* node, int x, int y, int w, int h, int div_w);
     static HitResult hit_test_node(const Node* node, int px, int py, int div_w);
     static void visit_leaves(

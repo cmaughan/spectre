@@ -1293,11 +1293,14 @@ void App::set_text_input_area(int x, int y, int w, int h)
 
 bool App::dispatch_to_nvim_host(std::string_view action)
 {
-    // Find an existing NvimHost (identified by debug name, no side effects).
+    // Find an existing NvimHost via the typed capability query. The first
+    // host (in HostManager iteration order) reporting is_nvim_host()==true wins;
+    // this is the same selection policy as before, just without the debug-string
+    // heuristic.
     IHost* nvim_host = nullptr;
     LeafId nvim_leaf = kInvalidLeaf;
     active_host_manager().for_each_host([&nvim_host, &nvim_leaf](LeafId id, IHost& host) {
-        if (!nvim_host && host.debug_state().name == "nvim")
+        if (!nvim_host && host.is_nvim_host())
         {
             nvim_host = &host;
             nvim_leaf = id;

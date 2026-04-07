@@ -245,38 +245,6 @@ vim.fn.search(typedef_pat)
         return true;
     }
 
-    if (action.starts_with("open_file_at_type:"))
-    {
-        // Format: open_file_at_type:path|qualified_name
-        const std::string_view rest = std::string_view(action).substr(18);
-        const size_t sep = rest.rfind('|');
-        if (sep != std::string_view::npos)
-        {
-            const std::string path(rest.substr(0, sep));
-            const std::string qualified(rest.substr(sep + 1));
-            static constexpr const char* kOpenAndSearchTypeLua = R"(
-local path, qualified = ...
-vim.cmd.edit(vim.fn.fnameescape(path))
-vim.cmd('normal! gg')
-local name = qualified
-local last = qualified:match(".*::([^:]+)$")
-if last ~= nil and last ~= '' then
-    name = last
-end
-local type_pat = [[\<\(struct\|class\|enum\|union\)\s\+]] .. name .. [[\>]]
-if vim.fn.search(type_pat) > 0 then return end
-local using_pat = [[\<using\s\+]] .. name .. [[\>]]
-if vim.fn.search(using_pat) > 0 then return end
-local typedef_pat = [[\<typedef\>.\{-}\<]] .. name .. [[\>]]
-vim.fn.search(typedef_pat)
-)";
-            rpc_.notify("nvim_exec_lua",
-                { NvimRpc::make_str(kOpenAndSearchTypeLua),
-                    NvimRpc::make_array({ NvimRpc::make_str(path), NvimRpc::make_str(qualified) }) });
-        }
-        return true;
-    }
-
     if (action.starts_with("open_file:"))
     {
         const std::string path(action.substr(10));

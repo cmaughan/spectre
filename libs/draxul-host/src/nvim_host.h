@@ -25,6 +25,10 @@ public:
     void on_mouse_wheel(const MouseWheelEvent& event) override;
     bool dispatch_action(std::string_view action) override;
     void request_close() override;
+    bool is_nvim_host() const override
+    {
+        return true;
+    }
 
 protected:
     bool initialize_host() override;

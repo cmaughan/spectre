@@ -7,7 +7,18 @@
 #include <utility>
 #include <vector>
 
-#ifdef __OBJC__
+// This header references Objective-C types directly and must only be
+// included from Objective-C++ translation units. Plain C++ TUs that need
+// to construct a MetalRenderer should instead include
+// "metal/metal_renderer_factory.h" and call create_metal_renderer(), which
+// returns the concrete instance through the public IGridRenderer interface.
+// Forcing ObjC++-only inclusion eliminates the previous dual-layout hazard
+// where MetalRenderer's data members had different types (ObjCRef<...> vs.
+// void*) in different TUs, silently diverging the struct layout.
+#ifndef __OBJC__
+#error "metal_renderer.h must only be included from Objective-C++ (.mm) sources. Use metal_renderer_factory.h from plain C++."
+#endif
+
 #import <dispatch/dispatch.h>
 #include <draxul/metal/objc_ref.h>
 @protocol MTLDevice;
@@ -20,9 +31,6 @@
 @protocol MTLSamplerState;
 @class CAMetalLayer;
 @protocol CAMetalDrawable;
-#else
-typedef void* id; // NOSONAR — forward declaration for ObjC 'id' type in non-ObjC translation units
-#endif
 
 namespace draxul
 {
@@ -81,9 +89,9 @@ private:
     // Non-owning list of active grid handles; handles register/deregister themselves.
     std::vector<MetalGridHandle*> grid_handles_;
 
-    // Metal object handles — typed under ObjC++ (ARC-managed via ObjCRef),
-    // opaque void* in plain C++ translation units.
-#ifdef __OBJC__
+    // Metal object handles — ARC-managed via ObjCRef. This header is
+    // ObjC++-only (see #error guard above), so a single set of typed
+    // declarations is sufficient.
     ObjCRef<id<MTLDevice>> device_;
     ObjCRef<id<MTLCommandQueue>> command_queue_;
     ObjCRef<CAMetalLayer*> layer_;
@@ -96,20 +104,6 @@ private:
     ObjCRef<id<MTLBuffer>> capture_buffer_;
     ObjCRef<id<CAMetalDrawable>> current_drawable_;
     ObjCRef<id<MTLBuffer>> atlas_staging_[MAX_FRAMES_IN_FLIGHT];
-#else
-    void* device_ = nullptr; // NOSONAR cpp:S5008
-    void* command_queue_ = nullptr; // NOSONAR cpp:S5008
-    void* layer_ = nullptr; // NOSONAR cpp:S5008
-    void* bg_pipeline_ = nullptr; // NOSONAR cpp:S5008
-    void* fg_pipeline_ = nullptr; // NOSONAR cpp:S5008
-    void* atlas_texture_ = nullptr; // NOSONAR cpp:S5008
-    void* depth_texture_ = nullptr; // NOSONAR cpp:S5008
-    void* atlas_sampler_ = nullptr; // NOSONAR cpp:S5008
-    void* frame_semaphore_ = nullptr; // NOSONAR cpp:S5008
-    void* capture_buffer_ = nullptr; // NOSONAR cpp:S5008
-    void* current_drawable_ = nullptr; // NOSONAR cpp:S5008
-    void* atlas_staging_[MAX_FRAMES_IN_FLIGHT] = {}; // NOSONAR cpp:S5008
-#endif
 
     size_t atlas_staging_sizes_[MAX_FRAMES_IN_FLIGHT] = {};
     std::vector<PendingAtlasUpload> pending_atlas_uploads_;
@@ -137,13 +131,8 @@ private:
     bool wait_for_vblank_ = true;
     MainThreadChecker thread_checker_;
     std::unique_ptr<FrameContext> frame_context_;
-#ifdef __OBJC__
     ObjCRef<id<MTLCommandBuffer>> active_command_buffer_;
     ObjCRef<id<MTLRenderCommandEncoder>> active_encoder_;
-#else
-    void* active_command_buffer_ = nullptr; // NOSONAR cpp:S5008
-    void* active_encoder_ = nullptr; // NOSONAR cpp:S5008
-#endif
     bool frame_active_ = false;
     bool main_render_encoder_started_ = false;
     bool active_encoder_has_depth_ = false;

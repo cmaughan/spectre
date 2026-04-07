@@ -111,8 +111,9 @@ TEST_CASE("nvim rpc reader thread exits cleanly after process is force-killed", 
     REQUIRE(elapsed < std::chrono::seconds(2));
 }
 
-// Test 3: After a crash, is_running() must return false and the log must contain the expected
-// pipe-error warning emitted by the reader thread.
+// Test 3: After a crash, is_running() must return false and the log must contain one of the
+// reader-thread transport-close signals. Different platforms can surface an EOF, a read error,
+// or a terminal transport-close message for the same shutdown.
 TEST_CASE("nvim rpc emits a pipe error log when the child process dies unexpectedly", "[nvim]")
 {
     ScopedLogCapture capture;
@@ -126,6 +127,9 @@ TEST_CASE("nvim rpc emits a pipe error log when the child process dies unexpecte
     INFO("rpc initializes");
     REQUIRE(rpc.initialize(process));
 
+    // Give the reader thread time to enter its blocking read before we kill the child.
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
     // Kill the child: the reader thread will hit a pipe read error and emit a log.
     process.shutdown();
     rpc.shutdown();
@@ -133,13 +137,16 @@ TEST_CASE("nvim rpc emits a pipe error log when the child process dies unexpecte
     INFO("is_running() must return false after shutdown");
     REQUIRE(!process.is_running());
 
-    // The reader thread logs "nvim pipe read error" when the remote end closes.
+    // Depending on the platform/pipe semantics this can surface as an EOF, a read error,
+    // or the reader thread exiting after the transport is marked closed.
     bool found_pipe_error = has_log_message(capture.records, LogLevel::Error, LogCategory::Rpc,
         "nvim pipe read error");
+    bool found_pipe_eof = has_log_message(capture.records, LogLevel::Info, LogCategory::Rpc,
+        "nvim pipe closed (EOF)");
     bool found_transport_closed = has_log_message(capture.records, LogLevel::Info, LogCategory::Rpc,
         "Reader thread exiting");
-    INFO("log should contain a pipe error or transport-closed message after child death");
-    REQUIRE((found_pipe_error || found_transport_closed));
+    INFO("log should contain a pipe-read error, EOF, or transport-closed message after child death");
+    REQUIRE((found_pipe_error || found_pipe_eof || found_transport_closed));
 }
 
 #ifndef _WIN32

@@ -150,6 +150,92 @@ bool test_lots_overlap(const TestLotRect& a, const TestLotRect& b)
     return a.min_x < b.max_x && a.max_x > b.min_x && a.min_z < b.max_z && a.max_z > b.min_z;
 }
 
+constexpr std::string_view kRoofSignModule = "libs/draxul-geometry";
+constexpr std::string_view kRoofSignFunctionBundle = "Functions";
+constexpr std::string_view kRoofSignFunctionName = "generate_draxul_roof_sign";
+constexpr std::string_view kRoofSignFunctionFile = "libs/draxul-geometry/src/roof_sign_generator.cpp";
+constexpr std::string_view kRoofSignStructName = "DraxulRoofSignParams";
+constexpr std::string_view kRoofSignStructFile = "libs/draxul-geometry/include/draxul/roof_sign_generator.h";
+
+struct RoofSignSemanticFixture
+{
+    std::shared_ptr<SemanticMegacityModel> model;
+    std::shared_ptr<SemanticMegacityLayout> layout;
+};
+
+RoofSignSemanticFixture make_roof_sign_semantic_fixture()
+{
+    SemanticCityBuilding function_bundle;
+    function_bundle.module_path = std::string(kRoofSignModule);
+    function_bundle.display_name = std::string(kRoofSignFunctionBundle);
+    function_bundle.qualified_name = std::string(kRoofSignFunctionBundle);
+    function_bundle.is_free_function = true;
+    function_bundle.function_count = 1;
+    function_bundle.metrics.footprint = 2.0f;
+    function_bundle.metrics.height = 1.2f;
+    function_bundle.center = { -3.0f, 0.0f };
+    function_bundle.layers.push_back({
+        std::string(kRoofSignFunctionName),
+        std::string(kRoofSignFunctionFile),
+        3,
+        function_bundle.metrics.height,
+    });
+
+    SemanticCityBuilding params_struct;
+    params_struct.module_path = std::string(kRoofSignModule);
+    params_struct.display_name = std::string(kRoofSignStructName);
+    params_struct.qualified_name = std::string(kRoofSignStructName);
+    params_struct.source_file_path = std::string(kRoofSignStructFile);
+    params_struct.is_struct = true;
+    params_struct.base_size = 5;
+    params_struct.metrics.footprint = 2.0f;
+    params_struct.metrics.height = 1.0f;
+    params_struct.center = { 3.0f, 0.0f };
+
+    SemanticCityModuleModel module_model;
+    module_model.module_path = std::string(kRoofSignModule);
+    module_model.buildings = { function_bundle, params_struct };
+    module_model.function_bundle_remap.emplace(
+        std::string(kRoofSignFunctionName),
+        std::string(kRoofSignFunctionBundle));
+
+    auto semantic_model = std::make_shared<SemanticMegacityModel>();
+    semantic_model->modules.push_back(module_model);
+    semantic_model->function_bundle_remap.emplace(
+        std::string(kRoofSignFunctionName),
+        std::string(kRoofSignFunctionBundle));
+    semantic_model->dependencies.push_back({
+        std::string(kRoofSignModule),
+        std::string(kRoofSignFunctionName),
+        "& input_params",
+        std::string(kRoofSignStructName),
+        std::string(kRoofSignModule),
+        std::string(kRoofSignStructName),
+        std::string(kRoofSignFunctionFile),
+        std::string(kRoofSignStructFile),
+        false,
+    });
+
+    auto semantic_layout = std::make_shared<SemanticMegacityLayout>();
+    SemanticCityModuleLayout module_layout;
+    module_layout.module_path = std::string(kRoofSignModule);
+    module_layout.buildings = { function_bundle, params_struct };
+    module_layout.min_x = -5.0f;
+    module_layout.max_x = 5.0f;
+    module_layout.min_z = -2.0f;
+    module_layout.max_z = 2.0f;
+    semantic_layout->modules.push_back(module_layout);
+    semantic_layout->min_x = module_layout.min_x;
+    semantic_layout->max_x = module_layout.max_x;
+    semantic_layout->min_z = module_layout.min_z;
+    semantic_layout->max_z = module_layout.max_z;
+
+    return {
+        .model = std::move(semantic_model),
+        .layout = std::move(semantic_layout),
+    };
+}
+
 std::filesystem::path bundled_font_path()
 {
     return std::filesystem::path(DRAXUL_PROJECT_ROOT) / "fonts" / "JetBrainsMonoNerdFont-Regular.ttf";
@@ -2501,79 +2587,21 @@ TEST_CASE("megacity host retries focused routes once the grid becomes available"
 
     REQUIRE(host.initialize(context, callbacks));
 
-    constexpr std::string_view kModule = "libs/draxul-geometry";
-    constexpr std::string_view kFunctionBundle = "Functions";
-    constexpr std::string_view kFunctionName = "generate_draxul_roof_sign";
-    constexpr std::string_view kFunctionFile = "libs/draxul-geometry/src/roof_sign_generator.cpp";
-    constexpr std::string_view kStructName = "DraxulRoofSignParams";
-    constexpr std::string_view kStructFile = "libs/draxul-geometry/include/draxul/roof_sign_generator.h";
+    const auto fixture = make_roof_sign_semantic_fixture();
 
-    SemanticCityBuilding function_bundle;
-    function_bundle.module_path = std::string(kModule);
-    function_bundle.display_name = std::string(kFunctionBundle);
-    function_bundle.qualified_name = std::string(kFunctionBundle);
-    function_bundle.is_free_function = true;
-    function_bundle.function_count = 1;
-    function_bundle.metrics.footprint = 2.0f;
-    function_bundle.metrics.height = 1.2f;
-    function_bundle.center = { -3.0f, 0.0f };
-    function_bundle.layers.push_back({
-        std::string(kFunctionName),
-        std::string(kFunctionFile),
-        3,
-        function_bundle.metrics.height,
-    });
-
-    SemanticCityBuilding params_struct;
-    params_struct.module_path = std::string(kModule);
-    params_struct.display_name = std::string(kStructName);
-    params_struct.qualified_name = std::string(kStructName);
-    params_struct.source_file_path = std::string(kStructFile);
-    params_struct.is_struct = true;
-    params_struct.base_size = 5;
-    params_struct.metrics.footprint = 2.0f;
-    params_struct.metrics.height = 1.0f;
-    params_struct.center = { 3.0f, 0.0f };
-
-    SemanticCityModuleModel module_model;
-    module_model.module_path = std::string(kModule);
-    module_model.buildings = { function_bundle, params_struct };
-    module_model.function_bundle_remap.emplace(std::string(kFunctionName), std::string(kFunctionBundle));
-
-    auto semantic_model = std::make_shared<SemanticMegacityModel>();
-    semantic_model->modules.push_back(module_model);
-    semantic_model->function_bundle_remap.emplace(std::string(kFunctionName), std::string(kFunctionBundle));
-    semantic_model->dependencies.push_back({
-        std::string(kModule),
-        std::string(kFunctionName),
-        "& input_params",
-        std::string(kStructName),
-        std::string(kModule),
-        std::string(kStructName),
-        std::string(kFunctionFile),
-        std::string(kStructFile),
-        false,
-    });
-
-    auto semantic_layout = std::make_shared<SemanticMegacityLayout>();
-    SemanticCityModuleLayout module_layout;
-    module_layout.module_path = std::string(kModule);
-    module_layout.buildings = { function_bundle, params_struct };
-    semantic_layout->modules.push_back(module_layout);
-
-    host.semantic_model_ = semantic_model;
-    host.semantic_layout_ = semantic_layout;
-    host.selected_building_name_ = std::string(kFunctionBundle);
-    host.selected_building_module_path_ = std::string(kModule);
+    host.semantic_model_ = fixture.model;
+    host.semantic_layout_ = fixture.layout;
+    host.selected_building_name_ = std::string(kRoofSignFunctionBundle);
+    host.selected_building_module_path_ = std::string(kRoofSignModule);
     host.selected_building_source_file_.clear();
-    host.selected_function_name_ = std::string(kFunctionName);
+    host.selected_function_name_ = std::string(kRoofSignFunctionName);
     host.selection_routes_requested_ = false;
     host.city_grid_.reset();
 
     host.pump();
     CHECK_FALSE(host.selection_routes_requested_);
 
-    CityGrid grid = build_city_grid(*semantic_layout, *semantic_model, host.renderer_config_);
+    CityGrid grid = build_city_grid(*fixture.layout, *fixture.model, host.renderer_config_);
     REQUIRE(grid.routes.empty());
     {
         std::lock_guard<std::mutex> lock(host.grid_mutex_);
@@ -2604,8 +2632,8 @@ TEST_CASE("megacity host retries focused routes once the grid becomes available"
     }
     REQUIRE(routed_grid != nullptr);
     REQUIRE(routed_grid->routes.size() == 1);
-    CHECK(routed_grid->routes[0].source_qualified_name == kFunctionName);
-    CHECK(routed_grid->routes[0].target_qualified_name == kStructName);
+    CHECK(routed_grid->routes[0].source_qualified_name == kRoofSignFunctionName);
+    CHECK(routed_grid->routes[0].target_qualified_name == kRoofSignStructName);
 
     host.shutdown();
 }
@@ -2636,35 +2664,24 @@ TEST_CASE("megacity host scene click on roof sign function emits focused depende
 
     REQUIRE(host.initialize(context, callbacks));
 
-    const std::filesystem::path repo_root = std::filesystem::path(__FILE__).parent_path().parent_path();
-    const std::filesystem::path db_path = repo_root / "db" / "megacity.sqlite3";
-    REQUIRE(std::filesystem::exists(db_path));
-    REQUIRE(host.city_db_.open(db_path));
-    host.available_modules_ = host.city_db_.list_modules();
+    const auto fixture = make_roof_sign_semantic_fixture();
 
-    uint64_t sign_label_revision = 1;
-    CityBuildResult build = build_city(
-        *host.world_,
-        host.city_db_,
-        host.sign_text_service_.get(),
-        host.available_modules_,
-        host.renderer_config_,
-        sign_label_revision);
-    REQUIRE(build.semantic_model != nullptr);
-    REQUIRE(build.layout != nullptr);
-
-    host.semantic_model_ = build.semantic_model;
-    host.semantic_layout_ = std::shared_ptr<const SemanticMegacityLayout>(build.layout.release());
-    host.city_bounds_valid_ = build.city_bounds_valid;
-    host.city_min_x_ = build.min_x;
-    host.city_max_x_ = build.max_x;
-    host.city_min_z_ = build.min_z;
-    host.city_max_z_ = build.max_z;
-    host.sign_label_revision_ = sign_label_revision;
-    host.camera_->frame_world_bounds(build.min_x, build.max_x, build.min_z, build.max_z);
+    host.semantic_model_ = fixture.model;
+    host.semantic_layout_ = fixture.layout;
+    host.city_bounds_valid_ = true;
+    host.city_min_x_ = fixture.layout->min_x;
+    host.city_max_x_ = fixture.layout->max_x;
+    host.city_min_z_ = fixture.layout->min_z;
+    host.city_max_z_ = fixture.layout->max_z;
+    host.sign_label_revision_ = 1;
+    host.camera_->frame_world_bounds(
+        fixture.layout->min_x,
+        fixture.layout->max_x,
+        fixture.layout->min_z,
+        fixture.layout->max_z);
     host.scene_dirty_ = true;
 
-    CityGrid grid = build_city_grid(*host.semantic_layout_, *host.semantic_model_, host.renderer_config_);
+    CityGrid grid = build_city_grid(*fixture.layout, *fixture.model, host.renderer_config_);
     {
         std::lock_guard<std::mutex> lock(host.grid_mutex_);
         host.city_grid_ = std::make_shared<CityGrid>(std::move(grid));
@@ -2680,7 +2697,7 @@ TEST_CASE("megacity host scene click on roof sign function emits focused depende
                 continue;
             for (const auto& layer : building.layers)
             {
-                if (layer.function_name == "generate_draxul_roof_sign")
+                if (layer.function_name == kRoofSignFunctionName)
                 {
                     function_bundle = &building;
                     roof_sign_layer = &layer;
@@ -2725,11 +2742,37 @@ TEST_CASE("megacity host scene click on roof sign function emits focused depende
         static_cast<int>(std::lround((ndc.x * 0.5f + 0.5f) * 800.0f)),
         static_cast<int>(std::lround((1.0f - (ndc.y * 0.5f + 0.5f)) * 600.0f)));
 
-    click_megacity_scene(host, screen_pos);
+    std::optional<glm::ivec2> precise_screen_pos;
+    for (int dy = -12; dy <= 12 && !precise_screen_pos.has_value(); ++dy)
+    {
+        for (int dx = -12; dx <= 12; ++dx)
+        {
+            const glm::ivec2 candidate = screen_pos + glm::ivec2(dx, dy);
+            auto hit = pick_building(
+                candidate,
+                800,
+                600,
+                *host.camera_,
+                *host.semantic_layout_,
+                {},
+                host.semantic_model_.get(),
+                &host.renderer_config_);
+            if (!hit)
+                continue;
+            if (hit->qualified_name != kRoofSignFunctionBundle || !hit->has_layer_index)
+                continue;
+            precise_screen_pos = candidate;
+            break;
+        }
+    }
+
+    REQUIRE(precise_screen_pos.has_value());
+
+    click_megacity_scene(host, *precise_screen_pos);
 
     CHECK(host.selected_building_name_ == function_bundle->qualified_name);
     CHECK(host.selected_building_module_path_ == function_bundle->module_path);
-    CHECK(host.selected_function_name_ == "generate_draxul_roof_sign");
+    CHECK(host.selected_function_name_ == kRoofSignFunctionName);
 
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
     while (std::chrono::steady_clock::now() < deadline)
@@ -2756,8 +2799,8 @@ TEST_CASE("megacity host scene click on roof sign function emits focused depende
         routed_grid->routes.begin(),
         routed_grid->routes.end(),
         [](const CityGrid::RoutePolyline& route) {
-            return route.source_qualified_name == "generate_draxul_roof_sign"
-                && route.target_qualified_name == "DraxulRoofSignParams";
+            return route.source_qualified_name == kRoofSignFunctionName
+                && route.target_qualified_name == kRoofSignStructName;
         }));
 
     host.pump();
@@ -2772,8 +2815,8 @@ TEST_CASE("megacity host scene click on roof sign function emits focused depende
     bool saw_visible_route_segment = false;
     for (const auto& obj : pass->scene().objects)
     {
-        if (obj.route_source == "generate_draxul_roof_sign"
-            && obj.route_target == "DraxulRoofSignParams")
+        if (obj.route_source == kRoofSignFunctionName
+            && obj.route_target == kRoofSignStructName)
         {
             saw_visible_route_segment = true;
             CHECK(obj.color.a == Catch::Approx(1.0f));
@@ -2791,7 +2834,7 @@ TEST_CASE("megacity host scene click on roof sign function emits focused depende
     host.selection_routes_requested_ = false;
 
     std::this_thread::sleep_for(std::chrono::milliseconds(450));
-    click_megacity_scene(host, screen_pos);
+    click_megacity_scene(host, *precise_screen_pos);
 
     const auto retry_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
     while (std::chrono::steady_clock::now() < retry_deadline)

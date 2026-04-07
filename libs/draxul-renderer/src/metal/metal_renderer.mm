@@ -1,4 +1,5 @@
 #include "metal_renderer.h"
+#include "metal_renderer_factory.h"
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_metal.h>
 #include <algorithm>
@@ -182,6 +183,11 @@ MetalRenderer::MetalRenderer(int atlas_size, RendererOptions options)
 }
 
 MetalRenderer::~MetalRenderer() = default;
+
+std::unique_ptr<IGridRenderer> create_metal_renderer(int atlas_size, RendererOptions options)
+{
+    return std::make_unique<MetalRenderer>(atlas_size, options);
+}
 
 bool MetalRenderer::ensure_capture_buffer(size_t width, size_t height)
 {

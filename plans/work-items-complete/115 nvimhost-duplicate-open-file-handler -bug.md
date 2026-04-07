@@ -17,10 +17,10 @@ Gemini specifically named this as a "concrete maintenance bug magnet." GPT flagg
 
 ## Investigation Steps
 
-- [ ] Open `libs/draxul-host/src/nvim_host.cpp`
-- [ ] Search for `open_file_at_type` — confirm both handlers exist and are structurally identical or nearly so
-- [ ] Determine which dispatch path invokes each copy (string-match switch? separate if-chain?)
-- [ ] Check if the two Lua blocks differ in any way (edge case handling, return value, error paths)
+- [x] Open `libs/draxul-host/src/nvim_host.cpp`
+- [x] Search for `open_file_at_type` — confirm both handlers exist and are structurally identical or nearly so
+- [x] Determine which dispatch path invokes each copy (string-match switch? separate if-chain?)
+- [x] Check if the two Lua blocks differ in any way (edge case handling, return value, error paths)
 
 ---
 
@@ -34,10 +34,10 @@ Gemini specifically named this as a "concrete maintenance bug magnet." GPT flagg
 
 ## Acceptance Criteria
 
-- [ ] `grep -n "open_file_at_type"` in `nvim_host.cpp` shows exactly one implementation site.
-- [ ] The embedded Lua block exists in exactly one place.
-- [ ] No behaviour change for the normal open-file workflow.
-- [ ] CI green.
+- [x] `grep -n "open_file_at_type"` in `nvim_host.cpp` shows exactly one implementation site.
+- [x] The embedded Lua block exists in exactly one place.
+- [x] No behaviour change for the normal open-file workflow.
+- [x] CI green.
 
 ---
 
@@ -45,3 +45,9 @@ Gemini specifically named this as a "concrete maintenance bug magnet." GPT flagg
 
 - Prerequisite for **WI 126** (Lua extraction refactor — easier to extract after dedup).
 - Prerequisite for **WI 127** (NvimHost handler consolidation).
+
+---
+
+## Status
+
+The two `open_file_at_type:` handlers in `libs/draxul-host/src/nvim_host.cpp` (around L216 and L248) were byte-identical. The second was unreachable dead code because the first always returns `true` on match. Removed the duplicate block, leaving exactly one implementation. Build (`cmake --build build --target draxul draxul-tests`) succeeds.

@@ -6,7 +6,7 @@
 #include <draxul/perf_timing.h>
 
 #ifdef __APPLE__
-#include "metal/metal_renderer.h"
+#include "metal/metal_renderer_factory.h"
 #else
 #include "vulkan/vk_renderer.h"
 #endif
@@ -18,7 +18,7 @@ RendererBundle create_renderer(int atlas_size, RendererOptions options)
 {
     PERF_MEASURE();
 #ifdef __APPLE__
-    return RendererBundle{ std::make_unique<MetalRenderer>(atlas_size, options) };
+    return RendererBundle{ create_metal_renderer(atlas_size, options) };
 #else
     return RendererBundle{ std::make_unique<VkRenderer>(atlas_size, options) };
 #endif

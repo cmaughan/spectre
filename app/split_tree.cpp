@@ -242,94 +242,72 @@ int SplitTree::leaf_count() const
 // ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------
+// Plain recursive helpers — avoid the per-call std::function heap allocation
+// the previous lambda-based searches incurred.
+const SplitTree::Node* SplitTree::find_leaf_impl(const Node* node, LeafId id)
+{
+    if (!node)
+        return nullptr;
+    if (node->is_leaf())
+        return node->leaf().id == id ? node : nullptr;
+    const auto& s = node->split();
+    if (const auto* found = find_leaf_impl(s.first.get(), id))
+        return found;
+    return find_leaf_impl(s.second.get(), id);
+}
+
+const SplitTree::Node* SplitTree::find_divider_impl(const Node* node, DividerId id)
+{
+    if (!node || node->is_leaf())
+        return nullptr;
+    const auto& s = node->split();
+    if (s.divider_id == id)
+        return node;
+    if (const auto* found = find_divider_impl(s.first.get(), id))
+        return found;
+    return find_divider_impl(s.second.get(), id);
+}
+
+const SplitTree::Node* SplitTree::find_parent_impl(const Node* node, const Node* child)
+{
+    if (!node || node->is_leaf())
+        return nullptr;
+    const auto& s = node->split();
+    if (s.first.get() == child || s.second.get() == child)
+        return node;
+    if (const auto* found = find_parent_impl(s.first.get(), child))
+        return found;
+    return find_parent_impl(s.second.get(), child);
+}
+
 const SplitTree::Node* SplitTree::find_leaf_node(LeafId id) const
 {
-    std::function<const Node*(const Node*)> search = [&](const Node* node) -> const Node* {
-        if (!node)
-            return nullptr;
-        if (node->is_leaf())
-            return node->leaf().id == id ? node : nullptr;
-        const auto& s = node->split();
-        if (const auto* found = search(s.first.get()))
-            return found;
-        return search(s.second.get());
-    };
-    return search(root_.get());
+    return find_leaf_impl(root_.get(), id);
 }
 
 SplitTree::Node* SplitTree::find_leaf_node(LeafId id)
 {
-    std::function<Node*(Node*)> search = [&](Node* node) -> Node* {
-        if (!node)
-            return nullptr;
-        if (node->is_leaf())
-            return node->leaf().id == id ? node : nullptr;
-        auto& s = node->split();
-        if (auto* found = search(s.first.get()))
-            return found;
-        return search(s.second.get());
-    };
-    return search(root_.get());
+    return const_cast<Node*>(find_leaf_impl(root_.get(), id));
 }
 
 const SplitTree::Node* SplitTree::find_divider_node(DividerId id) const
 {
-    std::function<const Node*(const Node*)> search = [&](const Node* node) -> const Node* {
-        if (!node || node->is_leaf())
-            return nullptr;
-        const auto& s = node->split();
-        if (s.divider_id == id)
-            return node;
-        if (const auto* found = search(s.first.get()))
-            return found;
-        return search(s.second.get());
-    };
-    return search(root_.get());
+    return find_divider_impl(root_.get(), id);
 }
 
 SplitTree::Node* SplitTree::find_divider_node(DividerId id)
 {
-    std::function<Node*(Node*)> search = [&](Node* node) -> Node* {
-        if (!node || node->is_leaf())
-            return nullptr;
-        auto& s = node->split();
-        if (s.divider_id == id)
-            return node;
-        if (auto* found = search(s.first.get()))
-            return found;
-        return search(s.second.get());
-    };
-    return search(root_.get());
+    return const_cast<Node*>(find_divider_impl(root_.get(), id));
 }
 
 const SplitTree::Node* SplitTree::find_parent_of(const Node* child) const
 {
-    std::function<const Node*(const Node*)> search = [&](const Node* node) -> const Node* {
-        if (!node || node->is_leaf())
-            return nullptr;
-        const auto& s = node->split();
-        if (s.first.get() == child || s.second.get() == child)
-            return node;
-        if (const auto* found = search(s.first.get()))
-            return found;
-        return search(s.second.get());
-    };
-    return search(root_.get());
+    return find_parent_impl(root_.get(), child);
 }
 
 SplitTree::Node* SplitTree::find_parent_of(const Node* child)
 {
-    std::function<Node*(Node*)> search = [&](Node* node) -> Node* {
-        if (!node || node->is_leaf())
-            return nullptr;
-        auto& s = node->split();
-        if (s.first.get() == child || s.second.get() == child)
-            return node;
-        if (auto* found = search(s.first.get()))
-            return found;
-        return search(s.second.get());
-    };
-    return search(root_.get());
+    return const_cast<Node*>(find_parent_impl(root_.get(), child));
 }
 
 void SplitTree::recompute_node(Node* node, int x, int y, int w, int h, int div_w)
@@ -534,23 +512,26 @@ LeafId SplitTree::find_neighbor(LeafId id, FocusDirection direction) const
     return kInvalidLeaf;
 }
 
+void SplitTree::visit_dividers(
+    const Node* node, const std::function<void(const DividerRect&)>& fn)
+{
+    if (!node || node->is_leaf())
+        return;
+    const auto& s = node->split();
+    DividerRect r;
+    r.x = s.div_x;
+    r.y = s.div_y;
+    r.w = s.div_w;
+    r.h = s.div_h;
+    r.direction = s.direction;
+    fn(r);
+    visit_dividers(s.first.get(), fn);
+    visit_dividers(s.second.get(), fn);
+}
+
 void SplitTree::for_each_divider(const std::function<void(const DividerRect&)>& fn) const
 {
-    std::function<void(const Node*)> visit = [&](const Node* node) {
-        if (!node || node->is_leaf())
-            return;
-        const auto& s = node->split();
-        DividerRect r;
-        r.x = s.div_x;
-        r.y = s.div_y;
-        r.w = s.div_w;
-        r.h = s.div_h;
-        r.direction = s.direction;
-        fn(r);
-        visit(s.first.get());
-        visit(s.second.get());
-    };
-    visit(root_.get());
+    visit_dividers(root_.get(), fn);
 }
 
 } // namespace draxul

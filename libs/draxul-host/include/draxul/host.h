@@ -181,6 +181,14 @@ public:
 
     virtual bool dispatch_action(std::string_view action) = 0;
     virtual void request_close() = 0;
+
+    // Capability query: returns true if this host is a Neovim host. Used by
+    // App::dispatch_to_nvim_host to locate a target pane without relying on
+    // debug-string heuristics. Override in NvimHost to return true.
+    virtual bool is_nvim_host() const
+    {
+        return false;
+    }
     virtual Color default_background() const = 0;
     virtual HostRuntimeState runtime_state() const = 0;
     virtual HostDebugState debug_state() const = 0;
