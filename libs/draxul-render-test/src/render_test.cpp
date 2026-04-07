@@ -204,7 +204,8 @@ AppOptions RenderTestScenario::make_app_options() const
     options.config_overrides.enable_ligatures = enable_ligatures;
     if (display_ppi > 0.0f)
         options.override_display_ppi = display_ppi;
-    options.config_overrides.font_path = font_path.empty() ? std::string{} : normalized_path_string(font_path);
+    if (!font_path.empty())
+        options.config_overrides.font_path = normalized_path_string(font_path);
     options.config_overrides.fallback_paths = fallback_paths;
     options.host_kind = host_kind;
     options.host_command = host_command;

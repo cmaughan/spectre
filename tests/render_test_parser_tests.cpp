@@ -123,6 +123,27 @@ TEST_CASE("render test parser: ${PROJECT_ROOT} placeholder expands to the compil
     std::filesystem::remove_all(dir, ec);
 }
 
+TEST_CASE("render test parser: omitted font_path leaves the font override unset", "[render]")
+{
+    const auto dir = std::filesystem::temp_directory_path() / "draxul-render-test-parser-font-override";
+    const auto path = dir / "nanovg-like.toml";
+    write_text_file(path,
+        "host = \"nanovg-demo\"\n"
+        "commands = [\"noop\"]\n");
+
+    std::string err;
+    auto scenario = draxul::load_render_test_scenario(path, &err);
+    INFO("scenario without font_path should load");
+    REQUIRE(scenario.has_value());
+
+    const draxul::AppOptions options = scenario->make_app_options();
+    INFO("missing font_path should not clear the bundled font fallback");
+    REQUIRE_FALSE(options.config_overrides.font_path.has_value());
+
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+}
+
 TEST_CASE("render test parser: invalid TOML scenario returns a parse error", "[render]")
 {
     const auto dir = std::filesystem::temp_directory_path() / "draxul-render-test-parser-invalid";
