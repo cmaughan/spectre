@@ -4,7 +4,6 @@
 #include <cmath>
 
 #ifdef _WIN32
-#include <psapi.h>
 #include <windows.h>
 #elif defined(__APPLE__)
 #include <mach/mach.h>
