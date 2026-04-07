@@ -26,9 +26,9 @@ This was flagged by Gemini as an example of capability probing via debug strings
 
 ## Investigation Steps
 
-- [ ] Find `dispatch_to_nvim_host` in `app/app.cpp` — confirm the `debug_state().name == "nvim"` pattern
-- [ ] Identify all callers of `dispatch_to_nvim_host`
-- [ ] Check whether `IHost` or `GridHostBase` has an appropriate type-safe query (e.g. `is_nvim_host()`, a `NvimCapability` interface, or a typed downcast to `NvimHost`)
+- [x] Find `dispatch_to_nvim_host` in `app/app.cpp` — confirm the `debug_state().name == "nvim"` pattern
+- [x] Identify all callers of `dispatch_to_nvim_host`
+- [x] Check whether `IHost` or `GridHostBase` has an appropriate type-safe query (e.g. `is_nvim_host()`, a `NvimCapability` interface, or a typed downcast to `NvimHost`)
 
 ---
 
@@ -48,10 +48,27 @@ Either way, document *which* pane is targeted when multiple Neovim panes are ope
 
 ## Acceptance Criteria
 
-- [ ] `grep "debug_state().name" app/app.cpp` returns no hits relating to dispatch logic.
-- [ ] Dispatch correctly targets a Neovim host when multiple pane types coexist.
+- [x] `grep "debug_state().name" app/app.cpp` returns no hits relating to dispatch logic.
+- [x] Dispatch correctly targets a Neovim host when multiple pane types coexist.
 - [ ] **WI 122** (mixed-host dispatch test) passes with the fixed implementation.
 - [ ] CI green.
+
+## Status
+
+Replaced the `host.debug_state().name == "nvim"` heuristic in
+`App::dispatch_to_nvim_host` with a typed capability query
+`IHost::is_nvim_host()` (default `false`), overridden in `NvimHost` to return
+`true`. The selection policy is preserved (first matching host in
+`HostManager::for_each_host` iteration order wins) and documented inline.
+
+Files changed:
+- `libs/draxul-host/include/draxul/host.h` — added `virtual bool is_nvim_host() const`
+- `libs/draxul-host/src/nvim_host.h` — override returning `true`
+- `app/app.cpp` — `dispatch_to_nvim_host` now uses `host.is_nvim_host()`
+
+Build: `cmake --build build --target draxul draxul-tests` succeeded. The
+acceptance test for mixed-host dispatch is tracked separately under WI 122 and
+not added here.
 
 ---
 
