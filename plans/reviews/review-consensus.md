@@ -1,53 +1,56 @@
-All 13 new work items and the updated consensus review are written. Here's a summary of what was produced:
+All 18 work items and the consensus file are written. Here's the summary:
 
 ---
 
-## `plans/reviews/review-consensus.md` — Full Replacement
+## `review-consensus.md` — Replaced
 
-A 9-section synthesis covering:
-- **Unanimous agreements** (MegaCity liability, app.cpp size, threading risks, good renderer abstraction)
-- **New bugs raised** (two overlooked Gemini criticals, four GPT findings)
-- **Three cross-cutting topics**: atlas upload duplication, documentation drift, config layer build boundary
-- **Genuine disagreements**: MegaCity (remove vs. isolate), custom VT parser (keep), do.py complexity (non-issue)
-- **Recommended fix order** and full **interdependency table**
+A full synthesis of all three reviews covering:
+- **4 unanimous agreements** (app god object, MegaCity burden, drain loop starvation, VT parser gaps, dynamic_cast capability probing)
+- **Agent-specific findings** with attribution (Claude: dead Linux code, Metal header hazard; Gemini: duplicate NvimHost handler, atlas upload duplication, overlay hardwiring; GPT: IHostCallbacks width, SDL3 risk)
+- **3 real disagreements** (MegaCity remove vs isolate, VT parser keep vs replace, ImGui opinion)
+- **Recommended 4-phase fix order** with interdependency table
 
 ---
 
-## 13 New Work Items (WI 100–112)
+## 18 New Work Items (WI 115–132)
 
-### Bugs (6)
-| # | Severity | Description |
-|---|----------|-------------|
-| 100 | CRITICAL | RPC init-order race: reader thread starts before callbacks are assigned [Gemini, overlooked] |
-| 101 | CRITICAL | `MpackValue::as_*()` uncaught exception kills reader thread silently [Gemini, overlooked] |
-| 102 | HIGH | Tab action names absent from config parser/serializer allowlist [GPT] |
-| 103 | HIGH | `activate_tab` is a no-op when selected from command palette [GPT] |
-| 104 | MEDIUM | `apply_font_metrics` / `reload_config` skip inactive workspaces [GPT] |
-| 105 | MEDIUM | Second late RPC response for same timed-out msgid re-leaks into `responses_` map [Gemini] |
+### Bugs (4) — highest priority
+| WI | Description |
+|-----|------------|
+| **115** | NvimHost duplicate `open_file_at_type:` handler -bug |
+| **116** | App debug-string dispatch heuristic (`name == "nvim"`) -bug |
+| **117** | MetalRenderer dual ObjC/C++ header layout hazard -bug |
+| **118** | SplitTree O(n) recursive finds + `std::function` allocations -bug |
 
-### Tests (3)
-| # | Description |
-|---|-------------|
-| 106 | Round-trip test for tab keybinding names through `config.toml` (acceptance for WI 102) |
-| 107 | Inactive workspace config/font propagation test (acceptance for WI 104) |
-| 108 | Atlas dirty-flag coordination across grid, chrome, and palette subsystems (acceptance for WI 109) |
+### Tests (5)
+| WI | Description |
+|-----|------------|
+| **119** | ChromeHost tab-bar hit-testing + DPI viewport -test |
+| **120** | ToastHost lifecycle (stacking, expiry, fade, replay) -test |
+| **121** | App render-tree overlay ordering -test |
+| **122** | Mixed-host dispatch without debug-name heuristic -test |
+| **123** | UiRequestWorker overlapping requests + cancellation -test |
 
-### Refactors (3)
-| # | Description |
-|---|-------------|
-| 109 | Extract single atlas-upload-if-dirty helper; remove three copy-pasted copies |
-| 110 | Fix `draxul-config` public links to `draxul-renderer`/`draxul-window` (build boundary) |
-| 111 | Repair stale `renderers.md`, `city_db.md` schema version, `features.md` keybinding |
+### Refactors (4)
+| WI | Description |
+|-----|------------|
+| **124** | Dead Linux code path cleanup -refactor |
+| **125** | Overlay registry (data-driven overlay management) -refactor |
+| **126** | Embedded Lua extraction from nvim_host.cpp -refactor |
+| **127** | NvimHost dispatch handler consolidation to dispatch table -refactor |
 
-### Feature (1)
-| # | Description |
-|---|-------------|
-| 112 | Add `mac-tsan` CMake preset for ThreadSanitizer builds |
+### Features (5)
+| WI | Description |
+|-----|------------|
+| **128** | Workspace tab name editing (double-click to rename) -feature |
+| **129** | Reopen last closed pane or tab -feature |
+| **130** | Keybinding inspector (show matched action in diagnostics panel) -feature |
+| **131** | Clipboard history with paste picker -feature |
+| **132** | Distraction-free / focus mode -feature |
 
-### Key interdependencies flagged in consensus
-- WI 100 + 101 + 89 → fix together in one `rpc.cpp` pass
-- WI 102 → WI 106 (test is the acceptance criterion)
-- WI 104 → WI 107 (same)
-- WI 109 → WI 108 (same)
-- WI 100/101 must precede WI 112 (fix known races before enabling TSan CI gate)
-- WI 71 (existing) may resolve WI 103 as a side-effect
+**Key interdependency chains:**
+- `115 → 126 → 127` (dedup first, then extract, then consolidate)
+- `116 → 122` (fix dispatch bug, then write its acceptance test)
+- `119 + 120 + 121 → 125` (tests must exist before overlay registry refactor)
+- `125 → 132` (focus mode is trivial after overlay registry)
+- `128 → 129` (tab name needed in reopen record)
