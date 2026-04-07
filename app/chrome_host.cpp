@@ -1,11 +1,15 @@
 #include "chrome_host.h"
 
+#include "host_manager.h"
+#include "workspace.h"
+
 #include <cmath>
 #include <cstring>
 #include <draxul/app_config.h>
 #include <draxul/log.h>
 #include <draxul/text_service.h>
 #include <nanovg.h>
+#include <unordered_set>
 
 namespace draxul
 {
@@ -78,6 +82,12 @@ constexpr Color kActiveTabBg{ 0.796f, 0.651f, 0.969f, 1.0f }; // #cba6f7 Mauve
 constexpr Color kInactiveTabBg{ 0.271f, 0.278f, 0.353f, 1.0f }; // #45475a Surface1
 constexpr Color kActiveTabFg{ 0.118f, 0.118f, 0.180f, 1.0f }; // #1e1e2e Base (dark on bright)
 constexpr Color kInactiveTabFg{ 0.651f, 0.678f, 0.780f, 1.0f }; // #a6adc8 Subtext0
+
+// Pane status bar (WI 78)
+constexpr Color kStatusBarBgFocused{ 0.180f, 0.184f, 0.247f, 0.85f }; // #2d2f3f darker overlay
+constexpr Color kStatusBarBgUnfocused{ 0.118f, 0.118f, 0.180f, 0.75f }; // #1e1e2e Base
+constexpr Color kStatusBarFgFocused{ 0.918f, 0.929f, 0.984f, 1.0f }; // #eaeafc near-white
+constexpr Color kStatusBarFgUnfocused{ 0.498f, 0.518f, 0.620f, 1.0f }; // #7f849e Overlay1
 constexpr int kTabPadCols = 1; // padding cells on each side of tab label
 constexpr int kGridPadding = 4; // renderer internal cell padding
 
@@ -120,8 +130,51 @@ void ChromeHost::draw(IFrameContext& frame)
     const int active_ws_id = deps_.active_workspace_id ? *deps_.active_workspace_id : -1;
     const bool show_tabs = workspaces.size() > 1;
     const bool show_dividers = active_tree().leaf_count() >= 2;
+    const bool show_status = deps_.config && deps_.config->show_pane_status;
 
-    if (!show_tabs && !show_dividers)
+    // Collect per-pane status entries (WI 78). One row of cells (cell_h tall)
+    // is reserved at the bottom of every pane by App::viewport_from_descriptor.
+    std::vector<PaneStatusEntry> status_entries;
+    int status_strip_h = 0;
+    if (show_status && deps_.grid_renderer)
+    {
+        const auto [cw, ch] = deps_.grid_renderer->cell_size_pixels();
+        status_strip_h = ch;
+        if (cw > 0 && ch > 0)
+        {
+            // Walk the active workspace's hosts so we can pull status_text() per pane.
+            const HostManager* active_hm = nullptr;
+            for (const auto& ws : workspaces)
+            {
+                if (ws->id == active_ws_id)
+                {
+                    active_hm = &ws->host_manager;
+                    break;
+                }
+            }
+            if (active_hm)
+            {
+                const SplitTree& tree = active_hm->tree();
+                const LeafId focused_leaf = tree.focused();
+                tree.for_each_leaf([&](LeafId id, const PaneDescriptor& desc) {
+                    IHost* h = active_hm->host_for(id);
+                    if (!h || desc.pixel_size.x <= 0 || desc.pixel_size.y <= ch)
+                        return;
+                    PaneStatusEntry e;
+                    e.pane_x = desc.pixel_pos.x;
+                    e.pane_y = desc.pixel_pos.y;
+                    e.pane_w = desc.pixel_size.x;
+                    e.pane_h = desc.pixel_size.y;
+                    e.text = h->status_text();
+                    e.focused = (id == focused_leaf);
+                    e.leaf = id;
+                    status_entries.push_back(std::move(e));
+                });
+            }
+        }
+    }
+
+    if (!show_tabs && !show_dividers && status_entries.empty())
         return;
 
     // --- Shared tab layout (used by both NanoVG and grid) ---
@@ -228,11 +281,44 @@ void ChromeHost::draw(IFrameContext& frame)
         }
     }
 
+    // Status bar background rects (one per pane).
+    struct StatusBgRect
+    {
+        float x, y, w, h;
+        bool focused;
+    };
+    std::vector<StatusBgRect> status_bg_rects;
+    if (status_strip_h > 0)
+    {
+        status_bg_rects.reserve(status_entries.size());
+        for (const auto& e : status_entries)
+        {
+            StatusBgRect r;
+            r.x = static_cast<float>(e.pane_x);
+            r.y = static_cast<float>(e.pane_y + e.pane_h - status_strip_h);
+            r.w = static_cast<float>(e.pane_w);
+            r.h = static_cast<float>(status_strip_h);
+            r.focused = e.focused;
+            status_bg_rects.push_back(r);
+        }
+    }
+
     // Single NanoVG callback draws everything: tab bar shapes + dividers + focus.
     const float focus_border = deps_.config ? deps_.config->focus_border_width : 3.0f;
     nanovg_pass_->set_draw_callback(
         [tab_rects = std::move(tab_rects), bar_w, bar_h,
-            dividers = std::move(dividers), focus_rect, focus_border](NVGcontext* vg, int /*w*/, int /*h*/) {
+            dividers = std::move(dividers), focus_rect, focus_border,
+            status_bg_rects = std::move(status_bg_rects)](NVGcontext* vg, int /*w*/, int /*h*/) {
+            // --- Pane status bar backgrounds (drawn first so dividers/focus go on top) ---
+            for (const auto& s : status_bg_rects)
+            {
+                const Color& bg = s.focused ? kStatusBarBgFocused : kStatusBarBgUnfocused;
+                nvgBeginPath(vg);
+                nvgRect(vg, s.x, s.y, s.w, s.h);
+                nvgFillColor(vg, nvgRGBAf(bg.r, bg.g, bg.b, bg.a));
+                nvgFill(vg);
+            }
+
             // --- Tab bar ---
             if (!tab_rects.empty())
             {
@@ -351,7 +437,128 @@ void ChromeHost::draw(IFrameContext& frame)
             frame.draw_grid_handle(*tab_handle_);
     }
 
+    // Per-pane status bar text (WI 78).
+    update_pane_status_grids(frame, status_entries);
+
     frame.flush_submit_chunk();
+}
+
+void ChromeHost::update_pane_status_grids(IFrameContext& frame, std::span<const PaneStatusEntry> entries)
+{
+    if (!deps_.grid_renderer || !deps_.text_service)
+        return;
+
+    const auto [cw, ch] = deps_.grid_renderer->cell_size_pixels();
+    if (cw <= 0 || ch <= 0)
+    {
+        pane_status_handles_.clear();
+        return;
+    }
+
+    // Prune handles for leaves that are no longer present.
+    std::unordered_set<LeafId> live_ids;
+    live_ids.reserve(entries.size());
+    for (const auto& e : entries)
+        live_ids.insert(e.leaf);
+    for (auto it = pane_status_handles_.begin(); it != pane_status_handles_.end();)
+    {
+        if (!live_ids.count(it->first))
+            it = pane_status_handles_.erase(it);
+        else
+            ++it;
+    }
+
+    if (entries.empty())
+        return;
+
+    constexpr int kStatusPadCols = 1;
+
+    for (const auto& e : entries)
+    {
+        const int strip_y = e.pane_y + e.pane_h - ch;
+        const int strip_w = e.pane_w;
+        const int grid_cols = std::max(1, strip_w / cw);
+
+        auto& handle = pane_status_handles_[e.leaf];
+        if (!handle)
+        {
+            handle = deps_.grid_renderer->create_grid_handle();
+            if (!handle)
+            {
+                DRAXUL_LOG_ERROR(LogCategory::App, "ChromeHost: pane status create_grid_handle() returned null");
+                continue;
+            }
+            handle->set_default_background({ 0, 0, 0, 0 });
+            handle->set_cursor(-1, -1, CursorStyle{});
+            handle->set_cursor_visible(false);
+        }
+
+        // Viewport: a strip aligned exactly with the reserved status row.
+        // Use kGridPadding-style offset trick from update_tab_grid: shift the
+        // grid rect upward by the renderer's internal cell padding so the
+        // single grid row centers vertically inside the strip.
+        const int padding = deps_.grid_renderer->padding();
+        PaneDescriptor desc;
+        desc.pixel_pos = { e.pane_x, strip_y - padding };
+        desc.pixel_size = { strip_w, ch + padding };
+        handle->set_viewport(desc);
+        handle->set_grid_size(grid_cols, 1);
+
+        // Build cell list. Background and foreground come from focused state.
+        const Color& fg = e.focused ? kStatusBarFgFocused : kStatusBarFgUnfocused;
+        const Color transparent{ 0.0f, 0.0f, 0.0f, 0.0f };
+
+        std::vector<CellUpdate> cells;
+        cells.reserve(static_cast<size_t>(grid_cols));
+        for (int c = 0; c < grid_cols; ++c)
+        {
+            CellUpdate cell{};
+            cell.col = c;
+            cell.row = 0;
+            cell.bg = transparent;
+            cell.fg = transparent;
+            cells.push_back(cell);
+        }
+
+        // Truncate the status text so it fits within (grid_cols - 2 * pad) columns.
+        const int usable_cols = std::max(0, grid_cols - kStatusPadCols * 2);
+        std::string text = e.text;
+        if (static_cast<int>(text.size()) > usable_cols)
+        {
+            if (usable_cols >= 1)
+            {
+                text = text.substr(0, static_cast<size_t>(usable_cols - 1));
+                text += "…";
+            }
+            else
+            {
+                text.clear();
+            }
+        }
+
+        for (int ci = 0; ci < static_cast<int>(text.size()); ++ci)
+        {
+            const int col = kStatusPadCols + ci;
+            if (col < 0 || col >= grid_cols)
+                continue;
+            const std::string cluster(1, text[static_cast<size_t>(ci)]);
+            AtlasRegion glyph = deps_.text_service->resolve_cluster(cluster);
+            auto& cell = cells[static_cast<size_t>(col)];
+            cell.fg = fg;
+            cell.glyph = glyph;
+        }
+
+        handle->update_cells(cells);
+    }
+
+    flush_atlas_if_dirty();
+
+    for (const auto& e : entries)
+    {
+        auto it = pane_status_handles_.find(e.leaf);
+        if (it != pane_status_handles_.end() && it->second)
+            frame.draw_grid_handle(*it->second);
+    }
 }
 
 void ChromeHost::update_tab_grid(std::span<const TabLayout> tabs)

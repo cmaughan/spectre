@@ -2262,6 +2262,11 @@ void MegaCityHost::request_close()
     running_ = false;
 }
 
+std::string MegaCityHost::status_text() const
+{
+    return "megacity";
+}
+
 Color MegaCityHost::default_background() const
 {
     return Color(0.05f, 0.05f, 0.10f, 1.0f);

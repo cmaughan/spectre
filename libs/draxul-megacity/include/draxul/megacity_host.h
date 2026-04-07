@@ -72,6 +72,7 @@ public:
 
     bool dispatch_action(std::string_view action) override;
     void request_close() override;
+    std::string status_text() const override;
     Color default_background() const override;
     HostRuntimeState runtime_state() const override;
     HostDebugState debug_state() const override;

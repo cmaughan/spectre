@@ -72,6 +72,7 @@ struct AppConfig
     float focus_border_width = 3.0f; // pane focus indicator thickness in pixels
     bool enable_toast_notifications = true; // master enable for non-blocking toast popups
     float toast_duration_s = 4.0f; // how long each toast remains visible before fading out
+    bool show_pane_status = true; // per-pane status bar (host kind | dims | cwd) below each pane
     std::vector<GuiKeybinding> keybindings = {}; // populated by AppConfig()
     TerminalConfig terminal; // [terminal] section -- fg/bg hex colors
 

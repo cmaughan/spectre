@@ -26,6 +26,7 @@ public:
     void on_mouse_move(const MouseMoveEvent& event) override;
     void on_mouse_wheel(const MouseWheelEvent& event) override;
     bool dispatch_action(std::string_view action) override;
+    std::string status_text() const override;
 
 protected:
     void on_viewport_changed() override;

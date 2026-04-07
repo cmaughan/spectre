@@ -111,8 +111,14 @@ protected:
     // Hook called by handle_osc() when the shell emits an OSC 7
     // directory-change notification (file://hostname/path).  The decoded
     // filesystem path is passed directly — no URL prefix, no percent-encoding.
-    // Default implementation updates the window title to the directory basename.
+    // Default implementation stores the path in current_cwd_ and updates the
+    // window title to the directory basename.
     virtual void on_osc_cwd(const std::string& path);
+
+    // Most recent OSC 7 working directory reported by the shell. Empty until
+    // the first OSC 7 sequence is observed. Stored in protected scope so
+    // subclasses (e.g. LocalTerminalHost::status_text) can read it directly.
+    std::string current_cwd_;
 
 private:
     uint16_t attr_id();

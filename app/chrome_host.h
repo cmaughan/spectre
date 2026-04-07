@@ -9,6 +9,7 @@
 #include <draxul/renderer.h>
 #include <optional>
 #include <span>
+#include <unordered_map>
 #include <vector>
 
 struct NVGcontext;
@@ -99,12 +100,27 @@ public:
     };
 
 private:
+    struct PaneStatusEntry
+    {
+        int pane_x = 0;
+        int pane_y = 0;
+        int pane_w = 0;
+        int pane_h = 0;
+        std::string text;
+        bool focused = false;
+        LeafId leaf = kInvalidLeaf;
+    };
+
     void update_tab_grid(std::span<const TabLayout> tabs);
+    void update_pane_status_grids(IFrameContext& frame, std::span<const PaneStatusEntry> entries);
     void flush_atlas_if_dirty();
 
     Deps deps_;
     std::unique_ptr<INanoVGPass> nanovg_pass_;
     std::unique_ptr<IGridHandle> tab_handle_;
+    // One grid handle per visible pane status strip, keyed by leaf id. Reused
+    // across frames; pruned when the leaf disappears.
+    std::unordered_map<LeafId, std::unique_ptr<IGridHandle>> pane_status_handles_;
     HostViewport viewport_{};
     bool running_ = false;
 };

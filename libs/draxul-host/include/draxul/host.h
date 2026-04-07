@@ -189,6 +189,14 @@ public:
     {
         return false;
     }
+
+    // One-line status string shown in the per-pane status bar (WI 78). Hosts
+    // override to expose host kind, dimensions, cwd, etc. Returning an empty
+    // string causes the status bar to display a generic placeholder.
+    virtual std::string status_text() const
+    {
+        return {};
+    }
     virtual Color default_background() const = 0;
     virtual HostRuntimeState runtime_state() const = 0;
     virtual HostDebugState debug_state() const = 0;

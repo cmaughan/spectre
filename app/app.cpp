@@ -1420,6 +1420,14 @@ HostViewport App::viewport_from_descriptor(const PaneDescriptor& desc) const
     viewport.padding = padding;
     viewport.pixel_scale = layout.pixel_scale;
 
+    // WI 78: reserve a one-cell strip at the bottom of every pane for the
+    // per-pane status bar. ChromeHost draws the strip in the reserved area.
+    if (config_.show_pane_status && cell_h > 0)
+    {
+        const int reserved = std::min(viewport.pixel_size.y, cell_h);
+        viewport.pixel_size.y -= reserved;
+    }
+
     const int usable_w = viewport.pixel_size.x - 2 * padding;
     const int usable_h = viewport.pixel_size.y - 2 * padding;
     viewport.grid_size.x = cell_w > 0 ? std::max(1, usable_w / cell_w) : 1;

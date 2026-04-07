@@ -457,6 +457,10 @@ void TerminalHostBase::erase_display(int mode)
 void TerminalHostBase::on_osc_cwd(const std::string& path)
 {
     PERF_MEASURE();
+    // Cache the full path for the per-pane status bar (WI 78). The window
+    // title (set below) only shows the basename for brevity.
+    current_cwd_ = path;
+
     // Show the last path component (directory name) as the window title,
     // matching the convention used by most terminal emulators.
     std::string_view sv = path;

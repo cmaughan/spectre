@@ -33,7 +33,7 @@ constexpr float kMaxFontPointSize = 72.0f;
 // kGuiModifierMask is defined in input_types.h as kGuiModifierMask (same bit values).
 // The list of known GUI action keys lives in <draxul/gui_actions.h> as the canonical
 // source of truth. Use is_known_gui_action_config_key() / for_each_gui_action_config_key().
-constexpr std::array<std::string_view, 18> kKnownTopLevelKeys = {
+constexpr std::array<std::string_view, 19> kKnownTopLevelKeys = {
     "window_width",
     "window_height",
     "font_size",
@@ -50,6 +50,7 @@ constexpr std::array<std::string_view, 18> kKnownTopLevelKeys = {
     "focus_border_width",
     "enable_toast_notifications",
     "toast_duration_s",
+    "show_pane_status",
     "keybindings",
     "terminal",
 };
@@ -298,6 +299,7 @@ AppConfig config_from_toml(const toml::table& document)
     check_int_type("atlas_size");
     check_bool_type("enable_ligatures");
     check_bool_type("smooth_scroll");
+    check_bool_type("show_pane_status");
     check_float_type("scroll_speed");
     check_float_type("palette_bg_alpha");
     check_float_type("focus_border_width");
@@ -353,6 +355,9 @@ AppConfig config_from_toml(const toml::table& document)
 
     if (auto parsed = toml_support::get_bool(document, "enable_toast_notifications"); parsed.has_value())
         config.enable_toast_notifications = *parsed;
+
+    if (auto parsed = toml_support::get_bool(document, "show_pane_status"); parsed.has_value())
+        config.show_pane_status = *parsed;
 
     {
         constexpr float kMinToastDuration = 0.5f;
@@ -559,6 +564,7 @@ std::string AppConfig::serialize() const
     document.insert_or_assign("scroll_speed", static_cast<double>(std::clamp(scroll_speed, 0.1f, 10.0f)));
     document.insert_or_assign("palette_bg_alpha", static_cast<double>(std::clamp(palette_bg_alpha, 0.0f, 1.0f)));
     document.insert_or_assign("focus_border_width", static_cast<double>(std::clamp(focus_border_width, 1.0f, 10.0f)));
+    document.insert_or_assign("show_pane_status", show_pane_status);
     if (!font_path.empty())
         document.insert_or_assign("font_path", font_path);
     if (!bold_font_path.empty())

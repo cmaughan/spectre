@@ -81,6 +81,11 @@ bool NvimHost::is_running() const
     return nvim_process_.is_running() && !rpc_.connection_failed();
 }
 
+std::string NvimHost::status_text() const
+{
+    return "nvim | " + std::to_string(grid_cols()) + "x" + std::to_string(grid_rows());
+}
+
 std::string NvimHost::init_error() const
 {
     return init_error_;

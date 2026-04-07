@@ -215,6 +215,12 @@ Customizable in `config.toml` under `[keybindings]`. Chord syntax: `"prefix, key
 | `enable_toast_notifications` | true | | Master switch for toast overlay |
 | `toast_duration_s` | 4.0 | 0.5--60.0 | Seconds each toast remains on screen before fading |
 
+### Pane Status Bar
+
+| Key | Default | Range | Notes |
+|-----|---------|-------|-------|
+| `show_pane_status` | true | | One-cell-tall status strip below each pane showing host kind, dimensions, and (for shell hosts) cwd from OSC 7 |
+
 ### Terminal (`[terminal]` section)
 
 | Key | Default | Range | Notes |

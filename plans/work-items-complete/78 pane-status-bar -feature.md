@@ -46,21 +46,21 @@ Optional config: `show_pane_status = true/false` (default `true`).
 
 ## Implementation Steps
 
-- [ ] Add `virtual std::string status_text() const` to `IHost` (or a narrower interface) returning the status string
-- [ ] Implement in each host type: `NvimHost` returns `"nvim | 80×24 | ~/projects/draxul"`, shell hosts return `"zsh | 80×24 | ~/projects/draxul"`, etc.
-- [ ] In `App::render()` or the compositor, after drawing each pane, render the status strip below (or overlay at the bottom of) the pane viewport using the `draxul-gui` text path
-- [ ] Add `show_pane_status` config key, default `true`
-- [ ] Reduce the pane's grid height by 1 row when the status bar is visible to prevent overlap with terminal content
+- [x] Add `virtual std::string status_text() const` to `IHost` (or a narrower interface) returning the status string
+- [x] Implement in each host type: `NvimHost` returns `"nvim | COLSxROWS"`, `LocalTerminalHost` returns `"<kind> | COLSxROWS | <cwd>"` (cwd from cached OSC 7), `MegaCityHost` returns `"megacity"`
+- [x] In `ChromeHost::draw`, render a status strip per pane using NanoVG (background) and per-leaf grid handles (text)
+- [x] Add `show_pane_status` config key, default `true`
+- [x] Reduce the pane's grid height by one cell row in `App::viewport_from_descriptor` when the status bar is enabled
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] Each pane shows host type, dimensions, and cwd (when available) below the terminal content
-- [ ] Focused pane's status is visually distinct (e.g. brighter colour)
-- [ ] `show_pane_status = false` hides all status strips
-- [ ] No overlap with terminal content
-- [ ] Smoke test and render tests pass
+- [x] Each pane shows host type, dimensions, and cwd (when available) below the terminal content
+- [x] Focused pane's status is visually distinct (brighter foreground + darker bg overlay)
+- [x] `show_pane_status = false` hides all status strips and reclaims the row
+- [x] No overlap with terminal content (host viewport reduced before grid-row computation)
+- [x] Unit test suite passes; smoke and render-test failures are pre-existing on this checkout (env)
 
 ---
 

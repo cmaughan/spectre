@@ -288,6 +288,31 @@ void LocalTerminalHost::on_mouse_wheel(const MouseWheelEvent& event)
 // Viewport / state reset
 // ---------------------------------------------------------------------------
 
+std::string LocalTerminalHost::status_text() const
+{
+    std::string result(host_name());
+    result += " | ";
+    result += std::to_string(grid_cols());
+    result += "x";
+    result += std::to_string(grid_rows());
+    if (!current_cwd_.empty())
+    {
+        result += " | ";
+        // Truncate cwd to 30 chars with leading ellipsis if too long.
+        constexpr size_t kMaxCwdLen = 30;
+        if (current_cwd_.size() > kMaxCwdLen)
+        {
+            result += "…";
+            result += current_cwd_.substr(current_cwd_.size() - (kMaxCwdLen - 1));
+        }
+        else
+        {
+            result += current_cwd_;
+        }
+    }
+    return result;
+}
+
 void LocalTerminalHost::on_viewport_changed()
 {
     PERF_MEASURE();

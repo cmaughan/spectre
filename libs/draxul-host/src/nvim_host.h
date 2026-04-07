@@ -29,6 +29,7 @@ public:
     {
         return true;
     }
+    std::string status_text() const override;
 
 protected:
     bool initialize_host() override;
