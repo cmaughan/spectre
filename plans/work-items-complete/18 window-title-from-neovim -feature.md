@@ -1,5 +1,7 @@
 # 18 window-title-from-neovim -feature
 
+**Status:** Completed — implemented under `plans/work-items-complete/23 window-title-set-title-feature.md`. `set_title` is dispatched in `libs/draxul-nvim/src/ui_events.cpp` and forwarded to `IWindow::set_title()` via the host. This duplicate item is closed.
+
 ## Summary
 
 The SDL window title is set once at startup and never updated. Neovim's `titlestring`

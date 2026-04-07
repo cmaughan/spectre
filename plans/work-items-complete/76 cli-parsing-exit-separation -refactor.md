@@ -7,6 +7,10 @@
 **Created:** 2026-04-03  
 **Model:** claude-sonnet-4-6
 
+## Status
+
+**Completed** — `app/main.cpp` now calls `draxul::parse_args()` (line 135) which returns a `ParseArgsResult` struct (`ParsedArgs args` + error/help fields). No `std::exit()` calls remain inside the parser; `main()` inspects the result and decides whether to exit. CLI parsing is now testable in isolation.
+
 ---
 
 ## Problem

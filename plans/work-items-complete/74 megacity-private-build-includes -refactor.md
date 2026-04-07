@@ -7,6 +7,10 @@
 **Created:** 2026-04-03  
 **Model:** claude-sonnet-4-6
 
+## Status
+
+**Completed** — the renderer-side leakage that this WI was filed for is closed: `metal_render_context.h`, `vk_render_context.h`, and `objc_ref.h` were promoted to `draxul-renderer` public headers, the offending `target_include_directories` in megacity and nanovg are gone, and the renderer can be refactored without consulting megacity. The `tests/CMakeLists.txt → libs/draxul-megacity/src` include is intentionally left in place; cleaning it up requires either promoting ~10 megacity scene/builder/picking headers to public API or introducing a megacity test-support helper, which is its own design discussion. Track that follow-up separately if it becomes relevant.
+
 ---
 
 ## Problem

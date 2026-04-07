@@ -1,5 +1,7 @@
 # 16 hostmanager-dynamic-cast-removal -refactor
 
+**Status:** Completed — the original `dynamic_cast<I3DHost*>` pattern is gone (see `plans/work-items-complete/14 app-rtti-capability-dispatch -refactor.md`). `app/host_manager.cpp` still has two MegaCityHost-specific casts for a different (non-3D-capability) reason; if those become problematic they should be tracked as a new item.
+
 **Priority:** MEDIUM
 **Type:** Refactor
 **Raised by:** Claude

@@ -1,5 +1,7 @@
 # 60 Command Palette
 
+**Status:** Completed — implemented under `plans/work-items-complete/25 command-palette -feature.md`. The palette is bound to `Ctrl+Shift+P` by default, uses fzf-style scoring, and is documented in `docs/features.md`. This duplicate item is closed.
+
 ## Why This Exists
 
 GUI keybinding actions (font_increase, toggle_debug_panel, copy, paste, etc.) are only accessible via keyboard shortcuts. There is no discoverable way for a user to find and invoke them without reading `config.toml`. A command palette would surface all registered actions, allow fuzzy search, and make the GUI layer self-documenting.

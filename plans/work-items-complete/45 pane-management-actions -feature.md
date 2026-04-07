@@ -3,6 +3,10 @@
 *Filed by: claude-sonnet-4-6 — 2026-03-29*
 *Source: review-latest.gpt.md [P]; review-latest.gemini.md [G]*
 
+## Status
+
+**Completed** — `close_pane`, `restart_host`, and `swap_pane` actions are wired up, registered with `GuiActionHandler`, default-bound, and documented in `docs/features.md`. `duplicate_pane` and `split_same_host` were explicitly deferred out of scope below; track them as separate items if revisited.
+
 ## Problem
 
 Pane creation is first-class in Draxul (split horizontal, split vertical) but pane lifecycle

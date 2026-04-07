@@ -1,4 +1,6 @@
 ---
+**Status:** Superseded — see `plans/work-items-complete/14 megacity-removal -refactor.md`. MegaCity was elevated to a first-class host tier rather than removed; `I3DPassProvider` and `void*` callbacks were cleaned up as part of WI-24 (renderer-host-layering-architecture). This duplicate item is closed as won't-do.
+
 # Megacity Demo Removal from Core Libraries
 
 ## Summary
