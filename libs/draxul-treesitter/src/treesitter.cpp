@@ -1,3 +1,4 @@
+#include <draxul/log.h>
 #include <draxul/perf_timing.h>
 #include <draxul/treesitter.h>
 
@@ -714,7 +715,18 @@ void CodebaseScanner::scan_thread(std::filesystem::path root)
             publish(std::make_shared<CodebaseSnapshot>(*snapshot));
     }
 
-    snapshot->complete = true;
+    // The loop above breaks early on filesystem errors (ec) or cancellation
+    // (stop_flag_). Only mark the snapshot complete if neither occurred —
+    // otherwise consumers cannot distinguish a truncated scan from a full one.
+    const bool stopped = stop_flag_.load();
+    snapshot->complete = !ec && !stopped;
+    if (ec)
+    {
+        DRAXUL_LOG_WARN(
+            ::draxul::LogCategory::App,
+            "treesitter scan incomplete: filesystem error during directory iteration: %s",
+            ec.message().c_str());
+    }
     snapshot->scan_time = std::chrono::steady_clock::now();
     publish(std::move(snapshot));
 

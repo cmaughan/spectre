@@ -131,7 +131,9 @@ bool ConPtyProcess::spawn(const std::string& command, const std::vector<std::str
     DeleteProcThreadAttributeList(startup.lpAttributeList);
     attribute_storage_.clear();
     CloseHandle(pty_input_read);
+    pty_input_read = INVALID_HANDLE_VALUE;
     CloseHandle(pty_output_write);
+    pty_output_write = INVALID_HANDLE_VALUE;
 
     if (!created)
     {
@@ -174,12 +176,16 @@ void ConPtyProcess::shutdown()
 
     if (proc_info_.hProcess)
     {
-        WaitForSingleObject(proc_info_.hProcess, 1000);
-        DWORD exit_code = STILL_ACTIVE;
-        GetExitCodeProcess(proc_info_.hProcess, &exit_code);
-        if (exit_code == STILL_ACTIVE)
-            TerminateProcess(proc_info_.hProcess, 0);
-        CloseHandle(proc_info_.hProcess);
+        // Offload the timed wait + TerminateProcess escalation to a detached
+        // thread so we never block the main/UI thread on a stuck child.
+        // CLAUDE.md: "Keep shutdown paths non-blocking; a stuck Neovim child
+        // must not hang the UI on exit."
+        HANDLE process_handle = proc_info_.hProcess;
+        std::thread([process_handle]() {
+            if (WaitForSingleObject(process_handle, 1000) == WAIT_TIMEOUT)
+                TerminateProcess(process_handle, 0);
+            CloseHandle(process_handle);
+        }).detach();
         proc_info_.hProcess = nullptr;
     }
     if (proc_info_.hThread)

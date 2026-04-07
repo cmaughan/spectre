@@ -244,6 +244,48 @@ TEST_CASE("vtparser overflow: plain_text buffer capped for incomplete multibyte"
 }
 
 // ---------------------------------------------------------------------------
+// Regression: partial UTF-8 at the cap boundary must not be discarded.
+// See plans/work-items-complete/04 vtparser-partial-utf8-discard -bug.md.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("vtparser overflow: partial UTF-8 at cap boundary preserved", "[vtparser][overflow]")
+{
+    ScopedLogCapture log;
+    TestParser tp;
+
+    // Feed a long stream of valid 3-byte CJK codepoints (U+4E2D = 中, "\xE4\xB8\xAD"),
+    // crafted so that the cap is hit mid-codepoint. After the flush triggered by the
+    // cap, any tail bytes that form an incomplete sequence must remain in plain_text_
+    // so that the next continuation byte completes the original glyph instead of being
+    // mis-decoded as a brand-new partial.
+    //
+    // Strategy: feed enough cluster boundaries to push past kMaxPlainTextBuffer, but
+    // stop one byte short of completing the final 3-byte sequence. Then feed the final
+    // continuation byte and verify that the resulting cluster sequence does not contain
+    // a U+FFFD replacement and that the cluster count is exactly what we sent.
+
+    const std::string ch = "\xE4\xB8\xAD"; // U+4E2D 中
+    // Pick a count that crosses the cap a few times.
+    const size_t total_chars = (VtParser::kMaxPlainTextBuffer / ch.size()) + 32;
+
+    for (size_t i = 0; i < total_chars - 1; ++i)
+    {
+        tp.parser.feed(ch);
+    }
+    // Feed the last codepoint split across two feeds so the partial sits at the tail.
+    tp.parser.feed(std::string_view(ch.data(), 2));
+    tp.parser.feed(std::string_view(ch.data() + 2, 1));
+
+    // Every emitted cluster should equal the original 3-byte CJK sequence — no
+    // mojibake, no replacement characters introduced by clear()-ing partial bytes.
+    REQUIRE(tp.clusters.size() == total_chars);
+    for (const auto& c : tp.clusters)
+    {
+        REQUIRE(c == ch);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Regression: normal sequences still work after overflow guard is in place
 // ---------------------------------------------------------------------------
 

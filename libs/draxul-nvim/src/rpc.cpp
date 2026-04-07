@@ -333,6 +333,11 @@ void NvimRpc::reader_thread_func()
     std::vector<uint8_t> accum;
     accum.reserve(1024 * 1024);
     size_t read_pos = 0;
+    // Counts consecutive single-byte discards from a hard decode failure. Resets on
+    // every successful decode. If we discard too many in a row the stream is hopelessly
+    // corrupt and we abort the reader rather than silently consume garbage forever.
+    int consecutive_invalid_discards = 0;
+    constexpr int kMaxConsecutiveInvalidDiscards = 16;
 
     while (impl_->running_)
     {
@@ -371,10 +376,38 @@ void NvimRpc::reader_thread_func()
         {
             MpackValue msg;
             size_t consumed = 0;
+            bool hard_error = false;
             std::span<const uint8_t> remaining(accum.data() + read_pos, accum.size() - read_pos);
-            if (!decode_mpack_value(remaining, msg, &consumed) || consumed == 0)
-                break;
+            if (!decode_mpack_value(remaining, msg, &consumed, &hard_error) || consumed == 0)
+            {
+                if (!hard_error)
+                {
+                    // Likely a truncated value: wait for more bytes from the next read.
+                    break;
+                }
+                // Hard structural failure on the byte at read_pos (e.g. reserved 0xC1).
+                // Skip it so the reader can recover instead of retrying the same bad
+                // prefix forever while accum grows unboundedly.
+                DRAXUL_LOG_ERROR(LogCategory::Rpc,
+                    "Invalid msgpack prefix byte 0x%02X at offset %zu; discarding 1 byte",
+                    (unsigned)remaining[0], read_pos);
+                read_pos += 1;
+                if (++consecutive_invalid_discards >= kMaxConsecutiveInvalidDiscards)
+                {
+                    DRAXUL_LOG_ERROR(LogCategory::Rpc,
+                        "Aborting reader after %d consecutive invalid bytes; stream is corrupt",
+                        consecutive_invalid_discards);
+                    impl_->read_failed_ = true;
+                    impl_->running_ = false;
+                    impl_->response_cv_.notify_all();
+                    if (on_notification_available)
+                        on_notification_available();
+                    return;
+                }
+                continue;
+            }
 
+            consecutive_invalid_discards = 0;
             read_pos += consumed;
 
             // Reset when the buffer is fully drained to avoid unbounded growth.

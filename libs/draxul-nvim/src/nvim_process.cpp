@@ -374,14 +374,25 @@ void NvimProcess::shutdown()
         pid_t result = waitpid(impl_->child_pid_, &status, WNOHANG);
         if (result == 0)
         {
+            // Send SIGTERM, then offload the timed wait + SIGKILL escalation
+            // to a detached thread so the main thread does not block on a
+            // stuck child. CLAUDE.md: "Keep shutdown paths non-blocking; a
+            // stuck Neovim child must not hang the UI on exit."
             kill(impl_->child_pid_, SIGTERM);
-            std::this_thread::sleep_for(std::chrono::microseconds(500000));
-            result = waitpid(impl_->child_pid_, &status, WNOHANG);
-            if (result == 0)
-            {
-                kill(impl_->child_pid_, SIGKILL);
-                waitpid(impl_->child_pid_, &status, 0);
-            }
+            pid_t pid_copy = impl_->child_pid_;
+            std::thread([pid_copy]() {
+                using namespace std::chrono;
+                const auto deadline = steady_clock::now() + milliseconds(500);
+                int s = 0;
+                while (steady_clock::now() < deadline)
+                {
+                    if (waitpid(pid_copy, &s, WNOHANG) != 0)
+                        return;
+                    std::this_thread::sleep_for(milliseconds(20));
+                }
+                kill(pid_copy, SIGKILL);
+                waitpid(pid_copy, &s, 0);
+            }).detach();
         }
         impl_->child_pid_ = -1;
     }

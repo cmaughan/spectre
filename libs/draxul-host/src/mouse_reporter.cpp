@@ -73,7 +73,7 @@ bool MouseReporter::on_button(int button, bool pressed, int mod_bits, int col, i
         return false;
 
     button_code = apply_mouse_modifiers(button_code, mod_bits);
-    if (!pressed)
+    if (!pressed && !mouse_sgr_)
         button_code = 3; // release code for non-SGR; SGR uses final char 'm'
 
     send_report(button_code, pressed, col, row);

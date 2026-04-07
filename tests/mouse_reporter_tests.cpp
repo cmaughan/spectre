@@ -245,7 +245,7 @@ TEST_CASE("mouse_reporter: SGR right press", "[mouse_reporter]")
     REQUIRE(h.written == "\x1B[<2;3;4M");
 }
 
-TEST_CASE("mouse_reporter: SGR release uses 'm' final char", "[mouse_reporter]")
+TEST_CASE("mouse_reporter: SGR left release preserves button code", "[mouse_reporter]")
 {
     Harness h;
     h.reporter.set_mode(1000, true);
@@ -254,8 +254,32 @@ TEST_CASE("mouse_reporter: SGR release uses 'm' final char", "[mouse_reporter]")
     h.clear();
     h.reporter.on_button(1, false, 0, 0, 0);
 
-    // Release: button code 3 (non-SGR release code), 'm' final char.
-    REQUIRE(h.written == "\x1B[<3;1;1m");
+    // SGR release: button code preserved, 'm' final char signals release.
+    REQUIRE(h.written == "\x1B[<0;1;1m");
+}
+
+TEST_CASE("mouse_reporter: SGR middle release preserves button code", "[mouse_reporter]")
+{
+    Harness h;
+    h.reporter.set_mode(1000, true);
+    h.reporter.set_mode(1006, true);
+    h.reporter.on_button(2, true, 0, 5, 10);
+    h.clear();
+    h.reporter.on_button(2, false, 0, 5, 10);
+
+    REQUIRE(h.written == "\x1B[<1;6;11m");
+}
+
+TEST_CASE("mouse_reporter: SGR right release preserves button code", "[mouse_reporter]")
+{
+    Harness h;
+    h.reporter.set_mode(1000, true);
+    h.reporter.set_mode(1006, true);
+    h.reporter.on_button(3, true, 0, 2, 3);
+    h.clear();
+    h.reporter.on_button(3, false, 0, 2, 3);
+
+    REQUIRE(h.written == "\x1B[<2;3;4m");
 }
 
 TEST_CASE("mouse_reporter: SGR handles large coordinates", "[mouse_reporter]")

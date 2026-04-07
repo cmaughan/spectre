@@ -429,6 +429,34 @@ TEST_CASE("mpack fuzz: fixmap(2) with only one complete pair", "[rpc][slow]")
     assert_safe_decode(buf, "fixmap truncated second pair");
 }
 
+TEST_CASE("mpack guard: str32 claiming 4 GB does not OOM", "[rpc]")
+{
+    // 0xdb = str32, length = 0xFFFFFFFF (~4 GB). Without the length guard, the
+    // decoder would attempt to allocate a 4 GB std::string and crash with
+    // std::bad_alloc. With the guard, the reader flags an error and the call
+    // returns false cleanly.
+    const uint8_t buf[] = { 0xdb, 0xff, 0xff, 0xff, 0xff };
+    MpackValue value;
+    size_t consumed = 0;
+    bool needs_more = false;
+    bool ok = decode_mpack_value(buf, value, &consumed, &needs_more);
+    REQUIRE_FALSE(ok);
+    // mpack_error_invalid is a hard structural failure, not a "needs more bytes" case.
+    REQUIRE_FALSE(needs_more);
+}
+
+TEST_CASE("mpack guard: bin32 claiming 4 GB does not OOM", "[rpc]")
+{
+    // 0xc6 = bin32, length = 0xFFFFFFFF (~4 GB).
+    const uint8_t buf[] = { 0xc6, 0xff, 0xff, 0xff, 0xff };
+    MpackValue value;
+    size_t consumed = 0;
+    bool needs_more = false;
+    bool ok = decode_mpack_value(buf, value, &consumed, &needs_more);
+    REQUIRE_FALSE(ok);
+    REQUIRE_FALSE(needs_more);
+}
+
 TEST_CASE("mpack fuzz: nested array inside map, leaf truncated", "[rpc][slow]")
 {
     const bool run_slow = std::getenv("DRAXUL_RUN_SLOW_TESTS") != nullptr;

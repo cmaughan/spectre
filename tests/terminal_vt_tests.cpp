@@ -1158,3 +1158,34 @@ TEST_CASE("terminal: DECSTBM 0;0 resets to full screen", "[terminal]")
     INFO("reset: scroll_bottom = rows-1 = 4");
     REQUIRE(ts.host.scroll_bottom() == 4);
 }
+
+// Regression: bug 01 csi-margins-zero-grid-ub. csi_margins() used
+// std::clamp(x, 0, grid_rows() - 1), which is UB when grid_rows() == 0
+// (lo > hi). The fix adds an early return when the grid is degenerate.
+// The viewport public API clamps rows to >= 1, so we exercise the smallest
+// legal grid here as a boundary check that the clamp arithmetic still
+// behaves sensibly when grid_rows() == 1 (i.e. grid_rows() - 1 == 0 == lo).
+TEST_CASE("terminal: DECSTBM on 1-row grid does not corrupt scroll region", "[terminal]")
+{
+    VtTerminalSetup ts(10, 1);
+    REQUIRE(ts.ok);
+
+    INFO("default scroll_top is 0 on 1-row grid");
+    REQUIRE(ts.host.scroll_top() == 0);
+    INFO("default scroll_bottom is 0 on 1-row grid");
+    REQUIRE(ts.host.scroll_bottom() == 0);
+
+    // Feed an ambitious DECSTBM. Both bounds clamp to [0, 0] so the
+    // top < bot guard rejects the new region; pre-fix this path was a
+    // hair away from the UB clamp call. No crash expected.
+    ts.host.feed("\x1B[1;999r");
+    INFO("scroll_top unchanged (top<bot guard rejected the assignment)");
+    REQUIRE(ts.host.scroll_top() == 0);
+    INFO("scroll_bottom unchanged");
+    REQUIRE(ts.host.scroll_bottom() == 0);
+
+    // 0;0 reset path on the smallest grid: also no crash, region stays sane.
+    ts.host.feed("\x1B[0;0r");
+    REQUIRE(ts.host.scroll_top() == 0);
+    REQUIRE(ts.host.scroll_bottom() == 0);
+}

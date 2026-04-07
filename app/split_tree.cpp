@@ -339,36 +339,50 @@ void SplitTree::recompute_node(Node* node, int x, int y, int w, int h, int div_w
 
     if (node->is_leaf())
     {
-        node->leaf().descriptor = { { x, y }, { w, h } };
+        node->leaf().descriptor
+            = { { x, y }, { std::max(0, w), std::max(0, h) } };
         return;
     }
+
+    const int safe_w = std::max(0, w);
+    const int safe_h = std::max(0, h);
 
     auto& s = node->split();
     if (s.direction == SplitDirection::Vertical)
     {
-        const int available = std::max(0, w - div_w);
-        const int first_w = std::max(1,
-            static_cast<int>(std::floor(static_cast<float>(available) * s.ratio)));
-        const int second_w = std::max(1, available - first_w);
+        // Clamp the divider so it never extends beyond the parent rect; the
+        // remaining `available` space is split between the two children.
+        const int eff_div_w = std::min(div_w, safe_w);
+        const int available = safe_w - eff_div_w;
+        const int first_w = (available > 0)
+            ? std::max(1,
+                  std::min(available,
+                      static_cast<int>(std::floor(static_cast<float>(available) * s.ratio))))
+            : 0;
+        const int second_w = std::max(0, available - first_w);
         s.div_x = x + first_w;
         s.div_y = y;
-        s.div_w = div_w;
-        s.div_h = h;
-        recompute_node(s.first.get(), x, y, first_w, h, div_w);
-        recompute_node(s.second.get(), x + first_w + div_w, y, second_w, h, div_w);
+        s.div_w = eff_div_w;
+        s.div_h = safe_h;
+        recompute_node(s.first.get(), x, y, first_w, safe_h, div_w);
+        recompute_node(s.second.get(), x + first_w + eff_div_w, y, second_w, safe_h, div_w);
     }
     else
     {
-        const int available = std::max(0, h - div_w);
-        const int first_h = std::max(1,
-            static_cast<int>(std::floor(static_cast<float>(available) * s.ratio)));
-        const int second_h = std::max(1, available - first_h);
+        const int eff_div_h = std::min(div_w, safe_h);
+        const int available = safe_h - eff_div_h;
+        const int first_h = (available > 0)
+            ? std::max(1,
+                  std::min(available,
+                      static_cast<int>(std::floor(static_cast<float>(available) * s.ratio))))
+            : 0;
+        const int second_h = std::max(0, available - first_h);
         s.div_x = x;
         s.div_y = y + first_h;
-        s.div_w = w;
-        s.div_h = div_w;
-        recompute_node(s.first.get(), x, y, w, first_h, div_w);
-        recompute_node(s.second.get(), x, y + first_h + div_w, w, second_h, div_w);
+        s.div_w = safe_w;
+        s.div_h = eff_div_h;
+        recompute_node(s.first.get(), x, y, safe_w, first_h, div_w);
+        recompute_node(s.second.get(), x, y + first_h + eff_div_h, safe_w, second_h, div_w);
     }
 }
 

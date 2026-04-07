@@ -60,13 +60,30 @@ void TerminalHostBase::pump()
     if (!chunks.empty())
     {
         // Process all available output, re-draining after each batch so that
-        // closely-spaced bursts are coalesced into a single flush.
+        // closely-spaced bursts are coalesced into a single flush. Bounded by
+        // an 8 ms wall-clock budget so that runaway producers (e.g. `yes`,
+        // `cat /dev/urandom`) cannot trap the main thread and starve the SDL
+        // event loop — any remaining output is picked up on the next frame.
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(8);
+        bool budget_exceeded = false;
         do
         {
             for (const auto& chunk : chunks)
                 consume_output(chunk);
+            if (std::chrono::steady_clock::now() >= deadline)
+            {
+                budget_exceeded = true;
+                break;
+            }
             chunks = do_process_drain();
         } while (!chunks.empty());
+
+        if (budget_exceeded)
+        {
+            DRAXUL_LOG_DEBUG(LogCategory::App,
+                "TerminalHostBase::pump drain budget (8 ms) exceeded; "
+                "deferring remaining output to next frame");
+        }
 
         flush_grid();
     }

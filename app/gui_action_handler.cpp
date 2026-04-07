@@ -304,14 +304,21 @@ void GuiActionHandler::activate_tab(std::string_view args) const
 {
     if (!deps_.on_activate_tab || args.empty())
         return;
+    constexpr int kMaxTabIndex = 10000;
     int index = 0;
     for (char c : args)
     {
         if (c >= '0' && c <= '9')
+        {
+            if (index > kMaxTabIndex)
+                break;
             index = index * 10 + (c - '0');
+        }
         else
             break;
     }
+    if (index > kMaxTabIndex)
+        index = kMaxTabIndex;
     if (index > 0)
         deps_.on_activate_tab(index);
 }

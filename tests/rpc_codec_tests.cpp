@@ -108,3 +108,56 @@ TEST_CASE("mpack decoder rejects truncated frames", "[rpc]")
     INFO("truncated frame is rejected");
     REQUIRE(!decode_mpack_value({ reinterpret_cast<const uint8_t*>(encoded.data()), encoded.size() }, decoded));
 }
+
+TEST_CASE("mpack decoder flags reserved 0xC1 prefix as a hard error", "[rpc]")
+{
+    SECTION("truncated frame is not flagged as a hard error")
+    {
+        std::vector<char> encoded;
+        REQUIRE(encode_mpack_value(NvimRpc::make_str("hello world"), encoded));
+        encoded.pop_back();
+
+        MpackValue decoded;
+        size_t consumed = 0;
+        bool hard_error = true;
+        REQUIRE(!decode_mpack_value(
+            { reinterpret_cast<const uint8_t*>(encoded.data()), encoded.size() }, decoded, &consumed, &hard_error));
+        REQUIRE_FALSE(hard_error);
+    }
+
+    SECTION("reserved 0xC1 prefix byte is reported as a hard error")
+    {
+        // 0xC1 is reserved/never-used in msgpack and is a hard structural error.
+        const uint8_t raw[] = { 0xC1, 0x00, 0x00 };
+        MpackValue decoded;
+        size_t consumed = 0;
+        bool hard_error = false;
+        REQUIRE(!decode_mpack_value({ raw, sizeof(raw) }, decoded, &consumed, &hard_error));
+        REQUIRE(hard_error);
+    }
+
+    SECTION("caller can recover by skipping the bad byte and decoding the next value")
+    {
+        // 0xC1 (invalid) followed by a valid msgpack uint 42 (single byte 0x2A).
+        std::vector<char> good;
+        REQUIRE(encode_mpack_value(NvimRpc::make_uint(42), good));
+
+        std::vector<uint8_t> stream;
+        stream.push_back(0xC1);
+        for (char c : good)
+            stream.push_back(static_cast<uint8_t>(c));
+
+        // First decode fails as a hard error so the reader knows to advance.
+        MpackValue decoded;
+        size_t consumed = 0;
+        bool hard_error = false;
+        REQUIRE(!decode_mpack_value({ stream.data(), stream.size() }, decoded, &consumed, &hard_error));
+        REQUIRE(hard_error);
+
+        // After discarding 1 byte the remainder decodes cleanly.
+        REQUIRE(decode_mpack_value({ stream.data() + 1, stream.size() - 1 }, decoded, &consumed));
+        REQUIRE(consumed == good.size());
+        REQUIRE(decoded.type() == MpackValue::UInt);
+        REQUIRE(decoded.as_int() == static_cast<int64_t>(42));
+    }
+}

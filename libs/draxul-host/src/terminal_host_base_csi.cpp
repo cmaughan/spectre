@@ -472,6 +472,12 @@ void TerminalHostBase::csi_margins(bool private_mode, const std::vector<int>& pa
     // DECSTBM - Set Top and Bottom Margins (scroll region)
     if (!private_mode)
     {
+        // Guard against a zero-sized grid (e.g. window minimized mid-redraw).
+        // std::clamp(x, 0, -1) is UB — require at least one row/col before clamping.
+        if (grid_rows() <= 0 || grid_cols() <= 0)
+        {
+            return;
+        }
         const int top = std::clamp(param_or(params, 0, 1) - 1, 0, grid_rows() - 1);
         const int bot = std::clamp(param_or(params, 1, grid_rows()) - 1, 0, grid_rows() - 1);
         if (top < bot)

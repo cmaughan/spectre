@@ -415,15 +415,24 @@ TEST_CASE("SplitTree: 100-deep split keeps recursion safe", "[split_tree]")
     std::vector<LeafId> visited;
     tree.for_each_leaf([&](LeafId id, const PaneDescriptor& desc) {
         visited.push_back(id);
-        CHECK(desc.pixel_size.x > 0);
-        CHECK(desc.pixel_size.y > 0);
+        // Deeply nested splits eventually collapse the innermost panes to 0
+        // width (each divider eats 4px), but everything must still be
+        // non-negative and inside the 2000x1000 window.
+        CHECK(desc.pixel_size.x >= 0);
+        CHECK(desc.pixel_size.y >= 0);
+        CHECK(desc.pixel_pos.x >= 0);
+        CHECK(desc.pixel_pos.x + desc.pixel_size.x <= 2000);
+        CHECK(desc.pixel_pos.y + desc.pixel_size.y <= 1000);
     });
 
     REQUIRE(visited.size() == 101);
 }
 
-TEST_CASE("SplitTree: tiny panes keep renderable descriptors", "[split_tree]")
+TEST_CASE("SplitTree: tiny panes stay in bounds", "[split_tree]")
 {
+    // When the available space cannot accommodate all dividers, panes collapse
+    // to zero width but must remain inside the window — never OOB. (See WI 08
+    // splittree-oob-placement.)
     SplitTree tree;
     const LeafId root = tree.reset(8, 8);
 
@@ -437,13 +446,14 @@ TEST_CASE("SplitTree: tiny panes keep renderable descriptors", "[split_tree]")
     std::vector<PaneDescriptor> descriptors;
     tree.for_each_leaf([&](LeafId, const PaneDescriptor& desc) {
         descriptors.push_back(desc);
-        CHECK(desc.pixel_size.x > 0);
-        CHECK(desc.pixel_size.y > 0);
+        CHECK(desc.pixel_size.x >= 0);
+        CHECK(desc.pixel_size.y >= 0);
+        CHECK(desc.pixel_pos.x >= 0);
+        CHECK(desc.pixel_pos.x + desc.pixel_size.x <= 8);
+        CHECK(desc.pixel_pos.y + desc.pixel_size.y <= 8);
     });
 
     REQUIRE(descriptors.size() == 6);
-    auto result = tree.hit_test(0, 0);
-    CHECK_FALSE(std::holds_alternative<std::monostate>(result));
 }
 
 // ---------------------------------------------------------------------------
@@ -454,8 +464,10 @@ TEST_CASE("SplitTree: tiny panes keep renderable descriptors", "[split_tree]")
 // during minimise, or before the first SDL resize lands). The contract these
 // tests pin down:
 //   * No leaf descriptor has a negative width or height for any input.
-//   * Leaves never go below 1px in the split direction (recompute_node clamps
-//     first/second to max(1, ...) so downstream rasterisers never divide by 0).
+//   * When the parent rect cannot fit a divider, panes collapse to 0 in the
+//     split direction (rather than being clamped to 1px and pushed out of
+//     bounds — see WI 08 splittree-oob-placement).
+//   * Leaves are always contained within the parent rectangle.
 //   * Origins never go negative.
 //   * recompute(0, 0) followed by a real recompute() restores the layout.
 
@@ -497,15 +509,14 @@ TEST_CASE("SplitTree zero dim: recompute(0, 0) on a 2-pane vertical split is non
     tree.recompute(0, 0);
     check_no_negative_dimensions(tree);
 
-    // recompute_node clamps first_w / second_w to max(1, ...), so each pane
-    // gets a 1px width even when the parent rect is empty. The right pane is
-    // pushed past the divider (1 + kDividerWidth = 5).
+    // When the parent rect can't fit a divider, both panes collapse to 0 width
+    // and stay anchored within the (empty) parent rect — no out-of-bounds.
     auto ad = tree.descriptor_for(a);
     auto bd = tree.descriptor_for(b);
-    CHECK(ad.pixel_size.x == 1);
-    CHECK(bd.pixel_size.x == 1);
+    CHECK(ad.pixel_size.x == 0);
+    CHECK(bd.pixel_size.x == 0);
     CHECK(ad.pixel_pos.x == 0);
-    CHECK(bd.pixel_pos.x == 1 + SplitTree::kDividerWidth);
+    CHECK(bd.pixel_pos.x == 0);
     CHECK(ad.pixel_size.y == 0);
     CHECK(bd.pixel_size.y == 0);
 }
@@ -522,10 +533,10 @@ TEST_CASE("SplitTree zero dim: recompute(0, 0) on a 2-pane horizontal split is n
 
     auto ad = tree.descriptor_for(a);
     auto bd = tree.descriptor_for(b);
-    CHECK(ad.pixel_size.y == 1);
-    CHECK(bd.pixel_size.y == 1);
+    CHECK(ad.pixel_size.y == 0);
+    CHECK(bd.pixel_size.y == 0);
     CHECK(ad.pixel_pos.y == 0);
-    CHECK(bd.pixel_pos.y == 1 + SplitTree::kDividerWidth);
+    CHECK(bd.pixel_pos.y == 0);
 }
 
 TEST_CASE("SplitTree zero dim: layout recovers after recompute(0, 0)", "[split_tree][zero]")
@@ -589,6 +600,44 @@ TEST_CASE("SplitTree zero dim: deeply nested tree stays non-negative at zero siz
     tree.recompute(1, 1, 0, 0);
     check_no_negative_dimensions(tree);
     (void)d;
+}
+
+TEST_CASE("SplitTree zero dim: pane smaller than divider stays in bounds (WI 08)",
+    "[split_tree][zero]")
+{
+    // Regression: when w <= div_w on a vertical split, the second child used
+    // to be placed at x + 1 + div_w (one pixel past the parent's right edge).
+    // After WI 08 the second child must remain inside the parent rect.
+    SplitTree tree;
+    auto a = tree.reset(1000, 800);
+    auto b = tree.split_leaf(a, SplitDirection::Vertical);
+
+    // 3 < kDividerWidth (4), so the divider cannot fit.
+    tree.recompute(3, 800);
+
+    auto ad = tree.descriptor_for(a);
+    auto bd = tree.descriptor_for(b);
+
+    CHECK(ad.pixel_pos.x >= 0);
+    CHECK(bd.pixel_pos.x >= 0);
+    CHECK(ad.pixel_pos.x + ad.pixel_size.x <= 3);
+    CHECK(bd.pixel_pos.x + bd.pixel_size.x <= 3);
+    CHECK(ad.pixel_size.x >= 0);
+    CHECK(bd.pixel_size.x >= 0);
+
+    // And the same for the horizontal axis.
+    SplitTree htree;
+    auto t = htree.reset(800, 1000);
+    auto bot = htree.split_leaf(t, SplitDirection::Horizontal);
+
+    htree.recompute(800, 3);
+
+    auto td = htree.descriptor_for(t);
+    auto bdh = htree.descriptor_for(bot);
+    CHECK(td.pixel_pos.y + td.pixel_size.y <= 3);
+    CHECK(bdh.pixel_pos.y + bdh.pixel_size.y <= 3);
+    CHECK(td.pixel_size.y >= 0);
+    CHECK(bdh.pixel_size.y >= 0);
 }
 
 TEST_CASE("SplitTree zero dim: negative dimensions are clamped, not propagated",

@@ -14,6 +14,11 @@ namespace
 // The container will still grow beyond this via push_back if needed.
 constexpr uint32_t kMaxReserveCount = 65536;
 
+// Cap str/bin allocations from msgpack tags to prevent OOM crashes from corrupt
+// or malicious messages claiming multi-GB lengths. 64 MB is well above any
+// realistic Neovim payload (file paths, line content, option values).
+constexpr uint32_t kMaxMpackStringLen = 64u * 1024u * 1024u;
+
 size_t estimate_value_size(const MpackValue& value)
 {
     PERF_MEASURE();
@@ -126,6 +131,11 @@ MpackValue read_value(mpack_reader_t* reader)
     case mpack_type_str:
     {
         uint32_t len = mpack_tag_str_length(&tag);
+        if (len > kMaxMpackStringLen)
+        {
+            mpack_reader_flag_error(reader, mpack_error_invalid);
+            return val;
+        }
         std::string text(len, '\0');
         mpack_read_bytes(reader, text.data(), len);
         mpack_done_str(reader);
@@ -135,6 +145,11 @@ MpackValue read_value(mpack_reader_t* reader)
     case mpack_type_bin:
     {
         uint32_t len = mpack_tag_bin_length(&tag);
+        if (len > kMaxMpackStringLen)
+        {
+            mpack_reader_flag_error(reader, mpack_error_invalid);
+            return val;
+        }
         std::string text(len, '\0');
         mpack_read_bytes(reader, text.data(), len);
         mpack_done_bin(reader);
@@ -222,11 +237,26 @@ bool encode_mpack_value(const MpackValue& value, std::vector<char>& out)
     return true;
 }
 
-bool decode_mpack_value(std::span<const uint8_t> bytes, MpackValue& value, size_t* consumed)
+bool decode_mpack_value(std::span<const uint8_t> bytes, MpackValue& value, size_t* consumed,
+    bool* hard_error)
 {
     PERF_MEASURE();
+    if (hard_error)
+        *hard_error = false;
     if (bytes.empty())
         return false;
+
+    // 0xC1 is reserved in the msgpack spec and never starts a valid value. Detecting it
+    // here lets the reader discard the bad byte and recover instead of stalling forever
+    // on the same invalid prefix while accum keeps growing. mpack collapses several
+    // structural errors into mpack_error_invalid (see mpack-reader.c) so we cannot rely
+    // on its error code alone to distinguish "needs more bytes" from "definitely bad".
+    if (bytes[0] == 0xC1)
+    {
+        if (hard_error)
+            *hard_error = true;
+        return false;
+    }
 
     mpack_reader_t reader;
     mpack_reader_init_data(&reader, reinterpret_cast<const char*>(bytes.data()), bytes.size());

@@ -93,7 +93,6 @@ void VtParser::feed(std::string_view bytes)
                         "vt_parser: plain_text buffer exceeded cap (%zu bytes); flushing",
                         kMaxPlainTextBuffer);
                     flush_plain_text();
-                    plain_text_.clear();
                 }
                 plain_text_.push_back(ch);
             }
