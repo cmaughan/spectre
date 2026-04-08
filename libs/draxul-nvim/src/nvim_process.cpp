@@ -184,6 +184,19 @@ void NvimProcess::shutdown()
 
 bool NvimProcess::write(const uint8_t* data, size_t len) const
 {
+    // WriteFile on an anonymous/named pipe is allowed to perform a partial
+    // write: it may return TRUE with `written` < `to_write` when the pipe's
+    // kernel buffer is nearly full (e.g. large msgpack-RPC payloads such as
+    // nvim_buf_set_lines with pasted content). A single call is therefore
+    // not sufficient — we must loop until the whole buffer has been
+    // delivered, otherwise the tail of the message is silently dropped and
+    // the RPC stream becomes corrupt for every subsequent request.
+    //
+    // Failure cases:
+    //  * WriteFile returns FALSE -> hard error (broken pipe, child exited).
+    //  * WriteFile returns TRUE with written == 0 -> should not happen on a
+    //    blocking handle, but we treat it as a hard error to avoid spinning
+    //    forever if the kernel ever violates that contract.
     size_t total_written = 0;
     while (total_written < len)
     {
@@ -191,8 +204,9 @@ bool NvimProcess::write(const uint8_t* data, size_t len) const
         DWORD to_write = static_cast<DWORD>(
             std::min<size_t>(len - total_written, MAXDWORD));
         if (!WriteFile(impl_->child_stdin_write_,
-                data + total_written, to_write, &written, nullptr)
-            || written == 0)
+                data + total_written, to_write, &written, nullptr))
+            return false;
+        if (written == 0)
             return false;
         total_written += written;
     }
