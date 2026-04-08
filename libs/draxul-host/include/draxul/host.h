@@ -206,6 +206,14 @@ public:
     {
         return {};
     }
+
+    // Most recent OSC 7-reported working directory, if any. Returned empty
+    // when the host is not a terminal or no cwd has been seen yet. Used by
+    // App to default-name workspace tabs from the active pane's cwd.
+    virtual std::string current_working_directory() const
+    {
+        return {};
+    }
     virtual Color default_background() const = 0;
     virtual HostRuntimeState runtime_state() const = 0;
     virtual HostDebugState debug_state() const = 0;

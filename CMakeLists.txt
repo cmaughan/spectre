@@ -1,4 +1,18 @@
 cmake_minimum_required(VERSION 3.25)
+
+# Optional compile cache. If ccache (or sccache) is on PATH, route every C/C++
+# compile through it so repeated builds of identical TUs are near-instant.
+# Set BEFORE project() so the language-enablement toolchain probes also run
+# under the launcher (otherwise we miss cache entries from CMake's own
+# compiler-detection compile tests). Purely additive — no effect when neither
+# tool is installed.
+find_program(DRAXUL_COMPILER_LAUNCHER NAMES ccache sccache)
+if(DRAXUL_COMPILER_LAUNCHER)
+    message(STATUS "Using compiler launcher: ${DRAXUL_COMPILER_LAUNCHER}")
+    set(CMAKE_C_COMPILER_LAUNCHER   "${DRAXUL_COMPILER_LAUNCHER}")
+    set(CMAKE_CXX_COMPILER_LAUNCHER "${DRAXUL_COMPILER_LAUNCHER}")
+endif()
+
 project(draxul VERSION 0.1.0 LANGUAGES CXX C)
 
 # All internal libraries are static; prevent any cached or inherited value from flipping this.

@@ -2,6 +2,7 @@
 
 #include "workspace.h"
 
+#include <chrono>
 #include <draxul/base_renderer.h>
 #include <draxul/host.h>
 #include <draxul/host_kind.h>
@@ -10,6 +11,7 @@
 #include <draxul/system_resource_monitor.h>
 #include <optional>
 #include <span>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -43,6 +45,21 @@ public:
         const int* active_workspace_id = nullptr;
         const SystemResourceSnapshot* system_resource_snapshot = nullptr;
         std::function<std::optional<std::pair<std::string, float>>()> chord_indicator = nullptr;
+
+        // Apply a user-typed name to a workspace tab. Owner (App) sets
+        // workspace.name and marks workspace.name_user_set so subsequent OSC 7
+        // updates don't overwrite the user's choice.
+        std::function<void(int workspace_id, std::string name)> set_workspace_name;
+        // Apply a user-typed name to a pane (per-leaf override). Owner (App)
+        // forwards this to HostManager::set_pane_name. Empty name clears the
+        // override and reverts to host->status_text().
+        std::function<void(LeafId leaf, std::string name)> set_pane_name;
+        // Look up the existing user override for a pane. Returns empty string
+        // when no override is set. Used to seed the rename buffer.
+        std::function<std::string(LeafId leaf)> get_pane_name;
+        // Request the host to schedule another frame even when no input
+        // arrived (used to drive the rename caret blink).
+        std::function<void()> request_frame;
     };
 
     explicit ChromeHost(Deps deps);
@@ -59,10 +76,7 @@ public:
     void set_viewport(const HostViewport& viewport) override;
     void pump() override {}
     void draw(IFrameContext& frame) override;
-    std::optional<std::chrono::steady_clock::time_point> next_deadline() const override
-    {
-        return std::nullopt;
-    }
+    std::optional<std::chrono::steady_clock::time_point> next_deadline() const override;
 
     bool dispatch_action(std::string_view /*action*/) override
     {
@@ -89,6 +103,45 @@ public:
     // Returns the 1-based tab index if hit, or 0 if not in the tab bar.
     int hit_test_tab(int px, int py) const;
 
+    // ----- Inline tab/pane rename (WI 128) -----------------------------
+    // A single edit session can target either a workspace tab or a pane
+    // status pill. Only one target is active at a time; starting a new edit
+    // commits any in-progress one.
+    //
+    // Workspace target:
+    void begin_tab_rename(int tab_index);
+    // Begin editing the tab corresponding to a workspace_id. Same semantics
+    // as begin_tab_rename(int). Used by the rename_tab command palette
+    // action which knows the active workspace id, not its 1-based index.
+    void begin_tab_rename_by_id(int workspace_id);
+    bool is_editing_tab() const;
+    int editing_workspace_id() const;
+    // Pane target:
+    void begin_pane_rename(LeafId leaf);
+    bool is_editing_pane() const;
+    LeafId editing_leaf_id() const;
+    // True while any rename session (tab or pane) is in progress. Used by
+    // InputDispatcher to route key/text events to the rename layer.
+    bool is_editing() const;
+    // Commit the current edit buffer (tab or pane) and exit edit mode.
+    // No-op when not editing. Empty buffers do not overwrite the existing
+    // name — they just exit edit mode.
+    void commit_tab_rename();
+    void cancel_tab_rename();
+    // Forward a text input event to the active rename buffer. Returns true
+    // if the event was consumed.
+    bool on_rename_text_input(const std::string& utf8);
+    // Forward a key event to the active rename buffer. Handles Enter /
+    // Escape / Backspace / Delete / Left / Right / Home / End. Returns true
+    // if the event was consumed.
+    bool on_rename_key(int sdl_keycode);
+
+    // Hit-test a point (physical pixels) against the per-pane status pills.
+    // Returns the LeafId of the pane whose pill contains the point, or
+    // kInvalidLeaf if none. Only valid after the first draw() call —
+    // ChromeHost caches the pill rects from the most recent frame.
+    LeafId hit_test_pane_status_pill(int px, int py) const;
+
     // Access the active workspace's tree for divider/focus rendering.
     const SplitTree& active_tree() const;
 
@@ -99,6 +152,7 @@ public:
         int text_col; // first column of label text
         int text_len; // label char count
         bool active;
+        bool editing = false;
         std::string label;
     };
 
@@ -136,6 +190,37 @@ private:
     void update_pane_status_grids(IFrameContext& frame, std::span<const PaneStatusEntry> entries);
     void flush_atlas_if_dirty();
 
+    // Inline rename state. Either targets a workspace (Workspace) or a
+    // pane (Pane); EditTarget::None means no rename in progress.
+    enum class EditTarget
+    {
+        None,
+        Workspace,
+        Pane,
+    };
+    struct EditState
+    {
+        EditTarget target = EditTarget::None;
+        int workspace_id = -1; // valid when target == Workspace
+        LeafId leaf_id = kInvalidLeaf; // valid when target == Pane
+        std::string buffer; // current edit text (no "N: " prefix)
+        size_t cursor = 0; // UTF-8 byte offset within buffer
+        std::chrono::steady_clock::time_point started_at{};
+    };
+
+    // Cached pane status pill rect from the last draw, used for hit testing.
+    struct PaneStatusPillHit
+    {
+        LeafId leaf = kInvalidLeaf;
+        float x = 0.0f;
+        float y = 0.0f;
+        float w = 0.0f;
+        float h = 0.0f;
+    };
+
+    // Resolve a workspace id from a 1-based tab index, or -1 if out of range.
+    int workspace_id_for_index(int tab_index) const;
+
     Deps deps_;
     std::unique_ptr<INanoVGPass> nanovg_pass_;
     std::unique_ptr<IGridHandle> tab_handle_;
@@ -144,6 +229,10 @@ private:
     std::unordered_map<LeafId, std::unique_ptr<IGridHandle>> pane_status_handles_;
     HostViewport viewport_{};
     bool running_ = false;
+    EditState edit_;
+    // Refreshed during draw() so InputDispatcher's mouse routing can hit-test
+    // the per-pane status pills without re-walking the active workspace tree.
+    mutable std::vector<PaneStatusPillHit> pane_pill_hits_;
 };
 
 } // namespace draxul

@@ -3,6 +3,7 @@
 #include "host_manager.h"
 #include "workspace.h"
 
+#include <SDL3/SDL_keycode.h>
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -83,16 +84,81 @@ constexpr Color kTabBarBg{ 0.094f, 0.094f, 0.145f, 1.0f }; // #181825 Mantle
 constexpr Color kActiveTabBg{ 0.796f, 0.651f, 0.969f, 1.0f }; // #cba6f7 Mauve
 constexpr Color kInactiveTabBg{ 0.271f, 0.278f, 0.353f, 1.0f }; // #45475a Surface1
 constexpr Color kActiveTabFg{ 0.118f, 0.118f, 0.180f, 1.0f }; // #1e1e2e Base (dark on bright)
-constexpr Color kInactiveTabFg{ 0.651f, 0.678f, 0.780f, 1.0f }; // #a6adc8 Subtext0
 constexpr Color kResourcePillBg{ 0.976f, 0.886f, 0.686f, 1.0f }; // #f9e2af Yellow
-constexpr Color kResourcePillFg{ 0.118f, 0.118f, 0.180f, 1.0f }; // #1e1e2e Base
-constexpr Color kResourcePillLabelFg{ 0.118f, 0.118f, 0.180f, 0.68f }; // muted label tint
 constexpr Color kResourcePillWarnBg{ 0.973f, 0.761f, 0.510f, 1.0f }; // orange
 constexpr Color kResourcePillHotBg{ 0.957f, 0.337f, 0.337f, 1.0f }; // red
 constexpr Color kChordPillBg{ 0.271f, 0.278f, 0.353f, 0.95f }; // inactive-tab grey
-constexpr Color kChordPillFg{ 0.808f, 0.839f, 0.957f, 1.0f }; // lighter text for quick scan
+
+// Named bg colors that mirror the NanoVG fill values used by the chrome
+// callback. Centralised so the grid label loops can run them through
+// text_for_bg() and pick a contrasting fg without re-typing magic numbers.
+constexpr Color kTabActiveAccentBg{ 0.725f, 0.235f, 0.235f, 0.863f }; // 185,60,60,220
+constexpr Color kTabInactiveAccentBg{ 0.431f, 0.451f, 0.549f, 0.784f }; // 110,115,140,200
+constexpr Color kTabEditingBodyBg{ 0.549f, 0.565f, 0.686f, 1.0f }; // 140,144,175,255
+constexpr Color kPaneFocusedAccentBg{ 0.235f, 0.647f, 0.373f, 0.863f }; // 60,165,95,220
+
+// BT.709 relative luminance (glm has no built-in helper). Alpha ignored.
+inline float relative_luminance(const Color& c)
+{
+    return 0.2126f * c.r + 0.7152f * c.g + 0.0722f * c.b;
+}
+
+// Pick a contrasting text color for the given background. Light backgrounds
+// (luminance > 0.5) get a near-black ink; darker ones get a near-white ink.
+// Alpha is left at 1.0 — caller can fade afterward if needed.
+inline Color text_for_bg(const Color& bg)
+{
+    constexpr Color kDarkInk{ 0.10f, 0.10f, 0.12f, 1.0f };
+    constexpr Color kLightInk{ 0.92f, 0.93f, 0.95f, 1.0f };
+    return relative_luminance(bg) > 0.5f ? kDarkInk : kLightInk;
+}
 
 constexpr int kTabPadCols = 1; // padding cells on each side of tab label
+// Minimum visible columns for the editable name portion of a tab during a
+// rename session, so the field stays comfortably wide even before the user
+// types anything. The "N: " prefix is added on top of this.
+constexpr int kEditMinNameCols = 10;
+
+// Step backward by one UTF-8 codepoint from `pos` in `s`. Returns the new
+// position, or 0 if already at the start.
+inline size_t utf8_prev(const std::string& s, size_t pos)
+{
+    if (pos == 0)
+        return 0;
+    --pos;
+    while (pos > 0 && (static_cast<unsigned char>(s[pos]) & 0xC0) == 0x80)
+        --pos;
+    return pos;
+}
+
+// Step forward by one UTF-8 codepoint from `pos` in `s`. Returns the new
+// position, clamped to s.size().
+inline size_t utf8_next(const std::string& s, size_t pos)
+{
+    if (pos >= s.size())
+        return s.size();
+    ++pos;
+    while (pos < s.size() && (static_cast<unsigned char>(s[pos]) & 0xC0) == 0x80)
+        ++pos;
+    return pos;
+}
+
+// Count display columns from buffer start up to byte offset `pos`, using
+// cluster_cell_width(). Used to position the rename caret.
+inline int columns_to_offset(const std::string& buffer, size_t pos)
+{
+    int cols = 0;
+    size_t i = 0;
+    while (i < pos && i < buffer.size())
+    {
+        const size_t next = utf8_next(buffer, i);
+        const std::string cluster = buffer.substr(i, next - i);
+        cols += std::max(1, cluster_cell_width(cluster));
+        i = next;
+    }
+    return cols;
+}
+
 // Pane status pill margin from the right edge of the pane (in cells).
 constexpr int kPaneStatusRightMarginCols = 1;
 
@@ -193,13 +259,13 @@ Color resource_pill_background_color(const SystemResourceSnapshot& snapshot)
 }
 
 void append_resource_metric(std::vector<ChromeHost::LabelCluster>& out, const char* label, int percent,
-    bool append_separator)
+    const Color& value_fg, const Color& label_fg, bool append_separator)
 {
-    append_label_clusters(out, label, kResourcePillLabelFg);
-    append_label_clusters(out, " ", kResourcePillLabelFg);
-    append_label_clusters(out, format_resource_percent_value(percent), kResourcePillFg);
+    append_label_clusters(out, label, label_fg);
+    append_label_clusters(out, " ", label_fg);
+    append_label_clusters(out, format_resource_percent_value(percent), value_fg);
     if (append_separator)
-        append_label_clusters(out, "  ", kResourcePillFg);
+        append_label_clusters(out, "  ", value_fg);
 }
 } // namespace
 
@@ -215,8 +281,17 @@ int ChromeHost::hit_test_tab(int px, int py) const
     int col_cursor = 0;
     for (size_t wi = 0; wi < workspaces.size(); ++wi)
     {
-        const std::string label = tab_label(wi, workspaces[wi]->name);
-        const int total_cols = static_cast<int>(label.size()) + kTabPadCols * 2;
+        const bool editing = (edit_.target == EditTarget::Workspace
+            && edit_.workspace_id == workspaces[wi]->id);
+        const std::string display_name = editing ? edit_.buffer : workspaces[wi]->name;
+        const std::string label = tab_label(wi, display_name);
+        int label_cols = static_cast<int>(label.size());
+        if (editing)
+        {
+            const int prefix_cols = static_cast<int>(std::to_string(wi + 1).size()) + 2; // "N: "
+            label_cols = std::max(label_cols, prefix_cols + kEditMinNameCols);
+        }
+        const int total_cols = label_cols + kTabPadCols * 2;
         const int tab_left = col_cursor * cw + kGridPadding;
         const int tab_right = (col_cursor + total_cols) * cw + kGridPadding;
         if (px >= tab_left && px < tab_right)
@@ -275,7 +350,13 @@ void ChromeHost::draw(IFrameContext& frame)
                     e.pane_w = desc.pixel_size.x;
                     e.pane_h = desc.pixel_size.y;
                     e.index = next_index++;
-                    e.text = h->status_text();
+                    // Prefer the user-set pane name (rename override) over
+                    // the host's auto-generated status text. Empty override
+                    // falls back to status_text().
+                    std::string override_name;
+                    if (deps_.get_pane_name)
+                        override_name = deps_.get_pane_name(id);
+                    e.text = override_name.empty() ? h->status_text() : std::move(override_name);
                     e.focused = (id == focused_leaf);
                     e.leaf = id;
                     status_entries.push_back(std::move(e));
@@ -312,8 +393,12 @@ void ChromeHost::draw(IFrameContext& frame)
                 RightPillLayout layout;
                 layout.bg = resource_pill_background_color(*deps_.system_resource_snapshot);
                 layout.flat_right_edge = true;
-                append_resource_metric(layout.clusters, "CPU", deps_.system_resource_snapshot->cpu_percent, true);
-                append_resource_metric(layout.clusters, "RAM", deps_.system_resource_snapshot->memory_percent, false);
+                const Color value_fg = text_for_bg(layout.bg);
+                const Color label_fg = apply_alpha(value_fg, 0.68f);
+                append_resource_metric(layout.clusters, "CPU",
+                    deps_.system_resource_snapshot->cpu_percent, value_fg, label_fg, true);
+                append_resource_metric(layout.clusters, "RAM",
+                    deps_.system_resource_snapshot->memory_percent, value_fg, label_fg, false);
 
                 const int total_cols = label_cluster_columns(layout.clusters) + kTabPadCols * 2;
                 layout.col_end = right_col_cursor;
@@ -330,7 +415,8 @@ void ChromeHost::draw(IFrameContext& frame)
                     RightPillLayout layout;
                     layout.bg = apply_alpha(kChordPillBg, state->second);
                     layout.flat_right_edge = false;
-                    append_label_clusters(layout.clusters, state->first, apply_alpha(kChordPillFg, state->second));
+                    append_label_clusters(layout.clusters, state->first,
+                        apply_alpha(text_for_bg(kChordPillBg), state->second));
 
                     const int total_cols = label_cluster_columns(layout.clusters) + kTabPadCols * 2;
                     layout.col_end = right_col_cursor;
@@ -346,8 +432,16 @@ void ChromeHost::draw(IFrameContext& frame)
             for (size_t wi = 0; wi < workspaces.size(); ++wi)
             {
                 const auto& ws = workspaces[wi];
-                const std::string label = tab_label(wi, ws->name);
-                const int label_cols = static_cast<int>(label.size());
+                const bool editing = (edit_.target == EditTarget::Workspace
+                    && edit_.workspace_id == ws->id);
+                const std::string display_name = editing ? edit_.buffer : ws->name;
+                const std::string label = tab_label(wi, display_name);
+                int label_cols = static_cast<int>(label.size());
+                if (editing)
+                {
+                    const int prefix_cols = static_cast<int>(std::to_string(wi + 1).size()) + 2; // "N: "
+                    label_cols = std::max(label_cols, prefix_cols + kEditMinNameCols);
+                }
                 const int total_cols = label_cols + kTabPadCols * 2;
                 if (tabs_end_col > 0 && col_cursor + total_cols > tabs_end_col)
                     break;
@@ -358,6 +452,7 @@ void ChromeHost::draw(IFrameContext& frame)
                 tl.text_col = col_cursor + kTabPadCols;
                 tl.text_len = label_cols;
                 tl.active = (ws->id == active_ws_id);
+                tl.editing = editing;
                 tl.label = label;
                 tabs.push_back(std::move(tl));
 
@@ -372,8 +467,14 @@ void ChromeHost::draw(IFrameContext& frame)
         float x, y, w, h;
         float accent_w; // width of the burgundy accent region (number portion)
         bool active;
+        bool editing;
     };
     std::vector<TabRect> tab_rects;
+    struct CaretRect
+    {
+        float x, y, h;
+    };
+    std::optional<CaretRect> caret_rect;
     if (!tabs.empty() && cw_shared > 0)
     {
         const float pill_h = static_cast<float>(ch_shared) - 4.0f; // 2px margin top+bottom
@@ -382,6 +483,8 @@ void ChromeHost::draw(IFrameContext& frame)
         for (size_t i = 0; i < tabs.size(); ++i)
         {
             const auto& tl = tabs[i];
+            const bool editing = (edit_.target == EditTarget::Workspace
+                && workspaces[i]->id == edit_.workspace_id);
             // Derive pixel position from grid column: pixel_x = col * cw + padding
             const float px = static_cast<float>(tl.col_begin * cw_shared + kGridPadding) + half_gap;
             const float pw = static_cast<float>((tl.col_end - tl.col_begin) * cw_shared) - half_gap * 2.0f;
@@ -390,7 +493,19 @@ void ChromeHost::draw(IFrameContext& frame)
             const int num_str_len = static_cast<int>(std::to_string(i + 1).size()); // digits
             const int accent_cols = kTabPadCols + num_str_len + 1; // pad + digits + ":"
             const float aw = static_cast<float>(accent_cols * cw_shared);
-            tab_rects.push_back({ px, pill_y, pw, pill_h, aw, tl.active });
+            tab_rects.push_back({ px, pill_y, pw, pill_h, aw, tl.active, editing });
+
+            if (editing)
+            {
+                // Caret sits after the "N: " prefix + cursor codepoints.
+                const int caret_cols = columns_to_offset(edit_.buffer, edit_.cursor);
+                const int caret_col = tl.text_col + (num_str_len + 2) + caret_cols; // +2 for ": "
+                CaretRect cr;
+                cr.x = static_cast<float>(caret_col * cw_shared + kGridPadding);
+                cr.y = pill_y + 2.0f;
+                cr.h = pill_h - 4.0f;
+                caret_rect = cr;
+            }
         }
     }
 
@@ -464,7 +579,11 @@ void ChromeHost::draw(IFrameContext& frame)
         float x, y, w, h;
         float accent_w; // burgundy "number" portion (only drawn when focused)
         bool focused;
+        bool editing;
     };
+    // Cache reset: refilled below so InputDispatcher can hit-test pills.
+    pane_pill_hits_.clear();
+    std::optional<CaretRect> pane_caret_rect;
     std::vector<StatusPillRect> status_pill_rects;
     if (status_strip_h > 0 && deps_.grid_renderer)
     {
@@ -472,13 +591,26 @@ void ChromeHost::draw(IFrameContext& frame)
         if (cw > 0 && ch > 0)
         {
             status_pill_rects.reserve(status_entries.size());
+            pane_pill_hits_.reserve(status_entries.size());
             for (const auto& e : status_entries)
             {
+                // Substitute the live edit buffer when this pane is being
+                // renamed; otherwise use the entry's status text.
+                const bool editing = (edit_.target == EditTarget::Pane
+                    && edit_.leaf_id == e.leaf);
+                const std::string display_text = editing ? edit_.buffer : e.text;
                 // Label = "<index>: <text>" — same prefix scheme as tabs.
                 const std::string num_str = std::to_string(e.index);
+                int text_cols = static_cast<int>(display_text.size());
+                if (editing)
+                {
+                    // Keep the field comfortably wide so an empty rename
+                    // session is still clearly editable.
+                    text_cols = std::max(text_cols, kEditMinNameCols);
+                }
                 const int label_cols = static_cast<int>(num_str.size()) + 2 // "N:"
                     + 1 // space after colon
-                    + static_cast<int>(e.text.size());
+                    + text_cols;
                 const int total_cols = label_cols + kTabPadCols * 2;
 
                 // Right-align: pill ends one cell from the pane's right edge.
@@ -506,27 +638,60 @@ void ChromeHost::draw(IFrameContext& frame)
                 r.h = pill_h;
                 r.accent_w = accent_w;
                 r.focused = e.focused;
+                r.editing = editing;
                 status_pill_rects.push_back(r);
+
+                PaneStatusPillHit hit;
+                hit.leaf = e.leaf;
+                hit.x = pill_x;
+                hit.y = pill_y;
+                hit.w = pill_w;
+                hit.h = pill_h;
+                pane_pill_hits_.push_back(hit);
+
+                if (editing)
+                {
+                    // Caret position: prefix is "<num>: ", text starts after
+                    // it. Convert byte cursor → display cols, advance from
+                    // the text origin inside the pill.
+                    const int prefix_cols = static_cast<int>(num_str.size()) + 2; // "N:" + space
+                    const int caret_cols = columns_to_offset(edit_.buffer, edit_.cursor);
+                    // Pill text origin (column 0 of the pill grid) sits at
+                    // pill_x + half_gap; tab padding is handled by the grid.
+                    const float text_origin_x = pill_x + half_gap
+                        + static_cast<float>((kTabPadCols + prefix_cols) * cw);
+                    CaretRect cr;
+                    cr.x = text_origin_x + static_cast<float>(caret_cols * cw);
+                    cr.y = pill_y + 2.0f;
+                    cr.h = pill_h - 4.0f;
+                    pane_caret_rect = cr;
+                }
             }
         }
     }
 
     // Single NanoVG callback draws everything: tab bar shapes + dividers + focus.
     const float focus_border = deps_.config ? deps_.config->focus_border_width : 3.0f;
+    const auto edit_started_at = edit_.started_at;
     nanovg_pass_->set_draw_callback(
         [tab_rects = std::move(tab_rects), bar_w, bar_h,
             right_pill_rects = std::move(right_pill_rects),
             dividers = std::move(dividers), focus_rect, focus_border,
-            status_pill_rects = std::move(status_pill_rects)](NVGcontext* vg, int /*w*/, int /*h*/) {
+            status_pill_rects = std::move(status_pill_rects),
+            caret_rect, pane_caret_rect, edit_started_at](NVGcontext* vg, int /*w*/, int /*h*/) {
             // --- Pane status pills (drawn first so dividers/focus border go on top) ---
             for (const auto& s : status_pill_rects)
             {
                 const float radius = s.h * 0.5f; // pill shape
 
-                // Pill body — same inactive grey background as workspace tabs.
+                // Pill body — brightened when editing, otherwise the same
+                // inactive grey background as workspace tabs.
                 nvgBeginPath(vg);
                 nvgRoundedRect(vg, s.x, s.y, s.w, s.h, radius);
-                nvgFillColor(vg, nvgRGBAf(kInactiveTabBg.r, kInactiveTabBg.g, kInactiveTabBg.b, kInactiveTabBg.a));
+                if (s.editing)
+                    nvgFillColor(vg, nvgRGBA(140, 144, 175, 255)); // brightened Surface2
+                else
+                    nvgFillColor(vg, nvgRGBAf(kInactiveTabBg.r, kInactiveTabBg.g, kInactiveTabBg.b, kInactiveTabBg.a));
                 nvgFill(vg);
 
                 // Number-prefix accent — bright green when focused, dimmed
@@ -542,6 +707,32 @@ void ChromeHost::draw(IFrameContext& frame)
                     nvgFillColor(vg, nvgRGBA(kInactiveAccentR, kInactiveAccentG, kInactiveAccentB, kInactiveAccentA));
                 nvgFill(vg);
                 nvgRestore(vg);
+
+                if (s.editing)
+                {
+                    // White outline so the rename target is unmistakable.
+                    nvgBeginPath(vg);
+                    nvgRoundedRect(vg, s.x, s.y, s.w, s.h, radius);
+                    nvgStrokeColor(vg, nvgRGBA(255, 255, 255, 230));
+                    nvgStrokeWidth(vg, 1.5f);
+                    nvgStroke(vg);
+                }
+            }
+
+            // --- Pane rename caret (blink at ~2 Hz) ---
+            if (pane_caret_rect)
+            {
+                const auto now = std::chrono::steady_clock::now();
+                const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    now - edit_started_at)
+                                    .count();
+                if ((ms / 500) % 2 == 0)
+                {
+                    nvgBeginPath(vg);
+                    nvgRect(vg, pane_caret_rect->x, pane_caret_rect->y, 1.5f, pane_caret_rect->h);
+                    nvgFillColor(vg, nvgRGBA(255, 255, 255, 230));
+                    nvgFill(vg);
+                }
             }
 
             // --- Tab bar ---
@@ -558,33 +749,38 @@ void ChromeHost::draw(IFrameContext& frame)
             {
                 const float radius = tab.h * 0.5f; // pill shape
 
-                // Full pill body — inactive bg for all tabs.
+                // Full pill body. Editing tabs use a brighter Surface2-ish
+                // shade so the field reads as "live" while the active red
+                // accent on the left stays untouched.
                 nvgBeginPath(vg);
                 nvgRoundedRect(vg, tab.x, tab.y, tab.w, tab.h, radius);
-                nvgFillColor(vg, nvgRGBAf(kInactiveTabBg.r, kInactiveTabBg.g, kInactiveTabBg.b, kInactiveTabBg.a));
+                if (tab.editing)
+                    nvgFillColor(vg, nvgRGBA(140, 144, 175, 255)); // brightened Surface2
+                else
+                    nvgFillColor(vg, nvgRGBAf(kInactiveTabBg.r, kInactiveTabBg.g, kInactiveTabBg.b, kInactiveTabBg.a));
                 nvgFill(vg);
 
+                // Number-prefix accent.
+                nvgSave(vg);
+                nvgIntersectScissor(vg, tab.x, tab.y, tab.w, tab.h);
+                nvgBeginPath(vg);
+                nvgRoundedRect(vg, tab.x, tab.y, tab.accent_w, tab.h, radius);
                 if (tab.active)
-                {
-                    // Active tab: bright red accent on the number portion (left side).
-                    nvgSave(vg);
-                    nvgIntersectScissor(vg, tab.x, tab.y, tab.w, tab.h);
-                    nvgBeginPath(vg);
-                    nvgRoundedRect(vg, tab.x, tab.y, tab.accent_w, tab.h, radius);
-                    nvgFillColor(vg, nvgRGBA(185, 60, 60, 220));
-                    nvgFill(vg);
-                    nvgRestore(vg);
-                }
+                    nvgFillColor(vg, nvgRGBA(185, 60, 60, 220)); // bright red
                 else
+                    nvgFillColor(vg, nvgRGBA(110, 115, 140, 200)); // dimmed
+                nvgFill(vg);
+                nvgRestore(vg);
+
+                if (tab.editing)
                 {
-                    // Inactive tab: dimmed accent on the number portion only.
-                    nvgSave(vg);
-                    nvgIntersectScissor(vg, tab.x, tab.y, tab.w, tab.h);
+                    // Editing outline: 1.5px stroke around the pill so the
+                    // user immediately reads the tab as "in edit mode".
                     nvgBeginPath(vg);
-                    nvgRoundedRect(vg, tab.x, tab.y, tab.accent_w, tab.h, radius);
-                    nvgFillColor(vg, nvgRGBA(110, 115, 140, 200));
-                    nvgFill(vg);
-                    nvgRestore(vg);
+                    nvgRoundedRect(vg, tab.x, tab.y, tab.w, tab.h, radius);
+                    nvgStrokeColor(vg, nvgRGBA(255, 255, 255, 230));
+                    nvgStrokeWidth(vg, 1.5f);
+                    nvgStroke(vg);
                 }
             }
 
@@ -603,6 +799,22 @@ void ChromeHost::draw(IFrameContext& frame)
                 }
                 nvgFillColor(vg, nvgRGBAf(pill.bg.r, pill.bg.g, pill.bg.b, pill.bg.a));
                 nvgFill(vg);
+            }
+
+            // Rename caret — blink at ~2 Hz.
+            if (caret_rect)
+            {
+                const auto now = std::chrono::steady_clock::now();
+                const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    now - edit_started_at)
+                                    .count();
+                if ((ms / 500) % 2 == 0)
+                {
+                    nvgBeginPath(vg);
+                    nvgRect(vg, caret_rect->x, caret_rect->y, 1.5f, caret_rect->h);
+                    nvgFillColor(vg, nvgRGBA(255, 255, 255, 230));
+                    nvgFill(vg);
+                }
             }
 
             // --- Divider lines ---
@@ -713,18 +925,32 @@ void ChromeHost::update_pane_status_grids(IFrameContext& frame, std::span<const 
     if (entries.empty())
         return;
 
-    // Match the workspace tab text colors:
-    //   - light fg on the burgundy "number" accent
-    //   - kInactiveTabFg on the rest of the label
-    constexpr Color kAccentFg{ 0.85f, 0.85f, 0.90f, 1.0f }; // light text on burgundy
+    // Pick fg from the underlying NanoVG fill color via luminance contrast.
+    // Body matches the workspace-tab inactive bg; the number-prefix accent
+    // is green when focused or dimmed grey otherwise (mirrors draw()).
+    const Color body_fg_normal = text_for_bg(kInactiveTabBg);
+    const Color body_fg_editing = text_for_bg(kTabEditingBodyBg);
+    const Color focused_accent_fg = text_for_bg(kPaneFocusedAccentBg);
+    const Color inactive_accent_fg = text_for_bg(kTabInactiveAccentBg);
 
     for (const auto& e : entries)
     {
+        const bool editing = (edit_.target == EditTarget::Pane && edit_.leaf_id == e.leaf);
+        const std::string display_text = editing ? edit_.buffer : e.text;
+        const Color body_fg = editing ? body_fg_editing : body_fg_normal;
+
         // Build the same "N: <text>" label the pill geometry was sized for.
         const std::string num_str = std::to_string(e.index);
-        std::string label = num_str + ": " + e.text;
+        std::string label = num_str + ": " + display_text;
 
-        const int label_cols = static_cast<int>(label.size());
+        int min_label_cols = static_cast<int>(label.size());
+        if (editing)
+        {
+            // Match the pill width grown by the draw() pass for an empty/short edit.
+            const int prefix_cols = static_cast<int>(num_str.size()) + 2; // "N:" + space
+            min_label_cols = std::max(min_label_cols, prefix_cols + kEditMinNameCols);
+        }
+        const int label_cols = min_label_cols;
         const int total_cols = label_cols + kTabPadCols * 2;
         // Cap pill width to the pane width so a long label cannot escape.
         const int max_cols = std::max(1, e.pane_w / cw - kPaneStatusRightMarginCols);
@@ -738,16 +964,16 @@ void ChromeHost::update_pane_status_grids(IFrameContext& frame, std::span<const 
         {
             const int text_room = std::max(0, usable_label_cols - prefix_cols);
             std::string truncated = num_str + ": ";
-            if (text_room >= 1 && !e.text.empty())
+            if (text_room >= 1 && !display_text.empty())
             {
-                if (static_cast<int>(e.text.size()) > text_room)
+                if (static_cast<int>(display_text.size()) > text_room)
                 {
-                    truncated += e.text.substr(0, static_cast<size_t>(text_room - 1));
+                    truncated += display_text.substr(0, static_cast<size_t>(text_room - 1));
                     truncated += "…";
                 }
                 else
                 {
-                    truncated += e.text;
+                    truncated += display_text;
                 }
             }
             label = std::move(truncated);
@@ -819,7 +1045,8 @@ void ChromeHost::update_pane_status_grids(IFrameContext& frame, std::span<const 
             const int col = ci;
             if (col < 0 || col >= pill_cols)
                 continue;
-            const Color& fg = (ci < num_prefix_len) ? kAccentFg : kInactiveTabFg;
+            const Color& accent_fg = e.focused ? focused_accent_fg : inactive_accent_fg;
+            const Color& fg = (ci < num_prefix_len) ? accent_fg : body_fg;
             const std::string cluster(1, label[static_cast<size_t>(ci)]);
             AtlasRegion glyph = deps_.text_service->resolve_cluster(cluster);
             auto& cell = cells[static_cast<size_t>(col)];
@@ -908,13 +1135,18 @@ void ChromeHost::update_tab_grid(std::span<const TabLayout> tabs, std::span<cons
     flush_atlas_if_dirty();
 
     // Write text into grid cells using the shared column-based layout.
-    // Light text on burgundy accent (number portion), standard text elsewhere.
-    constexpr Color kAccentFg{ 0.85f, 0.85f, 0.90f, 1.0f }; // light text on burgundy
+    // Foreground colors are picked from the underlying NanoVG fill via
+    // luminance contrast so any future bg tweak automatically gets readable
+    // ink without re-tuning a constant.
     for (size_t ti = 0; ti < tabs.size(); ++ti)
     {
         const auto& tl = tabs[ti];
         // Number prefix width: digits of (index+1) + ":" (the space after is name territory).
         const int num_prefix_cols = static_cast<int>(std::to_string(ti + 1).size()) + 1; // digits + ":"
+        const Color accent_bg = tl.active ? kTabActiveAccentBg : kTabInactiveAccentBg;
+        const Color body_bg = tl.editing ? kTabEditingBodyBg : kInactiveTabBg;
+        const Color accent_fg = text_for_bg(accent_bg);
+        const Color body_fg = text_for_bg(body_bg);
         int label_col = tl.text_col;
         int consumed_cols = 0;
         for (const auto& cluster_text : split_display_clusters(tl.label))
@@ -927,9 +1159,8 @@ void ChromeHost::update_tab_grid(std::span<const TabLayout> tabs, std::span<cons
                 continue;
             }
 
-            // Active tab: number chars on burgundy get light fg, rest gets inactive fg.
             const int cluster_width = std::max(1, cluster_cell_width(cluster_text));
-            const Color& fg = (tl.active && consumed_cols < num_prefix_cols) ? kAccentFg : kInactiveTabFg;
+            const Color& fg = (consumed_cols < num_prefix_cols) ? accent_fg : body_fg;
             AtlasRegion glyph = deps_.text_service->resolve_cluster(cluster_text);
 
             auto& cell = cells[static_cast<size_t>(col)];
@@ -965,6 +1196,256 @@ void ChromeHost::update_tab_grid(std::span<const TabLayout> tabs, std::span<cons
 
     tab_handle_->update_cells(cells);
     flush_atlas_if_dirty();
+}
+
+// ---------------------------------------------------------------------------
+// Inline tab/pane rename (WI 128)
+// ---------------------------------------------------------------------------
+
+bool ChromeHost::is_editing_tab() const
+{
+    return edit_.target == EditTarget::Workspace;
+}
+
+int ChromeHost::editing_workspace_id() const
+{
+    return is_editing_tab() ? edit_.workspace_id : -1;
+}
+
+bool ChromeHost::is_editing_pane() const
+{
+    return edit_.target == EditTarget::Pane;
+}
+
+LeafId ChromeHost::editing_leaf_id() const
+{
+    return is_editing_pane() ? edit_.leaf_id : kInvalidLeaf;
+}
+
+bool ChromeHost::is_editing() const
+{
+    return edit_.target != EditTarget::None;
+}
+
+LeafId ChromeHost::hit_test_pane_status_pill(int px, int py) const
+{
+    const float fx = static_cast<float>(px);
+    const float fy = static_cast<float>(py);
+    for (const auto& hit : pane_pill_hits_)
+    {
+        if (fx >= hit.x && fx < hit.x + hit.w && fy >= hit.y && fy < hit.y + hit.h)
+            return hit.leaf;
+    }
+    return kInvalidLeaf;
+}
+
+int ChromeHost::workspace_id_for_index(int tab_index) const
+{
+    if (!deps_.workspaces || tab_index <= 0)
+        return -1;
+    const auto& ws = *deps_.workspaces;
+    if (static_cast<size_t>(tab_index) > ws.size())
+        return -1;
+    return ws[static_cast<size_t>(tab_index - 1)]->id;
+}
+
+void ChromeHost::begin_tab_rename(int tab_index)
+{
+    const int id = workspace_id_for_index(tab_index);
+    if (id < 0)
+        return;
+    begin_tab_rename_by_id(id);
+}
+
+void ChromeHost::begin_tab_rename_by_id(int workspace_id)
+{
+    if (!deps_.workspaces)
+        return;
+    // Commit any in-progress edit (tab or pane) before starting a new one,
+    // unless we're already editing this exact workspace tab.
+    if (edit_.target != EditTarget::None
+        && !(edit_.target == EditTarget::Workspace && edit_.workspace_id == workspace_id))
+    {
+        commit_tab_rename();
+    }
+
+    for (const auto& ws : *deps_.workspaces)
+    {
+        if (ws->id != workspace_id)
+            continue;
+        edit_ = EditState{};
+        edit_.target = EditTarget::Workspace;
+        edit_.workspace_id = workspace_id;
+        edit_.buffer = ws->name;
+        edit_.cursor = edit_.buffer.size();
+        edit_.started_at = std::chrono::steady_clock::now();
+        if (deps_.request_frame)
+            deps_.request_frame();
+        return;
+    }
+}
+
+void ChromeHost::begin_pane_rename(LeafId leaf)
+{
+    if (leaf == kInvalidLeaf)
+        return;
+    // Commit any in-progress edit before starting a new one, unless we're
+    // already editing this exact pane.
+    if (edit_.target != EditTarget::None
+        && !(edit_.target == EditTarget::Pane && edit_.leaf_id == leaf))
+    {
+        commit_tab_rename();
+    }
+
+    // Seed buffer from existing user override; empty buffer means "no
+    // override yet" — the placeholder appears on first key press.
+    std::string seed;
+    if (deps_.get_pane_name)
+        seed = deps_.get_pane_name(leaf);
+
+    edit_ = EditState{};
+    edit_.target = EditTarget::Pane;
+    edit_.leaf_id = leaf;
+    edit_.buffer = std::move(seed);
+    edit_.cursor = edit_.buffer.size();
+    edit_.started_at = std::chrono::steady_clock::now();
+    if (deps_.request_frame)
+        deps_.request_frame();
+}
+
+void ChromeHost::commit_tab_rename()
+{
+    if (edit_.target == EditTarget::None)
+        return;
+    if (edit_.target == EditTarget::Workspace)
+    {
+        if (!edit_.buffer.empty() && deps_.set_workspace_name)
+            deps_.set_workspace_name(edit_.workspace_id, edit_.buffer);
+    }
+    else if (edit_.target == EditTarget::Pane)
+    {
+        // Empty buffer is allowed for panes — it clears the user override
+        // and reverts to host->status_text(). For workspaces we keep the
+        // existing name on empty commit; the pane semantics are different
+        // because the underlying status_text is always available as a
+        // sensible fallback.
+        if (deps_.set_pane_name)
+            deps_.set_pane_name(edit_.leaf_id, edit_.buffer);
+    }
+    edit_ = EditState{};
+    if (deps_.request_frame)
+        deps_.request_frame();
+}
+
+void ChromeHost::cancel_tab_rename()
+{
+    if (edit_.target == EditTarget::None)
+        return;
+    edit_ = EditState{};
+    if (deps_.request_frame)
+        deps_.request_frame();
+}
+
+bool ChromeHost::on_rename_text_input(const std::string& utf8)
+{
+    if (edit_.target == EditTarget::None)
+        return false;
+    if (utf8.empty())
+        return true;
+    edit_.buffer.insert(edit_.cursor, utf8);
+    edit_.cursor += utf8.size();
+    edit_.started_at = std::chrono::steady_clock::now(); // reset blink
+
+    // Warm any newly typed glyphs and queue the atlas-region upload BEFORE the
+    // next frame begins. The renderer flushes pending atlas uploads inside
+    // begin_frame(), so an upload queued from a draw pass is one frame late
+    // (cells reference atlas coords whose pixels arrive on the next frame).
+    // Doing the warm here, between frames, lets the next begin_frame() pick
+    // up the upload before any chrome draw runs.
+    if (deps_.text_service)
+    {
+        for (const auto& cluster : split_display_clusters(utf8))
+            deps_.text_service->resolve_cluster(cluster);
+        flush_atlas_if_dirty();
+    }
+
+    if (deps_.request_frame)
+        deps_.request_frame();
+    return true;
+}
+
+bool ChromeHost::on_rename_key(int sdl_keycode)
+{
+    if (edit_.target == EditTarget::None)
+        return false;
+
+    switch (sdl_keycode)
+    {
+    case SDLK_RETURN:
+    case SDLK_KP_ENTER:
+        commit_tab_rename();
+        return true;
+    case SDLK_ESCAPE:
+        cancel_tab_rename();
+        return true;
+    case SDLK_BACKSPACE:
+        if (edit_.cursor > 0)
+        {
+            const size_t prev = utf8_prev(edit_.buffer, edit_.cursor);
+            edit_.buffer.erase(prev, edit_.cursor - prev);
+            edit_.cursor = prev;
+            edit_.started_at = std::chrono::steady_clock::now();
+            if (deps_.request_frame)
+                deps_.request_frame();
+        }
+        return true;
+    case SDLK_DELETE:
+        if (edit_.cursor < edit_.buffer.size())
+        {
+            const size_t next = utf8_next(edit_.buffer, edit_.cursor);
+            edit_.buffer.erase(edit_.cursor, next - edit_.cursor);
+            edit_.started_at = std::chrono::steady_clock::now();
+            if (deps_.request_frame)
+                deps_.request_frame();
+        }
+        return true;
+    case SDLK_LEFT:
+        edit_.cursor = utf8_prev(edit_.buffer, edit_.cursor);
+        edit_.started_at = std::chrono::steady_clock::now();
+        if (deps_.request_frame)
+            deps_.request_frame();
+        return true;
+    case SDLK_RIGHT:
+        edit_.cursor = utf8_next(edit_.buffer, edit_.cursor);
+        edit_.started_at = std::chrono::steady_clock::now();
+        if (deps_.request_frame)
+            deps_.request_frame();
+        return true;
+    case SDLK_HOME:
+        edit_.cursor = 0;
+        edit_.started_at = std::chrono::steady_clock::now();
+        if (deps_.request_frame)
+            deps_.request_frame();
+        return true;
+    case SDLK_END:
+        edit_.cursor = edit_.buffer.size();
+        edit_.started_at = std::chrono::steady_clock::now();
+        if (deps_.request_frame)
+            deps_.request_frame();
+        return true;
+    default:
+        // Swallow all keys while editing so they cannot leak to the host
+        // beneath. Modifier-only keys (Shift/Ctrl/etc.) are also consumed.
+        return true;
+    }
+}
+
+std::optional<std::chrono::steady_clock::time_point> ChromeHost::next_deadline() const
+{
+    if (edit_.target == EditTarget::None)
+        return std::nullopt;
+    // Drive caret blink at ~2 Hz while editing.
+    return std::chrono::steady_clock::now() + std::chrono::milliseconds(250);
 }
 
 void ChromeHost::flush_atlas_if_dirty()

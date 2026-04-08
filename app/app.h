@@ -111,6 +111,10 @@ private:
     bool render_frame();
     int wait_timeout_ms(std::optional<std::chrono::steady_clock::time_point> wait_deadline) const;
     void refresh_system_resource_snapshot(std::chrono::steady_clock::time_point now);
+    // Update workspace tab names from each workspace's focused-pane cwd
+    // (OSC 7) when the user has not explicitly renamed the tab. Cheap to
+    // call every frame — bails out as soon as the cwd basename matches.
+    void refresh_workspace_default_names();
 
     // --- Workspace management (moved from ChromeHost) ---
     HostManager::Deps make_host_manager_deps();

@@ -532,6 +532,28 @@ bool App::initialize_chrome_host()
             return std::nullopt;
         return std::make_pair(state.text, state.alpha);
     };
+    chrome_deps.set_workspace_name = [this](int workspace_id, std::string name) {
+        for (auto& ws : workspaces_)
+        {
+            if (ws->id == workspace_id)
+            {
+                ws->name = std::move(name);
+                ws->name_user_set = true;
+                break;
+            }
+        }
+        request_frame();
+    };
+    chrome_deps.set_pane_name = [this](LeafId leaf, std::string name) {
+        // Apply to whichever workspace currently owns the leaf — pane edits
+        // are always against the active workspace.
+        active_host_manager().set_pane_name(leaf, std::move(name));
+        request_frame();
+    };
+    chrome_deps.get_pane_name = [this](LeafId leaf) {
+        return active_host_manager().pane_name(leaf);
+    };
+    chrome_deps.request_frame = [this]() { request_frame(); };
     chrome_host_ = std::make_unique<ChromeHost>(std::move(chrome_deps));
 
     {
@@ -764,6 +786,20 @@ void App::wire_gui_actions()
         input_dispatcher_.set_host(active_host_manager().focused_host());
         request_frame();
     };
+    gui_deps.on_rename_tab = [this]() {
+        if (chrome_host_)
+            chrome_host_->begin_tab_rename_by_id(active_workspace_);
+        request_frame();
+    };
+    gui_deps.on_rename_pane = [this]() {
+        if (!chrome_host_)
+            return;
+        const LeafId leaf = active_host_manager().focused_leaf();
+        if (leaf == kInvalidLeaf)
+            return;
+        chrome_host_->begin_pane_rename(leaf);
+        request_frame();
+    };
     gui_deps.broadcast_action = [this](std::string_view action) {
         active_host_manager().for_each_host(
             [action](LeafId, IHost& h) { h.dispatch_action(action); });
@@ -816,6 +852,7 @@ void App::wire_window_callbacks()
     disp_deps.on_resize = [this](int w, int h) { on_resize(w, h); };
     disp_deps.on_display_scale_changed = [this](float ppi) { on_display_scale_changed(ppi); };
     disp_deps.hit_test_tab = [this](int px, int py) { return chrome_host_->hit_test_tab(px, py); };
+    disp_deps.tab_bar_height_phys = [this]() { return chrome_host_ ? chrome_host_->tab_bar_height() : 0; };
     disp_deps.activate_tab = [this](int index) {
         activate_workspace_by_index(index);
         input_dispatcher_.set_host(active_host_manager().focused_host());
@@ -825,6 +862,35 @@ void App::wire_window_callbacks()
         activate_pane_by_index(index);
         input_dispatcher_.set_host(active_host_manager().focused_host());
         request_frame();
+    };
+    disp_deps.begin_tab_rename = [this](int tab_index) {
+        // Activate the tab before editing so the user always edits the
+        // visually-active workspace.
+        activate_workspace_by_index(tab_index);
+        input_dispatcher_.set_host(active_host_manager().focused_host());
+        chrome_host_->begin_tab_rename(tab_index);
+        request_frame();
+    };
+    // Reports any active rename session (tab OR pane) so the dispatcher's
+    // click-outside-commit and key-routing logic apply uniformly to both.
+    disp_deps.is_editing_tab = [this]() { return chrome_host_ && chrome_host_->is_editing(); };
+    disp_deps.hit_test_pane_pill = [this](int px, int py) -> LeafId {
+        return chrome_host_ ? chrome_host_->hit_test_pane_status_pill(px, py) : kInvalidLeaf;
+    };
+    disp_deps.begin_pane_rename = [this](LeafId leaf) {
+        if (chrome_host_)
+            chrome_host_->begin_pane_rename(leaf);
+        request_frame();
+    };
+    disp_deps.rename_text_input = [this](const std::string& text) {
+        return chrome_host_ && chrome_host_->on_rename_text_input(text);
+    };
+    disp_deps.rename_key = [this](int keycode) {
+        return chrome_host_ && chrome_host_->on_rename_key(keycode);
+    };
+    disp_deps.commit_tab_rename = [this]() {
+        if (chrome_host_)
+            chrome_host_->commit_tab_rename();
     };
     input_dispatcher_ = InputDispatcher(std::move(disp_deps));
     input_dispatcher_.set_chord_indicator_fade_ms(config_.chord_indicator_fade_ms);
@@ -1212,6 +1278,7 @@ bool App::pump_once(std::optional<std::chrono::steady_clock::time_point> wait_de
         // Pump all visible hosts via tree walk.
         rebuild_render_tree();
         walk_pump(render_root_);
+        refresh_workspace_default_names();
         const auto now = std::chrono::steady_clock::now();
         refresh_system_resource_snapshot(now);
         if (input_dispatcher_.update(now, config_.chord_timeout_ms))
@@ -1535,6 +1602,35 @@ HostManager::Deps App::make_host_manager_deps()
         return viewport_from_descriptor(desc);
     };
     return deps;
+}
+
+void App::refresh_workspace_default_names()
+{
+    for (auto& ws : workspaces_)
+    {
+        if (ws->name_user_set)
+            continue;
+        IHost* focused = ws->host_manager.focused_host();
+        if (!focused)
+            continue;
+        const std::string cwd = focused->current_working_directory();
+        if (cwd.empty())
+            continue;
+        // Strip trailing slashes, then take the basename.
+        std::string_view sv = cwd;
+        while (sv.size() > 1 && sv.back() == '/')
+            sv.remove_suffix(1);
+        const auto last_slash = sv.rfind('/');
+        const std::string_view basename
+            = (last_slash != std::string_view::npos) ? sv.substr(last_slash + 1) : sv;
+        if (basename.empty())
+            continue;
+        std::string new_name(basename);
+        if (ws->name == new_name)
+            continue;
+        ws->name = std::move(new_name);
+        request_frame();
+    }
 }
 
 bool App::create_initial_workspace(int pixel_w, int pixel_h)

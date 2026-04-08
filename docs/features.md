@@ -121,6 +121,10 @@ A standalone GUI library for rendering UI items that do not depend on ImGui. It 
 - `next_tab` (`Ctrl+S, N`): Cycle to the next workspace
 - `prev_tab` (`Ctrl+S, P`): Cycle to the previous workspace
 - Tab switching preserves focus state per workspace (focus lost/gained notifications)
+- **Inline tab rename**: double-click a workspace tab pill (or press `Ctrl+S, ,` — tmux-style chord) to edit the tab name in place. Enter commits, Escape cancels, Backspace/Delete/Home/End/Left/Right work as expected. Empty commits leave the existing name untouched.
+- **OSC 7 default naming**: shell hosts (e.g. zsh) drive the workspace tab name from the OSC 7 working-directory escape until the user explicitly renames the tab; once the user sets a name, OSC 7 updates no longer overwrite it.
+- **Inline pane rename**: double-click a pane status pill (or press `Ctrl+S, .`) to set a per-pane override name. Empty commit clears the override and reverts to the host-provided status text. Pane name overrides are in-memory only and follow the leaf for the lifetime of the session.
+- **Luminance-based pill text colour**: tab and pane pill text colour is chosen automatically from the underlying NanoVG fill via BT.709 relative luminance, so any future background tweak gets a readable foreground without re-tuning a constant.
 
 ---
 
@@ -171,6 +175,8 @@ Toggle with F12. Shows:
 | `close_tab` | `Ctrl + S, &` |
 | `next_tab` | `Ctrl + S, N` |
 | `prev_tab` | `Ctrl + S, P` |
+| `rename_tab` | `Ctrl + S, ,` |
+| `rename_pane` | `Ctrl + S, .` |
 | `confirm_paste` | `Ctrl + Shift + Enter` |
 | `cancel_paste` | `Ctrl + Shift + Escape` |
 | `toggle_copy_mode` | `Ctrl + Shift + Space` |
@@ -305,6 +311,9 @@ Customizable in `config.toml` under `[keybindings]`. Chord syntax: `"prefix, key
 
 ### Dependencies (FetchContent, automatic)
 SDL3, FreeType, HarfBuzz, MPack, ImGui, GLM, Catch2, vk-bootstrap (Windows), VMA (Windows)
+
+### Compiler Cache
+If `ccache` (or `sccache`) is found on `PATH`, the build automatically routes every C/C++ compile through it via `CMAKE_<LANG>_COMPILER_LAUNCHER`. The launcher is configured before `project()` so language-enablement compile probes also benefit. No effect when neither tool is installed.
 
 ### Shaders
 - Windows: GLSL 4.50 -> SPIR-V via glslc

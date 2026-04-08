@@ -91,6 +91,7 @@ bool HostManager::create(IHostCallbacks& callbacks, int pixel_w, int pixel_h,
     error_.clear();
     hosts_.clear();
     launch_options_.clear();
+    pane_user_names_.clear();
 
     LeafId root_id = tree_.reset(pixel_w, pixel_h);
 
@@ -214,6 +215,7 @@ bool HostManager::close_leaf(LeafId id)
         it->second->shutdown();
     hosts_.erase(it);
     launch_options_.erase(id);
+    pane_user_names_.erase(id);
 
     // Collapse the tree (this also updates focus if needed)
     if (!tree_.close_leaf(id))
@@ -343,6 +345,27 @@ void HostManager::shutdown()
     }
     hosts_.clear();
     launch_options_.clear();
+    pane_user_names_.clear();
+}
+
+void HostManager::set_pane_name(LeafId id, std::string name)
+{
+    if (name.empty())
+        pane_user_names_.erase(id);
+    else
+        pane_user_names_[id] = std::move(name);
+}
+
+const std::string& HostManager::pane_name(LeafId id) const
+{
+    static const std::string empty;
+    auto it = pane_user_names_.find(id);
+    return it == pane_user_names_.end() ? empty : it->second;
+}
+
+bool HostManager::has_pane_name(LeafId id) const
+{
+    return pane_user_names_.find(id) != pane_user_names_.end();
 }
 
 IHost* HostManager::focused_host() const

@@ -162,6 +162,19 @@ void InputDispatcher::on_key_event(const KeyEvent& event)
     PERF_MEASURE();
     const auto now = std::chrono::steady_clock::now();
 
+    // Inline tab rename (WI 128) intercepts all key input when active —
+    // typed characters arrive via on_text_input, but Enter/Escape/Backspace
+    // and arrow keys must not leak to the host underneath.
+    if (event.pressed && deps_.is_editing_tab && deps_.is_editing_tab() && deps_.rename_key)
+    {
+        if (deps_.rename_key(event.keycode))
+        {
+            if (deps_.request_frame)
+                deps_.request_frame();
+            return;
+        }
+    }
+
     // Overlay host (e.g. command palette) intercepts all input when active.
     if (deps_.overlay_host)
     {
@@ -296,22 +309,73 @@ void InputDispatcher::on_mouse_button_event(const MouseButtonEvent& event)
     if (deps_.overlay_host && deps_.overlay_host())
         return;
 
+    const int phys_x = deps_.pixel_scale.to_physical(event.pos.x);
+    const int phys_y = deps_.pixel_scale.to_physical(event.pos.y);
+    const int chrome_h = deps_.tab_bar_height_phys ? deps_.tab_bar_height_phys() : 0;
+    const bool over_chrome = (chrome_h > 0 && phys_y >= 0 && phys_y < chrome_h);
+
     // Tab bar click — check before anything else.
     if (event.pressed && deps_.hit_test_tab && deps_.activate_tab)
     {
-        const int phys_x = deps_.pixel_scale.to_physical(event.pos.x);
-        const int phys_y = deps_.pixel_scale.to_physical(event.pos.y);
         if (int tab_index = deps_.hit_test_tab(phys_x, phys_y); tab_index > 0)
         {
-            deps_.activate_tab(tab_index);
+            // Double-click on a tab → start inline rename. Single-click
+            // activates as before.
+            if (event.clicks >= 2 && deps_.begin_tab_rename)
+                deps_.begin_tab_rename(tab_index);
+            else
+                deps_.activate_tab(tab_index);
             return;
         }
     }
 
-    deps_.ui_panel->on_mouse_button(event);
+    // Pane status pill click — same UX as tab clicks: double-click renames,
+    // single-click is consumed (we don't want it to start drag selections in
+    // the underlying terminal). The mouse move/release events for any drag
+    // that started on a pill are also dropped via the over_pill check below.
+    LeafId pane_pill_leaf = kInvalidLeaf;
+    if (deps_.hit_test_pane_pill)
+        pane_pill_leaf = deps_.hit_test_pane_pill(phys_x, phys_y);
+    if (event.pressed && pane_pill_leaf != kInvalidLeaf)
+    {
+        if (event.clicks >= 2 && deps_.begin_pane_rename)
+            deps_.begin_pane_rename(pane_pill_leaf);
+        // Single click on the pill: just consume. Focus changes for that
+        // pane already happen via the underlying pane click path; we don't
+        // want a *pill* click to focus, since the pill sits inside the pane
+        // it belongs to.
+        return;
+    }
+    if (pane_pill_leaf != kInvalidLeaf)
+    {
+        // Mouse release on a pill: consume so drag-select doesn't start.
+        return;
+    }
 
-    const int phys_x_btn = deps_.pixel_scale.to_physical(event.pos.x);
-    const int phys_y_btn = deps_.pixel_scale.to_physical(event.pos.y);
+    // Any click within the chrome strip is consumed — never forwarded to
+    // the underlying host. Also commits an in-progress rename if the user
+    // clicked on a chrome region that wasn't a tab.
+    if (over_chrome)
+    {
+        if (event.pressed && deps_.is_editing_tab && deps_.is_editing_tab()
+            && deps_.commit_tab_rename)
+        {
+            deps_.commit_tab_rename();
+        }
+        return;
+    }
+
+    // Click outside the editing region (tab or pane) → commit the rename,
+    // then continue dispatching the click so the user's intent (focus a
+    // pane, etc.) still happens. is_editing_tab() reflects ANY active edit
+    // session in the new unified state machine.
+    if (event.pressed && deps_.is_editing_tab && deps_.is_editing_tab()
+        && deps_.commit_tab_rename)
+    {
+        deps_.commit_tab_rename();
+    }
+
+    deps_.ui_panel->on_mouse_button(event);
 
     // Divider drag: capture on left-button press over a divider; release on
     // any button release. While dragging we suppress forwarding to hosts.
@@ -322,7 +386,7 @@ void InputDispatcher::on_mouse_button_event(const MouseButtonEvent& event)
             HostManager* hm = deps_.host_manager ? deps_.host_manager() : nullptr;
             if (hm)
             {
-                if (auto hit = hm->divider_at_point(phys_x_btn, phys_y_btn))
+                if (auto hit = hm->divider_at_point(phys_x, phys_y))
                 {
                     drag_divider_id_ = hit->id;
                     return;
@@ -333,7 +397,7 @@ void InputDispatcher::on_mouse_button_event(const MouseButtonEvent& event)
         {
             drag_divider_id_ = kInvalidDivider;
             // Recompute cursor based on current position.
-            update_cursor_for_divider(phys_x_btn, phys_y_btn);
+            update_cursor_for_divider(phys_x, phys_y);
             return;
         }
     }
@@ -343,7 +407,7 @@ void InputDispatcher::on_mouse_button_event(const MouseButtonEvent& event)
         deps_.request_frame();
     if (deps_.ui_panel->wants_mouse())
         return;
-    if (deps_.ui_panel->layout().contains_panel_point(phys_x_btn, phys_y_btn))
+    if (deps_.ui_panel->layout().contains_panel_point(phys_x, phys_y))
     {
         return;
     }
@@ -352,8 +416,8 @@ void InputDispatcher::on_mouse_button_event(const MouseButtonEvent& event)
         // Hosts store viewports and cell sizes in physical pixels; translate
         // the SDL logical coordinates to physical before forwarding.
         MouseButtonEvent phys = event;
-        phys.pos.x = phys_x_btn;
-        phys.pos.y = phys_y_btn;
+        phys.pos.x = phys_x;
+        phys.pos.y = phys_y;
         target->on_mouse_button(phys);
     }
 }
@@ -371,6 +435,8 @@ void InputDispatcher::on_mouse_move_event(const MouseMoveEvent& event)
     const int phys_y_mv = deps_.pixel_scale.to_physical(event.pos.y);
 
     // Active divider drag: route directly to host manager and skip the rest.
+    // Handled before the chrome-strip suppression so a drag that strays into
+    // the tab bar still updates the divider ratio.
     if (drag_divider_id_ != kInvalidDivider)
     {
         if (HostManager* hm = deps_.host_manager ? deps_.host_manager() : nullptr)
@@ -382,6 +448,14 @@ void InputDispatcher::on_mouse_move_event(const MouseMoveEvent& event)
                 deps_.request_frame();
         }
         return;
+    }
+
+    // Suppress moves over the chrome strip so a click-drag that started on a
+    // tab pill doesn't translate into a drag-select in the underlying host.
+    {
+        const int chrome_h = deps_.tab_bar_height_phys ? deps_.tab_bar_height_phys() : 0;
+        if (chrome_h > 0 && phys_y_mv >= 0 && phys_y_mv < chrome_h)
+            return;
     }
 
     // Hover cursor feedback: change to resize cursor when over a divider.
@@ -416,6 +490,15 @@ void InputDispatcher::on_mouse_wheel_event(const MouseWheelEvent& event)
     // terminal while e.g. the command palette is open.
     if (deps_.overlay_host && deps_.overlay_host())
         return;
+
+    // Suppress wheel events over the chrome strip — scrolling on the tab
+    // bar should not scroll the terminal beneath.
+    {
+        const int chrome_h = deps_.tab_bar_height_phys ? deps_.tab_bar_height_phys() : 0;
+        const int phys_y = deps_.pixel_scale.to_physical(event.pos.y);
+        if (chrome_h > 0 && phys_y >= 0 && phys_y < chrome_h)
+            return;
+    }
 
     deps_.ui_panel->on_mouse_wheel(event);
     IHost* wheel_host = host_for_mouse_pos(event.pos.x, event.pos.y);
@@ -473,6 +556,16 @@ void InputDispatcher::connect(IWindow& window)
         {
             suppress_next_text_input_ = false;
             return;
+        }
+        // Inline tab rename consumes typed characters before anything else.
+        if (deps_.is_editing_tab && deps_.is_editing_tab() && deps_.rename_text_input)
+        {
+            if (deps_.rename_text_input(event.text))
+            {
+                if (deps_.request_frame)
+                    deps_.request_frame();
+                return;
+            }
         }
         // Overlay host consumes text input when active.
         if (deps_.overlay_host)
