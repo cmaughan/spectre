@@ -264,11 +264,12 @@ TEST_CASE("rpc backpressure: NvimRpc on_notification_available fires for each no
 
     NvimRpc rpc;
     std::atomic<int> callback_count{ 0 };
-    rpc.on_notification_available = [&]() {
+    RpcCallbacks cb;
+    cb.on_notification_available = [&]() {
         callback_count.fetch_add(1, std::memory_order_relaxed);
     };
     INFO("rpc initializes");
-    REQUIRE(rpc.initialize(process));
+    REQUIRE(rpc.initialize(process, std::move(cb)));
 
     RpcResult result = rpc.request("test_method", { NvimRpc::make_int(1) });
 
@@ -288,6 +289,59 @@ TEST_CASE("rpc backpressure: NvimRpc on_notification_available fires for each no
     REQUIRE(result.ok());
     INFO("on_notification_available fired at least once per notification");
     REQUIRE(callback_count.load() >= kExpected);
+}
+
+// -----------------------------------------------------------------------
+// Regression (WI 07): callbacks passed to initialize() must be installed
+// before the reader thread starts. This test spawns a fake server that
+// emits notifications immediately upon connect and asserts the callback
+// fires. Because callbacks are passed by value into initialize() and
+// stored before std::thread is constructed, the reader thread is
+// guaranteed to observe the installed function and never a
+// default-constructed std::function.
+// -----------------------------------------------------------------------
+
+TEST_CASE("rpc WI07: callbacks supplied at initialize() fire for immediate notifications", "[rpc]")
+{
+    const std::string fake_path = DRAXUL_RPC_FAKE_PATH;
+    ScopedEnvVar env("DRAXUL_RPC_FAKE_MODE", "notify_many");
+    NvimProcess process;
+    INFO("fake RPC server spawns");
+    REQUIRE(process.spawn(fake_path));
+
+    std::atomic<int> notify_count{ 0 };
+    std::atomic<int> request_count{ 0 };
+
+    RpcCallbacks cb;
+    cb.on_notification_available = [&]() {
+        notify_count.fetch_add(1, std::memory_order_relaxed);
+    };
+    cb.on_request = [&](const std::string&, const std::vector<MpackValue>&) {
+        request_count.fetch_add(1, std::memory_order_relaxed);
+        return NvimRpc::make_nil();
+    };
+
+    NvimRpc rpc;
+    INFO("rpc initializes with callbacks passed in");
+    REQUIRE(rpc.initialize(process, std::move(cb)));
+
+    // Trigger the fake server's notification burst.
+    RpcResult result = rpc.request("test_method", { NvimRpc::make_int(1) });
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (notify_count.load(std::memory_order_relaxed) == 0
+        && std::chrono::steady_clock::now() < deadline)
+    {
+        std::this_thread::sleep_for(std::chrono::microseconds(100));
+    }
+
+    rpc.shutdown();
+    process.shutdown();
+
+    INFO("request completed");
+    REQUIRE(result.ok());
+    INFO("callback installed via initialize() fired at least once");
+    REQUIRE(notify_count.load() > 0);
 }
 
 // -----------------------------------------------------------------------

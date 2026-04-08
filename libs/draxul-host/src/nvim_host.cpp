@@ -31,16 +31,20 @@ bool NvimHost::initialize_host()
         return false;
     }
 
-    // Set callbacks BEFORE initialize() starts the reader thread to avoid
-    // a race where the thread invokes a default-constructed std::function.
-    rpc_.on_notification_available = [this]() {
+    // Pass callbacks via initialize() so they are stored before the reader
+    // thread is spawned. std::thread construction synchronizes-with the new
+    // thread's entry, which makes the callbacks visible without further
+    // locking and closes the time-of-check / time-of-use window that an
+    // after-the-fact assignment would open.
+    RpcCallbacks rpc_callbacks;
+    rpc_callbacks.on_notification_available = [this]() {
         callbacks().wake_window();
     };
-    rpc_.on_request = [this](const std::string& method, const std::vector<MpackValue>& params) {
+    rpc_callbacks.on_request = [this](const std::string& method, const std::vector<MpackValue>& params) {
         return handle_rpc_request(method, params);
     };
 
-    if (!rpc_.initialize(nvim_process_))
+    if (!rpc_.initialize(nvim_process_, std::move(rpc_callbacks)))
     {
         init_error_ = "Neovim exited unexpectedly during startup.";
         return false;

@@ -97,12 +97,17 @@ NvimRpc::NvimRpc()
 }
 NvimRpc::~NvimRpc() = default;
 
-bool NvimRpc::initialize(NvimProcess& process)
+bool NvimRpc::initialize(NvimProcess& process, RpcCallbacks callbacks)
 {
     PERF_MEASURE();
     impl_->process_ = &process;
     impl_->read_buf_.resize(256 * 1024);
     impl_->read_failed_ = false;
+    // Install callbacks BEFORE spawning the reader thread so the thread
+    // construction synchronizes-with every use of callbacks_ inside
+    // reader_thread_func(). After this point callbacks_ is read-only from
+    // every thread, which is safe for concurrent const access.
+    callbacks_ = std::move(callbacks);
     impl_->running_ = true;
 
     impl_->reader_thread_ = std::thread(&NvimRpc::reader_thread_func, this);
@@ -232,8 +237,8 @@ void NvimRpc::notify(const std::string& method, const std::vector<MpackValue>& p
         DRAXUL_LOG_ERROR(LogCategory::Rpc, "Write failed for notification %s", method.c_str());
         impl_->read_failed_ = true;
         impl_->response_cv_.notify_all();
-        if (on_notification_available)
-            on_notification_available();
+        if (callbacks_.on_notification_available)
+            callbacks_.on_notification_available();
     }
 }
 
@@ -308,8 +313,8 @@ void NvimRpc::dispatch_rpc_request(const std::vector<MpackValue>& msg_array)
 
     MpackValue result = NvimRpc::make_nil();
     MpackValue error = NvimRpc::make_nil();
-    if (on_request)
-        result = on_request(method, params);
+    if (callbacks_.on_request)
+        result = callbacks_.on_request(method, params);
     else
         error = NvimRpc::make_str("no handler for: " + method);
 
@@ -343,8 +348,8 @@ void NvimRpc::dispatch_rpc_notification(const std::vector<MpackValue>& msg_array
         impl_->notifications_.push_back(std::move(notif));
     }
 
-    if (on_notification_available)
-        on_notification_available();
+    if (callbacks_.on_notification_available)
+        callbacks_.on_notification_available();
 }
 
 void NvimRpc::dispatch_rpc_message(const MpackValue& msg)
@@ -393,8 +398,8 @@ void NvimRpc::reader_thread_func()
             impl_->read_failed_ = true;
             impl_->running_ = false;
             impl_->response_cv_.notify_all();
-            if (on_notification_available)
-                on_notification_available();
+            if (callbacks_.on_notification_available)
+                callbacks_.on_notification_available();
             break;
         }
 
@@ -437,8 +442,8 @@ void NvimRpc::reader_thread_func()
                     impl_->read_failed_ = true;
                     impl_->running_ = false;
                     impl_->response_cv_.notify_all();
-                    if (on_notification_available)
-                        on_notification_available();
+                    if (callbacks_.on_notification_available)
+                        callbacks_.on_notification_available();
                     return;
                 }
                 continue;
@@ -482,8 +487,8 @@ void NvimRpc::reader_thread_func()
                     impl_->read_failed_ = true;
                     impl_->running_ = false;
                     impl_->response_cv_.notify_all();
-                    if (on_notification_available)
-                        on_notification_available();
+                    if (callbacks_.on_notification_available)
+                        callbacks_.on_notification_available();
                     return;
                 }
                 // Continue the inner loop so we keep draining accum and
@@ -509,8 +514,8 @@ void NvimRpc::reply_to_request(uint32_t msgid, const MpackValue& error, const Mp
         DRAXUL_LOG_ERROR(LogCategory::Rpc, "Write failed for reply to msgid %u", msgid);
         impl_->read_failed_ = true;
         impl_->response_cv_.notify_all();
-        if (on_notification_available)
-            on_notification_available();
+        if (callbacks_.on_notification_available)
+            callbacks_.on_notification_available();
     }
 }
 

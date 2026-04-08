@@ -165,13 +165,38 @@ public:
 
 // --- NvimRpc ---
 
+// Reader-thread callbacks supplied to NvimRpc::initialize().
+//
+// These MUST be passed at initialization time (not assigned after the reader
+// thread has started) so the reader thread never observes a partially-
+// constructed std::function. The reader thread is launched inside
+// initialize(); std::thread construction synchronizes-with the thread's
+// entry, so callbacks stored before the thread is spawned are guaranteed
+// visible to the reader without further synchronization.
+struct RpcCallbacks
+{
+    // Called whenever a new notification is pushed to the queue, or when the
+    // reader thread detects a fatal pipe error (to wake the main loop).
+    // Invoked on the reader thread. Must not block and must not acquire any
+    // mutex that the main thread may hold during drain_notifications().
+    std::function<void()> on_notification_available;
+
+    // Called synchronously from the reader thread when nvim sends an
+    // rpcrequest. Must return the result MpackValue. Called with the RPC
+    // write mutex NOT held.
+    std::function<MpackValue(const std::string& method, const std::vector<MpackValue>& params)> on_request;
+};
+
 class NvimRpc : public IRpcChannel
 {
 public:
     NvimRpc();
     ~NvimRpc() override;
 
-    bool initialize(NvimProcess& process);
+    // Start the reader thread. Callbacks are consumed here and stored
+    // before the thread is spawned so the reader never races with
+    // callback assignment.
+    bool initialize(NvimProcess& process, RpcCallbacks callbacks = {});
     void close();
     void shutdown();
 
@@ -201,12 +226,14 @@ public:
     // After this point NvimRpc::request() will assert it is not called from that thread.
     void set_main_thread_id(std::thread::id id);
 
-    std::function<void()> on_notification_available;
-    // Called synchronously from the reader thread when nvim sends an rpcrequest.
-    // Must return the result MpackValue; called with write_mutex_ NOT held.
-    std::function<MpackValue(const std::string& method, const std::vector<MpackValue>& params)> on_request;
-
 private:
+    // Reader-thread callbacks. Set once inside initialize() before the
+    // reader thread is spawned, then never modified again. std::thread
+    // construction provides the happens-before edge that makes the stored
+    // functions visible to the reader thread without further
+    // synchronization.
+    RpcCallbacks callbacks_;
+
     void reader_thread_func();
     void reply_to_request(uint32_t msgid, const MpackValue& error, const MpackValue& result);
     void dispatch_rpc_message(const MpackValue& msg);

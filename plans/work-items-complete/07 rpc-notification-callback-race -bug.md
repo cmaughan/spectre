@@ -24,11 +24,11 @@ If Neovim sends a notification or request immediately upon startup (e.g. during 
 
 ## Implementation Plan
 
-- [ ] Option A (preferred): Pass `on_notification_available` and `on_request` as constructor/initialisation arguments to `NvimRpc` so they are set before the reader thread starts. Update `NvimHost::initialize_host()` accordingly.
-- [ ] Option B: In `NvimRpc::initialize()`, accept callback arguments directly rather than relying on the caller to assign public members afterward.
-- [ ] Either way: make `on_notification_available` and `on_request` private/protected and only settable via an initialisation API, preventing the time-of-check-to-time-of-use window.
-- [ ] Add a TSan test that constructs `NvimRpc`, starts a reader, immediately fires a notification, and asserts no race is detected.
-- [ ] Verify the fix with `cmake --preset mac-tsan && ctest -R draxul-tests`.
+- [x] Option B (chosen): `NvimRpc::initialize()` now accepts a `RpcCallbacks` struct by value and stores it before the reader thread is spawned. `std::thread` construction provides the happens-before edge, so the reader never observes a default-constructed `std::function`.
+- [x] Made `on_notification_available` / `on_request` private (moved into the new `RpcCallbacks` aggregate, held as `NvimRpc::callbacks_`). Public assignment is no longer possible — callbacks can only be supplied at `initialize()` time.
+- [x] Updated `NvimHost::initialize_host()` to build an `RpcCallbacks` and hand it to `rpc_.initialize(nvim_process_, std::move(rpc_callbacks))`.
+- [x] Added regression test `rpc WI07: callbacks supplied at initialize() fire for immediate notifications` in `tests/rpc_backpressure_tests.cpp`, plus updated the existing `on_notification_available` test to use the new API.
+- [x] Verified with `cmake --build build --target draxul draxul-tests` and `ctest --test-dir build -R draxul-tests` (all pass). `py do.py smoke` also passes.
 
 ---
 
