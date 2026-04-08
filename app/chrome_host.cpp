@@ -213,6 +213,50 @@ std::vector<std::string> split_display_clusters(std::string_view text)
     return clusters;
 }
 
+// Count total display columns for a UTF-8 string, summing the cell width of
+// each grapheme-like cluster returned by split_display_clusters(). This is the
+// right thing to use for tab/pane label measurement — byte-length is wrong for
+// anything non-ASCII (e.g. "Ångström" is 9 bytes but 8 columns, CJK is worse).
+inline int label_display_columns(std::string_view text)
+{
+    int cols = 0;
+    for (const auto& cluster : split_display_clusters(text))
+        cols += std::max(1, cluster_cell_width(cluster));
+    return cols;
+}
+
+// Truncate a UTF-8 string to at most `max_cols` display columns, never
+// splitting a multi-byte sequence. If truncation occurs and `add_ellipsis` is
+// true, the returned string ends with U+2026 (which itself costs one column,
+// so the resulting string is <= max_cols columns).
+inline std::string truncate_to_columns(std::string_view text, int max_cols, bool add_ellipsis)
+{
+    if (max_cols <= 0)
+        return {};
+    const auto clusters = split_display_clusters(text);
+    int total = 0;
+    for (const auto& cluster : clusters)
+        total += std::max(1, cluster_cell_width(cluster));
+    if (total <= max_cols)
+        return std::string(text);
+
+    // Truncation needed. If we're adding an ellipsis, reserve 1 column for it.
+    const int budget = add_ellipsis ? std::max(0, max_cols - 1) : max_cols;
+    std::string out;
+    int used = 0;
+    for (const auto& cluster : clusters)
+    {
+        const int w = std::max(1, cluster_cell_width(cluster));
+        if (used + w > budget)
+            break;
+        out += cluster;
+        used += w;
+    }
+    if (add_ellipsis)
+        out += "\xe2\x80\xa6"; // U+2026 HORIZONTAL ELLIPSIS
+    return out;
+}
+
 void append_label_clusters(std::vector<ChromeHost::LabelCluster>& out, std::string_view text, const Color& fg)
 {
     for (const auto& cluster_text : split_display_clusters(text))
@@ -285,7 +329,7 @@ int ChromeHost::hit_test_tab(int px, int py) const
             && edit_.workspace_id == workspaces[wi]->id);
         const std::string display_name = editing ? edit_.buffer : workspaces[wi]->name;
         const std::string label = tab_label(wi, display_name);
-        int label_cols = static_cast<int>(label.size());
+        int label_cols = label_display_columns(label);
         if (editing)
         {
             const int prefix_cols = static_cast<int>(std::to_string(wi + 1).size()) + 2; // "N: "
@@ -436,7 +480,7 @@ void ChromeHost::draw(IFrameContext& frame)
                     && edit_.workspace_id == ws->id);
                 const std::string display_name = editing ? edit_.buffer : ws->name;
                 const std::string label = tab_label(wi, display_name);
-                int label_cols = static_cast<int>(label.size());
+                int label_cols = label_display_columns(label);
                 if (editing)
                 {
                     const int prefix_cols = static_cast<int>(std::to_string(wi + 1).size()) + 2; // "N: "
@@ -943,7 +987,7 @@ void ChromeHost::update_pane_status_grids(IFrameContext& frame, std::span<const 
         const std::string num_str = std::to_string(e.index);
         std::string label = num_str + ": " + display_text;
 
-        int min_label_cols = static_cast<int>(label.size());
+        int min_label_cols = label_display_columns(label);
         if (editing)
         {
             // Match the pill width grown by the draw() pass for an empty/short edit.
@@ -957,7 +1001,10 @@ void ChromeHost::update_pane_status_grids(IFrameContext& frame, std::span<const 
         const int pill_cols = std::min(total_cols, max_cols);
 
         // If the label was clamped, truncate the visible text portion (keep the
-        // "N: " prefix intact) and append an ellipsis.
+        // "N: " prefix intact) and append an ellipsis. Truncation is done on
+        // UTF-8 cluster boundaries via truncate_to_columns so we never cut a
+        // multi-byte sequence mid-byte (which would produce an invalid trailing
+        // stub byte that the renderer would try to treat as its own cluster).
         const int prefix_cols = static_cast<int>(num_str.size()) + 2; // "N: "
         const int usable_label_cols = std::max(0, pill_cols - kTabPadCols * 2);
         if (label_cols > usable_label_cols)
@@ -966,15 +1013,7 @@ void ChromeHost::update_pane_status_grids(IFrameContext& frame, std::span<const 
             std::string truncated = num_str + ": ";
             if (text_room >= 1 && !display_text.empty())
             {
-                if (static_cast<int>(display_text.size()) > text_room)
-                {
-                    truncated += display_text.substr(0, static_cast<size_t>(text_room - 1));
-                    truncated += "…";
-                }
-                else
-                {
-                    truncated += display_text;
-                }
+                truncated += truncate_to_columns(display_text, text_room, /*add_ellipsis=*/true);
             }
             label = std::move(truncated);
         }
@@ -1014,12 +1053,12 @@ void ChromeHost::update_pane_status_grids(IFrameContext& frame, std::span<const 
         handle->set_grid_size(pill_cols, 1);
 
         // Warm any uncached glyphs before updating the handle so newly typed
-        // chord/pane-status characters do not appear a frame late.
-        for (int ci = 0; ci < static_cast<int>(label.size()); ++ci)
-        {
-            const std::string cluster(1, label[static_cast<size_t>(ci)]);
-            deps_.text_service->resolve_cluster(cluster);
-        }
+        // chord/pane-status characters do not appear a frame late. Iterate
+        // UTF-8 clusters (not bytes!) so multi-byte codepoints resolve as one
+        // glyph and not a stream of garbage stub bytes.
+        const auto label_clusters = split_display_clusters(label);
+        for (const auto& cluster_text : label_clusters)
+            deps_.text_service->resolve_cluster(cluster_text);
         flush_atlas_if_dirty();
 
         // Cells start fully transparent — the NanoVG pill provides the bg.
@@ -1038,22 +1077,25 @@ void ChromeHost::update_pane_status_grids(IFrameContext& frame, std::span<const 
 
         // Pane-status text sits one cell tighter than workspace tabs so the
         // number aligns with the accent block instead of leaving a blank
-        // leading cell inside the pill.
+        // leading cell inside the pill. Walk by UTF-8 cluster (not byte!) and
+        // advance `col` by each cluster's display width so non-ASCII labels
+        // land in the correct column.
         const int num_prefix_len = static_cast<int>(num_str.size()) + 1; // digits + ":"
-        for (int ci = 0; ci < static_cast<int>(label.size()); ++ci)
+        int col = 0;
+        for (const auto& cluster_text : label_clusters)
         {
-            const int col = ci;
-            if (col < 0 || col >= pill_cols)
-                continue;
+            if (col >= pill_cols)
+                break;
+            const int cluster_w = std::max(1, cluster_cell_width(cluster_text));
             const Color& accent_fg = e.focused ? focused_accent_fg : inactive_accent_fg;
-            const Color& fg = (ci < num_prefix_len) ? accent_fg : body_fg;
-            const std::string cluster(1, label[static_cast<size_t>(ci)]);
-            AtlasRegion glyph = deps_.text_service->resolve_cluster(cluster);
+            const Color& fg = (col < num_prefix_len) ? accent_fg : body_fg;
+            AtlasRegion glyph = deps_.text_service->resolve_cluster(cluster_text);
             auto& cell = cells[static_cast<size_t>(col)];
             cell.fg = fg;
             cell.glyph = glyph;
             if (glyph.is_color)
                 cell.style_flags |= STYLE_FLAG_COLOR_GLYPH;
+            col += cluster_w;
         }
 
         handle->update_cells(cells);

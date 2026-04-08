@@ -31,15 +31,28 @@ This is especially visible now that pane rename input is UTF-8-aware (the user c
 
 ## Implementation Plan
 
-- [ ] Audit all label measurement/truncation sites in `chrome_host.cpp` and replace byte-length operations with UTF-8-aware equivalents.
-- [ ] Use the project's existing UTF-8 utilities (`libs/draxul-types` or `libs/draxul-grid` UTF-8 helpers) — do not introduce a new dependency.
-- [ ] For glyph warming at line 1018: iterate by codepoint, not byte.
-- [ ] For truncation: truncate at a codepoint boundary, never mid-sequence. Optionally append an ellipsis `…` (U+2026) if truncation occurs.
-- [ ] Write a unit test (see WI 20) that:
+- [x] Audit all label measurement/truncation sites in `chrome_host.cpp` and replace byte-length operations with UTF-8-aware equivalents.
+- [x] Use the project's existing UTF-8 utilities (`libs/draxul-types` or `libs/draxul-grid` UTF-8 helpers) — do not introduce a new dependency.
+- [x] For glyph warming at line 1018: iterate by codepoint, not byte.
+- [x] For truncation: truncate at a codepoint boundary, never mid-sequence. Optionally append an ellipsis `…` (U+2026) if truncation occurs.
+- [x] Write a unit test (see WI 20) that:
   - Creates a `ChromeHost`-like label measurer with a multi-byte UTF-8 tab name.
   - Asserts column width equals codepoint count (or display-width accounting for wide chars).
   - Asserts truncation produces valid UTF-8.
-- [ ] After the fix, run the render-test suite (`py do.py smoke`) to confirm no visual regression in the tab bar.
+- [x] After the fix, run the render-test suite (`py do.py smoke`) to confirm no visual regression in the tab bar.
+
+---
+
+## Resolution
+
+Added file-local helpers `label_display_columns()` and `truncate_to_columns()` in `app/chrome_host.cpp` that wrap the existing `split_display_clusters` + `cluster_cell_width` utilities from `<draxul/unicode.h>`. Replaced four byte-count sites:
+
+1. `hit_test_tab` tab-width measurement — now `label_display_columns(label)`.
+2. `draw()` tab-pill layout — same.
+3. Pane-status pill truncation — now goes through `truncate_to_columns(display_text, text_room, /*add_ellipsis=*/true)` so multi-byte sequences are never split.
+4. Pane-status glyph-warming + cell-writing loops — now iterate `split_display_clusters(label)` and advance the column cursor by `cluster_cell_width`, matching how the workspace-tab loop already worked.
+
+Added `tests/chrome_host_tabbar_tests.cpp` test case that pins the new codepoint-width hit-test behaviour using an "Ångström" workspace name (9 bytes, 8 columns). `draxul-tests` and `py do.py smoke` both pass.
 
 ---
 

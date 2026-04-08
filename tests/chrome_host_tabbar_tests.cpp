@@ -251,6 +251,40 @@ TEST_CASE("ChromeHost hit_test_tab: DPI scale doubles both hit regions and bar h
     REQUIRE(f.host->hit_test_tab(mid_1x_tab1, 40) == 0);
 }
 
+// WI 13 — ChromeHost used to measure tab widths by byte-length, so a UTF-8
+// label like "Ångström" (9 bytes, 8 codepoints/columns) reserved 9 columns in
+// the tab bar and mis-aligned every subsequent tab. Hit-testing on the right
+// edge of the first tab would land in an imaginary phantom column past where
+// the pill actually ends, and the second tab would be offset one cell to the
+// right of its rendered pill. This test pins the codepoint-width behaviour.
+TEST_CASE("ChromeHost hit_test_tab: UTF-8 label is measured in codepoints not bytes",
+    "[chrome_host][tabbar][hittest][utf8]")
+{
+    // "Ångström" — the 'Å' is 2 bytes, the 'ö' is 2 bytes, so the raw
+    // string is 9 bytes but only 8 display columns.
+    TabBarFixture f{ { 1, "\xc3\x85ngstr\xc3\xb6m" }, { 2, "beta" } };
+
+    // Label is "1: Ångström" = 11 columns. +2 padding = 13 cols * 10px = 130,
+    // + 4 grid padding = left 4, right 134.
+    constexpr int kTabPadCols = 1;
+    const int tab1_cols = 11 + kTabPadCols * 2;
+    const int tab1_left = 4;
+    const int tab1_right = tab1_cols * 10 + 4;
+    REQUIRE(tab1_right == 134);
+
+    const int py = 5;
+    // Right-edge pixel of tab 1's true column span must still hit tab 1.
+    REQUIRE(f.host->hit_test_tab(tab1_right - 1, py) == 1);
+    // One pixel past must fall into tab 2 (contiguous layout).
+    REQUIRE(f.host->hit_test_tab(tab1_right, py) == 2);
+
+    // The byte-count bug would have added a phantom column (1 extra 'ö' byte
+    // + 1 extra 'Å' byte = 2 extra cols), placing tab2 at col 15 instead of
+    // col 13, i.e. pixel 154 instead of 134. Verify a click at pixel 150 is
+    // firmly inside tab 2 rather than being lost in a phantom tab-1 region.
+    REQUIRE(f.host->hit_test_tab(150, py) == 2);
+}
+
 TEST_CASE("ChromeHost hit_test_tab: overflow-wide tab list still hit-tests correctly",
     "[chrome_host][tabbar][hittest]")
 {
