@@ -60,8 +60,14 @@ bool NvimHost::initialize_host()
     InitRollback rollback(this);
 
     const std::string command = launch_options().command.empty() ? "nvim" : launch_options().command;
-    if (!nvim_process_.spawn(command, launch_options().args, launch_options().working_dir))
+    if (auto spawn_result = nvim_process_.spawn(command, launch_options().args, launch_options().working_dir);
+        !spawn_result)
     {
+        // WI 24: surface the structured error detail to logs; the user-facing
+        // message stays stable so startup diagnostics remain unchanged.
+        DRAXUL_LOG_ERROR(LogCategory::Nvim,
+            "NvimHost spawn failed: %s",
+            spawn_result.error().message.c_str());
         init_error_ = "Could not start nvim. Please install Neovim and ensure it is on your PATH.";
         return false;
     }

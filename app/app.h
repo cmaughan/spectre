@@ -15,6 +15,7 @@
 #include <draxul/diagnostics_collector.h>
 #include <draxul/host.h>
 #include <draxul/renderer.h>
+#include <draxul/result.h>
 #include <draxul/system_resource_monitor.h>
 #include <draxul/text_service.h>
 #include <draxul/window.h>
@@ -90,7 +91,10 @@ private:
     // Applies font metrics from text_service_ to the renderer, diagnostics host, and all hosts.
     // Called after every TextService reinitialisation (startup, DPI change, size change).
     void apply_font_metrics();
-    void reload_config();
+    // WI 24: returns a Result so callers (the GUI action handler, tests) can
+    // observe failure. Previously this was `void` and silent — the only hint
+    // of failure was a log line.
+    Result<void, Error> reload_config();
 
     bool pump_once(std::optional<std::chrono::steady_clock::time_point> wait_deadline = std::nullopt);
     void on_resize(int pixel_w, int pixel_h);

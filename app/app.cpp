@@ -437,14 +437,16 @@ void App::apply_font_metrics()
     request_frame();
 }
 
-void App::reload_config()
+Result<void, Error> App::reload_config()
 {
     PERF_MEASURE();
     if (!options_.load_user_config)
     {
         DRAXUL_LOG_WARN(LogCategory::App,
             "Ignoring reload_config because user config loading is disabled.");
-        return;
+        return Result<void, Error>::err(Error(
+            ErrorKind::ConfigApplyFailed,
+            "User config loading is disabled; reload ignored."));
     }
 
     const AppConfig previous_config = config_;
@@ -456,6 +458,11 @@ void App::reload_config()
     const bool text_config_needs_reload = text_service_config_changed(previous_config, config_);
     const bool scroll_config_changed = previous_config.smooth_scroll != config_.smooth_scroll
         || previous_config.scroll_speed != config_.scroll_speed;
+
+    // Track a structured error if font reinit fails. We still fall back to
+    // the previous font, but the caller can now see that the reload was only
+    // partially successful.
+    Result<void, Error> font_result = Result<void, Error>::ok();
 
     if (text_config_needs_reload)
     {
@@ -471,12 +478,16 @@ void App::reload_config()
             DRAXUL_LOG_WARN(LogCategory::App,
                 "Failed to apply reloaded font settings from %s; keeping the current font configuration.",
                 ConfigDocument::default_path().string().c_str());
+            font_result = Result<void, Error>::err(Error::config_apply(
+                "Failed to apply reloaded font settings; reverted to previous font."));
             restore_text_service_config(config_, previous_config);
             const TextServiceConfig restored_text_config = make_text_service_config();
             if (!text_service_.initialize(restored_text_config, config_.font_size, display_ppi_))
             {
                 DRAXUL_LOG_ERROR(LogCategory::App,
                     "Failed to restore the previous font configuration after reload_config.");
+                font_result = Result<void, Error>::err(Error::config_apply(
+                    "Failed to restore previous font configuration after reload."));
             }
             else
             {
@@ -502,6 +513,7 @@ void App::reload_config()
     request_frame();
     DRAXUL_LOG_INFO(LogCategory::App, "Reloaded config from %s",
         ConfigDocument::default_path().string().c_str());
+    return font_result;
 }
 
 bool App::initialize_chrome_host()
@@ -656,7 +668,12 @@ void App::wire_gui_actions()
             push_toast(2, err.empty() ? std::string("Failed to open config in split pane") : err);
         }
     };
-    gui_deps.on_reload_config = [this]() { reload_config(); };
+    gui_deps.on_reload_config = [this]() {
+        // WI 24: reload_config() now returns a Result — surface non-OK outcomes
+        // to the user via a toast instead of silently swallowing them.
+        if (auto r = reload_config(); !r)
+            push_toast(2, r.error().message);
+    };
     gui_deps.on_toggle_zoom = [this]() {
         const int tab_y = chrome_host_->tab_bar_height();
         active_host_manager().toggle_zoom(

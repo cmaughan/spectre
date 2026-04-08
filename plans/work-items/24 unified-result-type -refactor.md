@@ -27,19 +27,21 @@ This inconsistency means error-path auditing requires knowing which pattern each
 ## Implementation Plan
 
 **Phase A — define the type:**
-- [ ] Evaluate whether to use `std::expected<T, E>` (C++23, already available with modern Clang/MSVC) or a custom `Result<T, E>` wrapper. Prefer `std::expected` if the compiler baseline supports it.
-- [ ] Define a project-wide error enum or error string type for common failure categories (init failure, RPC error, I/O error, config error).
-- [ ] Add a header in `libs/draxul-types/include/draxul/result.h`.
+- [x] Evaluate whether to use `std::expected<T, E>` (C++23, already available with modern Clang/MSVC) or a custom `Result<T, E>` wrapper. Prefer `std::expected` if the compiler baseline supports it. *(Project baseline is C++20 per `CMakeLists.txt`; hand-rolled a minimal `Result<T, E>` to avoid bumping the standard. Easy to swap for a `std::expected` alias later.)*
+- [x] Define a project-wide error enum or error string type for common failure categories (init failure, RPC error, I/O error, config error). *(`draxul::ErrorKind` + `draxul::Error` struct with factory helpers.)*
+- [x] Add a header in `libs/draxul-types/include/draxul/result.h`.
 
 **Phase B — migrate high-value call sites:**
-- [ ] `NvimProcess::spawn()` — currently returns `bool`; migrate to `Result<void, SpawnError>`.
+- [x] `NvimProcess::spawn()` — currently returns `bool`; migrate to `Result<void, SpawnError>`. *(Now `Result<void, Error>`; contextual bool conversion keeps existing `REQUIRE(spawn(...))` and `if (!spawn(...))` call sites compiling.)*
 - [ ] `NvimRpc::send_request()` — returns `RpcResult`; ensure it's consistent with `Result`.
-- [ ] `AppConfig::reload()` — currently silent; migrate to `Result<void, ConfigError>`.
+- [x] `AppConfig::reload()` — currently silent; migrate to `Result<void, ConfigError>`. *(Migrated `App::reload_config()` — the actual reload entry point — to `Result<void, Error>`; the closest `AppConfig::load()` static returns a value with defaults and was left alone.)*
 - [ ] `GlyphCache::rasterize_cluster()` — currently returns sentinel; migrate to `Result<AtlasRegion, RasterError>`.
 
 **Phase C — update callers:**
-- [ ] For each migrated function, update all call sites to handle the error or explicitly propagate it.
-- [ ] Convert previously-silent failures to either return an error to the caller or show a toast notification.
+- [x] For each migrated function, update all call sites to handle the error or explicitly propagate it. *(Scoped to the migrated sites: `NvimHost::initialize` now logs the structured spawn error; the GUI action lambda for `reload_config` now surfaces failure as a toast. Remaining call sites kept via bool conversion.)*
+- [x] Convert previously-silent failures to either return an error to the caller or show a toast notification. *(`reload_config` now shows a toast on font-reload failure instead of only logging.)*
+
+**Status (2026-04-08):** Phase A complete, 2/4 Phase B sites complete, Phase C scoped to migrated sites only. Remaining Phase B sites (`NvimRpc::send_request`, `GlyphCache::rasterize_cluster`) deferred — `rpc.cpp` migration in particular is a larger surface that should land as its own PR.
 
 ---
 

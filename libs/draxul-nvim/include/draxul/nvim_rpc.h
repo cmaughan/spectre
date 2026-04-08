@@ -8,6 +8,8 @@
 #include <variant>
 #include <vector>
 
+#include <draxul/result.h>
+
 namespace draxul
 {
 
@@ -19,7 +21,12 @@ public:
     NvimProcess();
     ~NvimProcess();
 
-    bool spawn(const std::string& nvim_path = "nvim", const std::vector<std::string>& extra_args = {}, const std::string& working_dir = {});
+    // WI 24: spawn() now returns Result<void, Error>. Legacy call sites that
+    // use contextual bool conversion (`if (spawn(...))`, `REQUIRE(spawn(...))`)
+    // keep compiling via `explicit operator bool` on Result.
+    Result<void, Error> spawn(const std::string& nvim_path = "nvim",
+        const std::vector<std::string>& extra_args = {},
+        const std::string& working_dir = {});
     void shutdown();
 
     bool write(const uint8_t* data, size_t len) const;

@@ -79,7 +79,7 @@ std::string quote_windows_arg(const std::string& value)
 
 } // namespace
 
-bool NvimProcess::spawn(const std::string& nvim_path, const std::vector<std::string>& extra_args, const std::string& working_dir)
+Result<void, Error> NvimProcess::spawn(const std::string& nvim_path, const std::vector<std::string>& extra_args, const std::string& working_dir)
 {
     PERF_MEASURE();
     SECURITY_ATTRIBUTES sa = {};
@@ -92,7 +92,7 @@ bool NvimProcess::spawn(const std::string& nvim_path, const std::vector<std::str
     if (!CreatePipe(&stdin_read, &stdin_write, &sa, 0))
     {
         DRAXUL_LOG_ERROR(LogCategory::Nvim, "Failed to create stdin pipe");
-        return false;
+        return Result<void, Error>::err(Error::io("Failed to create stdin pipe"));
     }
     SetHandleInformation(stdin_write, HANDLE_FLAG_INHERIT, 0);
 
@@ -101,7 +101,7 @@ bool NvimProcess::spawn(const std::string& nvim_path, const std::vector<std::str
         DRAXUL_LOG_ERROR(LogCategory::Nvim, "Failed to create stdout pipe");
         CloseHandle(stdin_read);
         CloseHandle(stdin_write);
-        return false;
+        return Result<void, Error>::err(Error::io("Failed to create stdout pipe"));
     }
     SetHandleInformation(stdout_read, HANDLE_FLAG_INHERIT, 0);
 
@@ -131,14 +131,16 @@ bool NvimProcess::spawn(const std::string& nvim_path, const std::vector<std::str
             nullptr, cwd,
             &si, &impl_->proc_info_))
     {
-        DRAXUL_LOG_ERROR(LogCategory::Nvim, "Failed to spawn nvim: error %lu", GetLastError());
+        const DWORD err = GetLastError();
+        DRAXUL_LOG_ERROR(LogCategory::Nvim, "Failed to spawn nvim: error %lu", err);
         CloseHandle(stdin_read);
         CloseHandle(stdin_write);
         CloseHandle(stdout_read);
         CloseHandle(stdout_write);
         if (nul_handle != INVALID_HANDLE_VALUE)
             CloseHandle(nul_handle);
-        return false;
+        return Result<void, Error>::err(Error::spawn(
+            "CreateProcess failed (GetLastError=" + std::to_string(err) + ")"));
     }
 
     CloseHandle(stdin_read);
@@ -151,7 +153,7 @@ bool NvimProcess::spawn(const std::string& nvim_path, const std::vector<std::str
     impl_->started_ = true;
 
     DRAXUL_LOG_INFO(LogCategory::Nvim, "nvim spawned (PID %lu)", impl_->proc_info_.dwProcessId);
-    return true;
+    return Result<void, Error>::ok();
 }
 
 void NvimProcess::shutdown()
@@ -234,7 +236,7 @@ bool NvimProcess::is_running() const
 
 #else // POSIX (macOS, Linux)
 
-bool NvimProcess::spawn(const std::string& nvim_path, const std::vector<std::string>& extra_args, const std::string& working_dir)
+Result<void, Error> NvimProcess::spawn(const std::string& nvim_path, const std::vector<std::string>& extra_args, const std::string& working_dir)
 {
     PERF_MEASURE();
     std::array<int, 2> stdin_pipe;
@@ -243,49 +245,59 @@ bool NvimProcess::spawn(const std::string& nvim_path, const std::vector<std::str
 
     if (pipe(stdin_pipe.data()) != 0)
     {
-        DRAXUL_LOG_ERROR(LogCategory::Nvim, "Failed to create stdin pipe: %s", strerror(errno));
-        return false;
+        const int e = errno;
+        DRAXUL_LOG_ERROR(LogCategory::Nvim, "Failed to create stdin pipe: %s", strerror(e));
+        return Result<void, Error>::err(Error::io(
+            std::string("Failed to create stdin pipe: ") + strerror(e)));
     }
     if (pipe(stdout_pipe.data()) != 0)
     {
-        DRAXUL_LOG_ERROR(LogCategory::Nvim, "Failed to create stdout pipe: %s", strerror(errno));
+        const int e = errno;
+        DRAXUL_LOG_ERROR(LogCategory::Nvim, "Failed to create stdout pipe: %s", strerror(e));
         close(stdin_pipe[0]);
         close(stdin_pipe[1]);
-        return false;
+        return Result<void, Error>::err(Error::io(
+            std::string("Failed to create stdout pipe: ") + strerror(e)));
     }
     if (pipe(exec_status_pipe.data()) != 0)
     {
-        DRAXUL_LOG_ERROR(LogCategory::Nvim, "Failed to create exec-status pipe: %s", strerror(errno));
+        const int e = errno;
+        DRAXUL_LOG_ERROR(LogCategory::Nvim, "Failed to create exec-status pipe: %s", strerror(e));
         close(stdin_pipe[0]);
         close(stdin_pipe[1]);
         close(stdout_pipe[0]);
         close(stdout_pipe[1]);
-        return false;
+        return Result<void, Error>::err(Error::io(
+            std::string("Failed to create exec-status pipe: ") + strerror(e)));
     }
 
     if (fcntl(exec_status_pipe[1], F_SETFD, FD_CLOEXEC) != 0)
     {
-        DRAXUL_LOG_ERROR(LogCategory::Nvim, "Failed to configure exec-status pipe: %s", strerror(errno));
+        const int e = errno;
+        DRAXUL_LOG_ERROR(LogCategory::Nvim, "Failed to configure exec-status pipe: %s", strerror(e));
         close(stdin_pipe[0]);
         close(stdin_pipe[1]);
         close(stdout_pipe[0]);
         close(stdout_pipe[1]);
         close(exec_status_pipe[0]);
         close(exec_status_pipe[1]);
-        return false;
+        return Result<void, Error>::err(Error::io(
+            std::string("Failed to configure exec-status pipe: ") + strerror(e)));
     }
 
     pid_t pid = fork();
     if (pid < 0)
     {
-        DRAXUL_LOG_ERROR(LogCategory::Nvim, "Failed to fork: %s", strerror(errno));
+        const int e = errno;
+        DRAXUL_LOG_ERROR(LogCategory::Nvim, "Failed to fork: %s", strerror(e));
         close(stdin_pipe[0]);
         close(stdin_pipe[1]);
         close(stdout_pipe[0]);
         close(stdout_pipe[1]);
         close(exec_status_pipe[0]);
         close(exec_status_pipe[1]);
-        return false;
+        return Result<void, Error>::err(Error::spawn(
+            std::string("fork() failed: ") + strerror(e)));
     }
 
     if (pid == 0)
@@ -353,7 +365,8 @@ bool NvimProcess::spawn(const std::string& nvim_path, const std::vector<std::str
         int status = 0;
         waitpid(pid, &status, 0);
         DRAXUL_LOG_ERROR(LogCategory::Nvim, "Failed to spawn nvim: %s", strerror(exec_errno));
-        return false;
+        return Result<void, Error>::err(Error::spawn(
+            std::string("execvp(") + nvim_path + ") failed: " + strerror(exec_errno)));
     }
 
     impl_->child_stdin_write_ = stdin_pipe[1];
@@ -362,7 +375,7 @@ bool NvimProcess::spawn(const std::string& nvim_path, const std::vector<std::str
     impl_->started_ = true;
 
     DRAXUL_LOG_INFO(LogCategory::Nvim, "nvim spawned (PID %d)", (int)impl_->child_pid_);
-    return true;
+    return Result<void, Error>::ok();
 }
 
 void NvimProcess::shutdown()
