@@ -32,9 +32,9 @@ Any change to the pattern (e.g. a new overlay check) requires three co-ordinated
 
 ## Investigation Steps
 
-- [ ] Read `app/input_dispatcher.cpp` to confirm all three handlers share the same structure
-- [ ] Identify the exact commonality and the per-handler differences (button events have `button_state`, wheel events have `delta`, move events have coordinates only)
-- [ ] Design a private helper signature that parameterises the differences
+- [x] Read `app/input_dispatcher.cpp` to confirm all three handlers share the same structure
+- [x] Identify the exact commonality and the per-handler differences (button events have `button_state`, wheel events have `delta`, move events have coordinates only)
+- [x] Design a private helper signature that parameterises the differences
 
 ---
 
@@ -53,18 +53,18 @@ Each handler checks UiPanel interception, then calls `dispatch_mouse_to_host()` 
 
 ## Implementation
 
-- [ ] Extract the common prefix/suffix into `InputDispatcher::dispatch_mouse_to_host()`
-- [ ] Simplify each of the three handlers to call the helper
-- [ ] Verify tests in `tests/input_dispatcher_test.cpp` (or equivalent) still pass unchanged
+- [x] Extract the common prefix/suffix into `InputDispatcher::dispatch_mouse_to_host()`
+- [x] Simplify each of the three handlers to call the helper
+- [x] Verify tests in `tests/input_dispatcher_test.cpp` (or equivalent) still pass unchanged
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] Three handlers each reduced to ~5–8 lines
-- [ ] All existing input dispatcher tests pass
-- [ ] No behaviour change in any path (including `wants_mouse()` short-circuit)
-- [ ] Build and smoke test pass
+- [x] Three handlers each reduced to ~5–8 lines
+- [x] All existing input dispatcher tests pass
+- [x] No behaviour change in any path (including `wants_mouse()` short-circuit)
+- [x] Build and smoke test pass
 
 ---
 

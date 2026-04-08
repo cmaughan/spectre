@@ -1,77 +1,88 @@
-Static-only review from direct reads of `app/`, `libs/`, `shaders/`, `tests/`, `scripts/`, `plans/`, and [docs/features.md](/Users/cmaughan/dev/Draxul/docs/features.md). I did not build, run, edit, or rely on pre-generated combined files. I also excluded items already parked in `plans/work-items-complete/` and `plans/work-items-icebox/`, and I did not repeat stale review findings that are already fixed in the current tree.
+**Scope**
+Static review only. I read source from `app/`, `libs/`, `shaders/`, `tests/`, `scripts/`, `plans/`, plus [`docs/features.md`](/Users/cmaughan/dev/Draxul/docs/features.md). I did not build, run, or modify anything. `modules/megacity/` implementation was outside the requested scan scope, so MegaCity comments are based on the scanned integration points, docs, tests, and app surface.
 
 **Findings**
-1. High: [LocalTerminalHost::pump()](/Users/cmaughan/dev/Draxul/libs/draxul-host/src/local_terminal_host.cpp#L134) still drains output until empty with no wall-clock budget. Under bursty PTY output, one host can monopolize the main thread and starve input/render.
-2. Medium-High: `draxul-config` is still not a clean low-level config module. It publicly links renderer/window in [libs/draxul-config/CMakeLists.txt](/Users/cmaughan/dev/Draxul/libs/draxul-config/CMakeLists.txt#L15), the facade header re-exports runtime options in [app_config.h](/Users/cmaughan/dev/Draxul/libs/draxul-config/include/draxul/app_config.h#L3), and [app_options.h](/Users/cmaughan/dev/Draxul/libs/draxul-config/include/draxul/app_options.h#L3) directly includes renderer/window headers. That defeats dependency direction and widens rebuild and merge surface.
-3. Medium-High: glyph-atlas dirty/upload ownership is duplicated across [grid_rendering_pipeline.cpp](/Users/cmaughan/dev/Draxul/libs/draxul-runtime-support/src/grid_rendering_pipeline.cpp#L227), [chrome_host.cpp](/Users/cmaughan/dev/Draxul/app/chrome_host.cpp#L439), [command_palette_host.cpp](/Users/cmaughan/dev/Draxul/app/command_palette_host.cpp#L188), and [toast_host.cpp](/Users/cmaughan/dev/Draxul/app/toast_host.cpp#L175). Multiple subsystems both upload and clear dirty state, which is fragile and hard to reason about in multi-host frames.
-4. Medium: [NvimHost::pump()](/Users/cmaughan/dev/Draxul/libs/draxul-host/src/nvim_host.cpp#L101) polls `window().clipboard_text()` every frame on the main thread. It is thread-safe, but it is still eager OS polling in a hot path for every Neovim pane.
-5. Medium: [NvimHost::dispatch_action()](/Users/cmaughan/dev/Draxul/libs/draxul-host/src/nvim_host.cpp#L216) contains the same `open_file_at_type:` handler twice, including duplicated embedded Lua blocks at [L216](/Users/cmaughan/dev/Draxul/libs/draxul-host/src/nvim_host.cpp#L216) and [L248](/Users/cmaughan/dev/Draxul/libs/draxul-host/src/nvim_host.cpp#L248). That is a concrete maintenance bug magnet.
-6. Medium: [App::dispatch_to_nvim_host()](/Users/cmaughan/dev/Draxul/app/app.cpp#L1294) finds “the nvim host” by checking `host.debug_state().name == "nvim"`. That is a debug-string heuristic, not a capability boundary.
-7. Medium: overlay hosts are hardwired throughout [app/app.cpp](/Users/cmaughan/dev/Draxul/app/app.cpp). `chrome_host_`, `palette_host_`, `toast_host_`, and `diagnostics_host_` are each threaded through init, render-tree assembly, viewport updates, diagnostics, and shutdown at [L323](/Users/cmaughan/dev/Draxul/app/app.cpp#L323), [L1079](/Users/cmaughan/dev/Draxul/app/app.cpp#L1079), [L1220](/Users/cmaughan/dev/Draxul/app/app.cpp#L1220), and [L1386](/Users/cmaughan/dev/Draxul/app/app.cpp#L1386). Every new overlay now means broad app-layer edits and merge conflicts.
-8. Medium: `HostManager` is not fully generic. [create_host_for_leaf()](/Users/cmaughan/dev/Draxul/app/host_manager.cpp#L397) still special-cases `MegaCityHost` via `dynamic_cast` at [L430](/Users/cmaughan/dev/Draxul/app/host_manager.cpp#L430), while complexity is concentrated in very large files like [app.cpp](/Users/cmaughan/dev/Draxul/app/app.cpp), [megacity_host.cpp](/Users/cmaughan/dev/Draxul/libs/draxul-megacity/src/megacity_host.cpp), [megacity_render_vk.cpp](/Users/cmaughan/dev/Draxul/libs/draxul-megacity/src/megacity_render_vk.cpp), [vk_renderer.cpp](/Users/cmaughan/dev/Draxul/libs/draxul-renderer/src/vulkan/vk_renderer.cpp), [metal_renderer.mm](/Users/cmaughan/dev/Draxul/libs/draxul-renderer/src/metal/metal_renderer.mm), and [megacity_scene_tests.cpp](/Users/cmaughan/dev/Draxul/tests/megacity_scene_tests.cpp). That is the biggest “hard for multiple agents” risk in the tree.
+1. High: `ToastHost::initialize()` dereferences a possibly-null grid handle. It calls `create_grid_handle()` and immediately uses `handle_` without a null check at [toast_host.cpp:25](/Users/cmaughan/dev/Draxul/app/toast_host.cpp#L25) and [toast_host.cpp:30](/Users/cmaughan/dev/Draxul/app/toast_host.cpp#L30). The same failure path is explicitly guarded in `GridHostBase`, `ChromeHost`, and `CommandPaletteHost`, so this is an outlier and a real crash surface.
 
-Overall: the repo structure is better than average, but app-layer orchestration and MegaCity-specific complexity are slowly re-centralizing knowledge that the library split was supposed to keep separated.
+2. High: the advertised “thread-safe” toast path does not actually guarantee next-frame delivery. The contract says background threads may call `push()` and the toast will appear “on the next frame” at [toast_host.h:21](/Users/cmaughan/dev/Draxul/app/toast_host.h#L21) and [toast_host.h:28](/Users/cmaughan/dev/Draxul/app/toast_host.h#L28), but `push()` only appends to `pending_` at [toast_host.cpp:10](/Users/cmaughan/dev/Draxul/app/toast_host.cpp#L10), `next_deadline()` ignores pending work at [toast_host.cpp:142](/Users/cmaughan/dev/Draxul/app/toast_host.cpp#L142), and `App::push_toast()` just forwards the message without waking or requesting a frame at [app.cpp:1461](/Users/cmaughan/dev/Draxul/app/app.cpp#L1461). If the app is idle, a background-thread toast can sit invisible until unrelated input arrives.
+
+3. Medium: `ChromeHost` still measures and renders tab/pane labels by byte count in several places, so UTF-8 tab names, pane names, and cwd/status strings will mis-measure, truncate incorrectly, and in pane status rendering may split multibyte sequences into invalid one-byte “clusters.” See byte-based tab sizing at [chrome_host.cpp:288](/Users/cmaughan/dev/Draxul/app/chrome_host.cpp#L288) and [chrome_host.cpp:439](/Users/cmaughan/dev/Draxul/app/chrome_host.cpp#L439), pane-status truncation at [chrome_host.cpp:943](/Users/cmaughan/dev/Draxul/app/chrome_host.cpp#L943), and one-byte glyph warming/rendering at [chrome_host.cpp:1018](/Users/cmaughan/dev/Draxul/app/chrome_host.cpp#L1018). This is now more visible because rename input is UTF-8-aware while layout is not.
+
+4. Medium: glyph-atlas dirty upload ownership is still split across multiple consumers. The core pipeline uploads in [grid_rendering_pipeline.cpp:174](/Users/cmaughan/dev/Draxul/libs/draxul-runtime-support/src/grid_rendering_pipeline.cpp#L174) and [grid_rendering_pipeline.cpp:227](/Users/cmaughan/dev/Draxul/libs/draxul-runtime-support/src/grid_rendering_pipeline.cpp#L227), while `ChromeHost`, `CommandPaletteHost`, and `ToastHost` each also inspect and clear dirty state at [chrome_host.cpp:1451](/Users/cmaughan/dev/Draxul/app/chrome_host.cpp#L1451), [command_palette_host.cpp:188](/Users/cmaughan/dev/Draxul/app/command_palette_host.cpp#L188), and [toast_host.cpp:175](/Users/cmaughan/dev/Draxul/app/toast_host.cpp#L175). That is a correctness risk around ordering, and it makes every new text overlay a shared-state footgun. This aligns with active WI 109.
+
+5. Medium: the config layer is still not a clean leaf. `draxul-config` publicly links renderer and window at [libs/draxul-config/CMakeLists.txt:15](/Users/cmaughan/dev/Draxul/libs/draxul-config/CMakeLists.txt#L15), and `AppOptions` publicly includes renderer/window types at [app_options.h:9](/Users/cmaughan/dev/Draxul/libs/draxul-config/include/draxul/app_options.h#L9). That means “config” transitively pulls in GPU and windowing APIs, which makes incremental builds heavier and weakens module ownership. This aligns with active WI 110.
+
+6. Medium: the app layer is still the main collaboration bottleneck. `App` owns startup, overlay creation, workspace lifecycle, render-tree assembly, toast routing, diagnostics, layout recomputation, input wiring, and event-loop policy in one class at [app.h:60](/Users/cmaughan/dev/Draxul/app/app.h#L60), [app.cpp:507](/Users/cmaughan/dev/Draxul/app/app.cpp#L507), and [app.cpp:1180](/Users/cmaughan/dev/Draxul/app/app.cpp#L1180). Multiple agents touching overlays, panes, focus, or startup will still collide here.
+
+7. Medium: `InputDispatcher`’s dependency surface is too wide and it repeats similar mouse-routing policy three times. The callback bag at [input_dispatcher.h:51](/Users/cmaughan/dev/Draxul/app/input_dispatcher.h#L51) is effectively an untyped app-service interface, and the same chrome/panel/overlay/host routing pattern is hand-maintained in [input_dispatcher.cpp:303](/Users/cmaughan/dev/Draxul/app/input_dispatcher.cpp#L303), [input_dispatcher.cpp:425](/Users/cmaughan/dev/Draxul/app/input_dispatcher.cpp#L425), and [input_dispatcher.cpp:490](/Users/cmaughan/dev/Draxul/app/input_dispatcher.cpp#L490). This is exactly the sort of seam that causes drift and merge conflicts.
+
+8. Medium: `NvimHost::dispatch_action()` is still a stringly-typed router mixed with embedded Lua source in the host implementation at [nvim_host.cpp:162](/Users/cmaughan/dev/Draxul/libs/draxul-host/src/nvim_host.cpp#L162). It is workable, but it is harder than necessary to review, unit-test, or split across agents. This aligns with active WI 126 and WI 127.
+
+Some of these are already active work items. The two issues that stood out as current-tree bugs rather than just known refactors were the `ToastHost` null-deref path and the background-thread toast wake/delivery gap.
+
+**Assumptions**
+- I did not run tests, so anything about runtime behaviour is inferred from the code paths.
+- I filtered out completed and icebox items when judging novelty, but I did reference active work items where the current tree still clearly supports them.
+- MegaCity implementation itself was outside the requested scan scope, so MegaCity comments are about the visible maintenance/product footprint, not a fresh deep review of `modules/megacity/`.
 
 **Top 10 Good**
-- The `draxul-*` library split is real and mostly coherent.
-- The host and renderer hierarchies are conceptually clean.
-- Test coverage is broad, not token.
-- [tests/support/replay_fixture.h](/Users/cmaughan/dev/Draxul/tests/support/replay_fixture.h) is the right abstraction for redraw/parser regressions.
-- [docs/features.md](/Users/cmaughan/dev/Draxul/docs/features.md) is unusually complete and useful.
-- The config and CLI surface is explicit and discoverable.
-- Render snapshot infrastructure exists and is documented.
-- Input routing and keybinding behavior have strong dedicated coverage.
-- The tree shows evidence of fixing previous review findings instead of letting them rot.
-- The app still keeps a lot of pure logic testable without spawning Neovim or a real window.
+- The repo-level decomposition is real: window, renderer, grid, font, nvim, host, runtime, UI, and config each have a clear home.
+- Test coverage breadth is strong for a GUI app: config, RPC, VT, render state, input, startup, shutdown, and many regression cases are already present.
+- The fake renderer/window/RPC fixtures make isolated tests practical instead of forcing full app boot.
+- `GridHostBase` plus per-host `IGridHandle` is a solid seam for keeping renderer state localized.
+- Host/provider registration keeps optional hosts out of most of the core app.
+- Render snapshot infrastructure is substantial and gives deterministic visual regression leverage.
+- The planning/review workflow is unusually disciplined; the repo has real review memory instead of vague TODOs.
+- The config system surfaces unknown keys and parsing problems instead of silently swallowing everything.
+- Cross-platform process handling is explicit rather than hidden in preprocessor soup inside the app loop.
+- The codebase is willing to extract hard-won regressions into tests, which is why the test tree is valuable rather than decorative.
 
 **Top 10 Bad**
-- [app/app.cpp](/Users/cmaughan/dev/Draxul/app/app.cpp) is too large and too central.
-- MegaCity consumes a disproportionate amount of complexity for a Neovim GUI frontend.
-- Overlay management is not data-driven.
-- Config types still leak runtime/renderer concerns.
-- Atlas upload ownership is ambiguous.
-- Capability checks sometimes fall back to debug strings and concrete casts.
-- Large embedded Lua strings in host code are hard to test and review.
-- Several source files are too large for comfortable parallel work.
-- Some hot paths still do eager polling or unbounded draining on the main thread.
-- The codebase’s strongest modularity story weakens at the app and MegaCity boundaries.
+- `App`, `ChromeHost`, and `InputDispatcher` are still the dominant merge-conflict zones.
+- Overlay management is hand-wired rather than data-driven.
+- Unicode handling is inconsistent in non-terminal UI text paths.
+- Toast lifecycle behaviour is under-tested and currently has at least two correctness flaws.
+- The config layer still leaks renderer/window dependencies.
+- Glyph-atlas upload ownership is split across several subsystems.
+- `NvimHost` still mixes transport, action routing, and embedded scripting too tightly.
+- Several core files are large enough that review quality will drop unless work stays very focused.
+- Important UI surfaces still lack dedicated tests even though the infrastructure to test them exists.
+- The application still carries more chrome/control-surface complexity than the core terminal/Nvim workflow really needs.
 
 **Best 10 QoL Features To Add**
-- Rename workspace tabs.
-- Reopen the last closed pane or tab.
-- Move a pane to a new or existing tab.
-- Duplicate the current pane with the same host and working directory.
-- Saved layout presets such as “editor + terminal” and “three-column”.
-- A keybinding inspector that shows which action matched and why.
-- Clipboard history with a paste picker.
-- A temporary focus mode that hides chrome, toasts, and diagnostics.
-- Recent files and recent working-directories switcher in the command palette.
-- Send selected text or the current command directly to another pane.
+- OSC 8 hyperlinks with click-to-open.
+- OSC 133 shell marks so users can jump between prompts and copy the last command output.
+- Config parse errors with exact line/column and an actionable message.
+- Multi-cell ligatures beyond the current two-cell limit.
+- Command palette descriptions, aliases, and better discoverability metadata.
+- “Open current pane cwd” and “copy current pane cwd” actions from the palette or pane chrome.
+- Duplicate focused pane with the same host kind, cwd, and launch options.
+- Tab/pane activity badges for shell bell, failed command, or long-running work.
+- A smarter paste-confirmation flow with a short preview and explicit size summary.
+- Right-click context menus for tabs, pane pills, and status areas so common actions are discoverable without memorising chords.
 
 **Best 10 Tests To Add**
-- A fairness test proving [LocalTerminalHost::pump()](/Users/cmaughan/dev/Draxul/libs/draxul-host/src/local_terminal_host.cpp#L134) cannot starve the frame loop under repeated drains.
-- A regression test that `open_file_at_type:` in [nvim_host.cpp](/Users/cmaughan/dev/Draxul/libs/draxul-host/src/nvim_host.cpp#L216) emits exactly one RPC action.
-- A `ChromeHost` test for tab-bar hit-testing and viewport updates across resize and DPI changes.
-- A `ToastHost` lifecycle test for stacking, expiry, fade, and `request_frame()` behavior.
-- An `App` render-tree test covering overlay ordering with diagnostics, palette, toast, and chrome on/off.
-- A workspace-tab test for focus preservation when switching, closing, and reopening mixed-host tabs.
-- A mixed-host dispatch test proving app actions target the intended Neovim pane without debug-name heuristics.
-- A file-drop test for spaces, unicode, and shell-sensitive paths across host kinds.
-- A `UiRequestWorker` test for overlapping requests, ordering, and cancellation semantics.
-- A command-palette overlay test covering window resize plus diagnostics-height changes in one flow.
+- `ToastHost` background-thread delivery while the app is idle; assert wake/request behaviour.
+- `ToastHost` `create_grid_handle()` failure during initialize; assert graceful failure instead of crash.
+- `ChromeHost` UTF-8 tab-name width and hit-testing.
+- `ChromeHost` UTF-8 pane-status truncation/rendering and rename cases.
+- A single-frame atlas-dirty ownership test covering grid, chrome, palette, and toast together.
+- `ToastHost` lifecycle coverage for stacking, expiry, fade, and buffered replay.
+- App overlay ordering plus input focus handoff across chrome, diagnostics, palette, and toast.
+- `ChromeHost` tab-bar geometry across resize and DPI change.
+- `CommandPalette` UTF-8 editing, especially backspace over multibyte input.
+- `NvimHost` action-dispatch tests that lock down handler registration and emitted Lua payloads.
 
 **Worst 10 Features**
-These are the lowest-ROI current features, not necessarily broken ones.
+- MegaCity’s large debug/control surface inside the main product.
+- MegaCity perf/coverage visualisation modes in a terminal-first app.
+- MegaCity sign/tree/material micro-tuning controls.
+- The always-visible top tab bar even when the user only has one workspace.
+- Inline tab/pane rename before UTF-8 layout is fully hardened.
+- The per-pane status strip in its current byte-oriented text implementation.
+- Toast notifications in their current wake/lifecycle state.
+- The centered half-window command palette with ASCII-centric editing behaviour.
+- The manually managed overlay stack as a user-facing capability rather than an internal subsystem.
+- The diagnostics panel carrying a lot of runtime-development surface directly into the shipped app.
 
-- MegaCity point-shadow face and stored-depth debug views.
-- MegaCity point-shadow depth-delta view.
-- MegaCity tangent, bitangent, and packed-TBN debug views.
-- MegaCity tree micro-tuning controls.
-- MegaCity sign sizing controls.
-- MegaCity sign color styling controls.
-- MegaCity building shading micro-knobs like `Middle Strip Push` and `Alternate Darken`.
-- MegaCity hex/oct threshold tuning.
-- MegaCity projection toggle.
-- MegaCity `Perf` / `Coverage` / `LCOV Coverage` / `Perf Log Scale` control surface as a shipping app feature rather than a separate dev tool.
-
-If you want a follow-up, the highest-leverage next step is to turn findings 1, 2, 3, and 7 into a small refactor plan: they are the best maintainability wins without needing a product decision.
+Overall: the base architecture is much better than a typical cross-platform GUI terminal, and the lower libraries are generally in the right places. The main remaining tax is concentrated in a handful of app-layer coordination files, plus a few overlay/text-path correctness gaps that are now worth fixing before adding more UI surface.

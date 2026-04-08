@@ -37,6 +37,13 @@ if(DRAXUL_ENABLE_MEGACITY)
     target_compile_definitions(draxul-tests PRIVATE DRAXUL_ENABLE_MEGACITY)
 endif()
 
+# draxul-tests loads draxul-rpc-fake at runtime via DRAXUL_RPC_FAKE_PATH
+# (4 test suites: nvim_crash, rpc_backpressure, rpc_integration, shutdown_race).
+# Make the dependency explicit so building the draxul-tests target also builds
+# its helper binary — otherwise those 24 tests fail with "No such file or
+# directory" until someone manually builds draxul-rpc-fake.
+add_dependencies(draxul-tests draxul-rpc-fake)
+
 add_test(NAME draxul-tests COMMAND $<TARGET_FILE:draxul-tests>)
 
 draxul_apply_sanitizers(draxul-tests)

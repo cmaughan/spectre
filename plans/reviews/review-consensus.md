@@ -1,56 +1,31 @@
-All 18 work items and the consensus file are written. Here's the summary:
+Done. Here's a summary of what was produced:
 
 ---
 
 ## `review-consensus.md` — Replaced
 
-A full synthesis of all three reviews covering:
-- **4 unanimous agreements** (app god object, MegaCity burden, drain loop starvation, VT parser gaps, dynamic_cast capability probing)
-- **Agent-specific findings** with attribution (Claude: dead Linux code, Metal header hazard; Gemini: duplicate NvimHost handler, atlas upload duplication, overlay hardwiring; GPT: IHostCallbacks width, SDL3 risk)
-- **3 real disagreements** (MegaCity remove vs isolate, VT parser keep vs replace, ImGui opinion)
-- **Recommended 4-phase fix order** with interdependency table
+A full synthesis covering:
+
+**Unanimous (all 3 agents):** App god object, no drain budget, atlas upload ambiguity, overlay hardwiring, capability-via-debug-string. All already tracked.
+
+**Two-agent agreements:** VT parser gaps, config dep leakage, SplitTree O(n), duplicate NvimHost handler, Metal header hazard, wire_gui_actions monolith. All already tracked.
+
+**Agent-specific new findings:**
+- Claude: workspace tab focus preservation test, alt-screen round-trip test *(new)*
+- Gemini: ChromeHost hardcoded Catppuccin colors *(new)*
+- GPT: NvimHost clipboard eager polling every frame *(new)*
+
+**Disagreements:** MegaCity isolate vs remove (consensus: follow WI 133 plugin-boundary first), ChromeHost layout engine (consensus: no, add tests instead), SDL coupling (consensus: IWindow abstraction is sufficient).
 
 ---
 
-## 18 New Work Items (WI 115–132)
+## 4 New Work Items
 
-### Bugs (4) — highest priority
-| WI | Description |
-|-----|------------|
-| **115** | NvimHost duplicate `open_file_at_type:` handler -bug |
-| **116** | App debug-string dispatch heuristic (`name == "nvim"`) -bug |
-| **117** | MetalRenderer dual ObjC/C++ header layout hazard -bug |
-| **118** | SplitTree O(n) recursive finds + `std::function` allocations -bug |
+| File | Type | Summary |
+|---|---|---|
+| `00 workspace-tab-focus-preservation -test.md` | test | Verify focus is preserved/restored when switching workspace tabs, using fake deps — no Neovim required |
+| `01 alt-screen-roundtrip-fidelity -test.md` | test | Verify main-screen content survives ESC[?1049h/l round-trip, including resize-during-alt-screen variant |
+| `02 nvimhost-clipboard-eager-polling -refactor.md` | refactor | Replace per-frame `clipboard_text()` poll in `NvimHost::pump()` with SDL3 clipboard-update event subscription |
+| `03 chromehost-hardcoded-theme-colors -feature.md` | feature | Expose `[chrome]` config section so tab bar, pills, dividers, and status bar colors are user-configurable |
 
-### Tests (5)
-| WI | Description |
-|-----|------------|
-| **119** | ChromeHost tab-bar hit-testing + DPI viewport -test |
-| **120** | ToastHost lifecycle (stacking, expiry, fade, replay) -test |
-| **121** | App render-tree overlay ordering -test |
-| **122** | Mixed-host dispatch without debug-name heuristic -test |
-| **123** | UiRequestWorker overlapping requests + cancellation -test |
-
-### Refactors (4)
-| WI | Description |
-|-----|------------|
-| **124** | Dead Linux code path cleanup -refactor |
-| **125** | Overlay registry (data-driven overlay management) -refactor |
-| **126** | Embedded Lua extraction from nvim_host.cpp -refactor |
-| **127** | NvimHost dispatch handler consolidation to dispatch table -refactor |
-
-### Features (5)
-| WI | Description |
-|-----|------------|
-| **128** | Workspace tab name editing (double-click to rename) -feature |
-| **129** | Reopen last closed pane or tab -feature |
-| **130** | Keybinding inspector (show matched action in diagnostics panel) -feature |
-| **131** | Clipboard history with paste picker -feature |
-| **132** | Distraction-free / focus mode -feature |
-
-**Key interdependency chains:**
-- `115 → 126 → 127` (dedup first, then extract, then consolidate)
-- `116 → 122` (fix dispatch bug, then write its acceptance test)
-- `119 + 120 + 121 → 125` (tests must exist before overlay registry refactor)
-- `125 → 132` (focus mode is trivial after overlay registry)
-- `128 → 129` (tab name needed in reopen record)
+**Key interdependencies flagged in consensus:** Phase chains `115→126→127`, `116→122`, `119+120+121→125→132`, and the new items `134/135` benefit from WI 125 being done first; `137` should coordinate with WI 128.
