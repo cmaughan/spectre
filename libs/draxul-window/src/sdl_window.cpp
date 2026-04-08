@@ -267,12 +267,58 @@ void SdlWindow::activate()
 void SdlWindow::shutdown()
 {
     PERF_MEASURE();
+    if (cursor_default_)
+    {
+        SDL_DestroyCursor(cursor_default_);
+        cursor_default_ = nullptr;
+    }
+    if (cursor_ew_)
+    {
+        SDL_DestroyCursor(cursor_ew_);
+        cursor_ew_ = nullptr;
+    }
+    if (cursor_ns_)
+    {
+        SDL_DestroyCursor(cursor_ns_);
+        cursor_ns_ = nullptr;
+    }
     if (window_)
     {
         SDL_DestroyWindow(window_);
         window_ = nullptr;
     }
     SDL_Quit();
+}
+
+SDL_Cursor* SdlWindow::ensure_cursor(MouseCursor cursor)
+{
+    switch (cursor)
+    {
+    case MouseCursor::ResizeLeftRight:
+        if (!cursor_ew_)
+            cursor_ew_ = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_EW_RESIZE);
+        return cursor_ew_;
+    case MouseCursor::ResizeUpDown:
+        if (!cursor_ns_)
+            cursor_ns_ = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_NS_RESIZE);
+        return cursor_ns_;
+    case MouseCursor::Default:
+    default:
+        if (!cursor_default_)
+            cursor_default_ = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_DEFAULT);
+        return cursor_default_;
+    }
+}
+
+void SdlWindow::set_mouse_cursor(MouseCursor cursor)
+{
+    if (cursor == active_cursor_)
+        return;
+    if (SDL_Cursor* sc = ensure_cursor(cursor))
+    {
+        SDL_SetCursor(sc);
+        active_cursor_ = cursor;
+    }
 }
 
 bool SdlWindow::handle_event(const SDL_Event& event)

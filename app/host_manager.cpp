@@ -404,6 +404,38 @@ IHost* HostManager::host_at_point(int px, int py)
     return focused_host();
 }
 
+std::optional<HostManager::DividerHitInfo> HostManager::divider_at_point(int px, int py) const
+{
+    PERF_MEASURE();
+    auto result = tree_.hit_test(px, py);
+    if (const auto* div_hit = std::get_if<SplitTree::DividerHit>(&result))
+        return DividerHitInfo{ div_hit->id, div_hit->direction };
+    return std::nullopt;
+}
+
+void HostManager::update_divider_from_pixel(DividerId id, int px, int py, int pixel_w, int pixel_h)
+{
+    PERF_MEASURE();
+    if (zoomed_)
+        return;
+    tree_.update_divider_from_pixel(id, px, py);
+    recompute_viewports(pixel_w, pixel_h);
+}
+
+void HostManager::nudge_divider(DividerId id, float delta, int pixel_w, int pixel_h)
+{
+    PERF_MEASURE();
+    if (zoomed_)
+        return;
+    tree_.nudge_divider(id, delta);
+    recompute_viewports(pixel_w, pixel_h);
+}
+
+DividerId HostManager::find_focused_ancestor_divider(FocusDirection direction) const
+{
+    return tree_.find_ancestor_divider(tree_.focused(), direction);
+}
+
 bool HostManager::create_host_for_leaf(LeafId id, IHostCallbacks& callbacks,
     HostLaunchOptions launch, bool is_primary)
 {

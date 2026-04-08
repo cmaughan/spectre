@@ -526,6 +526,15 @@ AppConfig::AppConfig()
         { "focus_down", 0, kModNone, static_cast<int32_t>(SDLK_J), kModCtrl },
         { "focus_up", 0, kModNone, static_cast<int32_t>(SDLK_K), kModCtrl },
         { "focus_right", 0, kModNone, static_cast<int32_t>(SDLK_L), kModCtrl },
+        // Pane resize: Ctrl+S, arrow (tmux-style — nudges nearest divider by 5%)
+        { "resize_pane_left", static_cast<int32_t>(SDLK_S), kModCtrl,
+            static_cast<int32_t>(SDLK_LEFT), kModNone },
+        { "resize_pane_right", static_cast<int32_t>(SDLK_S), kModCtrl,
+            static_cast<int32_t>(SDLK_RIGHT), kModNone },
+        { "resize_pane_up", static_cast<int32_t>(SDLK_S), kModCtrl,
+            static_cast<int32_t>(SDLK_UP), kModNone },
+        { "resize_pane_down", static_cast<int32_t>(SDLK_S), kModCtrl,
+            static_cast<int32_t>(SDLK_DOWN), kModNone },
         // Tab/workspace management: Ctrl+S chord prefix (tmux-style)
         // new_tab = Ctrl+S, C
         { "new_tab", static_cast<int32_t>(SDLK_S), kModCtrl,

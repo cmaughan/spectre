@@ -48,6 +48,10 @@ public:
         std::function<void()> on_focus_right; // move focus to right pane
         std::function<void()> on_focus_up; // move focus to upper pane
         std::function<void()> on_focus_down; // move focus to lower pane
+        std::function<void()> on_resize_pane_left; // shrink focused pane horizontally
+        std::function<void()> on_resize_pane_right; // grow focused pane horizontally
+        std::function<void()> on_resize_pane_up; // shrink focused pane vertically
+        std::function<void()> on_resize_pane_down; // grow focused pane vertically
         std::function<void(std::optional<HostKind>)> on_new_tab; // create a new workspace tab
         std::function<void()> on_close_tab; // close the active workspace tab
         std::function<void()> on_next_tab; // switch to the next tab
@@ -92,6 +96,10 @@ private:
     void focus_right() const;
     void focus_up() const;
     void focus_down() const;
+    void resize_pane_left() const;
+    void resize_pane_right() const;
+    void resize_pane_up() const;
+    void resize_pane_down() const;
     void new_tab(std::string_view args) const;
     void close_tab() const;
     void next_tab() const;

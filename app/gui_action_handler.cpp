@@ -53,6 +53,10 @@ const std::unordered_map<std::string_view, GuiActionHandler::ActionFn>& GuiActio
         {"focus_right",        [](auto& h, auto) { h.focus_right(); }},
         {"focus_up",           [](auto& h, auto) { h.focus_up(); }},
         {"focus_down",         [](auto& h, auto) { h.focus_down(); }},
+        {"resize_pane_left",   [](auto& h, auto) { h.resize_pane_left(); }},
+        {"resize_pane_right",  [](auto& h, auto) { h.resize_pane_right(); }},
+        {"resize_pane_up",     [](auto& h, auto) { h.resize_pane_up(); }},
+        {"resize_pane_down",   [](auto& h, auto) { h.resize_pane_down(); }},
         {"new_tab",            [](auto& h, auto args) { h.new_tab(args); }},
         {"close_tab",          [](auto& h, auto) { h.close_tab(); }},
         {"next_tab",           [](auto& h, auto) { h.next_tab(); }},
@@ -274,6 +278,34 @@ void GuiActionHandler::focus_down() const
     PERF_MEASURE();
     if (deps_.on_focus_down)
         deps_.on_focus_down();
+}
+
+void GuiActionHandler::resize_pane_left() const
+{
+    PERF_MEASURE();
+    if (deps_.on_resize_pane_left)
+        deps_.on_resize_pane_left();
+}
+
+void GuiActionHandler::resize_pane_right() const
+{
+    PERF_MEASURE();
+    if (deps_.on_resize_pane_right)
+        deps_.on_resize_pane_right();
+}
+
+void GuiActionHandler::resize_pane_up() const
+{
+    PERF_MEASURE();
+    if (deps_.on_resize_pane_up)
+        deps_.on_resize_pane_up();
+}
+
+void GuiActionHandler::resize_pane_down() const
+{
+    PERF_MEASURE();
+    if (deps_.on_resize_pane_down)
+        deps_.on_resize_pane_down();
 }
 
 void GuiActionHandler::new_tab(std::string_view args) const

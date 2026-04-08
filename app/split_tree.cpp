@@ -30,6 +30,12 @@ struct SplitTree::Node
         int div_y = 0;
         int div_w = 0;
         int div_h = 0;
+        // Full parent rect (the area the two children + divider occupy),
+        // computed during recompute(). Used to convert mouse pixels into ratios.
+        int rect_x = 0;
+        int rect_y = 0;
+        int rect_w = 0;
+        int rect_h = 0;
     };
 
     std::variant<LeafData, SplitData> data;
@@ -210,6 +216,68 @@ void SplitTree::set_divider_ratio(DividerId id, float ratio)
     recompute(origin_x_, origin_y_, total_w_, total_h_);
 }
 
+void SplitTree::update_divider_from_pixel(DividerId id, int px, int py)
+{
+    PERF_MEASURE();
+    if (id == kInvalidDivider)
+        return;
+    Node* node = find_divider_node(id);
+    if (!node || node->is_leaf())
+        return;
+    auto& s = node->split();
+    const int eff_div = (s.direction == SplitDirection::Vertical)
+        ? std::min(kDividerWidth, s.rect_w)
+        : std::min(kDividerWidth, s.rect_h);
+    float new_ratio = s.ratio;
+    if (s.direction == SplitDirection::Vertical)
+    {
+        const int available = std::max(1, s.rect_w - eff_div);
+        new_ratio = static_cast<float>(px - s.rect_x) / static_cast<float>(available);
+    }
+    else
+    {
+        const int available = std::max(1, s.rect_h - eff_div);
+        new_ratio = static_cast<float>(py - s.rect_y) / static_cast<float>(available);
+    }
+    s.ratio = std::clamp(new_ratio, 0.1f, 0.9f);
+    recompute(origin_x_, origin_y_, total_w_, total_h_);
+}
+
+void SplitTree::nudge_divider(DividerId id, float delta)
+{
+    PERF_MEASURE();
+    if (id == kInvalidDivider)
+        return;
+    Node* node = find_divider_node(id);
+    if (!node || node->is_leaf())
+        return;
+    auto& s = node->split();
+    s.ratio = std::clamp(s.ratio + delta, 0.1f, 0.9f);
+    recompute(origin_x_, origin_y_, total_w_, total_h_);
+}
+
+DividerId SplitTree::find_ancestor_divider(LeafId leaf, FocusDirection direction) const
+{
+    PERF_MEASURE();
+    const Node* target = find_leaf_node(leaf);
+    if (!target)
+        return kInvalidDivider;
+    const SplitDirection relevant
+        = (direction == FocusDirection::Left || direction == FocusDirection::Right)
+        ? SplitDirection::Vertical
+        : SplitDirection::Horizontal;
+    const Node* child = target;
+    const Node* parent = find_parent_of(child);
+    while (parent)
+    {
+        if (!parent->is_leaf() && parent->split().direction == relevant)
+            return parent->split().divider_id;
+        child = parent;
+        parent = find_parent_of(child);
+    }
+    return kInvalidDivider;
+}
+
 void SplitTree::set_focused(LeafId id)
 {
     PERF_MEASURE();
@@ -326,6 +394,10 @@ void SplitTree::recompute_node(Node* node, int x, int y, int w, int h, int div_w
     const int safe_h = std::max(0, h);
 
     auto& s = node->split();
+    s.rect_x = x;
+    s.rect_y = y;
+    s.rect_w = safe_w;
+    s.rect_h = safe_h;
     if (s.direction == SplitDirection::Vertical)
     {
         // Clamp the divider so it never extends beyond the parent rect; the

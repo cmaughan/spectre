@@ -33,6 +33,38 @@ void InputDispatcher::start_indicator_fade(std::chrono::steady_clock::time_point
     fade_ends_at_ = now + fade_duration;
 }
 
+bool InputDispatcher::update_cursor_for_divider(int phys_x, int phys_y)
+{
+    PERF_MEASURE();
+    if (!deps_.window)
+        return false;
+    HostManager* hm = deps_.host_manager ? deps_.host_manager() : nullptr;
+    if (!hm)
+        return false;
+    auto hit = hm->divider_at_point(phys_x, phys_y);
+    MouseCursor desired = MouseCursor::Default;
+    int new_state = 0;
+    if (hit)
+    {
+        if (hit->direction == SplitDirection::Vertical)
+        {
+            desired = MouseCursor::ResizeLeftRight;
+            new_state = 1;
+        }
+        else
+        {
+            desired = MouseCursor::ResizeUpDown;
+            new_state = 2;
+        }
+    }
+    if (new_state != active_mouse_cursor_)
+    {
+        deps_.window->set_mouse_cursor(desired);
+        active_mouse_cursor_ = new_state;
+    }
+    return hit.has_value();
+}
+
 // Returns the host that should receive a mouse event at (px, py).
 // px, py are SDL logical coordinates. PaneDescriptor boundaries are stored in
 // physical pixels, so we scale before hit-testing.
@@ -277,12 +309,41 @@ void InputDispatcher::on_mouse_button_event(const MouseButtonEvent& event)
     }
 
     deps_.ui_panel->on_mouse_button(event);
+
+    const int phys_x_btn = deps_.pixel_scale.to_physical(event.pos.x);
+    const int phys_y_btn = deps_.pixel_scale.to_physical(event.pos.y);
+
+    // Divider drag: capture on left-button press over a divider; release on
+    // any button release. While dragging we suppress forwarding to hosts.
+    if (event.button == SDL_BUTTON_LEFT)
+    {
+        if (event.pressed && drag_divider_id_ == kInvalidDivider)
+        {
+            HostManager* hm = deps_.host_manager ? deps_.host_manager() : nullptr;
+            if (hm)
+            {
+                if (auto hit = hm->divider_at_point(phys_x_btn, phys_y_btn))
+                {
+                    drag_divider_id_ = hit->id;
+                    return;
+                }
+            }
+        }
+        else if (!event.pressed && drag_divider_id_ != kInvalidDivider)
+        {
+            drag_divider_id_ = kInvalidDivider;
+            // Recompute cursor based on current position.
+            update_cursor_for_divider(phys_x_btn, phys_y_btn);
+            return;
+        }
+    }
+
     IHost* target = host_for_mouse_pos(event.pos.x, event.pos.y);
     if (deps_.ui_panel->wants_mouse() && deps_.request_frame)
         deps_.request_frame();
     if (deps_.ui_panel->wants_mouse())
         return;
-    if (deps_.ui_panel->layout().contains_panel_point(deps_.pixel_scale.to_physical(event.pos.x), deps_.pixel_scale.to_physical(event.pos.y)))
+    if (deps_.ui_panel->layout().contains_panel_point(phys_x_btn, phys_y_btn))
     {
         return;
     }
@@ -291,8 +352,8 @@ void InputDispatcher::on_mouse_button_event(const MouseButtonEvent& event)
         // Hosts store viewports and cell sizes in physical pixels; translate
         // the SDL logical coordinates to physical before forwarding.
         MouseButtonEvent phys = event;
-        phys.pos.x = deps_.pixel_scale.to_physical(event.pos.x);
-        phys.pos.y = deps_.pixel_scale.to_physical(event.pos.y);
+        phys.pos.x = phys_x_btn;
+        phys.pos.y = phys_y_btn;
         target->on_mouse_button(phys);
     }
 }
@@ -305,6 +366,27 @@ void InputDispatcher::on_mouse_move_event(const MouseMoveEvent& event)
     // the underlying host while an overlay (e.g. command palette) is active.
     if (deps_.overlay_host && deps_.overlay_host())
         return;
+
+    const int phys_x_mv = deps_.pixel_scale.to_physical(event.pos.x);
+    const int phys_y_mv = deps_.pixel_scale.to_physical(event.pos.y);
+
+    // Active divider drag: route directly to host manager and skip the rest.
+    if (drag_divider_id_ != kInvalidDivider)
+    {
+        if (HostManager* hm = deps_.host_manager ? deps_.host_manager() : nullptr)
+        {
+            const int pw = deps_.window ? deps_.window->width_pixels() : 0;
+            const int ph = deps_.window ? deps_.window->height_pixels() : 0;
+            hm->update_divider_from_pixel(drag_divider_id_, phys_x_mv, phys_y_mv, pw, ph);
+            if (deps_.request_frame)
+                deps_.request_frame();
+        }
+        return;
+    }
+
+    // Hover cursor feedback: change to resize cursor when over a divider.
+    // Skip while the panel wants the mouse.
+    update_cursor_for_divider(phys_x_mv, phys_y_mv);
 
     deps_.ui_panel->on_mouse_move(event);
     IHost* target = host_for_mouse_pos(event.pos.x, event.pos.y);

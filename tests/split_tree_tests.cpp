@@ -293,6 +293,75 @@ TEST_CASE("SplitTree: set_divider_ratio clamps", "[split_tree]")
     CHECK(tree.descriptor_for(b).pixel_size.x > 0);
 }
 
+TEST_CASE("SplitTree: update_divider_from_pixel maps mouse to ratio", "[split_tree]")
+{
+    SplitTree tree;
+    auto a = tree.reset(1000, 800);
+    auto b = tree.split_leaf(a, SplitDirection::Vertical);
+
+    auto result = tree.hit_test(499, 400);
+    REQUIRE(std::holds_alternative<SplitTree::DividerHit>(result));
+    const DividerId id = std::get<SplitTree::DividerHit>(result).id;
+
+    // Drop the divider near x=300 — left pane should occupy roughly that width.
+    tree.update_divider_from_pixel(id, 300, 400);
+    auto ad = tree.descriptor_for(a);
+    auto bd = tree.descriptor_for(b);
+    CHECK(ad.pixel_size.x >= 295);
+    CHECK(ad.pixel_size.x <= 305);
+    CHECK(ad.pixel_size.x + SplitTree::kDividerWidth + bd.pixel_size.x == 1000);
+
+    // Drag far past the right edge — clamps to 0.9 (~896 px on the left).
+    tree.update_divider_from_pixel(id, 5000, 400);
+    ad = tree.descriptor_for(a);
+    CHECK(ad.pixel_size.x > 850);
+    CHECK(ad.pixel_size.x < 900);
+
+    // Drag far left — clamps to 0.1 (~99 px).
+    tree.update_divider_from_pixel(id, -100, 400);
+    ad = tree.descriptor_for(a);
+    CHECK(ad.pixel_size.x > 80);
+    CHECK(ad.pixel_size.x < 120);
+}
+
+TEST_CASE("SplitTree: nudge_divider adjusts ratio by delta", "[split_tree]")
+{
+    SplitTree tree;
+    auto a = tree.reset(1000, 800);
+    tree.split_leaf(a, SplitDirection::Vertical);
+
+    auto result = tree.hit_test(499, 400);
+    const DividerId id = std::get<SplitTree::DividerHit>(result).id;
+
+    const int initial = tree.descriptor_for(a).pixel_size.x;
+    tree.nudge_divider(id, 0.1f);
+    const int after_grow = tree.descriptor_for(a).pixel_size.x;
+    CHECK(after_grow > initial);
+
+    tree.nudge_divider(id, -0.2f);
+    const int after_shrink = tree.descriptor_for(a).pixel_size.x;
+    CHECK(after_shrink < after_grow);
+}
+
+TEST_CASE("SplitTree: find_ancestor_divider walks up the tree", "[split_tree]")
+{
+    SplitTree tree;
+    auto a = tree.reset(1000, 800);
+    auto b = tree.split_leaf(a, SplitDirection::Vertical); // vertical divider above
+    auto c = tree.split_leaf(b, SplitDirection::Horizontal); // horizontal under b
+
+    // From c: nearest horizontal ancestor is the b/c split.
+    DividerId h_div = tree.find_ancestor_divider(c, FocusDirection::Down);
+    DividerId v_div = tree.find_ancestor_divider(c, FocusDirection::Left);
+    CHECK(h_div != kInvalidDivider);
+    CHECK(v_div != kInvalidDivider);
+    CHECK(h_div != v_div);
+
+    // From a: only the vertical divider exists above.
+    CHECK(tree.find_ancestor_divider(a, FocusDirection::Left) != kInvalidDivider);
+    CHECK(tree.find_ancestor_divider(a, FocusDirection::Down) == kInvalidDivider);
+}
+
 TEST_CASE("SplitTree: stale divider id is ignored", "[split_tree]")
 {
     SplitTree tree;

@@ -39,14 +39,20 @@ public:
     bool set_clipboard_text(const std::string& text) override;
     void set_text_input_area(int x, int y, int w, int h) override;
     void show_open_file_dialog() override;
+    void set_mouse_cursor(MouseCursor cursor) override;
 
 private:
     bool handle_event(const SDL_Event& event);
+    SDL_Cursor* ensure_cursor(MouseCursor cursor);
     SDL_Window* window_ = nullptr;
     unsigned int wake_event_type_ = 0;
     unsigned int file_dialog_event_type_ = 0;
     bool clamp_to_display_ = true;
     bool hidden_ = false;
+    SDL_Cursor* cursor_default_ = nullptr;
+    SDL_Cursor* cursor_ew_ = nullptr;
+    SDL_Cursor* cursor_ns_ = nullptr;
+    MouseCursor active_cursor_ = MouseCursor::Default;
 };
 
 } // namespace draxul

@@ -50,6 +50,8 @@ public:
     {
         const std::vector<GuiKeybinding>* keybindings = nullptr;
         GuiActionHandler* gui_action_handler = nullptr;
+        // Window used for cursor changes and pixel size queries during divider drag.
+        IWindow* window = nullptr;
         // Returns the active overlay host (e.g. command palette) when it should
         // intercept all input, or null when no overlay is active.
         std::function<IHost*()> overlay_host;
@@ -133,8 +135,14 @@ private:
     void on_mouse_wheel_event(const MouseWheelEvent& event);
     // Returns the host that should receive mouse events at (px, py).
     IHost* host_for_mouse_pos(int px, int py);
+    // Update mouse cursor based on whether (phys_x, phys_y) is over a divider.
+    // Returns true if a divider is under the point. Skipped while dragging.
+    bool update_cursor_for_divider(int phys_x, int phys_y);
 
     Deps deps_;
+    // Divider drag state.
+    int drag_divider_id_ = -1; // kInvalidDivider
+    int active_mouse_cursor_ = 0; // 0=default, 1=ew, 2=ns — avoids redundant calls
     float pending_scroll_y_ = 0.0f;
     bool had_scroll_event_ = false;
     // Chord (tmux-style prefix) state: true when a prefix key has been consumed and

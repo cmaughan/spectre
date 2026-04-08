@@ -89,6 +89,19 @@ public:
     // Ratio is clamped to [0.1, 0.9].
     void set_divider_ratio(DividerId id, float ratio);
 
+    // Update a divider's ratio from a mouse pixel position. The pixel is mapped
+    // to a position within the divider's parent rect along the split axis.
+    void update_divider_from_pixel(DividerId id, int px, int py);
+
+    // Adjust a divider's ratio by `delta` (positive grows the first child).
+    // Clamped to [0.1, 0.9].
+    void nudge_divider(DividerId id, float delta);
+
+    // Find the nearest ancestor divider above `leaf` whose split direction
+    // matches `direction` (Left/Right -> Vertical, Up/Down -> Horizontal).
+    // Returns kInvalidDivider if none exists.
+    DividerId find_ancestor_divider(LeafId leaf, FocusDirection direction) const;
+
     // Focus
     LeafId focused() const
     {

@@ -28,7 +28,7 @@ struct GuiActionInfo
 };
 
 // Canonical list of GUI action base names. Order is fixed but not load-bearing.
-inline constexpr std::array<GuiActionInfo, 30> kGuiActions = { {
+inline constexpr std::array<GuiActionInfo, 34> kGuiActions = { {
     { "toggle_diagnostics" },
     { "copy" },
     { "paste" },
@@ -53,6 +53,10 @@ inline constexpr std::array<GuiActionInfo, 30> kGuiActions = { {
     { "focus_right" },
     { "focus_up" },
     { "focus_down" },
+    { "resize_pane_left" },
+    { "resize_pane_right" },
+    { "resize_pane_up" },
+    { "resize_pane_down" },
     { "new_tab" },
     { "close_tab" },
     { "next_tab" },

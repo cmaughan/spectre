@@ -83,6 +83,13 @@ public:
         // Default no-op; override in platform implementations.
     }
 
+    // Set the system mouse cursor shape. Backends map MouseCursor enum values
+    // to native cursors. Default no-op for backends without cursor support.
+    virtual void set_mouse_cursor(MouseCursor)
+    {
+        // Default no-op; override in platform implementations.
+    }
+
     // Tint the OS title bar to match the given background color.
     // Best-effort: silently ignored on platforms/versions that don't support it.
     virtual void set_title_bar_color(Color)

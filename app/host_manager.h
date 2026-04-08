@@ -126,6 +126,26 @@ public:
     // Returns the host under the point, or null.
     IHost* host_at_point(int px, int py);
 
+    // Hit-test for a divider at the given pixel. Returns the divider id and
+    // direction if a divider is under the point, otherwise nullopt. Does not
+    // change focus. Used by InputDispatcher to drive cursor feedback and drag.
+    struct DividerHitInfo
+    {
+        DividerId id = kInvalidDivider;
+        SplitDirection direction = SplitDirection::Vertical;
+    };
+    std::optional<DividerHitInfo> divider_at_point(int px, int py) const;
+
+    // Update a divider's ratio based on a mouse pixel position and re-layout
+    // viewports. Used during drag.
+    void update_divider_from_pixel(DividerId id, int px, int py, int pixel_w, int pixel_h);
+
+    // Nudge a divider by a fixed delta (positive grows the first child).
+    void nudge_divider(DividerId id, float delta, int pixel_w, int pixel_h);
+
+    // Find an ancestor divider above the focused leaf in the given direction.
+    DividerId find_focused_ancestor_divider(FocusDirection direction) const;
+
     // Visit all hosts (zero-cost: no std::function allocation at call site).
     template <typename F>
     void for_each_host(F&& fn) const

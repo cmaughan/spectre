@@ -52,6 +52,15 @@ enum class CursorShape
     Vertical
 };
 
+// Mouse cursor shape — distinct from the terminal text cursor (CursorShape).
+// Backends map these to platform system cursors.
+enum class MouseCursor
+{
+    Default,
+    ResizeLeftRight, // EW resize for vertical splits
+    ResizeUpDown // NS resize for horizontal splits
+};
+
 struct CursorStyle
 {
     CursorShape shape = CursorShape::Block;

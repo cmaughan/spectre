@@ -698,6 +698,24 @@ void App::wire_gui_actions()
     gui_deps.on_focus_right = [focus_pane]() { focus_pane(FocusDirection::Right); };
     gui_deps.on_focus_up = [focus_pane]() { focus_pane(FocusDirection::Up); };
     gui_deps.on_focus_down = [focus_pane]() { focus_pane(FocusDirection::Down); };
+    auto resize_pane = [this](FocusDirection dir) {
+        HostManager& hm = active_host_manager();
+        DividerId id = hm.find_focused_ancestor_divider(dir);
+        if (id == kInvalidDivider)
+            return;
+        // Positive delta grows the first child (the leaf on the left/top side
+        // of the divider). For Left/Up actions we shrink the first child;
+        // for Right/Down we grow it.
+        const float step = 0.05f;
+        const float delta
+            = (dir == FocusDirection::Right || dir == FocusDirection::Down) ? step : -step;
+        hm.nudge_divider(id, delta, window_->width_pixels(), window_->height_pixels());
+        request_frame();
+    };
+    gui_deps.on_resize_pane_left = [resize_pane]() { resize_pane(FocusDirection::Left); };
+    gui_deps.on_resize_pane_right = [resize_pane]() { resize_pane(FocusDirection::Right); };
+    gui_deps.on_resize_pane_up = [resize_pane]() { resize_pane(FocusDirection::Up); };
+    gui_deps.on_resize_pane_down = [resize_pane]() { resize_pane(FocusDirection::Down); };
     gui_deps.on_new_tab = [this](std::optional<HostKind> kind) {
         const int pw = window_->width_pixels();
         const int th = diagnostics_host_->layout().terminal_height;
@@ -784,6 +802,7 @@ void App::wire_window_callbacks()
     InputDispatcher::Deps disp_deps;
     disp_deps.keybindings = &config_.keybindings;
     disp_deps.gui_action_handler = &gui_action_handler_;
+    disp_deps.window = window_.get();
     disp_deps.overlay_host = [this]() -> IHost* {
         return (palette_host_ && palette_host_->is_active()) ? palette_host_.get() : nullptr;
     };

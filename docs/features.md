@@ -100,10 +100,11 @@ A standalone GUI library for rendering UI items that do not depend on ImGui. It 
 ## Split Panes
 
 - Binary split tree with vertical and horizontal splits
-- Draggable dividers with ratio-based sizing
+- Draggable dividers with ratio-based sizing — hovering a divider switches the mouse cursor to the platform EW/NS resize cursor; click-and-drag updates the ratio in real time
 - Per-pane host instance with independent lifecycle
 - Focus tracking and pane-aware input routing
 - Keyboard-driven pane focus navigation (`Ctrl+H/J/K/L` vim-style) via `focus_left`, `focus_right`, `focus_up`, `focus_down` actions
+- Keyboard-driven pane resizing via `resize_pane_left`, `resize_pane_right`, `resize_pane_up`, `resize_pane_down` actions (each nudges the nearest enclosing divider by 5%)
 - **Pane zoom**: `toggle_zoom` action (default `Ctrl+S, z`) expands the focused pane to fill the full window; toggling again restores the previous split layout exactly (like tmux `Ctrl+B z`)
 - **Close pane**: Closes the focused pane and its host; if last pane, exits the app
 - **Restart host**: Kills the current host in the focused pane and relaunches with the same arguments
@@ -161,6 +162,10 @@ Toggle with F12. Shows:
 | `focus_down` | `Ctrl + J` |
 | `focus_up` | `Ctrl + K` |
 | `focus_right` | `Ctrl + L` |
+| `resize_pane_left` | `Ctrl + S, Left` |
+| `resize_pane_right` | `Ctrl + S, Right` |
+| `resize_pane_up` | `Ctrl + S, Up` |
+| `resize_pane_down` | `Ctrl + S, Down` |
 | `open_file_dialog` | (unbound) |
 | `new_tab` | `Ctrl + S, C` |
 | `close_tab` | `Ctrl + S, &` |
