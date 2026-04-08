@@ -99,6 +99,14 @@
             }
         },
         {
+            "name": "mac-tsan",
+            "displayName": "TSan Debug (macOS)",
+            "inherits": "mac-debug",
+            "cacheVariables": {
+                "DRAXUL_ENABLE_TSAN": "ON"
+            }
+        },
+        {
             "name": "mac-coverage",
             "displayName": "Coverage Debug (macOS)",
             "inherits": "mac-debug",
@@ -150,6 +158,10 @@
         {
             "name": "mac-asan",
             "configurePreset": "mac-asan"
+        },
+        {
+            "name": "mac-tsan",
+            "configurePreset": "mac-tsan"
         },
         {
             "name": "mac-coverage",

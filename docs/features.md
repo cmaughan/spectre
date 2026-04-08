@@ -284,6 +284,7 @@ Customizable in `config.toml` under `[keybindings]`. Chord syntax: `"prefix, key
 | `mac-debug` | macOS | Debug |
 | `mac-release` | macOS | Release |
 | `mac-asan` | macOS | Debug + AddressSanitizer + UBSan |
+| `mac-tsan` | macOS | Debug + ThreadSanitizer (mutually exclusive with ASan) |
 | `mac-coverage` | macOS | Debug + LLVM coverage |
 | `clang-tools` | macOS | Ninja, compile_commands.json only |
 
@@ -300,6 +301,7 @@ Customizable in `config.toml` under `[keybindings]`. Chord syntax: `"prefix, key
 |--------|---------|-------------|
 | `DRAXUL_ENABLE_RENDER_TESTS` | ON | Render test/snapshot infrastructure |
 | `DRAXUL_ENABLE_SANITIZERS` | OFF | ASan + UBSan |
+| `DRAXUL_ENABLE_TSAN` | OFF | ThreadSanitizer (Clang/GCC only, mutually exclusive with `DRAXUL_ENABLE_SANITIZERS`) |
 | `DRAXUL_ENABLE_COVERAGE` | OFF | LLVM source-based coverage |
 | `DRAXUL_ENABLE_MEGACITY` | ON | MegaCity optional module (`modules/megacity/`) — when OFF, the terminal product builds with no megacity sources, headers, link dependency, or test coupling |
 | `BUILD_TESTING` | ON | Test targets |

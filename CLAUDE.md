@@ -22,13 +22,16 @@ Requires CMake 3.25+, Xcode Command Line Tools (for Metal compiler).
 cmake --preset mac-debug                             # Configure (Debug)
 cmake --preset mac-release                           # Configure (Release)
 cmake --preset mac-asan                              # Configure (Debug + AddressSanitizer/LSan)
+cmake --preset mac-tsan                              # Configure (Debug + ThreadSanitizer)
 cmake --build build --target draxul                 # Build
-cmake --build build --target draxul-tests           # Build unit tests (with ASan preset: sanitizers enabled)
+cmake --build build --target draxul-tests           # Build unit tests (with sanitizer presets: sanitizers enabled)
 ```
 
 Run: `./build/draxul.app/Contents/MacOS/draxul` or `open ./build/draxul.app` (requires `nvim` on PATH).
 
 To run the unit test suite under ASan: `cmake --preset mac-asan && cmake --build build --target draxul-tests && ctest --test-dir build -R draxul-tests`.
+
+To run the unit test suite under TSan (ThreadSanitizer — mutually exclusive with ASan, so it uses its own preset): `cmake --preset mac-tsan && cmake --build build --target draxul-tests && ctest --test-dir build -R draxul-tests`.
 
 ### Debugging / Logging
 

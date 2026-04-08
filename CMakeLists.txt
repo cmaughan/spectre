@@ -23,6 +23,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(DRAXUL_ENABLE_SANITIZERS "Enable AddressSanitizer (and LeakSanitizer on non-Windows)" OFF)
+option(DRAXUL_ENABLE_TSAN "Enable ThreadSanitizer (Clang/GCC only, incompatible with ASan)" OFF)
 option(DRAXUL_ENABLE_COVERAGE "Enable LLVM source-based code coverage (Clang/Apple Clang only)" OFF)
 # DRAXUL_ENABLE_MEGACITY controls whether the spinning-cube 3D demo host is compiled and linked.
 # Defaults to ON to preserve the existing default build behaviour. Set to OFF for lightweight
@@ -34,6 +35,23 @@ option(DRAXUL_ENABLE_RENDER_TESTS "Enable render-test capture/compare infrastruc
 
 # Sanitizer helper — applied to draxul targets after FetchContent deps are fetched
 function(draxul_apply_sanitizers target)
+    if(DRAXUL_ENABLE_TSAN)
+        if(DRAXUL_ENABLE_SANITIZERS)
+            message(FATAL_ERROR "DRAXUL_ENABLE_TSAN and DRAXUL_ENABLE_SANITIZERS are mutually exclusive (TSan is incompatible with ASan).")
+        endif()
+        if(MSVC)
+            message(FATAL_ERROR "ThreadSanitizer is not supported on MSVC.")
+        endif()
+        target_compile_options(${target} PRIVATE
+            -fsanitize=thread
+            -fno-omit-frame-pointer
+            -g
+        )
+        target_link_options(${target} PRIVATE
+            -fsanitize=thread
+        )
+        return()
+    endif()
     if(NOT DRAXUL_ENABLE_SANITIZERS)
         return()
     endif()
