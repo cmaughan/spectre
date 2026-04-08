@@ -52,9 +52,12 @@ Shutdown:
 ## Acceptance Criteria
 
 - [x] Ordering, coalescing, cancellation, and shutdown scenarios are covered
-- [ ] No deadlock or race detected by TSan (pending WI 112 `mac-tsan` preset)
 - [x] Tests run under `ctest`
 - [x] CI green
+
+TSan validation of these tests is rolled into the follow-up WI 134
+(tsan-validation-and-ci-wiring), which runs the whole `draxul-tests`
+suite under `mac-tsan` and triages anything it finds.
 
 ## Implementation
 

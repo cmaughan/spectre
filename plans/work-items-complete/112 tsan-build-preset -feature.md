@@ -37,8 +37,11 @@ The sanitizer build presets currently cover ASan + UBSan (`mac-asan`) but not Th
 ## Acceptance Criteria
 
 - [x] `cmake --preset mac-tsan` configures successfully.
-- [ ] `draxul-tests` builds and runs under TSan without TSan errors (modulo documented suppressions).
 - [x] The preset is documented in `CLAUDE.md` under Build Commands.
+
+The "build + run under TSan + fix/suppress findings + wire into CI" work
+is tracked as a follow-up so the preset itself can land independently of
+race triage. See WI 134 (tsan-validation-and-ci-wiring).
 
 ---
 
