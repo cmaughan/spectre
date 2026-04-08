@@ -163,9 +163,10 @@ void LocalTerminalHost::on_key(const KeyEvent& event)
     PERF_MEASURE();
     if (copy_mode_.active)
     {
-        if (handle_copy_mode_key(event))
-            return;
-        return; // swallow keys that don't map; never forward to the process
+        // Always swallow keys in copy mode; never forward to the process,
+        // whether or not handle_copy_mode_key consumed the binding.
+        (void)handle_copy_mode_key(event);
+        return;
     }
     if (event.pressed && scrollback_.is_scrolled_back())
         scrollback_.scroll_to_live();
