@@ -64,6 +64,22 @@ bool send_response(uint32_t msgid, const MpackValue& error, const MpackValue& re
     return write_all(encoded);
 }
 
+bool send_response_with_raw_msgid(const MpackValue& raw_msgid, const MpackValue& error, const MpackValue& result)
+{
+    std::vector<char> encoded;
+    if (!encode_mpack_value(NvimRpc::make_array({
+                                NvimRpc::make_uint(1),
+                                raw_msgid,
+                                error,
+                                result,
+                            }),
+            encoded))
+    {
+        return false;
+    }
+    return write_all(encoded);
+}
+
 } // namespace
 
 int main()
@@ -120,6 +136,19 @@ int main()
     if (current_mode == "error")
     {
         return send_response(msgid, NvimRpc::make_str("boom"), NvimRpc::make_nil()) ? 0 : 5;
+    }
+
+    if (current_mode == "out_of_range_msgid_then_success")
+    {
+        // First emit a response whose msgid is a negative int64; the client
+        // must discard this (with a warning) rather than silently truncating
+        // it to a uint32_t that could collide with an in-flight request.
+        if (!send_response_with_raw_msgid(NvimRpc::make_int(-1), NvimRpc::make_nil(), NvimRpc::make_str("poison")))
+            return 7;
+        // Then emit a well-formed response for the real msgid so the request
+        // completes successfully and the test does not need to wait for the
+        // 5-second request timeout.
+        return send_response(msgid, NvimRpc::make_nil(), NvimRpc::make_str("ok")) ? 0 : 8;
     }
 
     return send_response(msgid, NvimRpc::make_nil(), NvimRpc::make_str("ok")) ? 0 : 6;

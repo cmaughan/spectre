@@ -184,6 +184,36 @@ TEST_CASE("nvim rpc request from a worker thread completes successfully", "[rpc]
     process.shutdown();
 }
 
+TEST_CASE("nvim rpc discards responses with out-of-range msgid and still completes the real request", "[rpc]")
+{
+    ScopedLogCapture capture;
+
+    ScopedEnvVar env("DRAXUL_RPC_FAKE_MODE", "out_of_range_msgid_then_success");
+    NvimProcess process;
+    INFO("fake RPC server spawns");
+    REQUIRE(process.spawn(helper_path()));
+
+    NvimRpc rpc;
+    INFO("rpc initializes");
+    REQUIRE(rpc.initialize(process));
+
+    auto start = std::chrono::steady_clock::now();
+    RpcResult result = rpc.request("fake_method", { NvimRpc::make_int(7) });
+    auto elapsed = std::chrono::steady_clock::now() - start;
+
+    rpc.shutdown();
+    process.shutdown();
+
+    INFO("real response still arrives after the poisoned out-of-range msgid is discarded");
+    REQUIRE(result.transport_ok);
+    REQUIRE(result.ok());
+    REQUIRE(result.result.as_str() == std::string("ok"));
+    INFO("client did not fall back to the 5-second timeout path");
+    REQUIRE(elapsed < std::chrono::seconds(2));
+    INFO("out-of-range msgid produced an rpc warning log");
+    REQUIRE(has_log_message(capture.records, LogLevel::Warn, LogCategory::Rpc, "out-of-range msgid"));
+}
+
 TEST_CASE("nvim rpc logs a warning when the transport aborts before a response arrives", "[rpc]")
 {
     ScopedLogCapture capture;
