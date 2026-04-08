@@ -51,10 +51,36 @@ Shutdown:
 
 ## Acceptance Criteria
 
-- [ ] Ordering, coalescing, cancellation, and shutdown scenarios are covered
-- [ ] No deadlock or race detected by TSan
-- [ ] Tests run under `ctest`
-- [ ] CI green
+- [x] Ordering, coalescing, cancellation, and shutdown scenarios are covered
+- [ ] No deadlock or race detected by TSan (pending WI 112 `mac-tsan` preset)
+- [x] Tests run under `ctest`
+- [x] CI green
+
+## Implementation
+
+Added `tests/ui_request_worker_overlap_tests.cpp` with six `[ui][overlap]`
+Catch2 test cases exercising the worker against a new `GatedFakeRpc` that
+provides per-call gating so the test can deterministically hold a request
+in-flight while submitting further requests:
+
+- "does not start a second request before the in-flight one completes" —
+  verifies that submitting B while A is in-flight keeps A as the only
+  in-flight call; B only starts after A is released.
+- "coalesces a burst submitted during an in-flight request" — 10 bursts
+  submitted during an in-flight A collapse to exactly one follow-up call
+  carrying the latest cols/rows (latest-wins slot semantics).
+- "drops pending requests when stopped during an in-flight call" — stop()
+  called while A is in-flight waits for A to complete but drops a B that
+  was queued behind it.
+- "shutdown drops pending request that never started" — stress-loop of
+  submit+stop that verifies at most one RPC call ever runs (no crash, no
+  replay after shutdown).
+- "ignores post-stop resize requests" — confirms post-stop submissions
+  are silently dropped.
+- "start after stop accepts new requests cleanly" — restart does not
+  replay prior pending state.
+
+TSan validation is deferred until WI 112 lands the `mac-tsan` preset.
 
 ---
 
