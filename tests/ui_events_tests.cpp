@@ -540,6 +540,96 @@ TEST_CASE("ui event handler does not crash when grid is null", "[ui]")
     REQUIRE(flushes == 1);
 }
 
+TEST_CASE("ui event handler tolerates type-mismatched redraw payloads", "[ui]")
+{
+    // Regression for WI 06: redraw handlers used to call `as_int()` / `as_str()` /
+    // `as_array()` after only validating outer array size, which threw
+    // `std::bad_variant_access` on the main thread for malformed payloads. Every
+    // handler named in the bug report must now bail gracefully with no exception
+    // and no mutation of handler state.
+    Grid grid;
+    grid.resize(4, 2);
+    grid.set_cell(0, 0, "A", 1, false);
+    grid.set_cell(1, 0, "B", 1, false);
+    grid.clear_dirty();
+
+    HighlightTable highlights;
+    UiEventHandler handler;
+    handler.set_grid(&grid);
+    handler.set_highlights(&highlights);
+
+    int resize_callbacks = 0;
+    int title_callbacks = 0;
+    int option_callbacks = 0;
+    int mode_change_callbacks = 0;
+    int cursor_goto_callbacks = 0;
+    handler.on_grid_resize = [&](int, int) { ++resize_callbacks; };
+    handler.on_title = [&](const std::string&) { ++title_callbacks; };
+    handler.on_option_set = [&](const std::string&, const MpackValue&) { ++option_callbacks; };
+    handler.on_mode_change = [&](int) { ++mode_change_callbacks; };
+    handler.on_cursor_goto = [&](int, int) { ++cursor_goto_callbacks; };
+
+    REQUIRE_NOTHROW(handler.process_redraw({
+        // grid_resize: cols/rows delivered as strings instead of ints.
+        redraw_event("grid_resize", { arr({ i(1), s("80"), s("24") }) }),
+        // grid_cursor_goto: row/col delivered as strings.
+        redraw_event("grid_cursor_goto", { arr({ i(1), s("5"), s("10") }) }),
+        // grid_scroll: bot delivered as string.
+        redraw_event("grid_scroll", { arr({ i(1), i(0), s("bad"), i(0), i(4), i(1), i(0) }) }),
+        // hl_attr_define: attr id is a string, map entries have wrong value types.
+        redraw_event("hl_attr_define",
+            { arr({ s("not-an-int"), map({ { s("foreground"), s("red") }, { s("bold"), s("true") } }) }) }),
+        // hl_attr_define: outer valid but map is nil instead of a map.
+        redraw_event("hl_attr_define", { arr({ i(3), nil() }) }),
+        // default_colors_set: non-integer colors.
+        redraw_event("default_colors_set", { arr({ s("fg"), s("bg"), s("sp") }) }),
+        // mode_info_set: second slot is a string rather than an array of modes.
+        redraw_event("mode_info_set", { arr({ b(true), s("not-an-array") }) }),
+        // mode_info_set: modes array contains a string rather than a map.
+        redraw_event("mode_info_set", { arr({ b(true), arr({ s("bogus") }) }) }),
+        // mode_info_set: map has non-string key and wrong-typed value for cell_percentage.
+        redraw_event("mode_info_set",
+            { arr({ b(true),
+                arr({ map({ { i(42), s("ignored") }, { s("cell_percentage"), s("bad") },
+                    { s("cursor_shape"), i(99) }, { s("name"), i(1) } }) }) }) }),
+        // mode_change: mode index is a string.
+        redraw_event("mode_change", { arr({ s("insert"), s("not-an-int") }) }),
+        // option_set: option name is an int.
+        redraw_event("option_set", { arr({ i(123), s("value") }) }),
+        // set_title: title is not a string.
+        redraw_event("set_title", { arr({ i(9999) }) }),
+        // grid_line: row/col are strings — must not corrupt the grid.
+        redraw_event("grid_line", { arr({ i(1), s("0"), s("0"), arr({ cell("Z", 1) }) }) }),
+        // Outer event with wrong name-slot type.
+        arr({ i(42), arr({}) }),
+        // Outer event whose first batch is a scalar instead of an array.
+        redraw_event("grid_resize", { i(5) }),
+        // Trailing valid flush — must still fire.
+        redraw_event("flush", {}),
+    }));
+
+    INFO("malformed grid_resize payloads are dropped");
+    REQUIRE(resize_callbacks == 0);
+    INFO("grid dimensions are untouched");
+    REQUIRE(grid.cols() == 4);
+    REQUIRE(grid.rows() == 2);
+    INFO("malformed set_title payloads do not fire the callback");
+    REQUIRE(title_callbacks == 0);
+    INFO("malformed option_set payloads do not fire the callback");
+    REQUIRE(option_callbacks == 0);
+    INFO("malformed mode_change payloads do not fire the callback");
+    REQUIRE(mode_change_callbacks == 0);
+    INFO("malformed grid_cursor_goto payloads do not fire the callback");
+    REQUIRE(cursor_goto_callbacks == 0);
+    INFO("mode table stays consistent even with malformed mode_info_set batches");
+    // The last mode_info_set clears and repopulates modes_ with one entry whose
+    // well-typed fields were ignored due to mismatches; the entry itself is added.
+    REQUIRE(handler.modes().size() == 1);
+    INFO("previously-written cells are not overwritten by malformed grid_line");
+    REQUIRE(grid.get_cell(0, 0).text == std::string("A"));
+    REQUIRE(grid.get_cell(1, 0).text == std::string("B"));
+}
+
 TEST_CASE("ui event handler does not crash when both grid and highlights are null", "[ui]")
 {
     UiEventHandler handler;
