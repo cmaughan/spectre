@@ -125,6 +125,27 @@ TEST_CASE("nvim rpc treats malformed responses as transport failure", "[rpc]")
     REQUIRE(elapsed < std::chrono::seconds(2));
 }
 
+TEST_CASE("nvim rpc reader survives a type-mismatched RPC packet and keeps delivering valid traffic", "[rpc]")
+{
+    ScopedLogCapture capture;
+
+    // WI 05: the fake server sends a structurally valid msgpack array whose
+    // fields have the wrong types (string where an int is expected), then a
+    // real success response. Before the fix, the first packet would throw
+    // std::bad_variant_access out of the reader thread and terminate the
+    // process; the second packet would never be seen. After the fix, the
+    // reader logs + counts the malformed packet and continues to dispatch.
+    RpcResult result = run_request_with_mode("malformed_dispatch_then_success");
+
+    INFO("reader survives and still reports transport success");
+    REQUIRE(result.transport_ok);
+    INFO("reader still delivers the subsequent valid response");
+    REQUIRE(result.ok());
+    REQUIRE(result.result.as_str() == std::string("ok"));
+    INFO("reader logs an error with a hex dump for the malformed packet");
+    REQUIRE(has_log_message(capture.records, LogLevel::Error, LogCategory::Rpc, "Malformed RPC packet"));
+}
+
 TEST_CASE("nvim rpc close() unblocks an in-flight request without waiting for timeout", "[rpc]")
 {
     ScopedEnvVar env("DRAXUL_RPC_FAKE_MODE", "hang");

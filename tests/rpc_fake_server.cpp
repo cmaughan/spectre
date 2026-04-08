@@ -115,6 +115,29 @@ int main()
         return 0;
     }
 
+    if (current_mode == "malformed_dispatch_then_success")
+    {
+        // WI 05: structurally valid msgpack that crashes the typed dispatcher.
+        // [1, "oops", nil, 0] — type=1 means "response" so msg_array[1] should
+        // be an integer msgid; we send a string instead. The reader must
+        // survive this and still deliver the real response that follows.
+        std::vector<char> malformed_encoded;
+        if (!encode_mpack_value(
+                NvimRpc::make_array({
+                    NvimRpc::make_uint(1),
+                    NvimRpc::make_str("oops"),
+                    NvimRpc::make_nil(),
+                    NvimRpc::make_int(0),
+                }),
+                malformed_encoded))
+        {
+            return 7;
+        }
+        if (!write_all(malformed_encoded))
+            return 8;
+        return send_response(msgid, NvimRpc::make_nil(), NvimRpc::make_str("ok")) ? 0 : 9;
+    }
+
     if (current_mode == "notify_then_success")
     {
         if (!send_notification("redraw", { NvimRpc::make_array({}) }))

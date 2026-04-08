@@ -36,6 +36,12 @@ struct NvimRpc::Impl
     std::atomic<uint32_t> next_msgid_{ 1 };
     std::atomic<bool> read_failed_{ false };
 
+    // WI 05: diagnostic counter for structurally-valid msgpack packets whose
+    // typed fields do not match what the RPC dispatcher expects (e.g. method
+    // name at a position that holds an int). Incremented from the reader
+    // thread's catch handler; read-only elsewhere.
+    std::atomic<uint64_t> malformed_packet_count_{ 0 };
+
     std::vector<uint8_t> read_buf_;
 };
 
@@ -46,6 +52,37 @@ namespace
 static constexpr auto kRpcRequestTimeout = std::chrono::seconds(5);
 static constexpr size_t kMaxNotificationQueueDepth = 4096;
 static constexpr size_t kNotificationQueueWarnDepth = 512;
+
+// WI 05: how many malformed RPC packets (type-mismatches during dispatch)
+// we tolerate before declaring the transport unusable and tearing down the
+// reader thread. Each one also logs an error with a hex dump of the packet.
+static constexpr uint64_t kMaxMalformedPacketsPerSession = 10;
+
+// Format the first bytes of a decoded packet as a hex dump for logging.
+// We do not have the raw on-wire bytes at this point (the mpack decode has
+// already consumed them) so we re-encode the MpackValue. This is only done
+// on the error path, so the re-encode cost is negligible.
+std::string hex_dump_first_bytes(const MpackValue& msg, size_t max_bytes = 64)
+{
+    std::vector<char> encoded;
+    if (!encode_mpack_value(msg, encoded))
+        return "<re-encode failed>";
+    const size_t n = std::min(encoded.size(), max_bytes);
+    std::string result;
+    result.reserve(n * 3 + 8);
+    static const char* kHex = "0123456789abcdef";
+    for (size_t i = 0; i < n; ++i)
+    {
+        auto byte = static_cast<uint8_t>(encoded[i]);
+        if (i > 0)
+            result.push_back(' ');
+        result.push_back(kHex[(byte >> 4) & 0x0F]);
+        result.push_back(kHex[byte & 0x0F]);
+    }
+    if (encoded.size() > max_bytes)
+        result.append(" ...");
+    return result;
+}
 } // namespace
 
 void NvimRpc::set_main_thread_id(std::thread::id id)
@@ -417,20 +454,40 @@ void NvimRpc::reader_thread_func()
                 read_pos = 0;
             }
 
+            // WI 05: dispatch_rpc_message() calls typed accessors (as_int,
+            // as_str) on fixed positions. A structurally-valid msgpack packet
+            // with the wrong element types throws std::bad_variant_access. We
+            // must NOT let that propagate through the reader thread into
+            // std::terminate: log, count, and continue so the next packet can
+            // be decoded. Only if we see a flood of malformed packets in one
+            // session do we give up and tear down the transport.
             try
             {
                 dispatch_rpc_message(msg);
             }
             catch (const std::exception& e)
             {
+                const uint64_t count = ++impl_->malformed_packet_count_;
                 DRAXUL_LOG_ERROR(LogCategory::Rpc,
-                    "Malformed RPC packet; aborting connection: %s", e.what());
-                impl_->read_failed_ = true;
-                impl_->running_ = false;
-                impl_->response_cv_.notify_all();
-                if (on_notification_available)
-                    on_notification_available();
-                return;
+                    "Malformed RPC packet (#%llu): %s; hex=%s",
+                    static_cast<unsigned long long>(count),
+                    e.what(),
+                    hex_dump_first_bytes(msg).c_str());
+                if (count >= kMaxMalformedPacketsPerSession)
+                {
+                    DRAXUL_LOG_ERROR(LogCategory::Rpc,
+                        "Aborting reader after %llu malformed RPC packets; "
+                        "transport is unusable",
+                        static_cast<unsigned long long>(count));
+                    impl_->read_failed_ = true;
+                    impl_->running_ = false;
+                    impl_->response_cv_.notify_all();
+                    if (on_notification_available)
+                        on_notification_available();
+                    return;
+                }
+                // Continue the inner loop so we keep draining accum and
+                // processing subsequent (valid) packets on the same transport.
             }
         }
     }

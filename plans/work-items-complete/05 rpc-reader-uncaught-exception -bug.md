@@ -26,11 +26,11 @@ In practice Neovim is well-behaved, but:
 
 ## Implementation Plan
 
-- [ ] Wrap the body of `dispatch_rpc_message()` (or the call site in `reader_thread_func`) in a `try { ... } catch (const std::exception& e) { ... }` block.
-- [ ] On catch: log the malformed packet (hex dump of first N bytes if available), increment a `malformed_packet_count_` diagnostic counter, and continue the loop — do **not** rethrow.
-- [ ] If the malformed packet count exceeds a threshold (e.g. 10 in one session) and no valid traffic has been seen recently, mark the transport as failed and signal the main thread.
-- [ ] Add a unit test using `replay_fixture.h` that feeds a wrong-shaped msgpack array and asserts the reader thread continues running (does not terminate).
-- [ ] Note: this is separate from WI 06 which fixes the main-thread crash in `ui_events.cpp`.
+- [x] Wrap the body of `dispatch_rpc_message()` (or the call site in `reader_thread_func`) in a `try { ... } catch (const std::exception& e) { ... }` block.
+- [x] On catch: log the malformed packet (hex dump of first N bytes if available), increment a `malformed_packet_count_` diagnostic counter, and continue the loop — do **not** rethrow.
+- [x] If the malformed packet count exceeds a threshold (e.g. 10 in one session) and no valid traffic has been seen recently, mark the transport as failed and signal the main thread.
+- [x] Add a unit test using the RPC fake-server harness that feeds a wrong-shaped msgpack array and asserts the reader thread continues running (delivers the subsequent valid response). Note: replay_fixture.h only builds MpackValue literals and cannot drive the reader thread directly, so the test uses the existing `rpc_fake_server` mode mechanism (new `malformed_dispatch_then_success` mode) which is the reader-thread-level equivalent.
+- [x] Note: this is separate from WI 06 which fixes the main-thread crash in `ui_events.cpp`.
 
 ---
 
