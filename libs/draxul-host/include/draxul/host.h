@@ -45,6 +45,15 @@ struct HostLaunchOptions
     // Minimum line count in a paste payload to trigger user confirmation
     // (0 = no confirmation).
     int paste_confirm_lines = 0;
+
+    // Generic optional host capabilities. Hosts that don't care ignore them.
+    // request_continuous_refresh: host wants the renderer presenting every
+    //   frame (set when --continuous-refresh is on); animation/3D hosts use
+    //   this to know they should mark frames dirty aggressively.
+    // show_host_ui_panels: when false, hosts with optional ImGui/debug
+    //   overlays should hide them at startup (driven by --no-ui).
+    bool request_continuous_refresh = false;
+    bool show_host_ui_panels = true;
 };
 
 struct HostReloadConfig

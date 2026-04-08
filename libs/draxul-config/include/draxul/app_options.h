@@ -32,9 +32,14 @@ struct AppOptions
     bool show_diagnostics_in_render_test = false;
     bool clamp_window_to_display = true;
     bool show_render_test_window = false;
-    bool megacity_continuous_refresh = false;
+    // Request that the renderer skip vblank waiting so a host can drive
+    // continuous refresh (3D scenes, animation-heavy hosts). The host kind
+    // doesn't matter — any host that wants to render every frame can opt in.
+    bool request_continuous_refresh = false;
     bool no_vblank = false;
-    bool no_ui = false;
+    // When true, hosts that have an optional ImGui/debug overlay should hide it
+    // on startup. Hosts without such overlays ignore the flag.
+    bool hide_host_ui_panels = false;
     std::optional<float> override_display_ppi;
     int render_target_pixel_width = 0;
     int render_target_pixel_height = 0;

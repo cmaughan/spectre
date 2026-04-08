@@ -665,7 +665,7 @@ TEST_CASE("host manager: MegaCity continuous refresh option enables idle deadlin
     options.load_user_config = false;
     options.save_user_config = false;
     options.host_kind = HostKind::MegaCity;
-    options.megacity_continuous_refresh = true;
+    options.request_continuous_refresh = true;
 
     HostManager::Deps deps;
     deps.options = &options;

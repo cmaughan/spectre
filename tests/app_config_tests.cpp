@@ -4,7 +4,9 @@
 #include <SDL3/SDL.h>
 #include <draxul/app_config.h>
 #include <draxul/config_document.h>
+#ifdef DRAXUL_ENABLE_MEGACITY
 #include <draxul/megacity_code_config.h>
+#endif
 #include <draxul/text_service.h>
 
 #include <catch2/catch_all.hpp>
@@ -311,7 +313,7 @@ TEST_CASE("app config serialize/parse round-trip preserves custom keybindings", 
     AppConfig original;
     original.keybindings = {
         { "toggle_diagnostics", 0, kModNone, static_cast<int32_t>(SDLK_D), kModCtrl },
-        { "toggle_megacity_ui", 0, kModNone, static_cast<int32_t>(SDLK_F2), kModNone },
+        { "toggle_host_ui", 0, kModNone, static_cast<int32_t>(SDLK_F2), kModNone },
         { "copy", 0, kModNone, static_cast<int32_t>(SDLK_C), kModCtrl | kModAlt },
         { "paste", 0, kModNone, static_cast<int32_t>(SDLK_V), kModCtrl | kModAlt },
         { "font_increase", 0, kModNone, static_cast<int32_t>(SDLK_EQUALS), kModCtrl },
@@ -332,9 +334,9 @@ TEST_CASE("app config serialize/parse round-trip preserves custom keybindings", 
     REQUIRE(format_gui_keybinding_combo(find_keybinding(round_tripped, "copy")->key,
                 find_keybinding(round_tripped, "copy")->modifiers)
         == std::string("Ctrl+Alt+C"));
-    INFO("custom MegaCity toggle binding survives round-trip");
-    REQUIRE(format_gui_keybinding_combo(find_keybinding(round_tripped, "toggle_megacity_ui")->key,
-                find_keybinding(round_tripped, "toggle_megacity_ui")->modifiers)
+    INFO("custom host UI toggle binding survives round-trip");
+    REQUIRE(format_gui_keybinding_combo(find_keybinding(round_tripped, "toggle_host_ui")->key,
+                find_keybinding(round_tripped, "toggle_host_ui")->modifiers)
         == std::string("F2"));
     INFO("custom font reset binding survives round-trip");
     REQUIRE(format_gui_keybinding_combo(find_keybinding(round_tripped, "font_reset")->key,
@@ -680,6 +682,7 @@ TEST_CASE("config document merge preserves host-owned tables", "[config]")
     REQUIRE(saved.find("[mega_city_code.defaults]") != std::string::npos);
 }
 
+#ifdef DRAXUL_ENABLE_MEGACITY
 TEST_CASE("megacity config round-trips through config document", "[config][megacity]")
 {
     ConfigDocument document;
@@ -770,6 +773,7 @@ TEST_CASE("megacity config round-trips through config document", "[config][megac
     REQUIRE(loaded_defaults == defaults);
     REQUIRE(loaded_current == current);
 }
+#endif // DRAXUL_ENABLE_MEGACITY
 
 TEST_CASE("config duplicate keybinding: same key+modifier for two actions produces warning", "[config]")
 {

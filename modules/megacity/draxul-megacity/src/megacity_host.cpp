@@ -18,6 +18,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <draxul/config_document.h>
+#include <draxul/host_registry.h>
 #include <draxul/imgui_host.h>
 #include <draxul/log.h>
 #include <draxul/megacity_host.h>
@@ -681,7 +682,8 @@ bool MegaCityHost::initialize(const HostContext& context, IHostCallbacks& callba
         ? load_megacity_code_config(*config_document_, renderer_defaults_)
         : renderer_defaults_;
     pending_renderer_config_ = renderer_config_;
-    show_ui_panels_ = renderer_config_.show_ui_panels;
+    show_ui_panels_ = renderer_config_.show_ui_panels && context.launch_options.show_host_ui_panels;
+    continuous_refresh_enabled_ = context.launch_options.request_continuous_refresh;
     restore_camera_after_initial_build_ = renderer_config_.camera_state_valid;
 
     const auto resolved_scan_root = resolve_scan_root(context.launch_options, &init_error_);
@@ -2730,6 +2732,11 @@ void MegaCityHost::clear_selection()
 std::unique_ptr<IHost> create_megacity_host()
 {
     return std::make_unique<MegaCityHost>();
+}
+
+void register_megacity_host_provider(HostProviderRegistry& registry)
+{
+    registry.register_provider(HostKind::MegaCity, &create_megacity_host);
 }
 
 } // namespace draxul

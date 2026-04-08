@@ -42,15 +42,6 @@ public:
     MegaCityHost();
     ~MegaCityHost() override;
 
-    void set_continuous_refresh_enabled(bool enabled)
-    {
-        continuous_refresh_enabled_ = enabled;
-    }
-    void set_ui_panels_visible(bool visible)
-    {
-        show_ui_panels_ = visible;
-    }
-
     bool initialize(const HostContext& context, IHostCallbacks& callbacks) override;
     void shutdown() override;
     bool is_running() const override;
@@ -209,7 +200,13 @@ private:
     std::atomic<bool> route_build_in_progress_{ false };
 };
 
-// Factory function — called from host_factory.cpp
+// Factory function — used by tests and by register_megacity_host_provider().
 std::unique_ptr<IHost> create_megacity_host();
+
+// Registers the MegaCity host kind with the supplied registry. The executable
+// calls this from main.cpp under #ifdef DRAXUL_ENABLE_MEGACITY so that nothing
+// in the core libraries depends on this header.
+class HostProviderRegistry;
+void register_megacity_host_provider(HostProviderRegistry& registry);
 
 } // namespace draxul

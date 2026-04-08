@@ -18,7 +18,7 @@ target_include_directories(draxul-tests PRIVATE
 )
 if(DRAXUL_ENABLE_MEGACITY)
     target_include_directories(draxul-tests PRIVATE
-        ${CMAKE_SOURCE_DIR}/libs/draxul-megacity/src
+        ${CMAKE_SOURCE_DIR}/modules/megacity/draxul-megacity/src
     )
 endif()
 target_link_libraries(draxul-tests PRIVATE
@@ -26,7 +26,7 @@ target_link_libraries(draxul-tests PRIVATE
     Catch2::Catch2
 )
 if(DRAXUL_ENABLE_MEGACITY)
-    target_link_libraries(draxul-tests PRIVATE draxul-geometry)
+    target_link_libraries(draxul-tests PRIVATE draxul-geometry draxul-megacity)
 endif()
 target_compile_definitions(draxul-tests PRIVATE
     DRAXUL_RPC_FAKE_PATH="$<TARGET_FILE:draxul-rpc-fake>"

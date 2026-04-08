@@ -1,5 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
+#ifdef DRAXUL_ENABLE_MEGACITY
+
 #include <draxul/treesitter.h>
 
 #include <algorithm>
@@ -272,3 +274,5 @@ TEST_CASE("tree-sitter captures inline methods defined inside class body", "[tre
 }
 
 } // namespace draxul
+
+#endif // DRAXUL_ENABLE_MEGACITY

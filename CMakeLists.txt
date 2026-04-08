@@ -109,10 +109,7 @@ add_subdirectory(libs/draxul-app-support)
 add_subdirectory(libs/draxul-host)
 add_subdirectory(libs/draxul-nanovg)
 if(DRAXUL_ENABLE_MEGACITY)
-    add_subdirectory(libs/draxul-geometry)
-    add_subdirectory(libs/draxul-treesitter)
-    add_subdirectory(libs/draxul-citydb)
-    add_subdirectory(libs/draxul-megacity)
+    add_subdirectory(modules/megacity)
 endif()
 
 # Apply sanitizers/coverage to all draxul library targets (not FetchContent deps)
@@ -200,14 +197,14 @@ target_link_libraries(draxul-app PUBLIC
     draxul-ui
     draxul-font
     draxul-grid
+    draxul-gui
     draxul-nvim
     draxul-host
     draxul-nanovg
 )
-if(DRAXUL_ENABLE_MEGACITY)
-    target_link_libraries(draxul-app PUBLIC draxul-megacity)
-    target_compile_definitions(draxul-app PRIVATE DRAXUL_ENABLE_MEGACITY)
-endif()
+# NOTE: draxul-megacity is intentionally NOT linked here. The terminal product
+# library has zero megacity dependency. Megacity is linked into the executable
+# target below, where main.cpp registers it via the host provider registry.
 if(DRAXUL_ENABLE_RENDER_TESTS)
     target_compile_definitions(draxul-app PUBLIC DRAXUL_ENABLE_RENDER_TESTS)
 endif()
@@ -232,6 +229,10 @@ draxul_apply_coverage(draxul)
 draxul_apply_msvc_parallel_pdb_fix(draxul)
 
 target_link_libraries(draxul PRIVATE draxul-app)
+if(DRAXUL_ENABLE_MEGACITY)
+    target_link_libraries(draxul PRIVATE draxul-megacity)
+    target_compile_definitions(draxul PRIVATE DRAXUL_ENABLE_MEGACITY)
+endif()
 if(DRAXUL_ENABLE_RENDER_TESTS)
     target_compile_definitions(draxul PRIVATE DRAXUL_ENABLE_RENDER_TESTS)
 endif()

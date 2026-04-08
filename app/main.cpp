@@ -5,8 +5,13 @@
 #include <cstdio>
 #include <cstdlib>
 #include <draxul/bmp.h>
+#include <draxul/host_registry.h>
 #include <draxul/log.h>
+#include <draxul/nanovg_demo_host.h>
 #include <draxul/perf_timing.h>
+#ifdef DRAXUL_ENABLE_MEGACITY
+#include <draxul/megacity_host.h>
+#endif
 #ifdef DRAXUL_ENABLE_RENDER_TESTS
 #include <draxul/render_test.h>
 #endif
@@ -151,6 +156,19 @@ static int draxul_main(std::vector<std::string> args)
 
     draxul::configure_default_logging();
 
+    // Register host providers. The terminal product registers its built-ins
+    // unconditionally; optional modules (megacity) only register when their
+    // build flag is on. Nothing in draxul-app or draxul-host links the
+    // megacity library — this main.cpp file is the sole megacity touchpoint
+    // in the executable.
+    auto& host_registry = draxul::HostProviderRegistry::global();
+    host_registry.clear();
+    draxul::register_builtin_host_providers(host_registry);
+    draxul::register_nanovg_demo_host_provider(host_registry);
+#ifdef DRAXUL_ENABLE_MEGACITY
+    draxul::register_megacity_host_provider(host_registry);
+#endif
+
     // CLI overrides for logging — these always work, unlike env vars which
     // may not propagate to macOS .app bundles.
     if (!parsed.log_file.empty() || !parsed.log_level.empty())
@@ -198,11 +216,11 @@ static int draxul_main(std::vector<std::string> args)
     if (!parsed.host_source_path.empty())
         options.host_source_path = parsed.host_source_path.string();
     if (parsed.continuous_refresh)
-        options.megacity_continuous_refresh = true;
+        options.request_continuous_refresh = true;
     if (parsed.no_vblank)
         options.no_vblank = true;
     if (parsed.no_ui)
-        options.no_ui = true;
+        options.hide_host_ui_panels = true;
     if (!parsed.screenshot_path.empty())
     {
         if (parsed.screenshot_width > 0 && parsed.screenshot_height > 0)

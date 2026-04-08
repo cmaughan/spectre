@@ -1,5 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
+#ifdef DRAXUL_ENABLE_MEGACITY
+
 #include <draxul/citydb.h>
 #include <draxul/treesitter.h>
 
@@ -420,3 +422,5 @@ TEST_CASE("city database expands interface-typed field dependencies across the i
 }
 
 } // namespace draxul
+
+#endif // DRAXUL_ENABLE_MEGACITY

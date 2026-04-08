@@ -4,21 +4,14 @@
 #include <draxul/base_renderer.h>
 #include <draxul/grid_host_base.h>
 #include <draxul/host_kind.h>
+#include <draxul/host_registry.h>
 #include <draxul/log.h>
 #include <draxul/perf_timing.h>
-#ifdef DRAXUL_ENABLE_MEGACITY
-#include <draxul/megacity_host.h>
-#endif
-#include <draxul/nanovg_demo_host.h>
 #include <draxul/renderer.h>
 #include <draxul/text_service.h>
 
 namespace draxul
 {
-
-#ifdef DRAXUL_ENABLE_MEGACITY
-std::unique_ptr<IHost> create_megacity_host();
-#endif
 
 namespace
 {
@@ -59,6 +52,12 @@ void apply_terminal_config(HostLaunchOptions& launch, const AppConfig& config)
     launch.selection_max_cells = config.terminal.selection_max_cells;
     launch.copy_on_select = config.terminal.copy_on_select;
     launch.paste_confirm_lines = config.terminal.paste_confirm_lines;
+}
+
+void apply_global_host_options(HostLaunchOptions& launch, const AppOptions& options)
+{
+    launch.request_continuous_refresh = options.request_continuous_refresh;
+    launch.show_host_ui_panels = !options.hide_host_ui_panels;
 }
 
 float imgui_font_size_from_metrics(const FontMetrics& metrics)
@@ -104,6 +103,8 @@ bool HostManager::create(IHostCallbacks& callbacks, int pixel_w, int pixel_h,
     launch.startup_commands = deps_.options->startup_commands;
     launch.enable_ligatures = deps_.config->enable_ligatures;
     apply_terminal_config(launch, *deps_.config);
+    if (deps_.options)
+        apply_global_host_options(launch, *deps_.options);
 
     return create_host_for_leaf(root_id, callbacks, std::move(launch), true);
 }
@@ -126,6 +127,8 @@ LeafId HostManager::split_focused(SplitDirection dir, IHostCallbacks& callbacks)
     launch.kind = split_host_kind_for(primary_kind);
     launch.enable_ligatures = deps_.config->enable_ligatures;
     apply_terminal_config(launch, *deps_.config);
+    if (deps_.options)
+        apply_global_host_options(launch, *deps_.options);
     if (deps_.options)
     {
         launch.working_dir = deps_.options->host_working_dir;
@@ -173,6 +176,8 @@ LeafId HostManager::split_focused(SplitDirection dir, HostLaunchOptions launch, 
 
     launch.enable_ligatures = deps_.config->enable_ligatures;
     apply_terminal_config(launch, *deps_.config);
+    if (deps_.options)
+        apply_global_host_options(launch, *deps_.options);
     if (deps_.options && launch.working_dir.empty())
         launch.working_dir = deps_.options->host_working_dir;
 
@@ -409,35 +414,19 @@ bool HostManager::create_host_for_leaf(LeafId id, IHostCallbacks& callbacks,
     {
         new_host = deps_.options->host_factory(launch.kind);
     }
-    else if (launch.kind == HostKind::MegaCity)
-    {
-#ifdef DRAXUL_ENABLE_MEGACITY
-        new_host = create_megacity_host();
-#else
-        error_ = "The Megacity host was disabled at build time (DRAXUL_ENABLE_MEGACITY=OFF).";
-        return false;
-#endif
-    }
-    else if (launch.kind == HostKind::NanoVGDemo)
-    {
-        new_host = create_nanovg_demo_host();
-    }
     else
-        new_host = create_host(launch.kind);
+    {
+        new_host = HostProviderRegistry::global().create(launch.kind);
+    }
 
     if (!new_host)
     {
-        error_ = std::string("The selected host is not supported on this platform: ") + to_string(launch.kind);
+        if (HostProviderRegistry::global().has(launch.kind))
+            error_ = std::string("The selected host could not be created: ") + to_string(launch.kind);
+        else
+            error_ = std::string("The selected host is not available in this build: ") + to_string(launch.kind);
         return false;
     }
-
-#ifdef DRAXUL_ENABLE_MEGACITY
-    if (launch.kind == HostKind::MegaCity)
-    {
-        if (auto* megacity = dynamic_cast<MegaCityHost*>(new_host.get()))
-            megacity->set_continuous_refresh_enabled(deps_.options && deps_.options->megacity_continuous_refresh);
-    }
-#endif
 
     IGridRenderer& grid_renderer = *deps_.grid_renderer;
     const float display_ppi = deps_.display_ppi ? *deps_.display_ppi : 96.0f;
@@ -466,14 +455,6 @@ bool HostManager::create_host_for_leaf(LeafId id, IHostCallbacks& callbacks,
             error_ = "Failed to initialize the selected host.";
         return false;
     }
-
-#ifdef DRAXUL_ENABLE_MEGACITY
-    if (deps_.options && deps_.options->no_ui)
-    {
-        if (auto* megacity = dynamic_cast<MegaCityHost*>(new_host.get()))
-            megacity->set_ui_panels_visible(false);
-    }
-#endif
 
     if (deps_.text_service)
     {

@@ -142,7 +142,7 @@ Toggle with F12. Shows:
 | Action | Default Binding |
 |--------|-----------------|
 | `toggle_diagnostics` | `F12` |
-| `toggle_megacity_ui` | `F1` |
+| `toggle_host_ui` | `F1` |
 | `copy` | `Ctrl + Shift + C` |
 | `paste` | `Ctrl + Shift + V` |
 | `font_increase` | `Ctrl + =` |
@@ -290,7 +290,7 @@ Customizable in `config.toml` under `[keybindings]`. Chord syntax: `"prefix, key
 | `DRAXUL_ENABLE_RENDER_TESTS` | ON | Render test/snapshot infrastructure |
 | `DRAXUL_ENABLE_SANITIZERS` | OFF | ASan + UBSan |
 | `DRAXUL_ENABLE_COVERAGE` | OFF | LLVM source-based coverage |
-| `DRAXUL_ENABLE_MEGACITY` | ON | MegaCity 3D demo host |
+| `DRAXUL_ENABLE_MEGACITY` | ON | MegaCity optional module (`modules/megacity/`) — when OFF, the terminal product builds with no megacity sources, headers, link dependency, or test coupling |
 | `BUILD_TESTING` | ON | Test targets |
 
 ### Build Targets

@@ -90,8 +90,7 @@ Use `--log-file` and `--log-level` CLI flags (reliable on all platforms; env var
 - `libs/draxul-host`: Host abstraction (`IHost` -> `I3DHost` -> `IGridHost` -> `GridHostBase`), HostManager, terminal emulation (VT parser, scrollback, selection, mouse protocols)
 - `libs/draxul-app-support`: Config I/O, grid rendering pipeline, render test infrastructure
 - `libs/draxul-ui`: ImGui-based diagnostics panel
-- `libs/draxul-megacity`: Optional 3D demo host (spinning cube + code visualization)
-- `libs/draxul-treesitter`: Optional TreeSitter integration
+- `modules/megacity/`: Optional megacity module (gated by `DRAXUL_ENABLE_MEGACITY`). Contains four internal libraries — `draxul-megacity`, `draxul-citydb`, `draxul-treesitter`, `draxul-geometry`. The terminal product has zero source-level dependency on this directory; megacity self-registers via `HostProviderRegistry` from `app/main.cpp` under `#ifdef DRAXUL_ENABLE_MEGACITY`.
 - `app/`: Orchestration only
 
 ### Key Abstractions

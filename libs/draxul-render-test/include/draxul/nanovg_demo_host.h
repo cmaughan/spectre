@@ -54,4 +54,7 @@ private:
 
 std::unique_ptr<IHost> create_nanovg_demo_host();
 
+class HostProviderRegistry;
+void register_nanovg_demo_host_provider(HostProviderRegistry& registry);
+
 } // namespace draxul

@@ -264,7 +264,7 @@ bool App::initialize()
     if (!time_step("Device, Swap, Pipe (GPU)", [this]() {
             RendererOptions renderer_options;
             renderer_options.wait_for_vblank = !options_.no_vblank
-                && !(options_.host_kind == HostKind::MegaCity && options_.megacity_continuous_refresh);
+                && !options_.request_continuous_refresh;
             renderer_ = renderer_factory_
                 ? renderer_factory_(config_.atlas_size, renderer_options)
                 : create_renderer(config_.atlas_size, renderer_options);

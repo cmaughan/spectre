@@ -1,3 +1,4 @@
+#include <draxul/host_registry.h>
 #include <draxul/nanovg_demo_host.h>
 
 #include <draxul/base_renderer.h>
@@ -259,6 +260,11 @@ void NanoVGDemoHost::draw(IFrameContext& frame)
 std::unique_ptr<IHost> create_nanovg_demo_host()
 {
     return std::make_unique<NanoVGDemoHost>();
+}
+
+void register_nanovg_demo_host_provider(HostProviderRegistry& registry)
+{
+    registry.register_provider(HostKind::NanoVGDemo, &create_nanovg_demo_host);
 }
 
 } // namespace draxul

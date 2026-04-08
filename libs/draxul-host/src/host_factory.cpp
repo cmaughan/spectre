@@ -1,6 +1,7 @@
 #include "nvim_host.h"
 
 #include <draxul/host.h>
+#include <draxul/host_registry.h>
 #include <draxul/perf_timing.h>
 
 namespace draxul
@@ -15,34 +16,25 @@ std::unique_ptr<IHost> create_wsl_host();
 namespace draxul
 {
 
-std::unique_ptr<IHost> create_host(HostKind kind)
+void register_builtin_host_providers(HostProviderRegistry& registry)
 {
     PERF_MEASURE();
-    switch (kind)
-    {
-    case HostKind::Nvim:
-        return std::make_unique<NvimHost>();
-    case HostKind::PowerShell:
+    registry.register_provider(HostKind::Nvim, [] {
+        return std::unique_ptr<IHost>(std::make_unique<NvimHost>());
+    });
+    registry.register_provider(HostKind::Bash, [] { return create_shell_host(); });
+    registry.register_provider(HostKind::Zsh, [] { return create_shell_host(); });
 #ifdef _WIN32
-        return create_powershell_host();
-#else
-        return nullptr;
+    registry.register_provider(HostKind::PowerShell, [] { return create_powershell_host(); });
+    registry.register_provider(HostKind::Wsl, [] { return create_wsl_host(); });
 #endif
-    case HostKind::Bash:
-    case HostKind::Zsh:
-        return create_shell_host();
-    case HostKind::Wsl:
-#ifdef _WIN32
-        return create_wsl_host();
-#else
-        return nullptr;
-#endif
-    case HostKind::MegaCity:
-        return nullptr; // Created via create_megacity_host() in host_manager.cpp
-    case HostKind::NanoVGDemo:
-        return nullptr; // Created via create_nanovg_demo_host() in app layer
-    }
-    return nullptr;
+}
+
+// Compatibility wrapper for callers that already had a HostKind in hand and
+// just want a host. Newer callers should go through HostProviderRegistry.
+std::unique_ptr<IHost> create_host(HostKind kind)
+{
+    return HostProviderRegistry::global().create(kind);
 }
 
 } // namespace draxul

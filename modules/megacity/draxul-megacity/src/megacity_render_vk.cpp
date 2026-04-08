@@ -3,7 +3,6 @@
 #include "megacity_material_assets.h"
 #include "mesh_library.h"
 #include "shadow_cascade.h"
-#include <draxul/vulkan/vk_render_context.h>
 #include <algorithm>
 #include <array>
 #include <backends/imgui_impl_vulkan.h>
@@ -11,6 +10,7 @@
 #include <draxul/log.h>
 #include <draxul/perf_timing.h>
 #include <draxul/runtime_path.h>
+#include <draxul/vulkan/vk_render_context.h>
 #include <fstream>
 #include <imgui.h>
 #include <vector>

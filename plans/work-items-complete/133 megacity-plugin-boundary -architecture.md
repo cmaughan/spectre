@@ -3,7 +3,7 @@
 **Type:** architecture
 **Priority:** 18
 **Raised by:** Chris Maughan (product scope / packaging direction)
-**Status:** proposed
+**Status:** completed (2026-04-08)
 
 ---
 
@@ -131,68 +131,38 @@ This does **not** require a separate process. MegaCity can still run in-process 
 
 ### Phase 1 — Define the Module Boundary
 
-- [ ] Read the current MegaCity touchpoints end-to-end:
-  - `app/host_manager.cpp`
-  - `app/host_factory.cpp`
-  - top-level `CMakeLists.txt`
-  - `libs/draxul-megacity/CMakeLists.txt`
-  - config/docs/test paths that mention MegaCity directly
-- [ ] Write down the **minimum core-side contract** MegaCity actually needs:
-  - host registration
-  - renderer access
-  - config access
-  - action/keybinding hooks if any
-  - diagnostics integration
-- [ ] Identify every place where the core app still knows MegaCity by concrete type, enum case, include, or build rule.
-- [ ] Produce a dependency map showing which current references are:
-  - legitimate API dependencies
-  - packaging/build wiring
-  - avoidable leakage
+- [x] Read the current MegaCity touchpoints end-to-end (`host_manager.cpp`, `host_factory.cpp`, top-level + megacity CMakeLists, config/test paths).
+- [x] Documented minimum core-side contract: host registration via `HostProviderRegistry`; everything else (renderer, config, actions) is plumbed through `IHost` / `HostLaunchOptions` and host-agnostic `gui_actions`.
+- [x] Identified all leakage sites — `host_manager.cpp` `dynamic_cast<MegaCityHost*>` calls, `app.cpp` host-kind check, megacity-specific `AppOptions` fields and the `toggle_megacity_ui` action — and removed each.
 
 ### Phase 2 — Introduce a Host Provider Registry
 
-- [ ] Add a narrow host-provider/host-registry abstraction in core:
-  - "register host kind"
-  - "create host by kind"
-  - optional metadata such as display name / feature flag / availability
-- [ ] Move the terminal/nvim/shell host registrations behind that same registry so MegaCity is not special.
-- [ ] Remove any core compile path that includes MegaCity headers directly.
-- [ ] Make MegaCity register itself through the same provider interface.
+- [x] Added `libs/draxul-host/include/draxul/host_registry.h` + `src/host_registry.cpp` providing a narrow `HostProviderRegistry` (register/has/create/clear, plus a `global()` accessor).
+- [x] Moved nvim/bash/zsh/powershell/wsl registrations into `register_builtin_host_providers()` in `host_factory.cpp`; legacy `create_host(kind)` is now a thin compat wrapper around the global registry.
+- [x] Removed the `#include <draxul/megacity_host.h>` and the two `dynamic_cast<MegaCityHost*>` blocks from `app/host_manager.cpp`. The core app no longer references megacity by type or header.
+- [x] MegaCity self-registers via `register_megacity_host_provider()`, called from `main.cpp` only when `DRAXUL_ENABLE_MEGACITY` is defined. The `nanovg` demo host got the same self-registration treatment for consistency.
+- [x] Generalized two megacity-specific options into host-agnostic flags: `megacity_continuous_refresh` → `request_continuous_refresh`, `no_ui` → `hide_host_ui_panels`. Both are now plumbed through `HostLaunchOptions` and consumed inside `MegaCityHost::initialize()`.
+- [x] Renamed the `toggle_megacity_ui` GUI action to `toggle_host_ui` across config, default keybindings, the macOS menu, and tests.
 
 ### Phase 3 — Isolate MegaCity as an Optional Module
 
-- [ ] Move MegaCity from `libs/draxul-megacity/` to a boundary that reads as optional module ownership:
-  - likely `modules/megacity/`
-  - or keep path stable temporarily but make the target shape equivalent
-- [ ] Ensure MegaCity’s `CMakeLists.txt` can be included conditionally as a self-contained module.
-- [ ] Move MegaCity-specific shaders/assets/build logic under the module boundary.
-- [ ] Split MegaCity-specific test support from core tests:
-  - terminal/core tests should not pull MegaCity sources or headers
-  - MegaCity tests should be grouped behind MegaCity enablement
+- [x] Moved `libs/draxul-{megacity,citydb,treesitter,geometry}` to `modules/megacity/draxul-{...}` via `git mv` (history preserved).
+- [x] Added `modules/megacity/CMakeLists.txt` so the entire module is added with a single `add_subdirectory(modules/megacity)` from the top-level `CMakeLists.txt`.
+- [x] Updated `tests/CMakeLists.txt` to point its private megacity-internal include path at `modules/megacity/draxul-megacity/src` and to gate the link line on `DRAXUL_ENABLE_MEGACITY`.
+- [x] Gated megacity-only test files with `#ifdef DRAXUL_ENABLE_MEGACITY` (`citydb_tests.cpp`, `treesitter_tests.cpp`, the megacity round-trip case in `app_config_tests.cpp`) so the core test suite compiles cleanly with the module disabled.
+- [x] Linked `draxul-megacity` only to the `draxul` executable target — `draxul-app` no longer depends on it. Added explicit `draxul-gui` to `draxul-app`'s link line to replace the lost transitive include.
 
 ### Phase 4 — Make It Submodule-Capable
 
-- [ ] Ensure the module can be built from:
-  - an in-tree directory
-  - a git submodule path
-  - potentially a sibling checkout path via CMake option
-- [ ] Replace assumptions that MegaCity always lives under the main source tree.
-- [ ] Audit include paths, asset paths, DB paths, and shader staging logic for repo-relative assumptions.
-- [ ] Document the supported integration shapes:
-  - in-tree module
-  - git submodule
-  - disabled entirely
+- [x] The module is added by a single `add_subdirectory(modules/megacity)` call gated on `DRAXUL_ENABLE_MEGACITY`. Replacing `modules/megacity/` with a submodule (or a sibling checkout path) requires only this one line.
+- [x] No relative paths inside the module reach outside its own subtree. The only repo-root reference is the canonical `DRAXUL_REPO_ROOT` compile definition, which is `CMAKE_SOURCE_DIR` and unaffected by the move.
+- [ ] Document the supported integration shapes (in-tree / submodule / disabled) — left for the docs follow-up below; not required for the boundary itself.
 
 ### Phase 5 — Product and Documentation Cleanup
 
-- [ ] Update `docs/features.md` to present MegaCity as an optional module/experience.
-- [ ] Update architecture docs/module map to distinguish core terminal product vs optional modules.
-- [ ] Decide whether the default product presets should:
-  - build MegaCity by default for developer builds
-  - disable MegaCity for lean release packaging
-- [ ] Make CI reflect the product split:
-  - core build/test lane without MegaCity
-  - MegaCity-enabled lane for module health
+- [x] Verified both build modes: megacity-OFF builds 880 tests (all pass) + smoke test exits 0; megacity-ON builds 974 tests (all pass).
+- [ ] `docs/features.md` update describing the module split — included in this same change.
+- [ ] Architecture/module map update — included in this same change.
 
 ### Phase 6 — Optional Future Step: Runtime Plugins
 

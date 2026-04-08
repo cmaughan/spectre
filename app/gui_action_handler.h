@@ -83,7 +83,7 @@ private:
     void open_file_dialog() const;
     void split_vertical(std::string_view args) const;
     void split_horizontal(std::string_view args) const;
-    void toggle_megacity_ui() const;
+    void toggle_host_ui() const;
     void toggle_zoom() const;
     void close_pane() const;
     void restart_host() const;

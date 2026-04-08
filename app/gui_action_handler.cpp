@@ -41,7 +41,7 @@ const std::unordered_map<std::string_view, GuiActionHandler::ActionFn>& GuiActio
         {"open_file_dialog",   [](auto& h, auto) { h.open_file_dialog(); }},
         {"split_vertical",     [](auto& h, auto args) { h.split_vertical(args); }},
         {"split_horizontal",   [](auto& h, auto args) { h.split_horizontal(args); }},
-        {"toggle_megacity_ui", [](auto& h, auto) { h.toggle_megacity_ui(); }},
+        {"toggle_host_ui", [](auto& h, auto) { h.toggle_host_ui(); }},
         {"command_palette",    [](auto& h, auto) { if (h.deps_.on_command_palette) h.deps_.on_command_palette(); }},
         {"edit_config",        [](auto& h, auto) { if (h.deps_.on_edit_config) h.deps_.on_edit_config(); }},
         {"reload_config",      [](auto& h, auto) { if (h.deps_.on_reload_config) h.deps_.on_reload_config(); }},
@@ -213,7 +213,7 @@ void GuiActionHandler::split_horizontal(std::string_view args) const
         deps_.on_split_horizontal(parse_host_kind(args));
 }
 
-void GuiActionHandler::toggle_megacity_ui() const
+void GuiActionHandler::toggle_host_ui() const
 {
     PERF_MEASURE();
     if (deps_.broadcast_action)

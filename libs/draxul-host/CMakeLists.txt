@@ -2,6 +2,7 @@ add_library(draxul-host
     src/alt_screen_manager.cpp
     src/grid_host_base.cpp
     src/host_factory.cpp
+    src/host_registry.cpp
     src/local_terminal_host.cpp
     src/mouse_reporter.cpp
     src/nvim_host.cpp

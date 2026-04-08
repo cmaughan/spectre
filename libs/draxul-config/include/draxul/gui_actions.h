@@ -41,7 +41,7 @@ inline constexpr std::array<GuiActionInfo, 30> kGuiActions = { {
     { "open_file_dialog" },
     { "split_vertical" },
     { "split_horizontal" },
-    { "toggle_megacity_ui" },
+    { "toggle_host_ui" },
     { "command_palette" },
     { "edit_config" },
     { "reload_config" },
