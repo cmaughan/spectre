@@ -13,6 +13,11 @@ void ToastHost::push(gui::ToastLevel level, std::string message, float duration_
     pending_.push_back({ level, std::move(message), duration_s });
 }
 
+void ToastHost::set_time_source(TimeSource source)
+{
+    time_source_ = std::move(source);
+}
+
 bool ToastHost::initialize(const HostContext& context, IHostCallbacks& callbacks)
 {
     callbacks_ = &callbacks;
@@ -33,7 +38,7 @@ bool ToastHost::initialize(const HostContext& context, IHostCallbacks& callbacks
     desc.pixel_size = { pixel_w_, pixel_h_ };
     handle_->set_viewport(desc);
 
-    last_tick_ = std::chrono::steady_clock::now();
+    last_tick_ = time_source_ ? time_source_() : std::chrono::steady_clock::now();
     return true;
 }
 
@@ -88,7 +93,7 @@ void ToastHost::pump()
     // Tick timers. If no toasts were active before this pump, reset the tick
     // baseline so we don't subtract the entire idle interval (which would
     // immediately expire freshly pushed toasts).
-    const auto now = std::chrono::steady_clock::now();
+    const auto now = time_source_ ? time_source_() : std::chrono::steady_clock::now();
     if (!had_active)
         last_tick_ = now;
     const float dt = std::chrono::duration<float>(now - last_tick_).count();

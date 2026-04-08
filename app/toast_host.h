@@ -4,6 +4,7 @@
 #include <draxul/gui/toast_renderer.h>
 #include <draxul/host.h>
 #include <draxul/renderer.h>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -23,10 +24,24 @@ class TextService;
 class ToastHost : public IHost
 {
 public:
+    /// Pluggable monotonic clock. Tests inject a fake source so expiry and
+    /// fade behaviour can be exercised without real sleeps.
+    using TimeSource = std::function<std::chrono::steady_clock::time_point()>;
+
     ToastHost() = default;
 
     /// Push a toast from any thread. The message will appear on the next frame.
     void push(gui::ToastLevel level, std::string message, float duration_s = 4.0f);
+
+    /// Inject a fake clock (tests only). Must be called before initialize()
+    /// or while the host is idle; the new source takes effect on the next pump.
+    void set_time_source(TimeSource source);
+
+    /// Expose the active toast list for tests. Not part of the IHost contract.
+    const std::vector<gui::ToastEntry>& active_toasts_for_test() const
+    {
+        return active_;
+    }
 
     // IHost interface
     bool initialize(const HostContext& context, IHostCallbacks& callbacks) override;
@@ -67,6 +82,7 @@ private:
 
     std::vector<gui::ToastEntry> active_;
     std::chrono::steady_clock::time_point last_tick_{};
+    TimeSource time_source_{};
 
     std::mutex pending_mutex_;
     std::vector<PendingToast> pending_;

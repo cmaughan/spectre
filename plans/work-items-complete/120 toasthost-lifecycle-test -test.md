@@ -55,10 +55,26 @@ Config: enable_toast_notifications = false:
 
 ## Acceptance Criteria
 
-- [ ] `tests/toast_host_tests.cpp` exists and covers the above scenarios
-- [ ] Fake clock drives timing without real `sleep()`
-- [ ] Tests run under `ctest`
-- [ ] CI green
+- [x] `tests/toast_host_tests.cpp` exists and covers the above scenarios
+- [x] Fake clock drives timing without real `sleep()`
+- [x] Tests run under `ctest`
+- [x] CI green
+
+## Implementation Summary
+
+- Added `ToastHost::TimeSource` (a `std::function<time_point()>`) and a
+  `set_time_source()` setter. Defaults to `std::chrono::steady_clock::now`
+  so production behaviour is unchanged.
+- Exposed `ToastHost::active_toasts_for_test()` as a read-only accessor so
+  tests can assert stacking / expiry without touching the grid pipeline.
+- `tests/toast_host_tests.cpp` covers: stacking (3 toasts, 10 toasts with
+  no hard cap — the current policy), expiry (short, zero, negative
+  durations), fade (direct assertions against `gui::render_toasts`),
+  `request_frame()` bookkeeping (called while active, quiet when empty),
+  early-buffer replay (push before initialize, then pump surfaces them),
+  and the `enable_toast_notifications` config gate (parser round-trip).
+- Fake clock is a tiny `FakeClock` struct advanced explicitly by each test;
+  no `sleep()` calls.
 
 ---
 
