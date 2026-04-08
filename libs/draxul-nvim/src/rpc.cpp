@@ -95,7 +95,18 @@ NvimRpc::NvimRpc()
     : impl_(std::make_unique<Impl>())
 {
 }
-NvimRpc::~NvimRpc() = default;
+
+NvimRpc::~NvimRpc()
+{
+    // Safety net: if the owner forgets to call shutdown() (e.g. NvimHost
+    // initialization throws or exits early after initialize() started the
+    // reader thread), the joinable std::thread member inside impl_ would
+    // otherwise trigger std::terminate on destruction. Always drain here.
+    if (impl_ && impl_->reader_thread_.joinable())
+    {
+        shutdown();
+    }
+}
 
 bool NvimRpc::initialize(NvimProcess& process, RpcCallbacks callbacks)
 {

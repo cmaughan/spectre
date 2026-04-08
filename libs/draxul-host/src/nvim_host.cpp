@@ -24,6 +24,41 @@ void apply_ui_option(UiOptions& options, const std::string& name, const MpackVal
 bool NvimHost::initialize_host()
 {
     PERF_MEASURE();
+
+    // RAII rollback: if initialize_host() exits abnormally (early return or
+    // thrown exception) after we have started any background threads or the
+    // nvim child, call shutdown() to drain them. Without this, the joinable
+    // std::thread members inside NvimRpc and UiRequestWorker would trigger
+    // std::terminate when NvimHost is destroyed by HostManager. See WI 04.
+    struct InitRollback
+    {
+        NvimHost* host = nullptr;
+        bool armed = true;
+        explicit InitRollback(NvimHost* h)
+            : host(h)
+        {
+        }
+        InitRollback(const InitRollback&) = delete;
+        InitRollback& operator=(const InitRollback&) = delete;
+        InitRollback(InitRollback&&) = delete;
+        InitRollback& operator=(InitRollback&&) = delete;
+        ~InitRollback()
+        {
+            if (armed)
+            {
+                try
+                {
+                    host->shutdown();
+                }
+                catch (...)
+                {
+                    // Destructors must not propagate.
+                }
+            }
+        }
+    };
+    InitRollback rollback(this);
+
     const std::string command = launch_options().command.empty() ? "nvim" : launch_options().command;
     if (!nvim_process_.spawn(command, launch_options().args, launch_options().working_dir))
     {
@@ -58,21 +93,16 @@ bool NvimHost::initialize_host()
 
     apply_grid_size(viewport().grid_size.x, viewport().grid_size.y);
     if (!attach_ui())
-    {
-        shutdown();
         return false;
-    }
     if (!execute_startup_commands())
-    {
-        shutdown();
         return false;
-    }
     setup_clipboard_provider();
     refresh_cursor_style();
 
     // All startup requests done — from this point on request() must not be
     // called from the main thread (it blocks on nvim response).
     rpc_.set_main_thread_id(std::this_thread::get_id());
+    rollback.armed = false;
     return true;
 }
 

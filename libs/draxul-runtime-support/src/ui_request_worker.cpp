@@ -6,6 +6,12 @@
 namespace draxul
 {
 
+UiRequestWorker::~UiRequestWorker()
+{
+    if (thread_.joinable())
+        stop();
+}
+
 void UiRequestWorker::start(IRpcChannel* rpc)
 {
     PERF_MEASURE();
