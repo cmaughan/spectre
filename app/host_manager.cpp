@@ -436,22 +436,26 @@ std::optional<HostManager::DividerHitInfo> HostManager::divider_at_point(int px,
     return std::nullopt;
 }
 
-void HostManager::update_divider_from_pixel(DividerId id, int px, int py, int pixel_w, int pixel_h)
+void HostManager::update_divider_from_pixel(DividerId id, int px, int py)
 {
     PERF_MEASURE();
     if (zoomed_)
         return;
+    // SplitTree preserves its own origin_x/origin_y/total_w/total_h from the
+    // last recompute() (which reserves space for the chrome strip), so call
+    // through the tree directly rather than recompute_viewports() — the latter
+    // would override the chrome reservation with (0, 0) and hide the tab bar.
     tree_.update_divider_from_pixel(id, px, py);
-    recompute_viewports(pixel_w, pixel_h);
+    update_all_viewports();
 }
 
-void HostManager::nudge_divider(DividerId id, float delta, int pixel_w, int pixel_h)
+void HostManager::nudge_divider(DividerId id, float delta)
 {
     PERF_MEASURE();
     if (zoomed_)
         return;
     tree_.nudge_divider(id, delta);
-    recompute_viewports(pixel_w, pixel_h);
+    update_all_viewports();
 }
 
 DividerId HostManager::find_focused_ancestor_divider(FocusDirection direction) const

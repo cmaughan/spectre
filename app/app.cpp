@@ -731,7 +731,7 @@ void App::wire_gui_actions()
         const float step = 0.05f;
         const float delta
             = (dir == FocusDirection::Right || dir == FocusDirection::Down) ? step : -step;
-        hm.nudge_divider(id, delta, window_->width_pixels(), window_->height_pixels());
+        hm.nudge_divider(id, delta);
         request_frame();
     };
     gui_deps.on_resize_pane_left = [resize_pane]() { resize_pane(FocusDirection::Left); };

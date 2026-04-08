@@ -441,9 +441,7 @@ void InputDispatcher::on_mouse_move_event(const MouseMoveEvent& event)
     {
         if (HostManager* hm = deps_.host_manager ? deps_.host_manager() : nullptr)
         {
-            const int pw = deps_.window ? deps_.window->width_pixels() : 0;
-            const int ph = deps_.window ? deps_.window->height_pixels() : 0;
-            hm->update_divider_from_pixel(drag_divider_id_, phys_x_mv, phys_y_mv, pw, ph);
+            hm->update_divider_from_pixel(drag_divider_id_, phys_x_mv, phys_y_mv);
             if (deps_.request_frame)
                 deps_.request_frame();
         }

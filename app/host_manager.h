@@ -145,11 +145,13 @@ public:
     std::optional<DividerHitInfo> divider_at_point(int px, int py) const;
 
     // Update a divider's ratio based on a mouse pixel position and re-layout
-    // viewports. Used during drag.
-    void update_divider_from_pixel(DividerId id, int px, int py, int pixel_w, int pixel_h);
+    // viewports. Used during drag. The SplitTree retains its own origin/size
+    // from the most recent recompute_viewports(), so the chrome reservation
+    // is preserved without callers needing to re-supply it.
+    void update_divider_from_pixel(DividerId id, int px, int py);
 
     // Nudge a divider by a fixed delta (positive grows the first child).
-    void nudge_divider(DividerId id, float delta, int pixel_w, int pixel_h);
+    void nudge_divider(DividerId id, float delta);
 
     // Find an ancestor divider above the focused leaf in the given direction.
     DividerId find_focused_ancestor_divider(FocusDirection direction) const;
