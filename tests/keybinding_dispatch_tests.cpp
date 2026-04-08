@@ -93,7 +93,7 @@ TEST_CASE("keybinding dispatch: default config has all known bindings", "[config
 {
     AppConfig cfg;
     INFO("default bindings present");
-    REQUIRE(static_cast<int>(cfg.keybindings.size()) == 34);
+    REQUIRE(static_cast<int>(cfg.keybindings.size()) == 36);
     INFO("toggle_diagnostics binding present");
     REQUIRE(find_binding(cfg, "toggle_diagnostics") != nullptr);
     INFO("copy binding present");
@@ -301,7 +301,7 @@ TEST_CASE("keybinding dispatch: empty keybindings table leaves defaults intact",
 
     // With an empty [keybindings] table the defaults remain unchanged.
     INFO("defaults remain with empty bindings table");
-    REQUIRE(static_cast<int>(cfg.keybindings.size()) == 34);
+    REQUIRE(static_cast<int>(cfg.keybindings.size()) == 36);
 }
 
 TEST_CASE("keybinding dispatch: no bindings configured — no action fires for any key", "[config]")

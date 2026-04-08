@@ -120,6 +120,13 @@ protected:
     // subclasses (e.g. LocalTerminalHost::status_text) can read it directly.
     std::string current_cwd_;
 
+public:
+    std::string current_working_directory() const override
+    {
+        return current_cwd_;
+    }
+
+protected:
 private:
     uint16_t attr_id();
     void compact_attr_ids();

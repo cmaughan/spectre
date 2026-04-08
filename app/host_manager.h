@@ -122,6 +122,14 @@ public:
     // Returns the host for a specific leaf.
     IHost* host_for(LeafId id) const;
 
+    // User-set pane name override (WI 128 — pane rename). When non-empty,
+    // ChromeHost displays this in place of the host's status_text() for the
+    // pane status pill. Cleared by passing an empty string. Persisted only
+    // for the lifetime of the leaf — closing the pane drops the override.
+    void set_pane_name(LeafId id, std::string name);
+    const std::string& pane_name(LeafId id) const;
+    bool has_pane_name(LeafId id) const;
+
     // Hit-test a point (physical pixels). Updates focus if a new leaf is hit.
     // Returns the host under the point, or null.
     IHost* host_at_point(int px, int py);
@@ -161,6 +169,7 @@ private:
     SplitTree tree_;
     std::unordered_map<LeafId, std::unique_ptr<IHost>> hosts_;
     std::unordered_map<LeafId, HostLaunchOptions> launch_options_;
+    std::unordered_map<LeafId, std::string> pane_user_names_;
     std::string error_;
 
     // Zoom state: when zoomed, the focused pane fills the full window.

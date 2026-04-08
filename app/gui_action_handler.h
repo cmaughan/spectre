@@ -53,6 +53,8 @@ public:
         std::function<void()> on_next_tab; // switch to the next tab
         std::function<void()> on_prev_tab; // switch to the previous tab
         std::function<void(int)> on_activate_tab; // switch to tab by 1-based index
+        std::function<void()> on_rename_tab; // begin inline rename of the active tab
+        std::function<void()> on_rename_pane; // begin inline rename of the focused pane
         std::function<void(std::string_view)> broadcast_action; // dispatch action to all hosts
         std::function<void()> on_test_toast; // emit a sample toast (palette/keybinding test hook)
     };

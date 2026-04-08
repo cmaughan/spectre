@@ -1,5 +1,7 @@
 #pragma once
 
+#include "split_tree.h"
+
 #include <algorithm>
 #include <chrono>
 #include <draxul/pixel_scale.h>
@@ -70,10 +72,33 @@ public:
         std::function<void(float)> on_display_scale_changed;
         // Tab bar click: returns 1-based tab index if (px, py) hits a tab, else 0.
         std::function<int(int, int)> hit_test_tab;
+        // Pane status pill click: returns the leaf id if (px, py) hits a pill,
+        // else kInvalidLeaf. Used to drive double-click pane rename and to
+        // suppress drag selection from spilling into the underlying host.
+        std::function<LeafId(int, int)> hit_test_pane_pill;
+        // Begin a rename session for the pane identified by leaf id.
+        std::function<void(LeafId)> begin_pane_rename;
+        // Height of the top chrome (tab bar) in physical pixels. Mouse events
+        // with phys_y < this height never reach the underlying host so the
+        // tab bar cannot start drag selections in the terminal beneath.
+        std::function<int()> tab_bar_height_phys;
         // Activate tab by 1-based index.
         std::function<void(int)> activate_tab;
         // Activate pane by 1-based visual index within the active workspace.
         std::function<void(int)> activate_pane;
+        // ----- Inline tab rename (WI 128) -------------------------------
+        // Begin a rename session for the tab at 1-based index.
+        std::function<void(int)> begin_tab_rename;
+        // True while ChromeHost has a rename session in progress.
+        std::function<bool()> is_editing_tab;
+        // Forward a typed UTF-8 chunk to the rename buffer. Returns true if
+        // the rename layer consumed it.
+        std::function<bool(const std::string&)> rename_text_input;
+        // Forward an SDL keycode to the rename layer. Returns true if
+        // consumed (Enter/Escape/Backspace/etc.).
+        std::function<bool(int)> rename_key;
+        // Commit the active rename buffer (used on click-outside).
+        std::function<void()> commit_tab_rename;
     };
 
     explicit InputDispatcher(Deps deps);

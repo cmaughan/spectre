@@ -539,6 +539,12 @@ AppConfig::AppConfig()
         // prev_tab = Ctrl+S, P
         { "prev_tab", static_cast<int32_t>(SDLK_S), kModCtrl,
             static_cast<int32_t>(SDLK_P), kModNone },
+        // rename_tab = Ctrl+S, ,  (mirrors tmux's `<prefix> ,` for rename-window)
+        { "rename_tab", static_cast<int32_t>(SDLK_S), kModCtrl,
+            static_cast<int32_t>(SDLK_COMMA), kModNone },
+        // rename_pane = Ctrl+S, .  (paired with rename_tab; tmux has no native pane rename)
+        { "rename_pane", static_cast<int32_t>(SDLK_S), kModCtrl,
+            static_cast<int32_t>(SDLK_PERIOD), kModNone },
         // activate_tab:N = Ctrl+S, 1-9
         { "activate_tab:1", static_cast<int32_t>(SDLK_S), kModCtrl, static_cast<int32_t>(SDLK_1), kModNone },
         { "activate_tab:2", static_cast<int32_t>(SDLK_S), kModCtrl, static_cast<int32_t>(SDLK_2), kModNone },
