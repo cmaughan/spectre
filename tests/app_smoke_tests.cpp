@@ -7,6 +7,7 @@
 // These tests complement app_pump_tests.cpp (which focuses on failure
 // rollback paths) by covering the happy-path lifecycle.
 
+#include "support/fake_host.h"
 #include "support/fake_renderer.h"
 #include "support/fake_window.h"
 #include "support/home_dir_redirect.h"
@@ -31,105 +32,35 @@ namespace
 // Minimal IHost stub — does nothing but report itself as running.
 // This lets App::initialize() succeed through the host step without
 // spawning a real process or requiring a pty / pipe.
+//
+// Built on the shared tests::FakeHost with debug-name "smoke-test". FakeHost
+// already implements the pump -> request_frame contract, records calls, and
+// returns content_ready once initialize() has run.
 // ---------------------------------------------------------------------------
-class SmokeTestHost : public IHost
+class SmokeTestHost : public tests::FakeHost
 {
 public:
-    bool initialize(const HostContext&, IHostCallbacks& callbacks) override
+    SmokeTestHost()
+        : FakeHost("smoke-test")
     {
-        callbacks_ = &callbacks;
-        initialized_ = true;
-        return true;
     }
 
-    void shutdown() override
-    {
-        running_ = false;
-    }
-
-    bool is_running() const override
-    {
-        return running_;
-    }
-
-    std::string init_error() const override
-    {
-        return {};
-    }
-
-    void set_viewport(const HostViewport&) override {}
-
-    void pump() override
-    {
-        ++pump_count_;
-        // Simulate what a real host does: request a frame after producing output.
-        // Without this, the pump loop would block in wait_events forever.
-        if (running_ && callbacks_)
-            callbacks_->request_frame();
-    }
-
-    std::optional<std::chrono::steady_clock::time_point> next_deadline() const override
-    {
-        return std::nullopt;
-    }
-
-    bool dispatch_action(std::string_view) override
-    {
-        return false;
-    }
-
-    void request_close() override
-    {
-        running_ = false;
-    }
-
-    Color default_background() const override
-    {
-        return Color(0.0f, 0.0f, 0.0f, 1.0f);
-    }
-
-    HostRuntimeState runtime_state() const override
-    {
-        HostRuntimeState state;
-        state.content_ready = initialized_;
-        return state;
-    }
-
-    HostDebugState debug_state() const override
-    {
-        HostDebugState state;
-        state.name = "smoke-test";
-        return state;
-    }
-
-    // Introspection for test assertions.
+    // Backwards-compat accessor — existing test call sites expect a
+    // pump_count() method.
     int pump_count() const
     {
-        return pump_count_;
+        return pump_calls;
     }
-    bool was_initialized() const
-    {
-        return initialized_;
-    }
-
-private:
-    IHostCallbacks* callbacks_ = nullptr;
-    bool initialized_ = false;
-    bool running_ = true;
-    int pump_count_ = 0;
 };
 
 // A host that fails to initialize — used by the "host init fails" test case.
 class FailingInitHost final : public SmokeTestHost
 {
 public:
-    bool initialize(const HostContext&, IHostCallbacks&) override
+    FailingInitHost()
     {
-        return false;
-    }
-    std::string init_error() const override
-    {
-        return "deliberate test failure";
+        fail_initialize = true;
+        init_error_message = "deliberate test failure";
     }
 };
 
@@ -166,83 +97,32 @@ std::unique_ptr<IHost> make_smoke_host(HostKind /*kind*/)
     return host;
 }
 
-class InitFrameOnlyHost final : public IHost
+// Host that requests a frame once during initialize() and then stays quiet.
+// Used to verify App::initialize paints the first frame even if later pumps
+// produce no work.
+class InitFrameOnlyHost final : public tests::FakeHost
 {
 public:
-    bool initialize(const HostContext&, IHostCallbacks& callbacks) override
+    InitFrameOnlyHost()
+        : FakeHost("init-frame-only")
     {
-        callbacks_ = &callbacks;
-        initialized_ = true;
-        callbacks_->request_frame();
-        return true;
+        // FakeHost::pump() auto-requests a frame; we want only the initial
+        // frame coming from initialize() to be visible to the test.
+        request_frame_on_pump = false;
     }
 
-    void shutdown() override
+    bool initialize(const HostContext& ctx, IHostCallbacks& callbacks) override
     {
-        running_ = false;
-    }
-
-    bool is_running() const override
-    {
-        return running_;
-    }
-
-    std::string init_error() const override
-    {
-        return {};
-    }
-
-    void set_viewport(const HostViewport&) override {}
-
-    void pump() override
-    {
-        ++pump_count_;
-    }
-
-    std::optional<std::chrono::steady_clock::time_point> next_deadline() const override
-    {
-        return std::nullopt;
-    }
-
-    bool dispatch_action(std::string_view) override
-    {
-        return false;
-    }
-
-    void request_close() override
-    {
-        running_ = false;
-    }
-
-    Color default_background() const override
-    {
-        return Color(0.0f, 0.0f, 0.0f, 1.0f);
-    }
-
-    HostRuntimeState runtime_state() const override
-    {
-        HostRuntimeState state;
-        state.content_ready = initialized_;
-        return state;
-    }
-
-    HostDebugState debug_state() const override
-    {
-        HostDebugState state;
-        state.name = "init-frame-only";
-        return state;
+        const bool ok = FakeHost::initialize(ctx, callbacks);
+        if (ok)
+            callbacks.request_frame();
+        return ok;
     }
 
     int pump_count() const
     {
-        return pump_count_;
+        return pump_calls;
     }
-
-private:
-    IHostCallbacks* callbacks_ = nullptr;
-    bool initialized_ = false;
-    bool running_ = true;
-    int pump_count_ = 0;
 };
 
 class ReloadTrackingHost final : public SmokeTestHost

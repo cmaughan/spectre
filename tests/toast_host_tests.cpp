@@ -15,6 +15,7 @@
 #include <draxul/text_service.h>
 #include <filesystem>
 
+#include "support/fake_clock.h"
 #include "support/fake_grid_pipeline_renderer.h"
 #include "support/fake_window.h"
 #include "support/test_host_callbacks.h"
@@ -41,23 +42,6 @@ bool init_text_service(TextService& text_service)
     return text_service.initialize(config, TextService::DEFAULT_POINT_SIZE, 96.0f);
 }
 
-// Monotonic fake clock that only advances when tests ask it to.
-struct FakeClock
-{
-    std::chrono::steady_clock::time_point now = std::chrono::steady_clock::time_point{}
-        + std::chrono::seconds(1000);
-
-    void advance(std::chrono::milliseconds dt)
-    {
-        now += dt;
-    }
-
-    ToastHost::TimeSource source()
-    {
-        return [this] { return now; };
-    }
-};
-
 struct ToastHostHarness
 {
     tests::FakeWindow window;
@@ -65,7 +49,7 @@ struct ToastHostHarness
     tests::TestHostCallbacks callbacks;
     TextService text_service;
     ToastHost host;
-    FakeClock clock;
+    tests::FakeClock clock;
 
     bool init()
     {

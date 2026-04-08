@@ -14,6 +14,7 @@
 // (App privately implements IHostCallbacks), so the test exercises the real
 // App::dispatch_to_nvim_host() implementation end-to-end.
 
+#include "support/fake_host.h"
 #include "support/fake_renderer.h"
 #include "support/fake_window.h"
 #include "support/home_dir_redirect.h"
@@ -42,114 +43,28 @@ std::string bundled_font_path()
 }
 
 // ---------------------------------------------------------------------------
-// Minimal IHost stub that records dispatched actions and exposes the
-// IHostCallbacks reference it captures during initialize(). Tests use that
-// reference to invoke App::dispatch_to_nvim_host() on the real App.
+// IHost stub built on top of the shared FakeHost. Adds a two-arg constructor
+// (is_nvim, debug_name) and method-style accessors for the existing test
+// call sites without duplicating all the IHost plumbing.
 // ---------------------------------------------------------------------------
-class DispatchTrackingHost : public IHost
+class DispatchTrackingHost final : public tests::FakeHost
 {
 public:
-    DispatchTrackingHost(bool is_nvim, std::string debug_name)
-        : is_nvim_(is_nvim)
-        , debug_name_(std::move(debug_name))
+    DispatchTrackingHost(bool is_nvim_flag, std::string debug_name)
+        : FakeHost(std::move(debug_name))
     {
+        is_nvim = is_nvim_flag;
     }
 
-    bool initialize(const HostContext&, IHostCallbacks& callbacks) override
-    {
-        callbacks_ = &callbacks;
-        initialized_ = true;
-        return true;
-    }
-
-    void shutdown() override
-    {
-        running_ = false;
-    }
-
-    bool is_running() const override
-    {
-        return running_;
-    }
-
-    std::string init_error() const override
-    {
-        return {};
-    }
-
-    void set_viewport(const HostViewport&) override {}
-
-    void pump() override
-    {
-        if (running_ && callbacks_)
-            callbacks_->request_frame();
-    }
-
-    std::optional<std::chrono::steady_clock::time_point> next_deadline() const override
-    {
-        return std::nullopt;
-    }
-
-    bool dispatch_action(std::string_view action) override
-    {
-        dispatched_actions_.emplace_back(action);
-        return true;
-    }
-
-    void request_close() override
-    {
-        running_ = false;
-    }
-
-    bool is_nvim_host() const override
-    {
-        return is_nvim_;
-    }
-
-    Color default_background() const override
-    {
-        return Color(0.0f, 0.0f, 0.0f, 1.0f);
-    }
-
-    HostRuntimeState runtime_state() const override
-    {
-        HostRuntimeState state;
-        state.content_ready = initialized_;
-        return state;
-    }
-
-    HostDebugState debug_state() const override
-    {
-        HostDebugState state;
-        state.name = debug_name_;
-        return state;
-    }
-
-    // Test-only accessors / mutators.
-    IHostCallbacks* callbacks() const
-    {
-        return callbacks_;
-    }
+    // Method-style accessor wrapping the base vector member.
     const std::vector<std::string>& dispatched_actions() const
     {
-        return dispatched_actions_;
+        return FakeHost::dispatched_actions;
     }
     void clear_dispatched_actions()
     {
-        dispatched_actions_.clear();
+        FakeHost::dispatched_actions.clear();
     }
-    void set_debug_name(std::string name)
-    {
-        debug_name_ = std::move(name);
-    }
-
-private:
-    IHostCallbacks* callbacks_ = nullptr;
-    std::vector<std::string> dispatched_actions_;
-    bool is_nvim_ = false;
-    std::string debug_name_;
-    bool initialized_ = false;
-    bool running_ = true;
 };
 
 // ---------------------------------------------------------------------------

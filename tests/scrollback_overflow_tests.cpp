@@ -2,6 +2,7 @@
 #include <draxul/terminal_host_base.h>
 
 #include "support/fake_renderer.h"
+#include "support/fake_window.h"
 #include "support/test_host_callbacks.h"
 #include <draxul/host.h>
 #include <draxul/text_service.h>
@@ -23,46 +24,7 @@ using namespace draxul;
 namespace
 {
 
-class SbFakeWindow final : public IWindow
-{
-public:
-    bool initialize(const std::string&, int, int) override
-    {
-        return true;
-    }
-    void shutdown() override {}
-    bool poll_events() override
-    {
-        return true;
-    }
-    void* native_handle() override
-    {
-        return nullptr;
-    }
-    std::pair<int, int> size_logical() const override
-    {
-        return { 800, 600 };
-    }
-    std::pair<int, int> size_pixels() const override
-    {
-        return { 800, 600 };
-    }
-    float display_ppi() const override
-    {
-        return 96.0f;
-    }
-    void set_title(const std::string&) override {}
-    std::string clipboard_text() const override
-    {
-        return {};
-    }
-    bool set_clipboard_text(const std::string&) override
-    {
-        return true;
-    }
-    void set_text_input_area(int, int, int, int) override {}
-};
-
+using SbFakeWindow = draxul::tests::FakeWindow;
 using SbFakeRenderer = draxul::tests::FakeTermRenderer;
 
 class SbTestHost final : public TerminalHostBase

@@ -25,18 +25,28 @@ Claude's review noted that test fixtures are scattered — each test file reinve
 
 ## Implementation Plan
 
-- [ ] Audit existing test files for mock implementations of `IWindow`, `IGridRenderer`, `IHost`, `IGridHandle`, and any time/clock abstractions.
-- [ ] Extract the canonical (most complete) version of each mock into a new file in `tests/support/` (which already contains `replay_fixture.h`).
-  - `tests/support/fake_window.h`
-  - `tests/support/fake_renderer.h`
-  - `tests/support/fake_host.h`
-  - `tests/support/fake_grid_handle.h`
-  - `tests/support/fake_clock.h`
-- [ ] Each fake should expose:
-  - A constructor accepting optional overrides for specific behaviours (e.g. `create_grid_handle` returning null).
-  - Call-count / argument-capture members for assertion.
+- [x] Audit existing test files for mock implementations of `IWindow`, `IGridRenderer`, `IHost`, `IGridHandle`, and any time/clock abstractions.
+- [x] Extract the canonical (most complete) version of each mock into a new file in `tests/support/` (which already contains `replay_fixture.h`).
+  - [x] `tests/support/fake_window.h` (already existed; no further changes needed).
+  - [x] `tests/support/fake_renderer.h` (already existed; now includes the split-out `fake_grid_handle.h`).
+  - [x] `tests/support/fake_host.h` — new. Canonical `FakeHost` built from `SmokeTestHost`/`StubHost`/`DispatchTrackingHost` with behaviour flags (`fail_initialize`, `is_nvim`, `request_frame_on_pump`, `dispatch_action_result`) and call-count/argument-capture members for every IHost method.
+  - [x] `tests/support/fake_grid_handle.h` — new. `FakeGridHandle` extracted from `fake_renderer.h`; records batches, overlays, cursor, viewport, default bg, scroll offset.
+  - [x] `tests/support/fake_clock.h` — new. `FakeClock` extracted from `toast_host_tests.cpp`; exposes `advance()`, `now()`, `set_now()`, and `source()` returning a `std::function<time_point()>` usable as any `TimeSource`.
+- [x] Each fake exposes:
+  - [x] Constructor / member toggles for behaviour injection (e.g. `FakeGridPipelineRenderer::fail_create_grid_handle` returning null; `FakeHost::fail_initialize`; `FakeHost::is_nvim`).
+  - [x] Call-count / argument-capture members for assertion.
 - [ ] Update existing tests to use the shared fakes rather than their local copies (do this incrementally — at minimum the tests being added by WI 14-23 should use the shared fakes from day one).
-- [ ] Wire the new support files into `CMakeLists.txt` as part of the `draxul-tests` target.
+  - [x] `tests/scrollback_overflow_tests.cpp` — uses shared `FakeWindow` (was `SbFakeWindow`).
+  - [x] `tests/shell_host_crash_tests.cpp` — uses shared `FakeWindow` (was `ShCrashFakeWindow`).
+  - [x] `tests/terminal_vt_psreadline_tests.cpp` — uses shared `FakeWindow` (was `PsFakeWindow`).
+  - [x] `tests/toast_host_tests.cpp` — uses shared `FakeClock` (was local `struct FakeClock`).
+  - [x] `tests/input_dispatcher_routing_tests.cpp` — uses shared `FakeHost` via `using StubHost = tests::FakeHost` (was local `StubHost`).
+  - [x] `tests/app_dispatch_tests.cpp` — `DispatchTrackingHost` now subclasses shared `FakeHost` (removes ~100 lines of boilerplate).
+  - [x] `tests/app_smoke_tests.cpp` — `SmokeTestHost`, `FailingInitHost`, `InitFrameOnlyHost` now built on shared `FakeHost`.
+  - [ ] `tests/host_manager_tests.cpp` — `LifetimeTestHost` still ad-hoc; specialised shutdown-counter + callback-on-shutdown behaviour not yet folded into the canonical fake.
+  - [ ] `tests/grid_host_null_handle_tests.cpp` — `StubGridHost` inherits `GridHostBase` rather than `IHost`; out of scope for `FakeHost`.
+- [x] Wire the new support files into `CMakeLists.txt` as part of the `draxul-tests` target.
+  - `tests/support/` is already on the include path and `*_tests.cpp` is globbed with `CONFIGURE_DEPENDS`; no CMake changes were needed.
 
 ---
 

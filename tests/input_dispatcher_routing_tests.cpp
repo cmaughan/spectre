@@ -2,6 +2,7 @@
 
 #include "gui_action_handler.h"
 #include "input_dispatcher.h"
+#include "support/fake_host.h"
 #include "support/fake_window.h"
 #include <SDL3/SDL.h>
 #include <draxul/app_config.h>
@@ -176,82 +177,8 @@ TEST_CASE("input dispatcher: gui_action_for_key_event skips chord bindings", "[i
 namespace
 {
 
-// Minimal IHost stub that records events for verification.
-class StubHost final : public IHost
-{
-public:
-    bool initialize(const HostContext&, IHostCallbacks&) override
-    {
-        return true;
-    }
-    void shutdown() override {}
-    bool is_running() const override
-    {
-        return true;
-    }
-    std::string init_error() const override
-    {
-        return {};
-    }
-    void set_viewport(const HostViewport&) override {}
-    void pump() override {}
-    std::optional<std::chrono::steady_clock::time_point> next_deadline() const override
-    {
-        return std::nullopt;
-    }
-
-    void on_key(const KeyEvent& event) override
-    {
-        key_events.push_back(event);
-    }
-    void on_text_input(const TextInputEvent& event) override
-    {
-        text_input_events.push_back(event);
-    }
-    void on_text_editing(const TextEditingEvent& event) override
-    {
-        text_editing_events.push_back(event);
-    }
-    void on_mouse_button(const MouseButtonEvent& event) override
-    {
-        mouse_button_events.push_back(event);
-    }
-    void on_mouse_move(const MouseMoveEvent& event) override
-    {
-        mouse_move_events.push_back(event);
-    }
-    void on_mouse_wheel(const MouseWheelEvent& event) override
-    {
-        mouse_wheel_events.push_back(event);
-    }
-
-    bool dispatch_action(std::string_view action) override
-    {
-        dispatched_actions.emplace_back(action);
-        return true;
-    }
-
-    void request_close() override {}
-    Color default_background() const override
-    {
-        return Color(0.0f, 0.0f, 0.0f, 1.0f);
-    }
-    HostRuntimeState runtime_state() const override
-    {
-        return {};
-    }
-    HostDebugState debug_state() const override
-    {
-        return {};
-    }
-    std::vector<KeyEvent> key_events;
-    std::vector<TextInputEvent> text_input_events;
-    std::vector<TextEditingEvent> text_editing_events;
-    std::vector<MouseButtonEvent> mouse_button_events;
-    std::vector<MouseMoveEvent> mouse_move_events;
-    std::vector<MouseWheelEvent> mouse_wheel_events;
-    std::vector<std::string> dispatched_actions;
-};
+// Minimal IHost stub — uses shared FakeHost which records every input event.
+using StubHost = draxul::tests::FakeHost;
 
 // Test harness that wires a full InputDispatcher through connect().
 struct E2ESetup

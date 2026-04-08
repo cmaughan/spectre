@@ -1,5 +1,7 @@
 #pragma once
 
+#include "fake_grid_handle.h"
+
 #include <draxul/renderer.h>
 #include <draxul/types.h>
 #include <imgui.h>
@@ -11,35 +13,6 @@
 
 namespace draxul::tests
 {
-
-// Minimal stub IGridHandle for use in tests.
-class FakeGridHandle final : public IGridHandle
-{
-public:
-    void set_grid_size(int, int) override {}
-    void update_cells(std::span<const CellUpdate> updates) override
-    {
-        update_batches.emplace_back(updates.begin(), updates.end());
-    }
-    void set_overlay_cells(std::span<const CellUpdate> updates) override
-    {
-        last_overlay.assign(updates.begin(), updates.end());
-    }
-    void set_cursor(int, int, const CursorStyle&) override {}
-    void set_cursor_visible(bool) override {}
-    void set_default_background(Color) override {}
-    void set_scroll_offset(float) override {}
-    void set_viewport(const PaneDescriptor&) override {}
-
-    std::vector<std::vector<CellUpdate>> update_batches;
-    std::vector<CellUpdate> last_overlay;
-
-    void reset()
-    {
-        update_batches.clear();
-        last_overlay.clear();
-    }
-};
 
 // Shared fake renderer implementation for use across all test files.
 // Provides the union of all capabilities observed across per-file fake
