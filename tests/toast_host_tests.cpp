@@ -279,6 +279,53 @@ TEST_CASE("ToastHost: request_frame() is NOT called when no toasts remain",
     CHECK(h.callbacks.request_frame_calls == after_expiry);
 }
 
+// ── WI 12: idle-wake gap — pending toasts must force an immediate deadline ──
+
+TEST_CASE("ToastHost: next_deadline() returns nullopt when idle with no toasts",
+    "[toast][wi12][idle-wake]")
+{
+    ToastHostHarness h;
+    if (!h.init())
+        SKIP("bundled font not found");
+
+    // No toasts pushed and none active — the host should not force a wake.
+    CHECK_FALSE(h.host.next_deadline().has_value());
+}
+
+TEST_CASE("ToastHost: a toast pushed from a background thread forces an immediate deadline",
+    "[toast][wi12][idle-wake]")
+{
+    // Regression test for WI 12. Previously, ToastHost::next_deadline() only
+    // considered active_, so a toast queued into pending_ from a background
+    // thread would not request an immediate wake — it would sit invisible
+    // until an unrelated event kicked the main loop. The fix: next_deadline()
+    // reports now() whenever pending_ is non-empty.
+    ToastHostHarness h;
+    if (!h.init())
+        SKIP("bundled font not found");
+
+    REQUIRE_FALSE(h.host.next_deadline().has_value());
+
+    // Simulate a push from another thread (the ToastHost push() contract
+    // explicitly allows any thread). We don't need real thread scheduling to
+    // exercise next_deadline's treatment of the pending queue.
+    h.host.push(gui::ToastLevel::Info, "from worker", 4.0f);
+
+    const auto deadline = h.host.next_deadline();
+    REQUIRE(deadline.has_value());
+    // Deadline must be at-or-before now (i.e. "wake immediately"), not the
+    // animation-fade 33ms-in-the-future path that applies to already-active
+    // toasts.
+    CHECK(*deadline <= std::chrono::steady_clock::now());
+
+    // After pumping, the pending queue drains into active_ and the deadline
+    // switches back to the animation cadence (roughly +33ms).
+    h.host.pump();
+    const auto after_pump = h.host.next_deadline();
+    REQUIRE(after_pump.has_value());
+    CHECK(*after_pump > std::chrono::steady_clock::now());
+}
+
 // ── Early-buffer replay (push before initialize) ─────────────────────────
 
 TEST_CASE("ToastHost: toasts pushed before initialize() surface on the first pump",

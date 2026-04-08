@@ -146,6 +146,15 @@ void ToastHost::draw(IFrameContext& frame)
 
 std::optional<std::chrono::steady_clock::time_point> ToastHost::next_deadline() const
 {
+    // WI 12: pending toasts pushed from other threads must wake the idle loop
+    // immediately. Without this the toast sits in pending_ until some unrelated
+    // event wakes the main loop (potentially an infinite delay if the app is
+    // fully idle).
+    {
+        std::lock_guard lock(pending_mutex_);
+        if (!pending_.empty())
+            return std::chrono::steady_clock::now();
+    }
     if (active_.empty())
         return std::nullopt;
     // Request a frame every ~33ms for smooth fade animation.

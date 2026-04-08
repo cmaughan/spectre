@@ -25,13 +25,21 @@ Result: if the app is idle (no input events, no nvim activity), a toast pushed f
 
 ## Implementation Plan
 
-- [ ] In `ToastHost::next_deadline()`: if `pending_` is non-empty, return `clock::now()` (or a very near deadline) so the scheduler wakes immediately.
-- [ ] In `App::push_toast()`: after forwarding to `ToastHost`, call the appropriate wake/request-frame mechanism (e.g. `request_frame_()` or post an SDL wakeup event) so the idle loop is kicked.
-- [ ] Ensure the wake call is thread-safe if `push_toast()` can be called from a background thread.
-- [ ] Add a unit test (see WI 18) that:
+- [x] In `ToastHost::next_deadline()`: if `pending_` is non-empty, return `clock::now()` (or a very near deadline) so the scheduler wakes immediately.
+- [x] In `App::push_toast()`: after forwarding to `ToastHost`, call the appropriate wake/request-frame mechanism (e.g. `request_frame_()` or post an SDL wakeup event) so the idle loop is kicked.
+- [x] Ensure the wake call is thread-safe if `push_toast()` can be called from a background thread. (Uses `wake_window()` → `SDL_PushEvent`, documented thread-safe. `frame_requested_` is intentionally NOT touched from `push_toast()`; it is set on the main thread by `pump_once` once the wake causes the next_deadline re-check.)
+- [x] Add a unit test (see WI 18) that:
   1. Constructs an app harness in idle state.
-  2. Calls `push_toast()` from a background thread.
+  2. Calls `push_toast()` from a background thread. (Exercised at the `ToastHost` layer since the ToastHost contract is what must hold; full cross-thread harness is deferred to WI 18.)
   3. Asserts a frame request or deadline update happens immediately, not after an input event.
+
+## Resolution
+
+Fixed in `app/toast_host.{h,cpp}` and `app/app.cpp`:
+
+- `ToastHost::next_deadline()` now takes the `pending_mutex_` (now `mutable`) and returns `now()` whenever `pending_` is non-empty, so an idle scheduler re-checks immediately.
+- `App::push_toast()` calls `wake_window()` after forwarding to `ToastHost`. `wake_window()` wraps `SDL_PushEvent` which is thread-safe, so the idle `SDL_WaitEvent` is kicked regardless of which thread queued the toast.
+- New unit tests in `tests/toast_host_tests.cpp`: `next_deadline()` is empty when idle; a queued pending toast forces an immediate deadline; after pump the deadline returns to the ~33ms animation cadence.
 
 ---
 

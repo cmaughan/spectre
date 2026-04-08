@@ -1475,6 +1475,12 @@ void App::push_toast(int level, std::string_view message)
     else if (level >= 2)
         toast_level = gui::ToastLevel::Error;
     toast_host_->push(toast_level, std::string(message), config_.toast_duration_s);
+
+    // WI 12: wake the main loop so an idle app surfaces the toast immediately.
+    // push_toast() may be called from background threads; wake_window() is
+    // thread-safe (SDL_PushEvent is documented thread-safe), whereas
+    // request_frame() writes a plain bool and must stay on the main thread.
+    wake_window();
 }
 
 void App::update_diagnostics_panel()

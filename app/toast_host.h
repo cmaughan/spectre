@@ -84,7 +84,7 @@ private:
     std::chrono::steady_clock::time_point last_tick_{};
     TimeSource time_source_{};
 
-    std::mutex pending_mutex_;
+    mutable std::mutex pending_mutex_;
     std::vector<PendingToast> pending_;
 };
 
