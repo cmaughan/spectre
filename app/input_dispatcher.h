@@ -167,6 +167,17 @@ private:
     // Update mouse cursor based on whether (phys_x, phys_y) is over a divider.
     // Returns true if a divider is under the point. Skipped while dragging.
     bool update_cursor_for_divider(int phys_x, int phys_y);
+    // Shared mouse-event tail used by all three on_mouse_*_event handlers.
+    // Resolves target via host_for_mouse_pos, runs the UiPanel wants_mouse
+    // short-circuit (with request_frame side effect), the contains_panel_point
+    // suppression, and finally calls `forward(*target, phys_x, phys_y)` only
+    // when an event should reach a host. Each handler is responsible for its
+    // own pre-checks (overlay, chrome strip, divider drag, panel-forward) and
+    // the per-event-type physical-event construction inside `forward`.
+    void dispatch_mouse_to_host(
+        int logical_x,
+        int logical_y,
+        const std::function<void(IHost&, int phys_x, int phys_y)>& forward);
 
     Deps deps_;
     // Divider drag state.
