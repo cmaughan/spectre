@@ -1,6 +1,7 @@
 #include "host_manager.h"
 
 #include <draxul/app_config.h>
+#include <draxul/app_options.h>
 #include <draxul/base_renderer.h>
 #include <draxul/grid_host_base.h>
 #include <draxul/host_kind.h>

@@ -4,6 +4,8 @@
 #include <SDL3/SDL.h>
 #include <draxul/app_config.h>
 #include <draxul/config_document.h>
+#include <draxul/events.h>
+#include <draxul/host_kind.h>
 #ifdef DRAXUL_ENABLE_MEGACITY
 #include <draxul/megacity_code_config.h>
 #endif

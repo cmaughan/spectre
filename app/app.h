@@ -10,6 +10,7 @@
 #include "workspace.h"
 #include <chrono>
 #include <draxul/app_config.h>
+#include <draxul/app_options.h>
 #include <draxul/config_document.h>
 #include <draxul/diagnostics_collector.h>
 #include <draxul/host.h>

@@ -10,8 +10,10 @@ target_include_directories(draxul-runtime-support PUBLIC
 )
 
 target_link_libraries(draxul-runtime-support PUBLIC
+    draxul-config
     draxul-font
     draxul-grid
     draxul-nvim
     draxul-renderer
+    draxul-window
 )

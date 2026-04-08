@@ -5,6 +5,7 @@
 #include "support/test_host_callbacks.h"
 
 #include <draxul/app_config.h>
+#include <draxul/app_options.h>
 #include <draxul/text_service.h>
 
 #include "host_manager.h"
