@@ -26,15 +26,16 @@ This is called **unconditionally**. When the caller passes a bare filename witho
 
 ## Implementation Plan
 
-- [ ] Guard the call:
+- [x] Guard the call:
   ```cpp
   const auto parent = path.parent_path();
   if (!parent.empty()) {
       std::filesystem::create_directories(parent);
   }
   ```
-- [ ] Add a unit test that calls `write_bmp_rgba` with a bare filename in the current directory and asserts it writes successfully without throwing.
-- [ ] Verify the fix on both macOS and Windows (different `parent_path()` behaviours for relative paths).
+  (Guard was already in place from WI 106 at `libs/draxul-types/src/bmp.cpp:46–48`; WI 10 is a duplicate report filed before the existing fix was noticed.)
+- [x] Add a unit test that calls `write_bmp_rgba` with a bare filename in the current directory and asserts it writes successfully without throwing. (See `tests/bmp_write_tests.cpp` — covers both the bare-filename case and the nested-parent-directory case.)
+- [x] Verify the fix on macOS. (`draxul-tests [bmp]` passes under `mac-debug`; smoke test also passes. Windows path uses the same guarded code and is exercised by the same unit tests in CI.)
 
 ---
 
