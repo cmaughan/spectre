@@ -348,6 +348,41 @@ TEST_CASE("ToastHost: toasts pushed before initialize() surface on the first pum
     CHECK(active[1].message == "early2");
 }
 
+// ── WI 11: null grid handle during initialize() ──────────────────────────
+
+TEST_CASE("ToastHost: initialize() returns false gracefully when create_grid_handle() is null",
+    "[toast][lifecycle][wi11]")
+{
+    ToastHostHarness h;
+    h.renderer.fail_create_grid_handle = true;
+
+    // text_service must still init so we reach the create_grid_handle() path.
+    if (!init_text_service(h.text_service))
+        SKIP("bundled font not found");
+
+    h.host.set_time_source(h.clock.source());
+
+    HostViewport viewport;
+    viewport.pixel_size = { h.window.pixel_w_, h.window.pixel_h_ };
+    viewport.grid_size = { 1, 1 };
+
+    HostContext context{
+        .window = &h.window,
+        .grid_renderer = &h.renderer,
+        .text_service = &h.text_service,
+        .initial_viewport = viewport,
+        .display_ppi = h.window.display_ppi_,
+    };
+
+    // Must return false (not crash) when the renderer hands back a null handle.
+    CHECK_FALSE(h.host.initialize(context, h.callbacks));
+    CHECK(h.renderer.create_grid_handle_calls == 1);
+
+    // And subsequent pump()/refresh() calls must not dereference the null handle.
+    h.host.push(gui::ToastLevel::Info, "post-fail", 4.0f);
+    h.host.pump(); // should be a no-op w.r.t. handle_
+}
+
 // ── enable_toast_notifications gate ───────────────────────────────────────
 
 TEST_CASE("AppConfig: enable_toast_notifications defaults to true", "[toast][config]")

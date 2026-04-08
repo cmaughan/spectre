@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <draxul/log.h>
 #include <draxul/text_service.h>
 
 namespace draxul
@@ -28,6 +29,11 @@ bool ToastHost::initialize(const HostContext& context, IHostCallbacks& callbacks
 
     set_viewport(context.initial_viewport);
     handle_ = renderer_->create_grid_handle();
+    if (!handle_)
+    {
+        DRAXUL_LOG_ERROR(LogCategory::App, "ToastHost: create_grid_handle() returned null");
+        return false;
+    }
 
     // Toast grid covers the full window but only emits cells for the small
     // toast region; the rest of the grid must stay fully transparent so the

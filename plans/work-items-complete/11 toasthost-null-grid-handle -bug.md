@@ -31,7 +31,7 @@ This is an outlier in an otherwise consistent pattern, making it a genuine crash
 
 ## Implementation Plan
 
-- [ ] Add a null check after `create_grid_handle()` in `ToastHost::initialize()`:
+- [x] Add a null check after `create_grid_handle()` in `ToastHost::initialize()`:
   ```cpp
   handle_ = create_grid_handle();
   if (!handle_) {
@@ -39,9 +39,9 @@ This is an outlier in an otherwise consistent pattern, making it a genuine crash
       return false;
   }
   ```
-- [ ] Verify this matches the pattern in `ChromeHost::initialize()` for consistency.
-- [ ] Add a unit test (see WI 19) that injects a null `create_grid_handle` return and asserts graceful `false` return, not a crash.
-- [ ] Run under ASan to confirm no use-after-null in the rest of the `initialize()` path.
+- [x] Verify this matches the pattern in `ChromeHost::initialize()` for consistency.
+- [x] Add a unit test (see WI 19) that injects a null `create_grid_handle` return and asserts graceful `false` return, not a crash.
+- [x] Run under ASan to confirm no use-after-null in the rest of the `initialize()` path.
 
 ---
 
