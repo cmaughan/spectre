@@ -441,7 +441,14 @@ void InputDispatcher::on_mouse_move_event(const MouseMoveEvent& event)
     {
         if (HostManager* hm = deps_.host_manager ? deps_.host_manager() : nullptr)
         {
-            hm->update_divider_from_pixel(drag_divider_id_, phys_x_mv, phys_y_mv);
+            int cw = 0, ch = 0;
+            if (deps_.cell_size_phys)
+            {
+                const auto cs = deps_.cell_size_phys();
+                cw = cs.first;
+                ch = cs.second;
+            }
+            hm->update_divider_from_pixel(drag_divider_id_, phys_x_mv, phys_y_mv, cw, ch);
             if (deps_.request_frame)
                 deps_.request_frame();
         }

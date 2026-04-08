@@ -84,6 +84,10 @@ public:
         // with phys_y < this height never reach the underlying host so the
         // tab bar cannot start drag selections in the terminal beneath.
         std::function<int()> tab_bar_height_phys;
+        // Cell size in physical pixels. Used to quantize divider drag in
+        // cell-aligned (tmux-style) steps so terminal grids don't visually
+        // jitter when crossing pixel-row thresholds.
+        std::function<std::pair<int, int>()> cell_size_phys;
         // Activate tab by 1-based index.
         std::function<void(int)> activate_tab;
         // Activate pane by 1-based visual index within the active workspace.

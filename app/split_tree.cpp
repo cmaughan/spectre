@@ -216,7 +216,22 @@ void SplitTree::set_divider_ratio(DividerId id, float ratio)
     recompute(origin_x_, origin_y_, total_w_, total_h_);
 }
 
-void SplitTree::update_divider_from_pixel(DividerId id, int px, int py)
+namespace
+{
+// Quantize a ratio so the first-child dimension lands on a multiple of
+// snap_step pixels. `available` is the parent dimension minus the divider
+// thickness (the same denominator update_divider_from_pixel uses).
+float snap_ratio_to_step(float ratio, int available, int snap_step)
+{
+    if (snap_step <= 0 || available <= 0)
+        return ratio;
+    const float first_px = ratio * static_cast<float>(available);
+    const int snapped_px = static_cast<int>(std::lround(first_px / static_cast<float>(snap_step))) * snap_step;
+    return static_cast<float>(snapped_px) / static_cast<float>(available);
+}
+} // namespace
+
+void SplitTree::update_divider_from_pixel(DividerId id, int px, int py, int snap_step)
 {
     PERF_MEASURE();
     if (id == kInvalidDivider)
@@ -229,21 +244,23 @@ void SplitTree::update_divider_from_pixel(DividerId id, int px, int py)
         ? std::min(kDividerWidth, s.rect_w)
         : std::min(kDividerWidth, s.rect_h);
     float new_ratio = s.ratio;
+    int available = 1;
     if (s.direction == SplitDirection::Vertical)
     {
-        const int available = std::max(1, s.rect_w - eff_div);
+        available = std::max(1, s.rect_w - eff_div);
         new_ratio = static_cast<float>(px - s.rect_x) / static_cast<float>(available);
     }
     else
     {
-        const int available = std::max(1, s.rect_h - eff_div);
+        available = std::max(1, s.rect_h - eff_div);
         new_ratio = static_cast<float>(py - s.rect_y) / static_cast<float>(available);
     }
+    new_ratio = snap_ratio_to_step(new_ratio, available, snap_step);
     s.ratio = std::clamp(new_ratio, 0.1f, 0.9f);
     recompute(origin_x_, origin_y_, total_w_, total_h_);
 }
 
-void SplitTree::nudge_divider(DividerId id, float delta)
+void SplitTree::nudge_divider(DividerId id, float delta, int snap_step)
 {
     PERF_MEASURE();
     if (id == kInvalidDivider)
@@ -252,8 +269,26 @@ void SplitTree::nudge_divider(DividerId id, float delta)
     if (!node || node->is_leaf())
         return;
     auto& s = node->split();
-    s.ratio = std::clamp(s.ratio + delta, 0.1f, 0.9f);
+    float new_ratio = std::clamp(s.ratio + delta, 0.1f, 0.9f);
+    const int eff_div = (s.direction == SplitDirection::Vertical)
+        ? std::min(kDividerWidth, s.rect_w)
+        : std::min(kDividerWidth, s.rect_h);
+    const int available = (s.direction == SplitDirection::Vertical)
+        ? std::max(1, s.rect_w - eff_div)
+        : std::max(1, s.rect_h - eff_div);
+    new_ratio = snap_ratio_to_step(new_ratio, available, snap_step);
+    s.ratio = std::clamp(new_ratio, 0.1f, 0.9f);
     recompute(origin_x_, origin_y_, total_w_, total_h_);
+}
+
+std::optional<SplitDirection> SplitTree::divider_direction(DividerId id) const
+{
+    if (id == kInvalidDivider)
+        return std::nullopt;
+    const Node* node = find_divider_node(id);
+    if (!node || node->is_leaf())
+        return std::nullopt;
+    return node->split().direction;
 }
 
 DividerId SplitTree::find_ancestor_divider(LeafId leaf, FocusDirection direction) const

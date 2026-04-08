@@ -147,11 +147,15 @@ public:
     // Update a divider's ratio based on a mouse pixel position and re-layout
     // viewports. Used during drag. The SplitTree retains its own origin/size
     // from the most recent recompute_viewports(), so the chrome reservation
-    // is preserved without callers needing to re-supply it.
-    void update_divider_from_pixel(DividerId id, int px, int py);
+    // is preserved without callers needing to re-supply it. cell_w/cell_h
+    // quantize the divider position to cell boundaries (tmux-style); HostManager
+    // picks the relevant axis from the divider's split direction. Pass 0/0
+    // to disable snapping.
+    void update_divider_from_pixel(DividerId id, int px, int py, int cell_w = 0, int cell_h = 0);
 
     // Nudge a divider by a fixed delta (positive grows the first child).
-    void nudge_divider(DividerId id, float delta);
+    // cell_w/cell_h quantize the resulting divider position to cell boundaries.
+    void nudge_divider(DividerId id, float delta, int cell_w = 0, int cell_h = 0);
 
     // Find an ancestor divider above the focused leaf in the given direction.
     DividerId find_focused_ancestor_divider(FocusDirection direction) const;

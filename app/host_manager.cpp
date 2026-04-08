@@ -436,7 +436,20 @@ std::optional<HostManager::DividerHitInfo> HostManager::divider_at_point(int px,
     return std::nullopt;
 }
 
-void HostManager::update_divider_from_pixel(DividerId id, int px, int py)
+namespace
+{
+int snap_step_for_divider(const SplitTree& tree, DividerId id, int cell_w, int cell_h)
+{
+    // Vertical splits move horizontally → snap to cell_w; horizontal splits
+    // move vertically → snap to cell_h.
+    const auto dir = tree.divider_direction(id);
+    if (!dir)
+        return 0;
+    return *dir == SplitDirection::Vertical ? cell_w : cell_h;
+}
+} // namespace
+
+void HostManager::update_divider_from_pixel(DividerId id, int px, int py, int cell_w, int cell_h)
 {
     PERF_MEASURE();
     if (zoomed_)
@@ -445,16 +458,18 @@ void HostManager::update_divider_from_pixel(DividerId id, int px, int py)
     // last recompute() (which reserves space for the chrome strip), so call
     // through the tree directly rather than recompute_viewports() — the latter
     // would override the chrome reservation with (0, 0) and hide the tab bar.
-    tree_.update_divider_from_pixel(id, px, py);
+    const int snap = snap_step_for_divider(tree_, id, cell_w, cell_h);
+    tree_.update_divider_from_pixel(id, px, py, snap);
     update_all_viewports();
 }
 
-void HostManager::nudge_divider(DividerId id, float delta)
+void HostManager::nudge_divider(DividerId id, float delta, int cell_w, int cell_h)
 {
     PERF_MEASURE();
     if (zoomed_)
         return;
-    tree_.nudge_divider(id, delta);
+    const int snap = snap_step_for_divider(tree_, id, cell_w, cell_h);
+    tree_.nudge_divider(id, delta, snap);
     update_all_viewports();
 }
 

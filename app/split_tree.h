@@ -3,6 +3,7 @@
 #include <draxul/pane_descriptor.h>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <variant>
 
 namespace draxul
@@ -91,11 +92,17 @@ public:
 
     // Update a divider's ratio from a mouse pixel position. The pixel is mapped
     // to a position within the divider's parent rect along the split axis.
-    void update_divider_from_pixel(DividerId id, int px, int py);
+    // If snap_step > 0, the resulting first-child dimension is quantized to a
+    // multiple of snap_step pixels (tmux-style cell-aligned drag).
+    void update_divider_from_pixel(DividerId id, int px, int py, int snap_step = 0);
 
     // Adjust a divider's ratio by `delta` (positive grows the first child).
-    // Clamped to [0.1, 0.9].
-    void nudge_divider(DividerId id, float delta);
+    // Clamped to [0.1, 0.9]. If snap_step > 0, the resulting first-child
+    // dimension is quantized to a multiple of snap_step pixels.
+    void nudge_divider(DividerId id, float delta, int snap_step = 0);
+
+    // Returns the split direction for a given divider id, or nullopt if none.
+    std::optional<SplitDirection> divider_direction(DividerId id) const;
 
     // Find the nearest ancestor divider above `leaf` whose split direction
     // matches `direction` (Left/Right -> Vertical, Up/Down -> Horizontal).
