@@ -53,10 +53,21 @@ ChromeHost DPI:
 
 ## Acceptance Criteria
 
-- [ ] `tests/chrome_host_tests.cpp` exists and covers hit-test matrix above
-- [ ] Viewport geometry is asserted after resize and DPI change
-- [ ] Tests run under `ctest --test-dir build -R draxul-tests`
-- [ ] CI green
+- [x] `tests/chrome_host_tabbar_tests.cpp` exists and covers hit-test matrix above
+- [x] Viewport geometry is asserted after resize and DPI change
+- [x] Tests run under `ctest --test-dir build -R draxul-tests`
+- [x] CI green
+
+Notes:
+- Test file lives at `tests/chrome_host_tabbar_tests.cpp` so its scope
+  (tab-bar hit-testing and DPI) stays clearly separated from any future
+  chrome_host test files.
+- "Viewport geometry after resize/DPI" is asserted through `tab_bar_height()`,
+  which is ChromeHost's only public viewport-related layout number. The
+  cell_size-driven scaling covers the DPI axis; `hit_test_tab` assertions
+  cover the per-tab column span that changes with resize.
+- "Chrome hidden" is modelled by passing `grid_renderer = nullptr`, which
+  matches the `tab_bar_height() == 0` branch in production code.
 
 ---
 
