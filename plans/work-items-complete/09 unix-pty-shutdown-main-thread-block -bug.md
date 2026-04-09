@@ -19,16 +19,16 @@ Total potential block: **600 ms**. With a process in uninterruptible kernel slee
 
 ## Investigation
 
-- [ ] Read `libs/draxul-host/src/unix_pty_process.cpp` lines 121–200 to confirm the blocking wait structure.
-- [ ] Read `libs/draxul-nvim/src/nvim_process.cpp` shutdown (POSIX path) to understand the detached-thread pattern to replicate.
-- [ ] Confirm which resources are safe to hand off to the background thread (pid, master_fd_, reader_thread_).
-- [ ] Check whether `reader_thread_.join()` (line 190) can also be moved to the background thread or if it must remain synchronous.
+- [x] Read `libs/draxul-host/src/unix_pty_process.cpp` lines 121–200 to confirm the blocking wait structure.
+- [x] Read `libs/draxul-nvim/src/nvim_process.cpp` shutdown (POSIX path) to understand the detached-thread pattern to replicate.
+- [x] Confirm which resources are safe to hand off to the background thread (pid, master_fd_, reader_thread_).
+- [x] Check whether `reader_thread_.join()` (line 190) can also be moved to the background thread or if it must remain synchronous.
 
 ---
 
 ## Fix Strategy
 
-- [ ] Move the SIGTERM/SIGKILL wait loops into a `std::thread` that is detached immediately after launch:
+- [x] Move the SIGTERM/SIGKILL wait loops into a `std::thread` that is detached immediately after launch:
   ```cpp
   // In shutdown(): signal the child, then detach the wait
   pid_t pid_copy = pid_;
@@ -37,14 +37,14 @@ Total potential block: **600 ms**. With a process in uninterruptible kernel slee
       // existing SIGTERM + SIGKILL wait logic here
   }).detach();
   ```
-- [ ] Ensure the reader thread join on line 190 is still reachable (or moved into the detached thread after the wait).
-- [ ] Guard against double-shutdown (pid_ = -1 before detach).
+- [x] Ensure the reader thread join on line 190 is still reachable (or moved into the detached thread after the wait).
+- [x] Guard against double-shutdown (pid_ = -1 before detach).
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] `UnixPtyProcess::shutdown()` returns within a few milliseconds on the main thread.
-- [ ] The child process is still reliably killed (SIGKILL escalation still runs in the background).
-- [ ] Build and smoke test pass: `cmake --build build --target draxul draxul-tests && py do.py smoke`.
+- [x] `UnixPtyProcess::shutdown()` returns within a few milliseconds on the main thread.
+- [x] The child process is still reliably killed (SIGKILL escalation still runs in the background).
+- [x] Build and smoke test pass: `cmake --build build --target draxul draxul-tests && py do.py smoke`.
 - [ ] Run under TSan: `cmake --preset mac-tsan && cmake --build build --target draxul-tests && ctest --test-dir build -R draxul-tests`. No new data-race findings.

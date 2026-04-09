@@ -129,80 +129,97 @@ void UnixPtyProcess::shutdown()
         (void)::write(shutdown_pipe_[1], "x", 1);
     }
 
-    // Kill ALL processes attached to this PTY. Programs like btop or nvim
-    // create their own process group, so kill(-pid_) only reaches the shell's
-    // group. We also query the terminal's foreground process group via
-    // tcgetpgrp() and signal that separately.
-    //
-    // We kill both the process group (-pid) and the individual process (pid)
-    // because the shell may have changed its own PGID (e.g. zsh job control),
-    // and killing the group alone would miss it.
-    if (pid_ > 0)
-    {
-        pid_t fg_pgid = master_fd_ >= 0 ? tcgetpgrp(master_fd_) : -1;
+    // Capture all state that the background reaper thread needs, then clear
+    // the member variables so the object is safe for reuse or destruction.
+    // The blocking waitpid loops and reader-thread join are offloaded to a
+    // detached thread so the main (UI) thread returns within microseconds.
+    // CLAUDE.md: "Keep shutdown paths non-blocking; a stuck Neovim child
+    // must not hang the UI on exit."
+    const pid_t pid_copy = pid_;
+    const pid_t fg_pgid = (pid_copy > 0 && master_fd_ >= 0) ? tcgetpgrp(master_fd_) : -1;
+    const int master_fd_copy = master_fd_;
+    const int pipe0_copy = shutdown_pipe_[0];
+    const int pipe1_copy = shutdown_pipe_[1];
+    std::thread reader_copy = std::move(reader_thread_);
 
-        // Phase 1: SIGTERM both groups + the direct child.
-        kill(pid_, SIGTERM);
-        kill(-pid_, SIGTERM);
-        if (fg_pgid > 0 && fg_pgid != pid_)
+    pid_ = -1;
+    master_fd_ = -1;
+    shutdown_pipe_[0] = -1;
+    shutdown_pipe_[1] = -1;
+
+    if (pid_copy > 0)
+    {
+        // Phase 1: SIGTERM both groups + the direct child (non-blocking).
+        kill(pid_copy, SIGTERM);
+        kill(-pid_copy, SIGTERM);
+        if (fg_pgid > 0 && fg_pgid != pid_copy)
             kill(-fg_pgid, SIGTERM);
 
-        // Grace period: wait up to ~100ms for the direct child to exit.
-        bool child_reaped = false;
-        int status = 0;
-        for (int i = 0; i < 10; ++i)
-        {
-            if (const pid_t ret = waitpid(pid_, &status, WNOHANG);
-                ret == pid_ || (ret < 0 && errno == ECHILD))
-            {
-                child_reaped = true;
-                break;
-            }
-            std::this_thread::sleep_for(std::chrono::microseconds(10000));
-        }
+        // Offload the timed wait + SIGKILL escalation + fd cleanup to a
+        // detached background thread.
+        std::thread(
+            [pid_copy, fg_pgid, master_fd_copy, pipe0_copy, pipe1_copy,
+                reader = std::move(reader_copy)]() mutable {
+                // Grace period: wait up to ~100ms for the direct child to exit.
+                bool child_reaped = false;
+                int status = 0;
+                for (int i = 0; i < 10; ++i)
+                {
+                    if (const pid_t ret = waitpid(pid_copy, &status, WNOHANG);
+                        ret == pid_copy || (ret < 0 && errno == ECHILD))
+                    {
+                        child_reaped = true;
+                        break;
+                    }
+                    std::this_thread::sleep_for(std::chrono::microseconds(10000));
+                }
 
-        // Phase 2: SIGKILL anything still alive. Always kill the foreground
-        // group regardless of whether the shell has already exited — the
-        // foreground program (btop, nvim, etc.) may still be running.
-        if (fg_pgid > 0 && fg_pgid != pid_)
-            kill(-fg_pgid, SIGKILL);
-        if (!child_reaped)
-        {
-            kill(pid_, SIGKILL);
-            kill(-pid_, SIGKILL);
+                // Phase 2: SIGKILL anything still alive. Always kill the foreground
+                // group regardless of whether the shell has already exited — the
+                // foreground program (btop, nvim, etc.) may still be running.
+                if (fg_pgid > 0 && fg_pgid != pid_copy)
+                    kill(-fg_pgid, SIGKILL);
+                if (!child_reaped)
+                {
+                    kill(pid_copy, SIGKILL);
+                    kill(-pid_copy, SIGKILL);
 
-            // Non-blocking reap with bounded timeout to avoid hanging the
-            // UI thread if the child is in an uninterruptible kernel sleep.
-            for (int i = 0; i < 50; ++i)
-            {
-                if (const pid_t ret = waitpid(pid_, &status, WNOHANG);
-                    ret == pid_ || (ret < 0 && errno == ECHILD))
-                    break;
-                std::this_thread::sleep_for(std::chrono::microseconds(10000));
-            }
-        }
+                    // Non-blocking reap with bounded timeout.
+                    for (int i = 0; i < 50; ++i)
+                    {
+                        if (const pid_t ret = waitpid(pid_copy, &status, WNOHANG);
+                            ret == pid_copy || (ret < 0 && errno == ECHILD))
+                            break;
+                        std::this_thread::sleep_for(std::chrono::microseconds(10000));
+                    }
+                }
 
-        pid_ = -1;
+                // Join the reader thread BEFORE closing master_fd_ to avoid racing
+                // on the fd.
+                if (reader.joinable())
+                    reader.join();
+
+                if (master_fd_copy >= 0)
+                    close(master_fd_copy);
+                if (pipe0_copy >= 0)
+                    close(pipe0_copy);
+                if (pipe1_copy >= 0)
+                    close(pipe1_copy);
+            })
+            .detach();
     }
-
-    // Join the reader thread BEFORE closing master_fd_ to avoid racing on the
-    // fd (the shutdown pipe already woke it, so it will exit promptly).
-    if (reader_thread_.joinable())
-        reader_thread_.join();
-
-    if (master_fd_ >= 0)
+    else
     {
-        close(master_fd_);
-        master_fd_ = -1;
-    }
-
-    for (int& fd : shutdown_pipe_)
-    {
-        if (fd >= 0)
-        {
-            close(fd);
-            fd = -1;
-        }
+        // No child process — clean up reader thread and fds synchronously
+        // (these return immediately when there is no child).
+        if (reader_copy.joinable())
+            reader_copy.join();
+        if (master_fd_copy >= 0)
+            close(master_fd_copy);
+        if (pipe0_copy >= 0)
+            close(pipe0_copy);
+        if (pipe1_copy >= 0)
+            close(pipe1_copy);
     }
 
     std::scoped_lock lock(output_mutex_);
