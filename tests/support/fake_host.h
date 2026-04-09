@@ -21,6 +21,7 @@
 #include <draxul/host.h>
 
 #include <chrono>
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -54,6 +55,15 @@ public:
     // Reported by is_nvim_host().
     bool is_nvim = false;
 
+    // When true, shutdown() calls callbacks_->request_frame() before
+    // returning. Exercises callback-during-teardown scenarios.
+    bool fire_callback_on_shutdown = false;
+
+    // Optional callback invoked from shutdown(). Useful for tests that need
+    // to track shutdown *after* the host is destroyed (capture a shared_ptr
+    // in the lambda so the counter outlives the host).
+    std::function<void()> on_shutdown_callback;
+
     // ── IHost ───────────────────────────────────────────────────────────────
 
     bool initialize(const HostContext& ctx, IHostCallbacks& callbacks) override
@@ -72,7 +82,19 @@ public:
     void shutdown() override
     {
         ++shutdown_calls;
+        if (on_shutdown_callback)
+            on_shutdown_callback();
+        if (fire_callback_on_shutdown && callbacks_)
+            callbacks_->request_frame();
         running_ = false;
+    }
+
+    // Test helper: trigger callbacks_->request_frame() from outside the host.
+    // Used to verify the callback handle remains valid after sibling teardown.
+    void trigger_frame_request() const
+    {
+        if (callbacks_)
+            callbacks_->request_frame();
     }
 
     bool is_running() const override

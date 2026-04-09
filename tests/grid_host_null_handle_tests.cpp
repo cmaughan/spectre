@@ -5,57 +5,17 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "command_palette_host.h"
+#include "support/fake_grid_host.h"
 #include "support/fake_grid_pipeline_renderer.h"
 #include "support/fake_window.h"
 #include "support/test_host_callbacks.h"
-#include <draxul/grid_host_base.h>
 #include <draxul/text_service.h>
 
 using namespace draxul;
 
-namespace
-{
-
-// Minimal concrete GridHostBase used to exercise the base-class initialize()
-// path. Subclass-specific hooks are no-ops; the base class returns false
-// before initialize_host() is reached if create_grid_handle() returns null.
-class StubGridHost final : public GridHostBase
-{
-public:
-    void shutdown() override {}
-    bool is_running() const override
-    {
-        return true;
-    }
-    std::string init_error() const override
-    {
-        return {};
-    }
-    void pump() override {}
-    bool dispatch_action(std::string_view) override
-    {
-        return false;
-    }
-    void request_close() override {}
-
-protected:
-    bool initialize_host() override
-    {
-        initialize_host_called = true;
-        return true;
-    }
-    void on_viewport_changed() override {}
-    void on_font_metrics_changed_impl() override {}
-    std::string_view host_name() const override
-    {
-        return "stub-grid-host";
-    }
-
-public:
-    bool initialize_host_called = false;
-};
-
-} // namespace
+// Use the shared FakeGridHost from tests/support/ instead of the ad-hoc
+// StubGridHost that lived here before WI 25.
+using StubGridHost = draxul::tests::FakeGridHost;
 
 TEST_CASE("GridHostBase::initialize returns false when grid handle creation fails", "[grid_host][null_handle]")
 {

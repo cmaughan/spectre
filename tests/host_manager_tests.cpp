@@ -1,5 +1,7 @@
 #include <catch2/catch_all.hpp>
 
+#include "support/fake_grid_host.h"
+#include "support/fake_host.h"
 #include "support/fake_renderer.h"
 #include "support/fake_window.h"
 #include "support/test_host_callbacks.h"
@@ -26,141 +28,13 @@ std::string bundled_font_path()
     return std::string(DRAXUL_PROJECT_ROOT) + "/fonts/JetBrainsMonoNerdFont-Regular.ttf";
 }
 
-class LifetimeTestHost final : public IHost
-{
-public:
-    explicit LifetimeTestHost(std::shared_ptr<int> shutdown_calls)
-        : shutdown_calls_(std::move(shutdown_calls))
-    {
-    }
+// Thin FakeHost alias for the host-manager harness. The shared FakeHost
+// provides all the tracking (shutdown_calls, fire_callback_on_shutdown,
+// trigger_frame_request, etc.) that LifetimeTestHost previously duplicated.
+using LifetimeTestHost = draxul::tests::FakeHost;
 
-    bool initialize(const HostContext&, IHostCallbacks& callbacks) override
-    {
-        callbacks_ = &callbacks;
-        return true;
-    }
-
-    void shutdown() override
-    {
-        if (shutdown_calls_)
-            ++(*shutdown_calls_);
-        if (fire_callback_on_shutdown_ && callbacks_)
-            callbacks_->request_frame();
-        running_ = false;
-    }
-
-    bool is_running() const override
-    {
-        return running_;
-    }
-
-    std::string init_error() const override
-    {
-        return {};
-    }
-
-    void set_viewport(const HostViewport&) override {}
-    void pump() override {}
-    std::optional<std::chrono::steady_clock::time_point> next_deadline() const override
-    {
-        return std::nullopt;
-    }
-
-    bool dispatch_action(std::string_view) override
-    {
-        return false;
-    }
-
-    void request_close() override
-    {
-        running_ = false;
-    }
-
-    Color default_background() const override
-    {
-        return Color(0.0f, 0.0f, 0.0f, 1.0f);
-    }
-
-    HostRuntimeState runtime_state() const override
-    {
-        HostRuntimeState state;
-        state.content_ready = true;
-        return state;
-    }
-
-    HostDebugState debug_state() const override
-    {
-        HostDebugState state;
-        state.name = "lifetime-test";
-        return state;
-    }
-
-    void trigger_frame_request() const
-    {
-        REQUIRE(callbacks_ != nullptr);
-        callbacks_->request_frame();
-    }
-
-    void set_fire_callback_on_shutdown(bool enabled)
-    {
-        fire_callback_on_shutdown_ = enabled;
-    }
-
-    int shutdown_calls() const
-    {
-        return shutdown_calls_ ? *shutdown_calls_ : 0;
-    }
-
-private:
-    IHostCallbacks* callbacks_ = nullptr;
-    std::shared_ptr<int> shutdown_calls_;
-    bool running_ = true;
-    bool fire_callback_on_shutdown_ = false;
-};
-
-class GuardedGridHost final : public GridHostBase
-{
-public:
-    bool initialize_host() override
-    {
-        return true;
-    }
-
-    void on_viewport_changed() override {}
-
-    void on_font_metrics_changed_impl() override {}
-
-    std::string_view host_name() const override
-    {
-        return "guarded-grid-host";
-    }
-
-    void pump() override {}
-
-    void shutdown() override {}
-
-    bool is_running() const override
-    {
-        return true;
-    }
-
-    std::string init_error() const override
-    {
-        return {};
-    }
-
-    bool dispatch_action(std::string_view) override
-    {
-        return false;
-    }
-
-    void request_close() override {}
-
-    void exercise_apply_grid_size(int cols, int rows)
-    {
-        apply_grid_size(cols, rows);
-    }
-};
+// Alias for the shared FakeGridHost (replaces the ad-hoc GuardedGridHost).
+using GuardedGridHost = draxul::tests::FakeGridHost;
 
 struct HostManagerHarness
 {
@@ -190,9 +64,10 @@ struct HostManagerHarness
         options.save_user_config = false;
         options.host_kind = HostKind::Nvim;
         options.host_factory = [this](HostKind) -> std::unique_ptr<IHost> {
-            auto shutdown_calls = std::make_shared<int>(0);
-            shutdown_counters.push_back(shutdown_calls);
-            auto host = std::make_unique<LifetimeTestHost>(std::move(shutdown_calls));
+            auto counter = std::make_shared<int>(0);
+            auto host = std::make_unique<LifetimeTestHost>("lifetime-test");
+            host->on_shutdown_callback = [counter] { ++(*counter); };
+            shutdown_counters.push_back(counter);
             created_hosts.push_back(host.get());
             return host;
         };
@@ -425,7 +300,7 @@ TEST_CASE("host manager: callbacks remain valid across pane teardown", "[host_ma
     REQUIRE(primary != nullptr);
     REQUIRE(secondary != nullptr);
 
-    secondary->set_fire_callback_on_shutdown(true);
+    secondary->fire_callback_on_shutdown = true;
     REQUIRE(harness.manager.close_leaf(new_leaf));
     REQUIRE(harness.callbacks.request_frame_calls == 1);
     REQUIRE(*harness.shutdown_counters[1] == 1);

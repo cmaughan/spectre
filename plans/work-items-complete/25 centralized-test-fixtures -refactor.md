@@ -35,7 +35,7 @@ Claude's review noted that test fixtures are scattered — each test file reinve
 - [x] Each fake exposes:
   - [x] Constructor / member toggles for behaviour injection (e.g. `FakeGridPipelineRenderer::fail_create_grid_handle` returning null; `FakeHost::fail_initialize`; `FakeHost::is_nvim`).
   - [x] Call-count / argument-capture members for assertion.
-- [ ] Update existing tests to use the shared fakes rather than their local copies (do this incrementally — at minimum the tests being added by WI 14-23 should use the shared fakes from day one).
+- [x] Update existing tests to use the shared fakes rather than their local copies (do this incrementally — at minimum the tests being added by WI 14-23 should use the shared fakes from day one).
   - [x] `tests/scrollback_overflow_tests.cpp` — uses shared `FakeWindow` (was `SbFakeWindow`).
   - [x] `tests/shell_host_crash_tests.cpp` — uses shared `FakeWindow` (was `ShCrashFakeWindow`).
   - [x] `tests/terminal_vt_psreadline_tests.cpp` — uses shared `FakeWindow` (was `PsFakeWindow`).
@@ -43,8 +43,8 @@ Claude's review noted that test fixtures are scattered — each test file reinve
   - [x] `tests/input_dispatcher_routing_tests.cpp` — uses shared `FakeHost` via `using StubHost = tests::FakeHost` (was local `StubHost`).
   - [x] `tests/app_dispatch_tests.cpp` — `DispatchTrackingHost` now subclasses shared `FakeHost` (removes ~100 lines of boilerplate).
   - [x] `tests/app_smoke_tests.cpp` — `SmokeTestHost`, `FailingInitHost`, `InitFrameOnlyHost` now built on shared `FakeHost`.
-  - [ ] `tests/host_manager_tests.cpp` — `LifetimeTestHost` still ad-hoc; specialised shutdown-counter + callback-on-shutdown behaviour not yet folded into the canonical fake.
-  - [ ] `tests/grid_host_null_handle_tests.cpp` — `StubGridHost` inherits `GridHostBase` rather than `IHost`; out of scope for `FakeHost`.
+  - [x] `tests/host_manager_tests.cpp` — `LifetimeTestHost` is now a `FakeHost` alias; `GuardedGridHost` replaced by `FakeGridHost`. `on_shutdown_callback` + `fire_callback_on_shutdown` added to shared `FakeHost` for post-destruction shutdown tracking.
+  - [x] `tests/grid_host_null_handle_tests.cpp` — `StubGridHost` replaced by shared `FakeGridHost` (`tests/support/fake_grid_host.h`).
 - [x] Wire the new support files into `CMakeLists.txt` as part of the `draxul-tests` target.
   - `tests/support/` is already on the include path and `*_tests.cpp` is globbed with `CONFIGURE_DEPENDS`; no CMake changes were needed.
 
