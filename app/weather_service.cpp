@@ -15,6 +15,11 @@
 #define pclose _pclose
 #endif
 
+#ifdef _WIN32
+#define popen _popen
+#define pclose _pclose
+#endif
+
 namespace draxul
 {
 
