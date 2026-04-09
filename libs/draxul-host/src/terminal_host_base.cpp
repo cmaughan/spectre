@@ -454,6 +454,27 @@ void TerminalHostBase::erase_display(int mode)
         mode, grid_cols(), grid_rows(), vt_.col, vt_.row);
     if (mode == 2)
     {
+        // Push non-blank visible rows to scrollback before clearing, so
+        // 'clear' command output is preserved in history (matches iTerm2,
+        // Windows Terminal). Only on the main screen.
+        if (!alt_screen_.in_alt_screen())
+        {
+            for (int r = 0; r < grid_rows(); ++r)
+            {
+                bool blank_row = true;
+                for (int c = 0; c < grid_cols(); ++c)
+                {
+                    const auto& cell = grid().get_cell(c, r);
+                    if (!cell.text.empty() && cell.text.view() != " ")
+                    {
+                        blank_row = false;
+                        break;
+                    }
+                }
+                if (!blank_row)
+                    on_line_scrolled_off(r);
+            }
+        }
         grid().clear();
         return;
     }

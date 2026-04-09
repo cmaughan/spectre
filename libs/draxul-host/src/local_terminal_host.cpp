@@ -2,6 +2,7 @@
 
 #include <SDL3/SDL_keycode.h>
 #include <algorithm>
+#include <draxul/input_types.h>
 #include <draxul/log.h>
 #include <draxul/perf_timing.h>
 #include <draxul/window.h>
@@ -168,6 +169,32 @@ void LocalTerminalHost::on_key(const KeyEvent& event)
         (void)handle_copy_mode_key(event);
         return;
     }
+
+    // Shift+PageUp/Down/Home/End for scrollback navigation.
+    if (event.pressed && (event.mod & kModShift))
+    {
+        if (event.keycode == SDLK_PAGEUP)
+        {
+            scrollback_.scroll(grid_rows());
+            return;
+        }
+        if (event.keycode == SDLK_PAGEDOWN)
+        {
+            scrollback_.scroll(-grid_rows());
+            return;
+        }
+        if (event.keycode == SDLK_HOME)
+        {
+            scrollback_.scroll(scrollback_.size());
+            return;
+        }
+        if (event.keycode == SDLK_END)
+        {
+            scrollback_.scroll_to_live();
+            return;
+        }
+    }
+
     if (event.pressed && scrollback_.is_scrolled_back())
         scrollback_.scroll_to_live();
     TerminalHostBase::on_key(event);
@@ -317,20 +344,79 @@ void LocalTerminalHost::on_viewport_changed()
     const int old_rows = grid_rows();
     const int new_cols = std::max(1, viewport().grid_size.x);
     const int new_rows = std::max(1, viewport().grid_size.y);
-    if (new_cols == grid_cols() && new_rows == grid_rows())
+    if (new_cols == old_cols && new_rows == old_rows)
         return;
 
+    // Capture the visible grid before anything changes.
     const GridSnapshot visible_snapshot = capture_grid_snapshot(grid(), old_cols, old_rows);
 
-    if (new_cols != grid_cols())
+    if (new_cols != old_cols)
         scrollback_.resize(new_cols);
-    else if (scrollback_.is_scrolled_back())
-        scrollback_.reset();
+    if (scrollback_.is_scrolled_back())
+        scrollback_.scroll_to_live();
     selection_.clear();
+
+    // Phase 2 reflow: when shrinking vertically, push excess top rows into
+    // scrollback so they survive the shell's post-SIGWINCH clear-and-redraw.
+    if (new_rows < old_rows)
+    {
+        const int excess = old_rows - new_rows;
+        for (int r = 0; r < excess; ++r)
+        {
+            const auto row_offset = static_cast<size_t>(r) * old_cols;
+            if (row_offset + old_cols <= visible_snapshot.cells.size())
+                scrollback_.push_row(&visible_snapshot.cells[row_offset], old_cols);
+        }
+    }
 
     TerminalHostBase::on_viewport_changed();
 
-    restore_grid_snapshot(grid(), grid_cols(), grid_rows(), visible_snapshot);
+    // When growing vertically, pull rows back from scrollback into the top of
+    // the grid and shift existing content down.
+    if (new_rows > old_rows && scrollback_.size() > 0)
+    {
+        const int pull = std::min(new_rows - old_rows, scrollback_.size());
+        // Collect pulled rows (pop_newest_rows visits newest-first, so reverse).
+        std::vector<std::vector<Cell>> pulled_rows;
+        pulled_rows.reserve(pull);
+        scrollback_.pop_newest_rows(pull, [&](std::span<const Cell> row) {
+            pulled_rows.emplace_back(row.begin(), row.end());
+        });
+        std::reverse(pulled_rows.begin(), pulled_rows.end());
+
+        // Shift existing grid content down by `pull` rows.
+        for (int r = grid_rows() - 1; r >= pull; --r)
+        {
+            for (int c = 0; c < grid_cols(); ++c)
+            {
+                const auto& src = grid().get_cell(c, r - pull);
+                grid().set_cell(c, r, std::string(src.text.view()), src.hl_attr_id, src.double_width);
+            }
+        }
+
+        // Write pulled scrollback rows at the top.
+        const int copy_cols = std::min(scrollback_.cols(), grid_cols());
+        for (int r = 0; r < pull; ++r)
+        {
+            for (int c = 0; c < copy_cols; ++c)
+            {
+                const auto& src = pulled_rows[r][c];
+                grid().set_cell(c, r, std::string(src.text.view()), src.hl_attr_id, src.double_width);
+            }
+            for (int c = copy_cols; c < grid_cols(); ++c)
+                grid().set_cell(c, r, " ", 0, false);
+        }
+
+        // Adjust cursor position: it shifted down by `pull` rows.
+        const int new_cursor_row = std::min(vt_state().row + pull, grid_rows() - 1);
+        set_cursor_position(vt_state().col, new_cursor_row);
+    }
+    else
+    {
+        // No scrollback pull — restore the visible snapshot (content that fits).
+        restore_grid_snapshot(grid(), grid_cols(), grid_rows(), visible_snapshot);
+    }
+
     force_full_redraw();
     flush_grid();
 }

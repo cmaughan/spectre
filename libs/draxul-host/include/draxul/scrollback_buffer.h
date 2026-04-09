@@ -32,9 +32,9 @@ public:
         std::function<void()> flush_grid;
     };
 
-    static constexpr int kCapacity = 2000;
+    static constexpr int kDefaultCapacity = 10000;
 
-    explicit ScrollbackBuffer(Callbacks cbs);
+    explicit ScrollbackBuffer(Callbacks cbs, int capacity = kDefaultCapacity);
 
     // (Re-)allocate ring-buffer storage for rows of `cols` cells.
     // Discards all existing scrollback content.  Must be called once before
@@ -48,6 +48,13 @@ public:
     // Returns nullptr if resize() has not been called yet (cols == 0).
     Cell* next_write_slot();
     void commit_push();
+
+    // Push a row of cells directly (convenience wrapper around next_write_slot / commit_push).
+    void push_row(const Cell* cells, int ncols);
+
+    // Pop the N newest rows from the ring buffer. Visits each row newest-first
+    // via the callback. Used during resize-grow to pull rows back from scrollback.
+    void pop_newest_rows(int n, const std::function<void(std::span<const Cell>)>& visitor);
 
     // Number of rows currently stored.
     int size() const
@@ -119,11 +126,13 @@ private:
 
     Callbacks cbs_;
 
-    // Flat ring-buffer storage: kCapacity * cols_ cells, pre-allocated once.
+    int capacity_;
+
+    // Flat ring-buffer storage: capacity_ * cols_ cells, pre-allocated once.
     std::vector<Cell> storage_;
     int cols_ = 0;
-    int write_head_ = 0; // index of the next slot to write (0-based, mod kCapacity)
-    int count_ = 0; // number of valid rows stored (0..kCapacity)
+    int write_head_ = 0; // index of the next slot to write (0-based, mod capacity_)
+    int count_ = 0; // number of valid rows stored (0..capacity_)
 
     int offset_ = 0;
 

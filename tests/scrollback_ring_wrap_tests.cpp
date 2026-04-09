@@ -15,6 +15,7 @@ namespace
 {
 
 constexpr int kTestCols = 10;
+constexpr int kTestCapacity = 100; // Small capacity for fast ring-wrap tests
 
 // Simple fake grid for scrollback callbacks
 struct FakeGrid
@@ -58,7 +59,7 @@ void push_row(ScrollbackBuffer& sb, char fill_char)
 TEST_CASE("scrollback: push within capacity stores all rows", "[scrollback][ring]")
 {
     FakeGrid grid;
-    ScrollbackBuffer sb(grid.make_callbacks());
+    ScrollbackBuffer sb(grid.make_callbacks(), kTestCapacity);
     sb.resize(kTestCols);
 
     push_row(sb, 'A');
@@ -71,28 +72,28 @@ TEST_CASE("scrollback: push within capacity stores all rows", "[scrollback][ring
 TEST_CASE("scrollback: push beyond capacity evicts oldest rows", "[scrollback][ring]")
 {
     FakeGrid grid;
-    ScrollbackBuffer sb(grid.make_callbacks());
+    ScrollbackBuffer sb(grid.make_callbacks(), kTestCapacity);
     sb.resize(kTestCols);
 
     // Push more rows than capacity
-    for (int i = 0; i < ScrollbackBuffer::kCapacity + 100; i++)
+    for (int i = 0; i < kTestCapacity + 100; i++)
         push_row(sb, static_cast<char>('A' + (i % 26)));
 
-    REQUIRE(sb.size() == ScrollbackBuffer::kCapacity);
+    REQUIRE(sb.size() == kTestCapacity);
 }
 
 TEST_CASE("scrollback: row content is correct after wrap-around", "[scrollback][ring]")
 {
     FakeGrid grid;
-    ScrollbackBuffer sb(grid.make_callbacks());
+    ScrollbackBuffer sb(grid.make_callbacks(), kTestCapacity);
     sb.resize(kTestCols);
 
     // Push exactly capacity + 5 rows
-    const int total = ScrollbackBuffer::kCapacity + 5;
+    const int total = kTestCapacity + 5;
     for (int i = 0; i < total; i++)
         push_row(sb, static_cast<char>('A' + (i % 26)));
 
-    REQUIRE(sb.size() == ScrollbackBuffer::kCapacity);
+    REQUIRE(sb.size() == kTestCapacity);
 
     // Verify content via for_each_cell: the first row should correspond
     // to the 6th push (index 5), which is 'F' (5 % 26 = 5)
@@ -106,13 +107,13 @@ TEST_CASE("scrollback: row content is correct after wrap-around", "[scrollback][
         cell_count++;
     });
 
-    REQUIRE(cell_count == ScrollbackBuffer::kCapacity * kTestCols);
+    REQUIRE(cell_count == kTestCapacity * kTestCols);
 }
 
 TEST_CASE("scrollback: viewport offset is clamped to stored rows", "[scrollback][ring]")
 {
     FakeGrid grid;
-    ScrollbackBuffer sb(grid.make_callbacks());
+    ScrollbackBuffer sb(grid.make_callbacks(), kTestCapacity);
     sb.resize(kTestCols);
 
     push_row(sb, 'A');
@@ -135,7 +136,7 @@ TEST_CASE("scrollback: resize preserves rows and resets offset", "[scrollback][r
     // not erase the user's scrollback history. Columns are clamped or extended
     // and the viewport offset is reset to 0.
     FakeGrid grid;
-    ScrollbackBuffer sb(grid.make_callbacks());
+    ScrollbackBuffer sb(grid.make_callbacks(), kTestCapacity);
     sb.resize(kTestCols);
 
     push_row(sb, 'A');
@@ -151,7 +152,7 @@ TEST_CASE("scrollback: resize preserves rows and resets offset", "[scrollback][r
 TEST_CASE("scrollback: reset clears rows but preserves column count", "[scrollback][ring]")
 {
     FakeGrid grid;
-    ScrollbackBuffer sb(grid.make_callbacks());
+    ScrollbackBuffer sb(grid.make_callbacks(), kTestCapacity);
     sb.resize(kTestCols);
 
     push_row(sb, 'A');
@@ -167,7 +168,7 @@ TEST_CASE("scrollback: reset clears rows but preserves column count", "[scrollba
 TEST_CASE("scrollback: next_write_slot returns nullptr before resize", "[scrollback][ring]")
 {
     FakeGrid grid;
-    ScrollbackBuffer sb(grid.make_callbacks());
+    ScrollbackBuffer sb(grid.make_callbacks(), kTestCapacity);
 
     REQUIRE(sb.next_write_slot() == nullptr);
 }

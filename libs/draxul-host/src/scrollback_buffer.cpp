@@ -7,8 +7,9 @@
 namespace draxul
 {
 
-ScrollbackBuffer::ScrollbackBuffer(Callbacks cbs)
+ScrollbackBuffer::ScrollbackBuffer(Callbacks cbs, int capacity)
     : cbs_(std::move(cbs))
+    , capacity_(capacity > 0 ? capacity : kDefaultCapacity)
 {
 }
 
@@ -38,7 +39,7 @@ void ScrollbackBuffer::resize(int cols)
 
         // Reallocate storage and copy rows back.
         cols_ = cols;
-        storage_.assign((size_t)kCapacity * cols, Cell{});
+        storage_.assign((size_t)capacity_ * cols, Cell{});
         for (int i = 0; i < old_count; ++i)
         {
             const auto* src = &tmp[(size_t)i * cols];
@@ -46,7 +47,7 @@ void ScrollbackBuffer::resize(int cols)
             for (int c = 0; c < cols; ++c)
                 dst[c] = src[c];
         }
-        write_head_ = old_count % kCapacity;
+        write_head_ = old_count % capacity_;
         count_ = old_count;
         // Reset scroll offset since row layout has changed.
         offset_ = 0;
@@ -69,7 +70,7 @@ void ScrollbackBuffer::resize(int cols)
     {
         // No existing scrollback — just allocate fresh storage.
         cols_ = cols;
-        storage_.assign((size_t)kCapacity * cols, Cell{});
+        storage_.assign((size_t)capacity_ * cols, Cell{});
         write_head_ = 0;
         count_ = 0;
         offset_ = 0;
@@ -89,9 +90,34 @@ Cell* ScrollbackBuffer::next_write_slot()
 void ScrollbackBuffer::commit_push()
 {
     PERF_MEASURE();
-    write_head_ = (write_head_ + 1) % kCapacity;
-    if (count_ < kCapacity)
+    write_head_ = (write_head_ + 1) % capacity_;
+    if (count_ < capacity_)
         ++count_;
+}
+
+void ScrollbackBuffer::push_row(const Cell* cells, int ncols)
+{
+    Cell* slot = next_write_slot();
+    if (!slot)
+        return;
+    const int copy = std::min(ncols, cols_);
+    for (int c = 0; c < copy; ++c)
+        slot[c] = cells[c];
+    commit_push();
+}
+
+void ScrollbackBuffer::pop_newest_rows(int n, const std::function<void(std::span<const Cell>)>& visitor)
+{
+    n = std::min(n, count_);
+    for (int i = 0; i < n; ++i)
+    {
+        write_head_ = (write_head_ - 1 + capacity_) % capacity_;
+        --count_;
+        visitor(std::span<const Cell>(&storage_[(size_t)write_head_ * cols_], (size_t)cols_));
+    }
+    // Clamp scroll offset to new size.
+    if (offset_ > count_)
+        offset_ = count_;
 }
 
 std::span<const Cell> ScrollbackBuffer::row(int i) const
@@ -99,8 +125,8 @@ std::span<const Cell> ScrollbackBuffer::row(int i) const
     assert(i >= 0 && i < count_);
     // When not full, the oldest slot is index 0 (write_head_ started at 0).
     // When full, the oldest slot is write_head_ (it will be overwritten next).
-    const int oldest = (count_ < kCapacity) ? 0 : write_head_;
-    const int slot = (oldest + i) % kCapacity;
+    const int oldest = (count_ < capacity_) ? 0 : write_head_;
+    const int slot = (oldest + i) % capacity_;
     return std::span<const Cell>(&storage_[(size_t)slot * cols_], (size_t)cols_);
 }
 
