@@ -700,3 +700,59 @@ TEST_CASE("CellText via Grid::set_cell warns on oversized cluster", "[celltext]"
     INFO("WARN is emitted through Grid::set_cell path");
     REQUIRE(found_warn);
 }
+
+TEST_CASE("grid clear sets full_dirty flag instead of per-cell push", "[grid]")
+{
+    Grid grid;
+    grid.resize(80, 24);
+    grid.clear_dirty();
+
+    REQUIRE(grid.dirty_cell_count() == 0);
+    REQUIRE(!grid.is_full_dirty());
+
+    grid.clear();
+
+    INFO("full_dirty flag is set after clear");
+    REQUIRE(grid.is_full_dirty());
+    INFO("dirty_cell_count reports total cell count");
+    REQUIRE(grid.dirty_cell_count() == size_t(80 * 24));
+
+    auto dirty = grid.get_dirty_cells();
+    INFO("get_dirty_cells returns all positions when full_dirty");
+    REQUIRE(dirty.size() == size_t(80 * 24));
+
+    grid.clear_dirty();
+    INFO("clear_dirty resets full_dirty flag");
+    REQUIRE(!grid.is_full_dirty());
+    REQUIRE(grid.dirty_cell_count() == 0);
+}
+
+TEST_CASE("grid mark_all_dirty sets full_dirty flag", "[grid]")
+{
+    Grid grid;
+    grid.resize(10, 5);
+    grid.clear_dirty();
+
+    grid.mark_all_dirty();
+    REQUIRE(grid.is_full_dirty());
+    REQUIRE(grid.dirty_cell_count() == size_t(10 * 5));
+
+    auto dirty = grid.get_dirty_cells();
+    REQUIRE(dirty.size() == size_t(10 * 5));
+}
+
+TEST_CASE("grid clear does not allocate per-cell for large dimensions", "[grid]")
+{
+    // This test verifies the OOM fix: clear() on a large grid should not
+    // push millions of entries into dirty_cells_.
+    Grid grid;
+    grid.resize(5000, 2000);
+    grid.clear_dirty();
+
+    grid.clear();
+    REQUIRE(grid.is_full_dirty());
+    // The key assertion: dirty_cells_ internal vector should be empty
+    // (full_dirty_ flag handles it instead). dirty_cell_count() returns
+    // the total via the flag, not via vector size.
+    REQUIRE(grid.dirty_cell_count() == size_t(5000) * size_t(2000));
+}

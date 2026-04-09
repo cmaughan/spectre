@@ -95,7 +95,13 @@ public:
     void remap_highlight_ids(Remap&& remap);
     size_t dirty_cell_count() const
     {
+        if (full_dirty_)
+            return static_cast<size_t>(cols_) * static_cast<size_t>(rows_);
         return dirty_cells_.size();
+    }
+    bool is_full_dirty() const
+    {
+        return full_dirty_;
     }
 
     struct DirtyCell
@@ -112,6 +118,7 @@ private:
     std::vector<Cell> cells_;
     std::vector<DirtyCell> dirty_cells_;
     std::vector<uint8_t> dirty_marks_;
+    bool full_dirty_ = false;
     Cell empty_cell_;
     MainThreadChecker thread_checker_;
 };

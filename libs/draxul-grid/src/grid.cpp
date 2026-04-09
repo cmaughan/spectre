@@ -269,13 +269,11 @@ void Grid::clear()
 {
     PERF_MEASURE();
     thread_checker_.assert_main_thread("Grid::clear");
+    for (auto& c : cells_)
+        c = make_blank_cell();
     dirty_cells_.clear();
     std::fill(dirty_marks_.begin(), dirty_marks_.end(), (uint8_t)0);
-    for (size_t i = 0; i < cells_.size(); i++)
-    {
-        cells_[i] = make_blank_cell();
-        mark_dirty_index((int)i);
-    }
+    full_dirty_ = true;
 }
 
 void Grid::set_cell(int col, int row, const std::string& text, uint16_t hl_id, bool double_width)
@@ -428,8 +426,7 @@ void Grid::mark_all_dirty()
     thread_checker_.assert_main_thread("Grid::mark_all_dirty");
     dirty_cells_.clear();
     std::fill(dirty_marks_.begin(), dirty_marks_.end(), (uint8_t)0);
-    for (size_t i = 0; i < cells_.size(); i++)
-        mark_dirty_index((int)i);
+    full_dirty_ = true;
 }
 
 void Grid::clear_dirty()
@@ -440,10 +437,20 @@ void Grid::clear_dirty()
         c.dirty = false;
     std::fill(dirty_marks_.begin(), dirty_marks_.end(), (uint8_t)0);
     dirty_cells_.clear();
+    full_dirty_ = false;
 }
 
 std::vector<Grid::DirtyCell> Grid::get_dirty_cells() const
 {
+    if (full_dirty_)
+    {
+        std::vector<DirtyCell> all;
+        all.reserve(static_cast<size_t>(cols_) * static_cast<size_t>(rows_));
+        for (int r = 0; r < rows_; ++r)
+            for (int c = 0; c < cols_; ++c)
+                all.push_back({ c, r });
+        return all;
+    }
     return dirty_cells_;
 }
 
