@@ -21,6 +21,14 @@
 #include <sstream>
 #include <utility>
 
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
+
 namespace draxul
 {
 
@@ -133,6 +141,22 @@ HostReloadConfig host_reload_config_from_app_config(const AppConfig& config)
     reload.copy_on_select = config.terminal.copy_on_select;
     reload.paste_confirm_lines = config.terminal.paste_confirm_lines;
     return reload;
+}
+
+int64_t unix_now_seconds()
+{
+    return std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch())
+        .count();
+}
+
+uint64_t current_process_id()
+{
+#ifdef _WIN32
+    return static_cast<uint64_t>(GetCurrentProcessId());
+#else
+    return static_cast<uint64_t>(getpid());
+#endif
 }
 
 } // namespace
@@ -374,6 +398,12 @@ bool App::initialize()
     // redraws on state changes do not start on a blank window.
     request_frame();
     rebuild_render_tree();
+    if (options_.enable_session_attach)
+    {
+        mark_session_attached();
+        persist_session_state();
+        persist_session_runtime_metadata(true);
+    }
 
     init_completed_ = true;
     rollback.armed = false;
@@ -624,6 +654,18 @@ bool App::initialize_chrome_host()
     bool restored_session = false;
     if (options_.enable_session_attach)
     {
+        std::string metadata_error;
+        if (auto metadata = load_session_runtime_metadata(options_.session_id, &metadata_error))
+        {
+            session_last_attached_unix_s_ = metadata->last_attached_unix_s;
+            session_last_detached_unix_s_ = metadata->last_detached_unix_s;
+        }
+        else if (!metadata_error.empty())
+        {
+            DRAXUL_LOG_WARN(LogCategory::App,
+                "Failed to load session metadata: %s", metadata_error.c_str());
+        }
+
         if (pending_window_activation_ && window_)
         {
             // Bring the app window forward before we respawn restored panes so
@@ -1772,9 +1814,11 @@ void App::detach_window()
     if (detached_)
         return;
 
-    persist_session_state();
-    input_dispatcher_.set_host(nullptr);
     detached_ = true;
+    mark_session_detached();
+    persist_session_state();
+    persist_session_runtime_metadata(true);
+    input_dispatcher_.set_host(nullptr);
     pending_window_activation_ = false;
     frame_requested_ = false;
     window_->hide();
@@ -1785,6 +1829,7 @@ void App::reattach_window()
     PERF_MEASURE();
     const bool was_detached = detached_;
     detached_ = false;
+    mark_session_attached();
     pending_window_activation_ = true;
     input_dispatcher_.set_host(active_host_manager().focused_host());
     if (was_detached)
@@ -1796,6 +1841,7 @@ void App::reattach_window()
     {
         window_->show();
     }
+    persist_session_runtime_metadata(true);
     request_frame();
 }
 
@@ -1815,6 +1861,13 @@ void App::kill_session()
     {
         DRAXUL_LOG_WARN(LogCategory::App,
             "Failed to delete session state for %s: %s",
+            options_.session_id.c_str(), error.c_str());
+    }
+    error.clear();
+    if (!delete_session_runtime_metadata(options_.session_id, &error) && !error.empty())
+    {
+        DRAXUL_LOG_WARN(LogCategory::App,
+            "Failed to delete session metadata for %s: %s",
             options_.session_id.c_str(), error.c_str());
     }
 
@@ -1870,6 +1923,43 @@ void App::persist_session_state()
             "Failed to save shell session state: %s",
             error.empty() ? "unknown error" : error.c_str());
     }
+}
+
+SessionRuntimeMetadata App::snapshot_session_runtime_metadata(bool live) const
+{
+    SessionRuntimeMetadata metadata;
+    metadata.session_id = options_.session_id;
+    metadata.live = live;
+    metadata.detached = live && detached_;
+    metadata.owner_pid = live ? current_process_id() : 0;
+    metadata.last_attached_unix_s = session_last_attached_unix_s_;
+    metadata.last_detached_unix_s = session_last_detached_unix_s_;
+    return metadata;
+}
+
+void App::persist_session_runtime_metadata(bool live)
+{
+    PERF_MEASURE();
+    if (!options_.enable_session_attach || session_killed_ || !can_detach_window())
+        return;
+
+    std::string error;
+    if (!save_session_runtime_metadata(snapshot_session_runtime_metadata(live), &error))
+    {
+        DRAXUL_LOG_WARN(LogCategory::App,
+            "Failed to save session metadata: %s",
+            error.empty() ? "unknown error" : error.c_str());
+    }
+}
+
+void App::mark_session_attached()
+{
+    session_last_attached_unix_s_ = unix_now_seconds();
+}
+
+void App::mark_session_detached()
+{
+    session_last_detached_unix_s_ = unix_now_seconds();
 }
 
 bool App::restore_session_state(int pixel_w, int pixel_h, const AppSessionState& state)
@@ -2102,7 +2192,10 @@ void App::shutdown()
 #endif
 
     if (!session_killed_)
+    {
         persist_session_state();
+        persist_session_runtime_metadata(false);
+    }
     session_attach_server_.stop();
 
     for (auto& ws : workspaces_)

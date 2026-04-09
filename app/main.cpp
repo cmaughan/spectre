@@ -230,11 +230,18 @@ static int draxul_main(std::vector<std::string> args)
         for (const auto& session : sessions)
         {
             const auto probe_status = draxul::SessionAttachServer::probe(session.session_id);
-            const char* state = "saved";
+            bool live = session.live;
+            bool detached = session.detached;
             if (probe_status == draxul::SessionAttachServer::ProbeStatus::Running)
-                state = "live";
-            else if (probe_status == draxul::SessionAttachServer::ProbeStatus::Error)
-                state = "saved?";
+                live = true;
+            else if (probe_status == draxul::SessionAttachServer::ProbeStatus::NoServer)
+                live = false;
+
+            const char* state = "saved";
+            if (live)
+                state = detached ? "detached" : "live";
+            else if (!session.has_saved_state)
+                state = "live?";
 
             std::printf("%s\t%s\t%d workspace%s\t%d pane%s\n",
                 session.session_id.c_str(),
@@ -280,13 +287,16 @@ static int draxul_main(std::vector<std::string> args)
         {
             std::printf("Killed running session '%s'.\n", parsed.session_id.c_str());
             (void)draxul::delete_session_state(parsed.session_id);
+            (void)draxul::delete_session_runtime_metadata(parsed.session_id);
             draxul::shutdown_logging();
             return 0;
         }
 
         std::string delete_error;
         const bool deleted_saved_state = draxul::delete_session_state(parsed.session_id, &delete_error);
-        if (kill_status == draxul::SessionAttachServer::AttachStatus::NoServer && deleted_saved_state)
+        const bool deleted_metadata = draxul::delete_session_runtime_metadata(parsed.session_id);
+        if (kill_status == draxul::SessionAttachServer::AttachStatus::NoServer
+            && (deleted_saved_state || deleted_metadata))
         {
             std::printf("Deleted saved session '%s'.\n", parsed.session_id.c_str());
             draxul::shutdown_logging();

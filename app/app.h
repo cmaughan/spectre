@@ -133,6 +133,10 @@ private:
     void kill_session();
     std::optional<AppSessionState> snapshot_session_state() const;
     void persist_session_state();
+    SessionRuntimeMetadata snapshot_session_runtime_metadata(bool live) const;
+    void persist_session_runtime_metadata(bool live);
+    void mark_session_attached();
+    void mark_session_detached();
     bool restore_session_state(int pixel_w, int pixel_h, const AppSessionState& state);
 
     // --- Workspace management (moved from ChromeHost) ---
@@ -207,6 +211,8 @@ private:
     std::atomic<bool> external_session_shutdown_requested_ = false;
     bool detached_ = false;
     bool session_killed_ = false;
+    int64_t session_last_attached_unix_s_ = 0;
+    int64_t session_last_detached_unix_s_ = 0;
 };
 
 } // namespace draxul

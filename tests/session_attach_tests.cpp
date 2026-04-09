@@ -10,6 +10,7 @@
 #include <draxul/session_attach.h>
 
 #include "app.h"
+#include "session_state.h"
 
 #include <condition_variable>
 #include <chrono>
@@ -173,6 +174,10 @@ TEST_CASE("app session attach: close request detaches a shell session", "[sessio
     created_window->queue_close_request();
     REQUIRE(app.run_smoke_test(std::chrono::milliseconds(200)));
     REQUIRE_FALSE(created_window->is_visible());
+    auto metadata = load_session_runtime_metadata("default");
+    REQUIRE(metadata);
+    REQUIRE(metadata->live);
+    REQUIRE(metadata->detached);
     REQUIRE(g_last_attach_host->shutdown_calls == 0);
     REQUIRE(g_last_attach_host->request_close_calls == 0);
 
@@ -199,6 +204,7 @@ TEST_CASE("app session attach: shutdown command kills the session", "[session_at
         == SessionAttachServer::AttachStatus::Attached);
     app.run();
     REQUIRE(g_last_attach_host->request_close_calls == 1);
+    REQUIRE_FALSE(load_session_runtime_metadata("default").has_value());
 
     app.shutdown();
 }

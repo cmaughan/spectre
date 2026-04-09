@@ -12,6 +12,7 @@
 #include <fstream>
 #include <sstream>
 #include <string_view>
+#include <unordered_map>
 
 namespace draxul
 {
@@ -20,6 +21,7 @@ namespace
 {
 
 constexpr int kSessionStateVersion = 1;
+constexpr int kSessionMetadataVersion = 1;
 
 uint64_t fnv1a_hash(std::string_view text)
 {
@@ -55,6 +57,13 @@ std::string session_file_name(std::string_view session_id)
 {
     std::ostringstream out;
     out << std::hex << fnv1a_hash(session_id) << "-" << session_slug(session_id) << ".toml";
+    return out.str();
+}
+
+std::string session_metadata_file_name(std::string_view session_id)
+{
+    std::ostringstream out;
+    out << std::hex << fnv1a_hash(session_id) << "-" << session_slug(session_id) << ".meta.toml";
     return out.str();
 }
 
@@ -360,9 +369,54 @@ SessionSummary summarize_session_state(const AppSessionState& state)
     summary.session_id = state.session_id;
     summary.session_name = state.session_name;
     summary.workspace_count = static_cast<int>(state.workspaces.size());
+    summary.has_saved_state = true;
     for (const WorkspaceSessionState& workspace : state.workspaces)
         summary.pane_count += static_cast<int>(workspace.host_manager.panes.size());
     return summary;
+}
+
+void merge_runtime_metadata(SessionSummary& summary, const SessionRuntimeMetadata& metadata)
+{
+    summary.live = metadata.live;
+    summary.detached = metadata.detached;
+    summary.owner_pid = metadata.owner_pid;
+    summary.last_attached_unix_s = metadata.last_attached_unix_s;
+    summary.last_detached_unix_s = metadata.last_detached_unix_s;
+}
+
+std::optional<SessionRuntimeMetadata> load_session_runtime_metadata_from_path(
+    const std::filesystem::path& path, std::string* error)
+{
+    if (!std::filesystem::exists(path))
+        return std::nullopt;
+
+    std::string parse_error;
+    auto document = toml_support::parse_file(path, &parse_error);
+    if (!document)
+    {
+        if (error)
+            *error = parse_error;
+        return std::nullopt;
+    }
+
+    SessionRuntimeMetadata metadata;
+    metadata.version = static_cast<int>(toml_support::get_int(*document, "version").value_or(0));
+    if (metadata.version != kSessionMetadataVersion)
+    {
+        if (error)
+            *error = "Unsupported session metadata version.";
+        return std::nullopt;
+    }
+
+    metadata.session_id = toml_support::get_string(*document, "session_id").value_or("default");
+    metadata.live = toml_support::get_bool(*document, "live").value_or(false);
+    metadata.detached = toml_support::get_bool(*document, "detached").value_or(false);
+    metadata.owner_pid = static_cast<uint64_t>(toml_support::get_int(*document, "owner_pid").value_or(0));
+    metadata.last_attached_unix_s = toml_support::get_int(
+        *document, "last_attached_unix_s").value_or(0);
+    metadata.last_detached_unix_s = toml_support::get_int(
+        *document, "last_detached_unix_s").value_or(0);
+    return metadata;
 }
 
 } // namespace
@@ -378,6 +432,13 @@ std::filesystem::path session_state_path(std::string_view session_id)
     PERF_MEASURE();
     const std::string normalized_id = session_id.empty() ? "default" : std::string(session_id);
     return session_state_directory() / session_file_name(normalized_id);
+}
+
+std::filesystem::path session_metadata_path(std::string_view session_id)
+{
+    PERF_MEASURE();
+    const std::string normalized_id = session_id.empty() ? "default" : std::string(session_id);
+    return session_state_directory() / session_metadata_file_name(normalized_id);
 }
 
 bool save_session_state(const AppSessionState& state, std::string* error)
@@ -469,6 +530,80 @@ bool delete_session_state(std::string_view session_id, std::string* error)
     }
 }
 
+bool save_session_runtime_metadata(
+    const SessionRuntimeMetadata& metadata, std::string* error)
+{
+    PERF_MEASURE();
+    try
+    {
+        const std::string normalized_id = metadata.session_id.empty()
+            ? "default"
+            : metadata.session_id;
+        toml::table document;
+        document.insert_or_assign("version", metadata.version);
+        document.insert_or_assign("session_id", normalized_id);
+        document.insert_or_assign("live", metadata.live);
+        document.insert_or_assign("detached", metadata.detached);
+        document.insert_or_assign("owner_pid", static_cast<int64_t>(metadata.owner_pid));
+        document.insert_or_assign("last_attached_unix_s", metadata.last_attached_unix_s);
+        document.insert_or_assign("last_detached_unix_s", metadata.last_detached_unix_s);
+
+        const auto path = session_metadata_path(normalized_id);
+        std::filesystem::create_directories(path.parent_path());
+        std::ofstream out(path, std::ios::trunc);
+        if (!out)
+        {
+            if (error)
+                *error = "Unable to open session metadata for writing.";
+            return false;
+        }
+        out << document << '\n';
+        if (!out)
+        {
+            if (error)
+                *error = "Failed writing session metadata.";
+            return false;
+        }
+        return true;
+    }
+    catch (const std::exception& ex)
+    {
+        if (error)
+            *error = ex.what();
+        return false;
+    }
+}
+
+bool delete_session_runtime_metadata(std::string_view session_id, std::string* error)
+{
+    PERF_MEASURE();
+    try
+    {
+        std::error_code ec;
+        const bool removed = std::filesystem::remove(session_metadata_path(session_id), ec);
+        if (ec)
+        {
+            if (error)
+                *error = ec.message();
+            return false;
+        }
+        return removed;
+    }
+    catch (const std::exception& ex)
+    {
+        if (error)
+            *error = ex.what();
+        return false;
+    }
+}
+
+std::optional<SessionRuntimeMetadata> load_session_runtime_metadata(
+    std::string_view session_id, std::string* error)
+{
+    PERF_MEASURE();
+    return load_session_runtime_metadata_from_path(session_metadata_path(session_id), error);
+}
+
 std::optional<AppSessionState> load_session_state(
     std::string_view session_id, std::string* error)
 {
@@ -495,6 +630,7 @@ std::vector<SessionSummary> list_saved_sessions(std::string* error)
     std::vector<SessionSummary> sessions;
     try
     {
+        std::unordered_map<std::string, SessionSummary> by_id;
         const auto dir = session_state_directory();
         if (std::filesystem::exists(dir))
         {
@@ -503,25 +639,59 @@ std::vector<SessionSummary> list_saved_sessions(std::string* error)
                 if (!entry.is_regular_file() || entry.path().extension() != ".toml")
                     continue;
 
+                const std::string file_name = entry.path().filename().string();
                 std::string load_error;
-                if (auto state = load_session_state_from_path(entry.path(), &load_error))
-                    sessions.push_back(summarize_session_state(*state));
+                if (file_name.ends_with(".meta.toml"))
+                {
+                    if (auto metadata = load_session_runtime_metadata_from_path(entry.path(), &load_error))
+                    {
+                        SessionSummary& summary = by_id[metadata->session_id];
+                        summary.session_id = metadata->session_id;
+                        if (summary.session_name.empty())
+                            summary.session_name = metadata->session_id;
+                        merge_runtime_metadata(summary, *metadata);
+                    }
+                    else if (!load_error.empty())
+                    {
+                        DRAXUL_LOG_WARN(LogCategory::App,
+                            "Skipping invalid session metadata %s: %s",
+                            entry.path().string().c_str(), load_error.c_str());
+                    }
+                }
+                else if (auto state = load_session_state_from_path(entry.path(), &load_error))
+                {
+                    SessionSummary summary = summarize_session_state(*state);
+                    SessionSummary& slot = by_id[summary.session_id];
+                    slot.session_id = summary.session_id;
+                    slot.session_name = summary.session_name;
+                    slot.workspace_count = summary.workspace_count;
+                    slot.pane_count = summary.pane_count;
+                    slot.has_saved_state = true;
+                }
                 else if (!load_error.empty())
+                {
                     DRAXUL_LOG_WARN(LogCategory::App,
                         "Skipping invalid session state %s: %s",
                         entry.path().string().c_str(), load_error.c_str());
+                }
             }
         }
 
         const auto legacy_path = legacy_default_session_state_path();
-        const bool have_default = std::any_of(sessions.begin(), sessions.end(),
-            [](const SessionSummary& session) { return session.session_id == "default"; });
+        const bool have_default = by_id.contains("default");
         if (!have_default)
         {
             std::string load_error;
             if (auto legacy = load_session_state_from_path(legacy_path, &load_error))
-                sessions.push_back(summarize_session_state(*legacy));
+            {
+                SessionSummary summary = summarize_session_state(*legacy);
+                by_id[summary.session_id] = std::move(summary);
+            }
         }
+
+        sessions.reserve(by_id.size());
+        for (auto& [id, summary] : by_id)
+            sessions.push_back(std::move(summary));
 
         std::sort(sessions.begin(), sessions.end(), [](const SessionSummary& lhs, const SessionSummary& rhs) {
             return lhs.session_id < rhs.session_id;

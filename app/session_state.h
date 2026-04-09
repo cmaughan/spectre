@@ -2,6 +2,7 @@
 
 #include "host_manager.h"
 
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -29,18 +30,41 @@ struct AppSessionState
     std::vector<WorkspaceSessionState> workspaces;
 };
 
+struct SessionRuntimeMetadata
+{
+    int version = 1;
+    std::string session_id = "default";
+    bool live = false;
+    bool detached = false;
+    uint64_t owner_pid = 0;
+    int64_t last_attached_unix_s = 0;
+    int64_t last_detached_unix_s = 0;
+};
+
 struct SessionSummary
 {
     std::string session_id;
     std::string session_name;
     int workspace_count = 0;
     int pane_count = 0;
+    bool has_saved_state = false;
+    bool live = false;
+    bool detached = false;
+    uint64_t owner_pid = 0;
+    int64_t last_attached_unix_s = 0;
+    int64_t last_detached_unix_s = 0;
 };
 
 std::filesystem::path session_state_directory();
 std::filesystem::path session_state_path(std::string_view session_id);
+std::filesystem::path session_metadata_path(std::string_view session_id);
 bool save_session_state(const AppSessionState& state, std::string* error = nullptr);
 bool delete_session_state(std::string_view session_id, std::string* error = nullptr);
+bool save_session_runtime_metadata(
+    const SessionRuntimeMetadata& metadata, std::string* error = nullptr);
+bool delete_session_runtime_metadata(std::string_view session_id, std::string* error = nullptr);
+std::optional<SessionRuntimeMetadata> load_session_runtime_metadata(
+    std::string_view session_id, std::string* error = nullptr);
 std::optional<AppSessionState> load_session_state(
     std::string_view session_id, std::string* error = nullptr);
 std::optional<AppSessionState> load_session_state(std::string* error = nullptr);
