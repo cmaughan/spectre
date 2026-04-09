@@ -448,6 +448,24 @@ void NvimRpc::reader_thread_func()
 
         accum.insert(accum.end(), impl_->read_buf_.begin(), impl_->read_buf_.begin() + n);
 
+        // WI 08: Guard against unbounded accumulation. A corrupt stream that
+        // sends valid-looking msgpack headers claiming a large payload but never
+        // delivers the body bytes would grow accum indefinitely (read_pos stays 0
+        // so the compaction guard above never fires). Cap it hard.
+        constexpr size_t kMaxAccumBytes = 256ULL * 1024 * 1024; // 256 MB
+        if (accum.size() > kMaxAccumBytes)
+        {
+            DRAXUL_LOG_ERROR(LogCategory::Rpc,
+                "RPC accumulation buffer exceeded %zu bytes; stream is corrupt, aborting reader",
+                kMaxAccumBytes);
+            impl_->read_failed_ = true;
+            impl_->running_ = false;
+            impl_->response_cv_.notify_all();
+            if (callbacks_.on_notification_available)
+                callbacks_.on_notification_available();
+            return;
+        }
+
         while (read_pos < accum.size())
         {
             MpackValue msg;

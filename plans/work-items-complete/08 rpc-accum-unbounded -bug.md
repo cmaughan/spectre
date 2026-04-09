@@ -15,15 +15,15 @@
 
 ## Investigation
 
-- [ ] Read `libs/draxul-nvim/src/rpc.cpp` lines 380–470 (the reader loop) to confirm the compaction condition and the accum growth path.
-- [ ] Confirm that the `!hard_error` path on truncated messages just `break`s the inner loop without any size limit check.
-- [ ] Determine a reasonable maximum buffer size (current `read_buf_` is 256 KB; 256 MB seems a safe upper bound).
+- [x] Read `libs/draxul-nvim/src/rpc.cpp` lines 380–470 (the reader loop) to confirm the compaction condition and the accum growth path.
+- [x] Confirm that the `!hard_error` path on truncated messages just `break`s the inner loop without any size limit check.
+- [x] Determine a reasonable maximum buffer size (current `read_buf_` is 256 KB; 256 MB seems a safe upper bound).
 
 ---
 
 ## Fix Strategy
 
-- [ ] Add a max-size guard in the outer read loop, after appending to `accum`:
+- [x] Add a max-size guard in the outer read loop, after appending to `accum`:
   ```cpp
   constexpr size_t kMaxAccumBytes = 256ULL * 1024 * 1024; // 256 MB
   accum.insert(accum.end(), impl_->read_buf_.begin(), impl_->read_buf_.begin() + n);
@@ -44,6 +44,6 @@
 
 ## Acceptance Criteria
 
-- [ ] Reader thread aborts with an error log when `accum` exceeds the configured limit.
-- [ ] Normal operation (large but valid redraw events) is not affected.
-- [ ] Build and smoke test pass: `cmake --build build --target draxul draxul-tests && py do.py smoke`.
+- [x] Reader thread aborts with an error log when `accum` exceeds the configured limit.
+- [x] Normal operation (large but valid redraw events) is not affected.
+- [x] Build and smoke test pass: `cmake --build build --target draxul draxul-tests && py do.py smoke`.
