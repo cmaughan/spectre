@@ -1,6 +1,7 @@
 #include <draxul/bmp.h>
 #include <draxul/perf_timing.h>
 
+#include <climits>
 #include <cmath>
 #include <cstdint>
 #include <fstream>
@@ -120,6 +121,10 @@ std::optional<CapturedFrame> read_bmp_rgba(const std::filesystem::path& path)
     const uint32_t compression = read_u32(30);
 
     if (planes != 1 || bpp != 32 || compression != 0 || width <= 0 || height == 0)
+        return std::nullopt;
+
+    // Guard against INT32_MIN: std::abs(INT32_MIN) is undefined behaviour.
+    if (height == INT32_MIN)
         return std::nullopt;
 
     const bool top_down = height < 0;

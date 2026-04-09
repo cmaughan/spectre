@@ -4,6 +4,7 @@
 #include <draxul/types.h>
 
 #include <filesystem>
+#include <fstream>
 #include <system_error>
 
 using namespace draxul;
@@ -65,6 +66,68 @@ TEST_CASE("write_bmp_rgba accepts a bare filename without throwing", "[bmp]")
     REQUIRE(round_trip->rgba == frame.rgba);
 
     fs::current_path(original_cwd, ec);
+    fs::remove_all(sandbox, ec);
+}
+
+// Regression test for WI 06: read_bmp_rgba must reject a BMP whose height
+// field is INT32_MIN, because std::abs(INT32_MIN) is undefined behaviour.
+TEST_CASE("read_bmp_rgba rejects height == INT32_MIN", "[bmp]")
+{
+    namespace fs = std::filesystem;
+
+    // Build a minimal 54-byte BMP header with height = INT32_MIN (0x80000000).
+    // The pixel data is irrelevant because the header validation should reject
+    // the file before reaching pixel reads.
+    std::vector<uint8_t> header(54, 0);
+
+    // BMP magic
+    header[0] = 0x42;
+    header[1] = 0x4D; // 'BM'
+
+    // File size (header only, 54 bytes)
+    header[2] = 54;
+
+    // Pixel data offset
+    header[10] = 54;
+
+    // DIB header size
+    header[14] = 40;
+
+    // Width = 1
+    header[18] = 1;
+
+    // Height = INT32_MIN = 0x80000000
+    header[22] = 0x00;
+    header[23] = 0x00;
+    header[24] = 0x00;
+    header[25] = 0x80;
+
+    // Planes = 1
+    header[26] = 1;
+
+    // BPP = 32
+    header[28] = 32;
+
+    // Compression = 0 (already zero)
+
+    std::error_code ec;
+    const auto sandbox = fs::temp_directory_path(ec) / "draxul-bmp-int32min-test";
+    REQUIRE_FALSE(ec);
+    fs::remove_all(sandbox, ec);
+    fs::create_directories(sandbox, ec);
+    REQUIRE_FALSE(ec);
+
+    const auto bmp_path = sandbox / "int32min.bmp";
+    {
+        std::ofstream out(bmp_path, std::ios::binary | std::ios::trunc);
+        out.write(reinterpret_cast<const char*>(header.data()),
+            static_cast<std::streamsize>(header.size()));
+        REQUIRE(out.good());
+    }
+
+    auto result = draxul::read_bmp_rgba(bmp_path);
+    REQUIRE_FALSE(result.has_value());
+
     fs::remove_all(sandbox, ec);
 }
 

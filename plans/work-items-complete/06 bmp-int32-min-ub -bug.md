@@ -15,14 +15,14 @@
 
 ## Investigation
 
-- [ ] Read `libs/draxul-types/src/bmp.cpp` lines 112–130 to confirm the validation logic and the location of the `std::abs` call.
-- [ ] Confirm the existing guard (`if (... || height == 0)`) and that `INT32_MIN` is not excluded.
+- [x] Read `libs/draxul-types/src/bmp.cpp` lines 112–130 to confirm the validation logic and the location of the `std::abs` call.
+- [x] Confirm the existing guard (`if (... || height == 0)`) and that `INT32_MIN` is not excluded.
 
 ---
 
 ## Fix Strategy
 
-- [ ] Add a guard for `INT32_MIN` before line 126:
+- [x] Add a guard for `INT32_MIN` before line 126:
   ```cpp
   if (height == INT32_MIN)
       return std::nullopt;
@@ -33,6 +33,6 @@
 
 ## Acceptance Criteria
 
-- [ ] `read_bmp_rgba()` returns `std::nullopt` for a BMP with `height = 0x80000000`.
-- [ ] UBSan build does not flag `std::abs(INT32_MIN)`.
-- [ ] Build and smoke test pass: `cmake --build build --target draxul draxul-tests && py do.py smoke`.
+- [x] `read_bmp_rgba()` returns `std::nullopt` for a BMP with `height = 0x80000000`.
+- [x] UBSan build does not flag `std::abs(INT32_MIN)`.
+- [x] Build and smoke test pass: `cmake --build build --target draxul draxul-tests && py do.py smoke`.
