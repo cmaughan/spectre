@@ -74,6 +74,11 @@ void TerminalHostBase::handle_esc(char ch)
         vt_.pending_wrap = false;
         if (vt_.row == vt_.scroll_bottom)
         {
+            if (!alt_screen_.in_alt_screen() && vt_.scroll_top == 0
+                && vt_.scroll_bottom == grid_rows() - 1)
+            {
+                on_line_scrolled_off(vt_.scroll_top);
+            }
             grid().scroll(vt_.scroll_top, vt_.scroll_bottom + 1, 0, grid_cols(), 1);
         }
         else if (vt_.row < grid_rows() - 1)
@@ -356,7 +361,17 @@ void TerminalHostBase::csi_scroll(char final_char, bool private_mode, const std:
     {
         const int n = param_or(params, 0, 1);
         if (!private_mode)
+        {
+            // Capture rows about to scroll off the top into scrollback.
+            if (!alt_screen_.in_alt_screen() && vt_.scroll_top == 0
+                && vt_.scroll_bottom == grid_rows() - 1)
+            {
+                const int capture = std::min(n, grid_rows());
+                for (int i = 0; i < capture; ++i)
+                    on_line_scrolled_off(vt_.scroll_top + i);
+            }
             grid().scroll(vt_.scroll_top, vt_.scroll_bottom + 1, 0, grid_cols(), n);
+        }
         break;
     }
     case 'T': // SD - Scroll Down
@@ -389,7 +404,18 @@ void TerminalHostBase::csi_insert_delete(char final_char, const std::vector<int>
     {
         const int n = param_or(params, 0, 1);
         if (vt_.row >= vt_.scroll_top && vt_.row <= vt_.scroll_bottom)
+        {
+            // Capture rows scrolling off the top when deleting at the
+            // top of the full-screen scroll region.
+            if (!alt_screen_.in_alt_screen() && vt_.row == 0 && vt_.scroll_top == 0
+                && vt_.scroll_bottom == grid_rows() - 1)
+            {
+                const int capture = std::min(n, grid_rows());
+                for (int i = 0; i < capture; ++i)
+                    on_line_scrolled_off(i);
+            }
             grid().scroll(vt_.row, vt_.scroll_bottom + 1, 0, grid_cols(), n);
+        }
         vt_.pending_wrap = false;
         break;
     }
