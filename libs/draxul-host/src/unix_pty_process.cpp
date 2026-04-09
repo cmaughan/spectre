@@ -86,6 +86,17 @@ bool UnixPtyProcess::spawn(const std::string& command, const std::vector<std::st
         if (slave_fd > STDERR_FILENO)
             close(slave_fd);
 
+        // Close all inherited file descriptors above stderr to prevent FD
+        // leakage into the child (log files, SDL/GPU FDs, other hosts' pipe
+        // ends). The child only needs stdin/stdout/stderr which are already
+        // set up via dup2 above.
+        {
+            const int max_fd = static_cast<int>(sysconf(_SC_OPEN_MAX));
+            const int limit = (max_fd > 0) ? max_fd : 1024;
+            for (int fd = STDERR_FILENO + 1; fd < limit; ++fd)
+                close(fd); // harmless if fd is not open
+        }
+
         // Restore SIGPIPE to default so child processes (and their pipelines)
         // terminate correctly. The parent set SIG_IGN before fork().
         signal(SIGPIPE, SIG_DFL);

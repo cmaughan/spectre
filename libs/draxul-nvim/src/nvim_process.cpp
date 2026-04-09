@@ -319,6 +319,22 @@ Result<void, Error> NvimProcess::spawn(const std::string& nvim_path, const std::
         close(stdin_pipe[0]);
         close(stdout_pipe[1]);
 
+        // Close all inherited file descriptors above stderr to prevent FD
+        // leakage into the child (log files, SDL/GPU FDs, other pipe ends).
+        // exec_status_pipe[1] is kept open (it has FD_CLOEXEC so exec will
+        // close it automatically, but we still need it for pre-exec error
+        // reporting).
+        {
+            const int max_fd = static_cast<int>(sysconf(_SC_OPEN_MAX));
+            const int limit = (max_fd > 0) ? max_fd : 1024;
+            for (int fd = STDERR_FILENO + 1; fd < limit; ++fd)
+            {
+                if (fd == exec_status_pipe[1])
+                    continue;
+                close(fd); // harmless if fd is not open
+            }
+        }
+
         // Restore SIGPIPE to default so child processes terminate correctly
         // on broken pipes. The parent GUI may have set SIG_IGN.
         signal(SIGPIPE, SIG_DFL);

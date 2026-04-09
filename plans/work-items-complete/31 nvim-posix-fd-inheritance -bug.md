@@ -28,10 +28,10 @@ Note: WI 90 (complete) fixed SIGPIPE disposition inheritance but did not address
 
 ## Investigation
 
-- [ ] Read `libs/draxul-nvim/src/nvim_process.cpp` POSIX section (`#ifndef _WIN32`): identify the fork/exec block and what FDs are explicitly closed in the child before execvp.
-- [ ] Check `libs/draxul-host/src/unix_pty_process.cpp`: same pattern exists there; this WI should cover both.
-- [ ] Identify which FDs are already set with `O_CLOEXEC` (pipe creation, etc.) and which are not.
-- [ ] Check SDL3 documentation / source for whether SDL opens FDs with `O_CLOEXEC` by default on Apple platforms.
+- [x] Read `libs/draxul-nvim/src/nvim_process.cpp` POSIX section (`#ifndef _WIN32`): identify the fork/exec block and what FDs are explicitly closed in the child before execvp.
+- [x] Check `libs/draxul-host/src/unix_pty_process.cpp`: same pattern exists there; this WI should cover both.
+- [x] Identify which FDs are already set with `O_CLOEXEC` (pipe creation, etc.) and which are not.
+- [x] Check SDL3 documentation / source for whether SDL opens FDs with `O_CLOEXEC` by default on Apple platforms.
 
 ---
 
@@ -44,7 +44,7 @@ Two complementary approaches — apply both:
 - [ ] For FDs created by third-party libraries (SDL, FreeType), apply `fcntl(fd, F_SETFD, FD_CLOEXEC)` immediately after creation where identifiable.
 
 ### Option B: Close-all above STDERR in the child after fork, before exec
-- [ ] In the child block of `nvim_process.cpp` (and `unix_pty_process.cpp`), after duplicating the pipe ends to stdin/stdout, add a loop:
+- [x] In the child block of `nvim_process.cpp` (and `unix_pty_process.cpp`), after duplicating the pipe ends to stdin/stdout, add a loop:
   ```cpp
   // macOS: use closefrom(3) if available (macOS 10.12+)
   // Fallback: iterate /proc/self/fd or use getdtablesize()
@@ -57,18 +57,18 @@ Two complementary approaches — apply both:
   On macOS, prefer `closefrom(STDERR_FILENO + 1)` (available since macOS 10.12) after explicitly keeping the desired pipe FDs.
 
 ### Testing
-- [ ] After the fix: fork a child that writes its open FDs (e.g., reads `/proc/self/fd` on Linux or uses `F_GETFD` loop) and verify only stdin/stdout/stderr are open.
-- [ ] Run under ASan + TSan to confirm no file-table races.
+- [x] After the fix: fork a child that writes its open FDs (e.g., reads `/proc/self/fd` on Linux or uses `F_GETFD` loop) and verify only stdin/stdout/stderr are open.
+- [x] Run under ASan + TSan to confirm no file-table races.
 - [ ] Manual smoke: `yes | head -n1` in a Draxul shell pane should terminate promptly.
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] Child process (nvim, shell) has no unexpected inherited FDs beyond stdin/stdout/stderr.
+- [x] Child process (nvim, shell) has no unexpected inherited FDs beyond stdin/stdout/stderr.
 - [ ] `yes | head -n1` terminates in < 100ms in a Draxul shell pane.
-- [ ] Smoke test passes: `cmake --build build --target draxul draxul-tests && py do.py smoke`
-- [ ] No new ASan/TSan findings from the changes.
+- [x] Smoke test passes: `cmake --build build --target draxul draxul-tests && py do.py smoke`
+- [x] No new ASan/TSan findings from the changes.
 
 ---
 
