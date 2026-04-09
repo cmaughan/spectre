@@ -344,6 +344,7 @@ static int draxul_main(std::vector<std::string> args)
         || parse_result.args.want_console
         || parse_result.args.list_sessions
         || parse_result.args.attach_session
+        || parse_result.args.detach_session
         || parse_result.args.kill_session;
     if (needs_console_output)
         ensure_console_io(true);
@@ -460,6 +461,46 @@ static int draxul_main(std::vector<std::string> args)
         }
         std::fprintf(stderr, "Failed to attach to session '%s': %s\n",
             parsed.session_id.c_str(), attach_error.empty() ? "unknown error" : attach_error.c_str());
+        draxul::shutdown_logging();
+        return 1;
+    }
+
+    if (parsed.detach_session)
+    {
+        std::string command_error;
+        const auto detach_status = draxul::SessionAttachServer::send_command(
+            parsed.session_id, draxul::SessionAttachServer::Command::Detach, &command_error);
+        if (detach_status == draxul::SessionAttachServer::AttachStatus::Attached)
+        {
+            constexpr auto kDetachTimeout = std::chrono::seconds(1);
+            constexpr auto kDetachPoll = std::chrono::milliseconds(50);
+            const auto deadline = std::chrono::steady_clock::now() + kDetachTimeout;
+            while (std::chrono::steady_clock::now() < deadline)
+            {
+                draxul::SessionAttachServer::LiveSessionInfo live_info;
+                if (draxul::SessionAttachServer::query_live_session(parsed.session_id, &live_info)
+                    && live_info.detached)
+                {
+                    std::printf("Detached session '%s'.\n", parsed.session_id.c_str());
+                    draxul::shutdown_logging();
+                    return 0;
+                }
+                std::this_thread::sleep_for(kDetachPoll);
+            }
+            std::fprintf(stderr,
+                "Session '%s' is running but did not detach. It may not be a detachable shell session.\n",
+                parsed.session_id.c_str());
+            draxul::shutdown_logging();
+            return 1;
+        }
+        if (detach_status == draxul::SessionAttachServer::AttachStatus::NoServer)
+        {
+            std::fprintf(stderr, "No running session '%s'.\n", parsed.session_id.c_str());
+            draxul::shutdown_logging();
+            return 1;
+        }
+        std::fprintf(stderr, "Failed to detach session '%s': %s\n",
+            parsed.session_id.c_str(), command_error.empty() ? "unknown error" : command_error.c_str());
         draxul::shutdown_logging();
         return 1;
     }

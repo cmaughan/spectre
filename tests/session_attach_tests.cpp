@@ -120,6 +120,33 @@ TEST_CASE("session attach: shutdown command stops the server", "[session_attach]
     server.stop();
 }
 
+TEST_CASE("session attach: detach command reaches the server", "[session_attach]")
+{
+    TempDir temp_dir("session-attach-detach");
+    HomeDirRedirect redirect(temp_dir.path);
+
+    SessionAttachServer server;
+    std::mutex mutex;
+    std::condition_variable cv;
+    int detach_count = 0;
+
+    REQUIRE(server.start("alpha", [&](SessionAttachServer::Command command) {
+        if (command != SessionAttachServer::Command::Detach)
+            return;
+        std::lock_guard lock(mutex);
+        ++detach_count;
+        cv.notify_one();
+    }));
+
+    REQUIRE(SessionAttachServer::send_command("alpha", SessionAttachServer::Command::Detach)
+        == SessionAttachServer::AttachStatus::Attached);
+
+    std::unique_lock lock(mutex);
+    REQUIRE(cv.wait_for(lock, std::chrono::milliseconds(500), [&]() { return detach_count == 1; }));
+
+    server.stop();
+}
+
 TEST_CASE("session attach: different session ids stay isolated", "[session_attach]")
 {
     TempDir temp_dir("session-attach-isolated");
@@ -242,6 +269,44 @@ TEST_CASE("app session attach: shutdown command kills the session", "[session_at
     app.run();
     REQUIRE(g_last_attach_host->request_close_calls == 1);
     REQUIRE_FALSE(load_session_runtime_metadata("default").has_value());
+
+    app.shutdown();
+}
+
+TEST_CASE("app session attach: detach command hides the session window", "[session_attach][app]")
+{
+    const std::string font = bundled_font_path();
+    if (!std::filesystem::exists(font))
+        SKIP("bundled font not found");
+
+    TempDir temp_dir("app-session-explicit-detach");
+    HomeDirRedirect redirect(temp_dir.path);
+
+    FakeWindow* created_window = nullptr;
+    g_last_attach_host = nullptr;
+
+    AppOptions opts = make_attach_options();
+    opts.window_factory = [&]() {
+        auto window = std::make_unique<FakeWindow>();
+        created_window = window.get();
+        return window;
+    };
+
+    App app(std::move(opts));
+    REQUIRE(app.initialize());
+    REQUIRE(created_window != nullptr);
+    REQUIRE(app.run_smoke_test(std::chrono::milliseconds(200)));
+
+    REQUIRE(SessionAttachServer::send_command("default", SessionAttachServer::Command::Detach)
+        == SessionAttachServer::AttachStatus::Attached);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+    while (created_window->is_visible() && std::chrono::steady_clock::now() < deadline)
+        REQUIRE(app.run_smoke_test(std::chrono::milliseconds(50)));
+    REQUIRE_FALSE(created_window->is_visible());
+
+    SessionAttachServer::LiveSessionInfo live_info;
+    REQUIRE(SessionAttachServer::query_live_session("default", &live_info));
+    REQUIRE(live_info.detached);
 
     app.shutdown();
 }

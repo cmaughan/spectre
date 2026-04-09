@@ -98,6 +98,8 @@ const char* command_text(SessionAttachServer::Command command)
     {
     case SessionAttachServer::Command::Activate:
         return "activate";
+    case SessionAttachServer::Command::Detach:
+        return "detach";
     case SessionAttachServer::Command::Shutdown:
         return "shutdown";
     case SessionAttachServer::Command::QueryLiveSession:
@@ -297,6 +299,11 @@ bool SessionAttachServer::start(std::string_view session_id, CommandHandler on_c
                     if (on_command_requested_)
                         on_command_requested_(Command::Activate);
                 }
+                else if (command == "detach")
+                {
+                    if (on_command_requested_)
+                        on_command_requested_(Command::Detach);
+                }
                 else if (command == "shutdown")
                 {
                     if (on_command_requested_)
@@ -412,6 +419,11 @@ bool SessionAttachServer::start(std::string_view session_id, CommandHandler on_c
                 {
                     if (on_command_requested_)
                         on_command_requested_(Command::Activate);
+                }
+                else if (command == "detach")
+                {
+                    if (on_command_requested_)
+                        on_command_requested_(Command::Detach);
                 }
                 else if (command == "shutdown")
                 {

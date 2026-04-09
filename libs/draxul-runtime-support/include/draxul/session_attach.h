@@ -27,6 +27,7 @@ public:
     enum class Command
     {
         Activate,
+        Detach,
         Shutdown,
         QueryLiveSession,
     };

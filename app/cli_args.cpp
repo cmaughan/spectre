@@ -29,6 +29,8 @@ ParseArgsResult parse_args(const std::vector<std::string>& args)
             parsed.list_sessions = true;
         else if (args[i] == "--attach-session")
             parsed.attach_session = true;
+        else if (args[i] == "--detach-session")
+            parsed.detach_session = true;
         else if (args[i] == "--kill-session")
             parsed.kill_session = true;
 #ifdef DRAXUL_ENABLE_RENDER_TESTS

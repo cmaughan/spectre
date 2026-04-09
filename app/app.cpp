@@ -460,6 +460,8 @@ bool App::initialize_session_attach()
             [this](SessionAttachServer::Command command) {
                 if (command == SessionAttachServer::Command::Activate)
                     external_attach_requested_.store(true);
+                else if (command == SessionAttachServer::Command::Detach)
+                    external_detach_requested_.store(true);
                 else if (command == SessionAttachServer::Command::Shutdown)
                     external_session_shutdown_requested_.store(true);
                 wake_window();
@@ -1388,6 +1390,8 @@ bool App::pump_once(std::optional<std::chrono::steady_clock::time_point> wait_de
     {
         if (external_attach_requested_.exchange(false))
             reattach_window();
+        if (external_detach_requested_.exchange(false))
+            detach_window();
         if (external_session_shutdown_requested_.exchange(false))
         {
             kill_session();
@@ -1817,7 +1821,7 @@ bool App::can_detach_window() const
 void App::detach_window()
 {
     PERF_MEASURE();
-    if (detached_)
+    if (detached_ || !can_detach_window())
         return;
 
     detached_ = true;

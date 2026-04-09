@@ -133,6 +133,13 @@ TEST_CASE("cli: --attach-session sets the flag", "[cli]")
     REQUIRE(r.args.attach_session);
 }
 
+TEST_CASE("cli: --detach-session sets the flag", "[cli]")
+{
+    auto r = parse({ "--detach-session" });
+    REQUIRE_FALSE(r.error.has_value());
+    REQUIRE(r.args.detach_session);
+}
+
 TEST_CASE("cli: --kill-session sets the flag", "[cli]")
 {
     auto r = parse({ "--kill-session" });

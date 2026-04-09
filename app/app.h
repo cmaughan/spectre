@@ -209,6 +209,7 @@ private:
     DiagnosticsCollector diagnostics_collector_;
     SessionAttachServer session_attach_server_;
     std::atomic<bool> external_attach_requested_ = false;
+    std::atomic<bool> external_detach_requested_ = false;
     std::atomic<bool> external_session_shutdown_requested_ = false;
     bool detached_ = false;
     bool session_killed_ = false;
