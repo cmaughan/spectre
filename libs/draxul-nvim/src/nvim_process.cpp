@@ -433,7 +433,13 @@ bool NvimProcess::write(const uint8_t* data, size_t len) const
     while (total_written < len)
     {
         ssize_t n = ::write(impl_->child_stdin_write_, data + total_written, len - total_written);
-        if (n <= 0)
+        if (n < 0)
+        {
+            if (errno == EINTR)
+                continue;
+            return false;
+        }
+        if (n == 0)
             return false;
         total_written += (size_t)n;
     }
@@ -442,7 +448,11 @@ bool NvimProcess::write(const uint8_t* data, size_t len) const
 
 int NvimProcess::read(uint8_t* buffer, size_t max_len) const
 {
-    ssize_t n = ::read(impl_->child_stdout_read_, buffer, max_len);
+    ssize_t n;
+    do
+    {
+        n = ::read(impl_->child_stdout_read_, buffer, max_len);
+    } while (n < 0 && errno == EINTR);
     if (n < 0)
         return -1;
     return (int)n;

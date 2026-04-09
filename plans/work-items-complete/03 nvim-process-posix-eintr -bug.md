@@ -19,15 +19,15 @@ The PTY sibling `unix_pty_process.cpp` handles EINTR correctly in both its read 
 
 ## Investigation
 
-- [ ] Read `libs/draxul-nvim/src/nvim_process.cpp` POSIX section (lines ~417–436) to confirm the missing EINTR handling in `write()` and `read()`.
-- [ ] Read `libs/draxul-host/src/unix_pty_process.cpp` write/read paths to confirm the correct EINTR pattern used there.
-- [ ] Read `libs/draxul-nvim/src/rpc.cpp` lines 180–195 to understand how `write()` returning false leads to `read_failed_ = true`.
+- [x] Read `libs/draxul-nvim/src/nvim_process.cpp` POSIX section (lines ~417–436) to confirm the missing EINTR handling in `write()` and `read()`.
+- [x] Read `libs/draxul-host/src/unix_pty_process.cpp` write/read paths to confirm the correct EINTR pattern used there.
+- [x] Read `libs/draxul-nvim/src/rpc.cpp` lines 180–195 to understand how `write()` returning false leads to `read_failed_ = true`.
 
 ---
 
 ## Fix Strategy
 
-- [ ] In `NvimProcess::write()` (POSIX), replace `if (n <= 0) return false;` with:
+- [x] In `NvimProcess::write()` (POSIX), replace `if (n <= 0) return false;` with:
   ```cpp
   if (n < 0) {
       if (errno == EINTR) continue;
@@ -35,7 +35,7 @@ The PTY sibling `unix_pty_process.cpp` handles EINTR correctly in both its read 
   }
   if (n == 0) return false;
   ```
-- [ ] In `NvimProcess::read()` (POSIX), replace the single `::read()` call with a retry loop:
+- [x] In `NvimProcess::read()` (POSIX), replace the single `::read()` call with a retry loop:
   ```cpp
   ssize_t n;
   do { n = ::read(impl_->child_stdout_read_, buffer, max_len); }
@@ -48,9 +48,9 @@ The PTY sibling `unix_pty_process.cpp` handles EINTR correctly in both its read 
 
 ## Acceptance Criteria
 
-- [ ] A signal delivered during nvim pipe I/O does not kill the RPC transport.
-- [ ] The fix matches the EINTR handling in `unix_pty_process.cpp`.
-- [ ] Build and smoke test pass: `cmake --build build --target draxul draxul-tests && py do.py smoke`.
+- [x] A signal delivered during nvim pipe I/O does not kill the RPC transport.
+- [x] The fix matches the EINTR handling in `unix_pty_process.cpp`.
+- [x] Build and smoke test pass: `cmake --build build --target draxul draxul-tests && py do.py smoke`.
 - [ ] Run under TSan: `cmake --preset mac-tsan && cmake --build build --target draxul-tests && ctest --test-dir build -R draxul-tests`. No new findings.
 
 ---
