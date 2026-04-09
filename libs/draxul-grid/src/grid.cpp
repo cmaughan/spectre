@@ -257,12 +257,33 @@ void Grid::resize(int cols, int rows)
         cols = std::clamp(cols, 0, kMaxGridDim);
         rows = std::clamp(rows, 0, kMaxGridDim);
     }
+
+    const int old_cols = cols_;
+    const int old_rows = rows_;
+
+    if (cols == old_cols && rows == old_rows)
+        return;
+
+    // Preserve existing cell content during resize. When shrinking, the cells
+    // that still fit stay intact. When growing, new cells are blanked.
+    const auto new_size = static_cast<size_t>(cols) * static_cast<size_t>(rows);
+    std::vector<Cell> new_cells(new_size, make_blank_cell());
+
+    const int copy_rows = std::min(old_rows, rows);
+    const int copy_cols = std::min(old_cols, cols);
+    for (int r = 0; r < copy_rows; ++r)
+    {
+        const auto src_offset = static_cast<size_t>(r) * static_cast<size_t>(old_cols);
+        const auto dst_offset = static_cast<size_t>(r) * static_cast<size_t>(cols);
+        std::copy_n(cells_.begin() + src_offset, copy_cols, new_cells.begin() + dst_offset);
+    }
+
+    cells_ = std::move(new_cells);
     cols_ = cols;
     rows_ = rows;
-    cells_.resize(static_cast<size_t>(cols) * static_cast<size_t>(rows));
-    dirty_marks_.assign(static_cast<size_t>(cols) * static_cast<size_t>(rows), 0);
+    dirty_marks_.assign(new_size, 0);
     dirty_cells_.clear();
-    clear();
+    full_dirty_ = true;
 }
 
 void Grid::clear()

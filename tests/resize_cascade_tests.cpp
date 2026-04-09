@@ -114,9 +114,9 @@ TEST_CASE("resize cascade: grid grow clears all cells (content repopulated by pr
 
     grid.resize(10, 6);
 
-    // After resize the grid is blank — content repopulated by the terminal process.
-    INFO("top-left cell is blank after grow (full reset)");
-    REQUIRE(grid.get_cell(0, 0).text == std::string(" "));
+    // After resize, existing content within the old bounds is preserved.
+    INFO("top-left cell preserved after grow");
+    REQUIRE(grid.get_cell(0, 0).text == std::string("H"));
     INFO("cols updated to 10 after grow");
     REQUIRE(grid.cols() == 10);
     INFO("rows updated to 6 after grow");
