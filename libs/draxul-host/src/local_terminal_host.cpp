@@ -373,7 +373,6 @@ std::string LocalTerminalHost::status_text() const
     if (!current_cwd_.empty())
     {
         result += " | ";
-        // Truncate cwd to 30 chars with leading ellipsis if too long.
         constexpr size_t kMaxCwdLen = 30;
         if (current_cwd_.size() > kMaxCwdLen)
         {
@@ -384,6 +383,14 @@ std::string LocalTerminalHost::status_text() const
         {
             result += current_cwd_;
         }
+    }
+    if (scrollback_.is_scrolled_back())
+    {
+        result += " [";
+        result += std::to_string(scrollback_.offset());
+        result += "/";
+        result += std::to_string(scrollback_.size());
+        result += "]";
     }
     return result;
 }
