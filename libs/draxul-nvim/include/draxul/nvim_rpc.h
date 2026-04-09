@@ -2,7 +2,9 @@
 #include <array>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <variant>
@@ -101,8 +103,12 @@ struct MpackValue
     {
         if (auto value = std::get_if<int64_t>(&storage))
             return *value;
-        if (auto value = std::get_if<uint64_t>(&storage))
-            return (int64_t)*value;
+        if (auto* v = std::get_if<uint64_t>(&storage))
+        {
+            if (*v > static_cast<uint64_t>(std::numeric_limits<int64_t>::max()))
+                throw std::range_error("uint64 value exceeds int64 range in as_int()");
+            return static_cast<int64_t>(*v);
+        }
         throw std::bad_variant_access();
     }
 

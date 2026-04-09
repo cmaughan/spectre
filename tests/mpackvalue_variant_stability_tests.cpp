@@ -120,3 +120,33 @@ TEST_CASE("MpackValue type() does not conflate Int with UInt", "[rpc]")
     INFO("Int and UInt types must be distinct");
     REQUIRE(int_val.type() != uint_val.type());
 }
+
+TEST_CASE("MpackValue as_int() converts small uint64 to int64", "[rpc]")
+{
+    MpackValue val = NvimRpc::make_uint(42);
+    INFO("small uint64 should convert to int64 without error");
+    REQUIRE(val.as_int() == 42);
+}
+
+TEST_CASE("MpackValue as_int() converts max-representable uint64 to int64", "[rpc]")
+{
+    uint64_t max_safe = static_cast<uint64_t>(std::numeric_limits<int64_t>::max());
+    MpackValue val = NvimRpc::make_uint(max_safe);
+    INFO("INT64_MAX stored as uint64 should convert to int64");
+    REQUIRE(val.as_int() == std::numeric_limits<int64_t>::max());
+}
+
+TEST_CASE("MpackValue as_int() throws for uint64 exceeding INT64_MAX", "[rpc]")
+{
+    uint64_t too_large = static_cast<uint64_t>(std::numeric_limits<int64_t>::max()) + 1;
+    MpackValue val = NvimRpc::make_uint(too_large);
+    INFO("uint64 > INT64_MAX must throw std::range_error, not silently wrap to negative");
+    REQUIRE_THROWS_AS(val.as_int(), std::range_error);
+}
+
+TEST_CASE("MpackValue as_int() throws for UINT64_MAX", "[rpc]")
+{
+    MpackValue val = NvimRpc::make_uint(std::numeric_limits<uint64_t>::max());
+    INFO("UINT64_MAX must throw std::range_error");
+    REQUIRE_THROWS_AS(val.as_int(), std::range_error);
+}

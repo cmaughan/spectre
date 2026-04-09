@@ -20,9 +20,9 @@ For values > `INT64_MAX` (e.g. large Neovim buffer/window/tabpage handles or bit
 
 ## Investigation
 
-- [ ] Read `libs/draxul-nvim/include/draxul/nvim_rpc.h` lines 70–115 to understand the full `MpackValue` variant and all `as_*` accessors.
-- [ ] Search for callers of `as_int()` in `libs/draxul-nvim/src/` and `libs/draxul-host/src/` to understand whether any caller would mishandle a negative value.
-- [ ] Check whether Neovim's ext types (Buffer, Window, Tabpage) use uint64 IDs that could exceed INT64_MAX in practice.
+- [x] Read `libs/draxul-nvim/include/draxul/nvim_rpc.h` lines 70–115 to understand the full `MpackValue` variant and all `as_*` accessors.
+- [x] Search for callers of `as_int()` in `libs/draxul-nvim/src/` and `libs/draxul-host/src/` to understand whether any caller would mishandle a negative value.
+- [x] Check whether Neovim's ext types (Buffer, Window, Tabpage) use uint64 IDs that could exceed INT64_MAX in practice.
 
 ---
 
@@ -43,7 +43,7 @@ Option B (broader): Add an `as_uint()` accessor for callers that legitimately ha
 
 ## Acceptance Criteria
 
-- [ ] `as_int()` does not silently return a negative value for `uint64_t` inputs > `INT64_MAX`.
-- [ ] UBSan/sanitizer build does not flag the cast.
-- [ ] All existing callers continue to work correctly.
-- [ ] Build and smoke test pass: `cmake --build build --target draxul draxul-tests && py do.py smoke`.
+- [x] `as_int()` does not silently return a negative value for `uint64_t` inputs > `INT64_MAX`.
+- [x] UBSan/sanitizer build does not flag the cast.
+- [x] All existing callers continue to work correctly.
+- [x] Build and smoke test pass: `cmake --build build --target draxul draxul-tests && py do.py smoke`.
