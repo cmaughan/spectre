@@ -256,7 +256,7 @@ void TerminalHostBase::reset_terminal_state()
     vt_.origin_mode = false;
     vt_.cursor_app_mode = false;
     vt_.cursor_shape = CursorShape::Block;
-    vt_.cursor_blink = true;
+    vt_.cursor_blink = false;
     bracketed_paste_mode_ = false;
     alt_screen_.reset();
 }

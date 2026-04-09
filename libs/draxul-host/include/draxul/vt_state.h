@@ -21,7 +21,7 @@ struct VtState
 
     // DECSCUSR — cursor shape set by the shell via CSI Ps SP q.
     CursorShape cursor_shape = CursorShape::Block;
-    bool cursor_blink = true; // blinking by default (DECSCUSR 0/1)
+    bool cursor_blink = false; // steady by default; shell sends DECSCUSR to enable
 };
 
 } // namespace draxul
