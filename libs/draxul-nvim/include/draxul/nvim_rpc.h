@@ -145,22 +145,15 @@ struct RpcResponse
     MpackValue result;
 };
 
-struct RpcResult
-{
-    MpackValue result;
-    MpackValue error;
-    bool transport_ok = false;
-
-    bool is_error() const
-    {
-        return !error.is_nil();
-    }
-
-    bool ok() const
-    {
-        return transport_ok && !is_error();
-    }
-};
+// WI 24: RPC requests return Result<MpackValue, Error>. Two failure modes are
+// distinguished by Error::kind:
+//   - ErrorKind::IoError  — transport-level failure (write failed, child died,
+//                            response timed out, malformed packet on the wire)
+//   - ErrorKind::RpcError — Neovim returned a structured error (the request
+//                            reached the server and the server replied with
+//                            an error mpack value). Error::message holds the
+//                            stringified server error.
+using RpcResult = Result<MpackValue, Error>;
 
 class IRpcChannel
 {

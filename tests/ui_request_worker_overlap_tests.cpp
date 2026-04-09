@@ -68,10 +68,7 @@ public:
             arrived_cv_.notify_all();
         }
 
-        RpcResult result;
-        result.transport_ok = true;
-        result.result = NvimRpc::make_nil();
-        return result;
+        return RpcResult::ok(NvimRpc::make_nil());
     }
 
     void notify(const std::string&, const std::vector<MpackValue>&) override {}

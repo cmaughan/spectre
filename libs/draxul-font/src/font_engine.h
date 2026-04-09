@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <draxul/font_metrics.h>
+#include <draxul/result.h>
 #include <draxul/types.h>
 #include <string>
 #include <unordered_map>
@@ -172,7 +173,11 @@ private:
         size_t operator()(const ClusterKey& key) const;
     };
 
-    bool rasterize_cluster(const std::string& text, FT_Face face, TextShaper& shaper, AtlasRegion& region);
+    // WI 24: returns the rasterized atlas region, or a structured error
+    // describing why rasterization failed (FreeType load/render error, atlas
+    // overflow, or color-glyph conversion failure). Empty/whitespace clusters
+    // produce an ok result wrapping a default-constructed AtlasRegion.
+    Result<AtlasRegion, Error> rasterize_cluster(const std::string& text, FT_Face face, TextShaper& shaper);
     bool reserve_region(int w, int h, int& atlas_x, int& atlas_y, const char* label);
 
     FT_Face face_ = nullptr;

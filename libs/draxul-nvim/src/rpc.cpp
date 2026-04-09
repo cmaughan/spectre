@@ -151,6 +151,29 @@ bool NvimRpc::connection_failed() const
     return impl_->read_failed_;
 }
 
+namespace
+{
+// Stringify the mpack `error` field that nvim returns alongside an rpcrequest
+// failure. Neovim conventionally encodes errors as `[code, message]` arrays;
+// some helpers send a bare string. Anything else falls back to the type name.
+std::string stringify_rpc_error(const MpackValue& error)
+{
+    if (error.is_nil())
+        return "unknown rpc error";
+    if (error.type() == MpackValue::String)
+        return error.as_str();
+    if (error.type() == MpackValue::Array)
+    {
+        const auto& arr = error.as_array();
+        if (arr.size() >= 2 && arr[1].type() == MpackValue::String)
+            return arr[1].as_str();
+        if (!arr.empty() && arr[0].type() == MpackValue::String)
+            return arr[0].as_str();
+    }
+    return "rpc error (non-string payload)";
+}
+} // namespace
+
 RpcResult NvimRpc::request(const std::string& method, const std::vector<MpackValue>& params)
 {
     PERF_MEASURE();
@@ -162,12 +185,11 @@ RpcResult NvimRpc::request(const std::string& method, const std::vector<MpackVal
     {
         DRAXUL_LOG_ERROR(LogCategory::Rpc,
             "NvimRpc::request() called from main thread — would block render loop");
-        return {};
+        return RpcResult::err(Error::io("rpc request from main thread"));
     }
-    RpcResult rpc_result;
     if (!impl_->process_ || !impl_->running_)
     {
-        return rpc_result;
+        return RpcResult::err(Error::io("rpc transport not running"));
     }
 
     uint32_t msgid = impl_->next_msgid_++;
@@ -176,20 +198,20 @@ RpcResult NvimRpc::request(const std::string& method, const std::vector<MpackVal
     if (!encode_rpc_request(msgid, method, params, encoded))
     {
         DRAXUL_LOG_ERROR(LogCategory::Rpc, "Failed to encode request %s", method.c_str());
-        return rpc_result;
+        return RpcResult::err(Error::io("failed to encode rpc request: " + method));
     }
 
     {
         std::lock_guard<std::mutex> write_lock(impl_->write_mutex_);
         if (!impl_->running_)
-            return rpc_result;
+            return RpcResult::err(Error::io("rpc transport closed"));
 
         if (!impl_->process_->write(reinterpret_cast<const uint8_t*>(encoded.data()), encoded.size()))
         {
             DRAXUL_LOG_ERROR(LogCategory::Rpc, "Write failed for request %s", method.c_str());
             impl_->read_failed_ = true;
             impl_->response_cv_.notify_all();
-            return rpc_result;
+            return RpcResult::err(Error::io("rpc write failed: " + method));
         }
     }
 
@@ -213,15 +235,16 @@ RpcResult NvimRpc::request(const std::string& method, const std::vector<MpackVal
                 impl_->timed_out_msgids_.end());
             impl_->timed_out_msgids_.erase(oldest);
         }
-        return rpc_result;
+        return RpcResult::err(Error::io("rpc request timed out or aborted: " + method));
     }
 
     auto resp = std::move(impl_->responses_[msgid]);
     impl_->responses_.erase(msgid);
-    rpc_result.result = std::move(resp.result);
-    rpc_result.error = std::move(resp.error);
-    rpc_result.transport_ok = true;
-    return rpc_result;
+    if (!resp.error.is_nil())
+    {
+        return RpcResult::err(Error::rpc(stringify_rpc_error(resp.error)));
+    }
+    return RpcResult::ok(std::move(resp.result));
 }
 
 void NvimRpc::notify(const std::string& method, const std::vector<MpackValue>& params)

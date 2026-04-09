@@ -51,7 +51,7 @@ public:
         auto set_option = rpc_.request("nvim_command", {
                                                            NvimRpc::make_str(std::string("set ambiwidth=") + (ambiwidth == AmbiWidth::Double ? "double" : "single")),
                                                        });
-        expect(set_option.ok(), "nvim should accept the ambiwidth setting");
+        expect(set_option.has_value(), "nvim should accept the ambiwidth setting");
 
         auto result = rpc_.request("nvim_call_function", {
                                                              NvimRpc::make_str("strdisplaywidth"),
@@ -60,8 +60,8 @@ public:
                                                              }),
                                                          });
 
-        expect(result.ok(), "nvim strdisplaywidth should return a display width");
-        return (int)result.result.as_int();
+        expect(result.has_value(), "nvim strdisplaywidth should return a display width");
+        return (int)result.value().as_int();
     }
 
 private:

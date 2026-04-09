@@ -56,28 +56,22 @@ TEST_CASE("nvim rpc returns successful responses from the transport", "[rpc]")
 {
     RpcResult result = run_request_with_mode("success");
 
-    INFO("request reports transport success");
-    REQUIRE(result.transport_ok);
     INFO("request reports overall success");
-    REQUIRE(result.ok());
+    REQUIRE(result.has_value());
     INFO("request result payload survives");
-    REQUIRE(result.result.as_str() == std::string("ok"));
-    INFO("successful response keeps nil error");
-    REQUIRE(result.error.is_nil());
+    REQUIRE(result.value().as_str() == std::string("ok"));
 }
 
 TEST_CASE("nvim rpc surfaces remote errors without losing transport success", "[rpc]")
 {
     RpcResult result = run_request_with_mode("error");
 
-    INFO("remote error still counts as transport success");
-    REQUIRE(result.transport_ok);
     INFO("remote error makes the request unsuccessful");
-    REQUIRE(!result.ok());
-    INFO("remote error is surfaced");
-    REQUIRE(result.is_error());
-    INFO("remote error payload survives");
-    REQUIRE(result.error.as_str() == std::string("boom"));
+    REQUIRE(!result.has_value());
+    INFO("remote error is classified as RpcError, not a transport failure");
+    REQUIRE(result.error().kind == ErrorKind::RpcError);
+    INFO("remote error payload survives in the message");
+    REQUIRE(result.error().message == std::string("boom"));
 }
 
 TEST_CASE("nvim rpc aborts cleanly when the child exits without responding", "[rpc]")
@@ -87,9 +81,9 @@ TEST_CASE("nvim rpc aborts cleanly when the child exits without responding", "[r
     auto elapsed = std::chrono::steady_clock::now() - start;
 
     INFO("aborted transport reports failure");
-    REQUIRE(!result.transport_ok);
-    INFO("aborted transport is not successful");
-    REQUIRE(!result.ok());
+    REQUIRE(!result.has_value());
+    INFO("aborted transport is classified as IoError");
+    REQUIRE(result.error().kind == ErrorKind::IoError);
     INFO("aborted transport returns promptly without timing out");
     REQUIRE(elapsed < std::chrono::seconds(2));
 }
@@ -100,7 +94,7 @@ TEST_CASE("nvim rpc queues notifications received before the response", "[rpc]")
     RpcResult result = run_request_with_mode("notify_then_success", &notifications);
 
     INFO("request still succeeds when a notification precedes the response");
-    REQUIRE(result.ok());
+    REQUIRE(result.has_value());
     INFO("notification is queued");
     REQUIRE(static_cast<int>(notifications.size()) == 1);
     INFO("notification method survives");
@@ -118,9 +112,8 @@ TEST_CASE("nvim rpc treats malformed responses as transport failure", "[rpc]")
     auto elapsed = std::chrono::steady_clock::now() - start;
 
     INFO("malformed response reports transport failure");
-    REQUIRE(!result.transport_ok);
-    INFO("malformed response is not successful");
-    REQUIRE(!result.ok());
+    REQUIRE(!result.has_value());
+    REQUIRE(result.error().kind == ErrorKind::IoError);
     INFO("malformed response returns promptly without timing out");
     REQUIRE(elapsed < std::chrono::seconds(2));
 }
@@ -137,11 +130,9 @@ TEST_CASE("nvim rpc reader survives a type-mismatched RPC packet and keeps deliv
     // reader logs + counts the malformed packet and continues to dispatch.
     RpcResult result = run_request_with_mode("malformed_dispatch_then_success");
 
-    INFO("reader survives and still reports transport success");
-    REQUIRE(result.transport_ok);
     INFO("reader still delivers the subsequent valid response");
-    REQUIRE(result.ok());
-    REQUIRE(result.result.as_str() == std::string("ok"));
+    REQUIRE(result.has_value());
+    REQUIRE(result.value().as_str() == std::string("ok"));
     INFO("reader logs an error with a hex dump for the malformed packet");
     REQUIRE(has_log_message(capture.records, LogLevel::Error, LogCategory::Rpc, "Malformed RPC packet"));
 }
@@ -194,12 +185,10 @@ TEST_CASE("nvim rpc request from a worker thread completes successfully", "[rpc]
     });
     worker.join();
 
-    INFO("worker-thread request reports transport success");
-    REQUIRE(result.transport_ok);
     INFO("worker-thread request reports overall success");
-    REQUIRE(result.ok());
+    REQUIRE(result.has_value());
     INFO("worker-thread result payload survives");
-    REQUIRE(result.result.as_str() == std::string("ok"));
+    REQUIRE(result.value().as_str() == std::string("ok"));
 
     rpc.shutdown();
     process.shutdown();
@@ -226,9 +215,8 @@ TEST_CASE("nvim rpc discards responses with out-of-range msgid and still complet
     process.shutdown();
 
     INFO("real response still arrives after the poisoned out-of-range msgid is discarded");
-    REQUIRE(result.transport_ok);
-    REQUIRE(result.ok());
-    REQUIRE(result.result.as_str() == std::string("ok"));
+    REQUIRE(result.has_value());
+    REQUIRE(result.value().as_str() == std::string("ok"));
     INFO("client did not fall back to the 5-second timeout path");
     REQUIRE(elapsed < std::chrono::seconds(2));
     INFO("out-of-range msgid produced an rpc warning log");
@@ -242,7 +230,8 @@ TEST_CASE("nvim rpc logs a warning when the transport aborts before a response a
     RpcResult result = run_request_with_mode("abort_after_read");
 
     INFO("aborted transport reports failure");
-    REQUIRE(!result.transport_ok);
+    REQUIRE(!result.has_value());
+    REQUIRE(result.error().kind == ErrorKind::IoError);
     INFO("aborted request should emit an rpc warning");
     REQUIRE(has_log_message(capture.records, LogLevel::Warn, LogCategory::Rpc, "Request timed out or aborted: fake_method"));
 }

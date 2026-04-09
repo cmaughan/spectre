@@ -190,13 +190,14 @@ const AtlasRegion& GlyphCache::get_cluster(const std::string& text, FT_Face face
     if (it != cluster_cache_.end())
         return it->second;
 
-    AtlasRegion region = {};
-    if (rasterize_cluster(text, face, shaper, region))
+    auto result = rasterize_cluster(text, face, shaper);
+    if (result.has_value())
     {
-        auto [ins, _] = cluster_cache_.try_emplace(std::move(key), region);
+        auto [ins, _] = cluster_cache_.try_emplace(std::move(key), result.value());
         return ins->second;
     }
 
+    DRAXUL_LOG_DEBUG(LogCategory::Font, "rasterize_cluster failed: %s", result.error().message.c_str());
     return empty_region_;
 }
 
@@ -227,15 +228,12 @@ bool GlyphCache::reserve_region(int w, int h, int& atlas_x, int& atlas_y, const 
     return true;
 }
 
-bool GlyphCache::rasterize_cluster(const std::string& text, FT_Face face, TextShaper& shaper, AtlasRegion& region)
+Result<AtlasRegion, Error> GlyphCache::rasterize_cluster(const std::string& text, FT_Face face, TextShaper& shaper)
 {
     PERF_MEASURE();
     auto shaped = shaper.shape(text);
     if (shaped.empty())
-    {
-        region = {};
-        return true;
-    }
+        return AtlasRegion{};
 
     std::vector<RasterizedGlyph> glyphs;
     glyphs.reserve(shaped.size());
@@ -249,10 +247,12 @@ bool GlyphCache::rasterize_cluster(const std::string& text, FT_Face face, TextSh
     for (const auto& shaped_glyph : shaped)
     {
         if (FT_Load_Glyph(face, shaped_glyph.glyph_id, FT_LOAD_DEFAULT | FT_LOAD_COLOR))
-            return false;
+            return Result<AtlasRegion, Error>::err(
+                Error{ ErrorKind::AtlasOverflow, "FT_Load_Glyph failed for cluster: " + text });
         if (face->glyph->format != FT_GLYPH_FORMAT_BITMAP
             && FT_Render_Glyph(face->glyph, FT_RENDER_MODE_NORMAL))
-            return false;
+            return Result<AtlasRegion, Error>::err(
+                Error{ ErrorKind::AtlasOverflow, "FT_Render_Glyph failed for cluster: " + text });
 
         FT_Bitmap& bmp = face->glyph->bitmap;
         if (bmp.width > 0 && bmp.rows > 0)
@@ -263,7 +263,8 @@ bool GlyphCache::rasterize_cluster(const std::string& text, FT_Face face, TextSh
             glyph.left = pen_x + shaped_glyph.x_offset + face->glyph->bitmap_left;
             glyph.top = shaped_glyph.y_offset + face->glyph->bitmap_top;
             if (!bitmap_to_rgba(bmp, glyph.pixels, glyph.is_color))
-                return false;
+                return Result<AtlasRegion, Error>::err(
+                    Error{ ErrorKind::AtlasOverflow, "bitmap_to_rgba failed for cluster: " + text });
 
             bbox_left = std::min(bbox_left, glyph.left);
             bbox_right = std::max(bbox_right, glyph.left + glyph.width);
@@ -276,10 +277,7 @@ bool GlyphCache::rasterize_cluster(const std::string& text, FT_Face face, TextSh
     }
 
     if (glyphs.empty())
-    {
-        region = {};
-        return true;
-    }
+        return AtlasRegion{};
 
     // If no glyphs had ink (all zero-size bitmaps), reset sentinels to avoid
     // signed overflow in cluster_height = bbox_top - bbox_bottom.
@@ -317,7 +315,8 @@ bool GlyphCache::rasterize_cluster(const std::string& text, FT_Face face, TextSh
     int atlas_x = 0;
     int atlas_y = 0;
     if (!reserve_region(cluster_width, cluster_height, atlas_x, atlas_y, "cluster"))
-        return false;
+        return Result<AtlasRegion, Error>::err(
+            Error{ ErrorKind::AtlasOverflow, "atlas full for cluster: " + text });
     used_pixels_ += (size_t)cluster_width * cluster_height;
 
     std::vector<uint8_t> composite((size_t)cluster_width * cluster_height * ATLAS_PIXEL_SIZE, 0);
@@ -365,6 +364,7 @@ bool GlyphCache::rasterize_cluster(const std::string& text, FT_Face face, TextSh
             (size_t)cluster_width * ATLAS_PIXEL_SIZE);
     }
 
+    AtlasRegion region{};
     float inv_size = 1.0f / static_cast<float>(atlas_size_);
     region.uv = {
         static_cast<float>(atlas_x) * inv_size,
@@ -378,7 +378,7 @@ bool GlyphCache::rasterize_cluster(const std::string& text, FT_Face face, TextSh
 
     expand_dirty_rect(dirty_rect_, dirty_, atlas_x, atlas_y, cluster_width, cluster_height);
     dirty_ = true;
-    return true;
+    return region;
 }
 
 } // namespace draxul

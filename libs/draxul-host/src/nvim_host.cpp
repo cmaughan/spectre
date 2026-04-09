@@ -359,9 +359,9 @@ bool NvimHost::attach_ui()
                                                          { NvimRpc::make_str("ext_multigrid"), NvimRpc::make_bool(false) },
                                                      }),
                                                  });
-    if (!attach.ok())
+    if (!attach.has_value())
     {
-        DRAXUL_LOG_ERROR(LogCategory::App, "nvim_ui_attach failed");
+        DRAXUL_LOG_ERROR(LogCategory::App, "nvim_ui_attach failed: %s", attach.error().message.c_str());
         init_error_ = "Neovim rejected UI attach.";
         return false;
     }
@@ -374,9 +374,10 @@ bool NvimHost::execute_startup_commands()
     for (const auto& command : launch_options().startup_commands)
     {
         auto response = rpc_.request("nvim_command", { NvimRpc::make_str(command) });
-        if (!response.ok())
+        if (!response.has_value())
         {
-            DRAXUL_LOG_ERROR(LogCategory::App, "Startup command failed: %s", command.c_str());
+            DRAXUL_LOG_ERROR(LogCategory::App, "Startup command failed: %s (%s)",
+                command.c_str(), response.error().message.c_str());
             init_error_ = "A startup command failed while initializing Neovim.";
             return false;
         }
@@ -388,10 +389,10 @@ bool NvimHost::setup_clipboard_provider()
 {
     PERF_MEASURE();
     auto api_info = rpc_.request("nvim_get_api_info", {});
-    if (!api_info.ok() || api_info.result.type() != MpackValue::Array || api_info.result.as_array().empty())
+    if (!api_info.has_value() || api_info.value().type() != MpackValue::Array || api_info.value().as_array().empty())
         return true;
 
-    clipboard_channel_id_ = api_info.result.as_array()[0].as_int();
+    clipboard_channel_id_ = api_info.value().as_array()[0].as_int();
 
     static constexpr const char* kClipboardLua = R"(
 local channel = ...
@@ -413,7 +414,7 @@ vim.g.clipboard = {
                                                     NvimRpc::make_str(kClipboardLua),
                                                     NvimRpc::make_array({ NvimRpc::make_int(clipboard_channel_id_) }),
                                                 });
-    return result.ok();
+    return result.has_value();
 }
 
 void NvimHost::queue_resize_request(int cols, int rows, const char* reason)

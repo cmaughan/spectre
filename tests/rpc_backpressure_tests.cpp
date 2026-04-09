@@ -117,7 +117,7 @@ TEST_CASE("rpc backpressure: NvimRpc drain_notifications returns all queued item
     process.shutdown();
 
     INFO("request succeeds in notify_then_success mode");
-    REQUIRE(result.ok());
+    REQUIRE(result.has_value());
     INFO("exactly one notification is drained after the request");
     REQUIRE(static_cast<int>(notifications.size()) == 1);
     INFO("notification method is 'redraw'");
@@ -164,7 +164,7 @@ TEST_CASE("rpc backpressure: NvimRpc drains 100 notifications without losing any
     process.shutdown();
 
     INFO("request succeeds in notify_many mode");
-    REQUIRE(result.ok());
+    REQUIRE(result.has_value());
     INFO("all 100 notifications delivered without loss");
     REQUIRE(static_cast<int>(all.size()) == kExpected);
 }
@@ -245,7 +245,7 @@ TEST_CASE("rpc backpressure: NvimRpc concurrent drain consumer and reader thread
     process.shutdown();
 
     INFO("request succeeds with concurrent consumer");
-    REQUIRE(result.ok());
+    REQUIRE(result.has_value());
     INFO("all 100 notifications delivered under concurrent drain");
     REQUIRE(static_cast<int>(all.size()) == kExpected);
 }
@@ -286,7 +286,7 @@ TEST_CASE("rpc backpressure: NvimRpc on_notification_available fires for each no
     process.shutdown();
 
     INFO("request succeeds");
-    REQUIRE(result.ok());
+    REQUIRE(result.has_value());
     INFO("on_notification_available fired at least once per notification");
     REQUIRE(callback_count.load() >= kExpected);
 }
@@ -339,7 +339,7 @@ TEST_CASE("rpc WI07: callbacks supplied at initialize() fire for immediate notif
     process.shutdown();
 
     INFO("request completed");
-    REQUIRE(result.ok());
+    REQUIRE(result.has_value());
     INFO("callback installed via initialize() fired at least once");
     REQUIRE(notify_count.load() > 0);
 }
@@ -422,7 +422,7 @@ TEST_CASE("rpc backpressure: NvimRpc enqueue-then-drain in sequence returns FIFO
     process.shutdown();
 
     INFO("request succeeds");
-    REQUIRE(result.ok());
+    REQUIRE(result.has_value());
     INFO("all notifications received");
     REQUIRE(static_cast<int>(all.size()) == kExpected);
 

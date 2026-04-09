@@ -38,10 +38,7 @@ public:
         request_in_flight_ = false;
         cv_.notify_all();
 
-        RpcResult result;
-        result.transport_ok = true;
-        result.result = NvimRpc::make_nil();
-        return result;
+        return RpcResult::ok(NvimRpc::make_nil());
     }
 
     void notify(const std::string& method, const std::vector<MpackValue>& params) override

@@ -69,9 +69,10 @@ void UiRequestWorker::thread_main()
             continue;
 
         auto resize = rpc_->request("nvim_ui_try_resize", { NvimRpc::make_int(request.cols), NvimRpc::make_int(request.rows) });
-        if (!resize.ok())
+        if (!resize.has_value())
         {
-            DRAXUL_LOG_WARN(LogCategory::App, "nvim_ui_try_resize failed during %s", request.reason.c_str());
+            DRAXUL_LOG_WARN(LogCategory::App, "nvim_ui_try_resize failed during %s: %s",
+                request.reason.c_str(), resize.error().message.c_str());
         }
     }
 }

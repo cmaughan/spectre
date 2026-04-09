@@ -137,6 +137,15 @@ public:
     using value_type = T;
     using error_type = E;
 
+    // Default-constructed Result is in the error state with a default-
+    // constructed E. Lets call sites declare a Result variable up front and
+    // assign into it later (common in worker-thread test fixtures), without
+    // needing a placeholder value of T.
+    Result()
+        : storage_(std::in_place_index<1>, E{})
+    {
+    }
+
     // Implicit construction from T — lets `return Foo{...};` just work.
     Result(T value)
         : storage_(std::in_place_index<0>, std::move(value))

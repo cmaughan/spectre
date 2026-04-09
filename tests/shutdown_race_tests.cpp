@@ -35,10 +35,7 @@ public:
         released_cv_.wait(lock, [this]() { return released_; });
         in_flight_.fetch_sub(1);
 
-        RpcResult result;
-        result.transport_ok = true;
-        result.result = NvimRpc::make_nil();
-        return result;
+        return RpcResult::ok(NvimRpc::make_nil());
     }
 
     void notify(const std::string&, const std::vector<MpackValue>&) override {}
@@ -232,8 +229,9 @@ TEST_CASE("rpc shutdown() mid-flight request returns cleanly without crash", "[n
 
     INFO("requester must have returned after shutdown()");
     REQUIRE(request_finished.load());
-    INFO("transport_ok should be false when shut down mid-flight");
-    REQUIRE(!result.transport_ok);
+    INFO("result should report transport failure when shut down mid-flight");
+    REQUIRE(!result.has_value());
+    REQUIRE(result.error().kind == ErrorKind::IoError);
     INFO("shutdown() mid-flight must complete well before the 5s timeout");
     REQUIRE(elapsed < std::chrono::seconds(2));
 }
