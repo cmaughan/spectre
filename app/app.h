@@ -130,6 +130,7 @@ private:
     bool can_detach_window() const;
     void detach_window();
     void reattach_window();
+    void kill_session();
     std::optional<AppSessionState> snapshot_session_state() const;
     void persist_session_state();
     bool restore_session_state(int pixel_w, int pixel_h, const AppSessionState& state);
@@ -203,7 +204,9 @@ private:
     DiagnosticsCollector diagnostics_collector_;
     SessionAttachServer session_attach_server_;
     std::atomic<bool> external_attach_requested_ = false;
+    std::atomic<bool> external_session_shutdown_requested_ = false;
     bool detached_ = false;
+    bool session_killed_ = false;
 };
 
 } // namespace draxul

@@ -423,10 +423,14 @@ bool App::initialize_session_attach()
         return true;
 
     std::string error;
-    if (!session_attach_server_.start([this]() {
-            external_attach_requested_.store(true);
-            wake_window();
-        },
+    if (!session_attach_server_.start(options_.session_id,
+            [this](SessionAttachServer::Command command) {
+                if (command == SessionAttachServer::Command::Activate)
+                    external_attach_requested_.store(true);
+                else if (command == SessionAttachServer::Command::Shutdown)
+                    external_session_shutdown_requested_.store(true);
+                wake_window();
+            },
             &error))
     {
         last_init_error_ = error.empty()
@@ -620,8 +624,17 @@ bool App::initialize_chrome_host()
     bool restored_session = false;
     if (options_.enable_session_attach)
     {
+        if (pending_window_activation_ && window_)
+        {
+            // Bring the app window forward before we respawn restored panes so
+            // any transient shell startup windows stay behind Draxul instead of
+            // photobombing the restore.
+            window_->activate();
+            pending_window_activation_ = false;
+        }
+
         std::string session_error;
-        if (auto saved_session = load_session_state(&session_error);
+        if (auto saved_session = load_session_state(options_.session_id, &session_error);
             saved_session && !saved_session->workspaces.empty())
         {
             restored_session = restore_session_state(
@@ -1327,6 +1340,11 @@ bool App::pump_once(std::optional<std::chrono::steady_clock::time_point> wait_de
     {
         if (external_attach_requested_.exchange(false))
             reattach_window();
+        if (external_session_shutdown_requested_.exchange(false))
+        {
+            kill_session();
+            return false;
+        }
 
         if (pending_window_activation_)
         {
@@ -1781,6 +1799,31 @@ void App::reattach_window()
     request_frame();
 }
 
+void App::kill_session()
+{
+    PERF_MEASURE();
+    if (session_killed_)
+        return;
+
+    session_killed_ = true;
+    detached_ = false;
+    pending_window_activation_ = false;
+    input_dispatcher_.set_host(nullptr);
+
+    std::string error;
+    if (!delete_session_state(options_.session_id, &error) && !error.empty())
+    {
+        DRAXUL_LOG_WARN(LogCategory::App,
+            "Failed to delete session state for %s: %s",
+            options_.session_id.c_str(), error.c_str());
+    }
+
+    active_host_manager().for_each_host([](LeafId, IHost& h) {
+        h.request_close();
+    });
+    running_ = false;
+}
+
 std::optional<AppSessionState> App::snapshot_session_state() const
 {
     PERF_MEASURE();
@@ -1788,6 +1831,8 @@ std::optional<AppSessionState> App::snapshot_session_state() const
         return std::nullopt;
 
     AppSessionState state;
+    state.session_id = options_.session_id;
+    state.session_name = options_.session_id;
     state.active_workspace_id = active_workspace_;
     state.next_workspace_id = next_workspace_id_;
 
@@ -1811,7 +1856,7 @@ std::optional<AppSessionState> App::snapshot_session_state() const
 void App::persist_session_state()
 {
     PERF_MEASURE();
-    if (!options_.enable_session_attach)
+    if (!options_.enable_session_attach || session_killed_)
         return;
 
     auto state = snapshot_session_state();
@@ -2056,7 +2101,8 @@ void App::shutdown()
     macos_menu_.reset(); // tear down menu before handler goes away
 #endif
 
-    persist_session_state();
+    if (!session_killed_)
+        persist_session_state();
     session_attach_server_.stop();
 
     for (auto& ws : workspaces_)

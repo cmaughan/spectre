@@ -16,6 +16,9 @@ struct ParsedArgs
     bool continuous_refresh = false;
     bool no_vblank = false;
     bool no_ui = false;
+    bool list_sessions = false;
+    bool attach_session = false;
+    bool kill_session = false;
 #ifdef DRAXUL_ENABLE_RENDER_TESTS
     bool bless_render_test = false;
     bool show_render_test_window = false;
@@ -25,6 +28,7 @@ struct ParsedArgs
     std::optional<HostKind> host_kind;
     std::string host_command;
     std::filesystem::path host_source_path;
+    std::string session_id = "default";
     std::string log_file;
     std::string log_level;
     std::filesystem::path screenshot_path;

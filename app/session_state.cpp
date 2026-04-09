@@ -5,9 +5,12 @@
 #include <draxul/perf_timing.h>
 #include <draxul/toml_support.h>
 
+#include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <exception>
 #include <fstream>
+#include <sstream>
 #include <string_view>
 
 namespace draxul
@@ -17,6 +20,48 @@ namespace
 {
 
 constexpr int kSessionStateVersion = 1;
+
+uint64_t fnv1a_hash(std::string_view text)
+{
+    uint64_t hash = 14695981039346656037ull;
+    for (unsigned char ch : text)
+    {
+        hash ^= static_cast<uint64_t>(ch);
+        hash *= 1099511628211ull;
+    }
+    return hash;
+}
+
+std::string session_slug(std::string_view session_id)
+{
+    std::string slug;
+    slug.reserve(session_id.size());
+    for (unsigned char ch : session_id)
+    {
+        if (std::isalnum(ch) || ch == '-' || ch == '_' || ch == '.')
+            slug.push_back(static_cast<char>(ch));
+        else
+            slug.push_back('_');
+    }
+
+    if (slug.empty())
+        slug = "default";
+    if (slug.size() > 48)
+        slug.resize(48);
+    return slug;
+}
+
+std::string session_file_name(std::string_view session_id)
+{
+    std::ostringstream out;
+    out << std::hex << fnv1a_hash(session_id) << "-" << session_slug(session_id) << ".toml";
+    return out.str();
+}
+
+std::filesystem::path legacy_default_session_state_path()
+{
+    return ConfigDocument::default_path().parent_path() / "session-state.toml";
+}
 
 const char* split_direction_to_string(SplitDirection direction)
 {
@@ -235,69 +280,9 @@ std::optional<HostManager::SessionState> parse_host_manager_state(
     return state;
 }
 
-} // namespace
-
-std::filesystem::path default_session_state_path()
+std::optional<AppSessionState> load_session_state_from_path(
+    const std::filesystem::path& path, std::string* error)
 {
-    PERF_MEASURE();
-    return ConfigDocument::default_path().parent_path() / "session-state.toml";
-}
-
-bool save_session_state(const AppSessionState& state, std::string* error)
-{
-    PERF_MEASURE();
-    try
-    {
-        toml::table document;
-        document.insert_or_assign("version", state.version);
-        document.insert_or_assign("session_id", state.session_id);
-        document.insert_or_assign("active_workspace_id", state.active_workspace_id);
-        document.insert_or_assign("next_workspace_id", state.next_workspace_id);
-
-        toml::array workspaces;
-        for (const WorkspaceSessionState& workspace : state.workspaces)
-        {
-            toml::table workspace_table;
-            workspace_table.insert_or_assign("id", workspace.id);
-            if (!workspace.name.empty())
-                workspace_table.insert_or_assign("name", workspace.name);
-            workspace_table.insert_or_assign("name_user_set", workspace.name_user_set);
-            workspace_table.insert_or_assign(
-                "host_manager", serialize_host_manager_state(workspace.host_manager));
-            workspaces.push_back(std::move(workspace_table));
-        }
-        document.insert_or_assign("workspaces", std::move(workspaces));
-
-        const auto path = default_session_state_path();
-        std::filesystem::create_directories(path.parent_path());
-        std::ofstream out(path, std::ios::trunc);
-        if (!out)
-        {
-            if (error)
-                *error = "Unable to open session state for writing.";
-            return false;
-        }
-        out << document << '\n';
-        if (!out)
-        {
-            if (error)
-                *error = "Failed writing session state.";
-            return false;
-        }
-        return true;
-    }
-    catch (const std::exception& ex)
-    {
-        if (error)
-            *error = ex.what();
-        return false;
-    }
-}
-
-std::optional<AppSessionState> load_session_state(std::string* error)
-{
-    PERF_MEASURE();
-    const auto path = default_session_state_path();
     if (!std::filesystem::exists(path))
         return std::nullopt;
 
@@ -320,6 +305,7 @@ std::optional<AppSessionState> load_session_state(std::string* error)
     }
 
     state.session_id = toml_support::get_string(*document, "session_id").value_or("default");
+    state.session_name = toml_support::get_string(*document, "session_name").value_or(state.session_id);
     state.active_workspace_id = static_cast<int>(
         toml_support::get_int(*document, "active_workspace_id").value_or(-1));
     state.next_workspace_id = static_cast<int>(
@@ -366,6 +352,187 @@ std::optional<AppSessionState> load_session_state(std::string* error)
     }
 
     return state;
+}
+
+SessionSummary summarize_session_state(const AppSessionState& state)
+{
+    SessionSummary summary;
+    summary.session_id = state.session_id;
+    summary.session_name = state.session_name;
+    summary.workspace_count = static_cast<int>(state.workspaces.size());
+    for (const WorkspaceSessionState& workspace : state.workspaces)
+        summary.pane_count += static_cast<int>(workspace.host_manager.panes.size());
+    return summary;
+}
+
+} // namespace
+
+std::filesystem::path session_state_directory()
+{
+    PERF_MEASURE();
+    return ConfigDocument::default_path().parent_path() / "sessions";
+}
+
+std::filesystem::path session_state_path(std::string_view session_id)
+{
+    PERF_MEASURE();
+    const std::string normalized_id = session_id.empty() ? "default" : std::string(session_id);
+    return session_state_directory() / session_file_name(normalized_id);
+}
+
+bool save_session_state(const AppSessionState& state, std::string* error)
+{
+    PERF_MEASURE();
+    try
+    {
+        const std::string normalized_id = state.session_id.empty() ? "default" : state.session_id;
+        toml::table document;
+        document.insert_or_assign("version", state.version);
+        document.insert_or_assign("session_id", normalized_id);
+        document.insert_or_assign("session_name", state.session_name.empty() ? normalized_id : state.session_name);
+        document.insert_or_assign("active_workspace_id", state.active_workspace_id);
+        document.insert_or_assign("next_workspace_id", state.next_workspace_id);
+
+        toml::array workspaces;
+        for (const WorkspaceSessionState& workspace : state.workspaces)
+        {
+            toml::table workspace_table;
+            workspace_table.insert_or_assign("id", workspace.id);
+            if (!workspace.name.empty())
+                workspace_table.insert_or_assign("name", workspace.name);
+            workspace_table.insert_or_assign("name_user_set", workspace.name_user_set);
+            workspace_table.insert_or_assign(
+                "host_manager", serialize_host_manager_state(workspace.host_manager));
+            workspaces.push_back(std::move(workspace_table));
+        }
+        document.insert_or_assign("workspaces", std::move(workspaces));
+
+        const auto path = session_state_path(normalized_id);
+        std::filesystem::create_directories(path.parent_path());
+        std::ofstream out(path, std::ios::trunc);
+        if (!out)
+        {
+            if (error)
+                *error = "Unable to open session state for writing.";
+            return false;
+        }
+        out << document << '\n';
+        if (!out)
+        {
+            if (error)
+                *error = "Failed writing session state.";
+            return false;
+        }
+        return true;
+    }
+    catch (const std::exception& ex)
+    {
+        if (error)
+            *error = ex.what();
+        return false;
+    }
+}
+
+bool delete_session_state(std::string_view session_id, std::string* error)
+{
+    PERF_MEASURE();
+    try
+    {
+        const std::string normalized_id = session_id.empty() ? "default" : std::string(session_id);
+        std::error_code ec;
+        const bool removed = std::filesystem::remove(session_state_path(normalized_id), ec);
+        if (ec)
+        {
+            if (error)
+                *error = ec.message();
+            return false;
+        }
+
+        if (normalized_id == "default")
+        {
+            std::filesystem::remove(legacy_default_session_state_path(), ec);
+            if (ec)
+            {
+                if (error)
+                    *error = ec.message();
+                return false;
+            }
+        }
+
+        return removed || normalized_id == "default";
+    }
+    catch (const std::exception& ex)
+    {
+        if (error)
+            *error = ex.what();
+        return false;
+    }
+}
+
+std::optional<AppSessionState> load_session_state(
+    std::string_view session_id, std::string* error)
+{
+    PERF_MEASURE();
+    const std::string normalized_id = session_id.empty() ? "default" : std::string(session_id);
+    const auto path = session_state_path(normalized_id);
+    if (auto state = load_session_state_from_path(path, error))
+        return state;
+
+    if (normalized_id == "default")
+        return load_session_state_from_path(legacy_default_session_state_path(), error);
+
+    return std::nullopt;
+}
+
+std::optional<AppSessionState> load_session_state(std::string* error)
+{
+    return load_session_state("default", error);
+}
+
+std::vector<SessionSummary> list_saved_sessions(std::string* error)
+{
+    PERF_MEASURE();
+    std::vector<SessionSummary> sessions;
+    try
+    {
+        const auto dir = session_state_directory();
+        if (std::filesystem::exists(dir))
+        {
+            for (const auto& entry : std::filesystem::directory_iterator(dir))
+            {
+                if (!entry.is_regular_file() || entry.path().extension() != ".toml")
+                    continue;
+
+                std::string load_error;
+                if (auto state = load_session_state_from_path(entry.path(), &load_error))
+                    sessions.push_back(summarize_session_state(*state));
+                else if (!load_error.empty())
+                    DRAXUL_LOG_WARN(LogCategory::App,
+                        "Skipping invalid session state %s: %s",
+                        entry.path().string().c_str(), load_error.c_str());
+            }
+        }
+
+        const auto legacy_path = legacy_default_session_state_path();
+        const bool have_default = std::any_of(sessions.begin(), sessions.end(),
+            [](const SessionSummary& session) { return session.session_id == "default"; });
+        if (!have_default)
+        {
+            std::string load_error;
+            if (auto legacy = load_session_state_from_path(legacy_path, &load_error))
+                sessions.push_back(summarize_session_state(*legacy));
+        }
+
+        std::sort(sessions.begin(), sessions.end(), [](const SessionSummary& lhs, const SessionSummary& rhs) {
+            return lhs.session_id < rhs.session_id;
+        });
+    }
+    catch (const std::exception& ex)
+    {
+        if (error)
+            *error = ex.what();
+    }
+    return sessions;
 }
 
 } // namespace draxul

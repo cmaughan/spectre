@@ -54,6 +54,8 @@ TEST_CASE("session state: save/load round-trip preserves workspace topology", "[
     workspace.host_manager = std::move(host_manager_state);
 
     AppSessionState state;
+    state.session_id = "workbench";
+    state.session_name = "workbench";
     state.active_workspace_id = 7;
     state.next_workspace_id = 8;
     state.workspaces.push_back(std::move(workspace));
@@ -63,9 +65,10 @@ TEST_CASE("session state: save/load round-trip preserves workspace topology", "[
     REQUIRE(save_error.empty());
 
     std::string load_error;
-    auto loaded = load_session_state(&load_error);
+    auto loaded = load_session_state("workbench", &load_error);
     REQUIRE(loaded);
     REQUIRE(load_error.empty());
+    REQUIRE(loaded->session_id == "workbench");
     REQUIRE(loaded->active_workspace_id == 7);
     REQUIRE(loaded->next_workspace_id == 8);
     REQUIRE(loaded->workspaces.size() == 1);
@@ -89,4 +92,107 @@ TEST_CASE("session state: save/load round-trip preserves workspace topology", "[
     CHECK(loaded_workspace.host_manager.panes[0].launch.working_dir == "D:/left");
     CHECK(loaded_workspace.host_manager.panes[1].pane_name == "right");
     CHECK(loaded_workspace.host_manager.panes[1].launch.args == (std::vector<std::string>{ "-NoProfile" }));
+
+    const auto sessions = list_saved_sessions(&load_error);
+    REQUIRE(load_error.empty());
+    REQUIRE(sessions.size() == 1);
+    CHECK(sessions[0].session_id == "workbench");
+    CHECK(sessions[0].workspace_count == 1);
+    CHECK(sessions[0].pane_count == 2);
+}
+
+TEST_CASE("session state: distinct session ids persist separately", "[session_state]")
+{
+    TempDir temp_dir("session-state-separate");
+    HomeDirRedirect redirect(temp_dir.path);
+
+    auto make_workspace = [](int id, std::string name) {
+        SplitTree tree;
+        const LeafId leaf = tree.reset(800, 600);
+        WorkspaceSessionState workspace;
+        workspace.id = id;
+        workspace.name = std::move(name);
+        workspace.name_user_set = true;
+        workspace.host_manager.tree = tree.snapshot();
+        workspace.host_manager.panes.push_back({
+            .leaf_id = leaf,
+            .launch = {
+                .kind = HostKind::PowerShell,
+                .command = "pwsh",
+                .args = {},
+                .working_dir = "D:/tmp",
+                .source_path = "",
+                .startup_commands = {},
+            },
+            .pane_name = "shell",
+        });
+        return workspace;
+    };
+
+    AppSessionState alpha;
+    alpha.session_id = "alpha";
+    alpha.session_name = "alpha";
+    alpha.active_workspace_id = 1;
+    alpha.next_workspace_id = 2;
+    alpha.workspaces.push_back(make_workspace(1, "alpha"));
+
+    AppSessionState beta;
+    beta.session_id = "beta/dev";
+    beta.session_name = "beta/dev";
+    beta.active_workspace_id = 2;
+    beta.next_workspace_id = 3;
+    beta.workspaces.push_back(make_workspace(2, "beta"));
+
+    std::string error;
+    REQUIRE(save_session_state(alpha, &error));
+    REQUIRE(error.empty());
+    REQUIRE(save_session_state(beta, &error));
+    REQUIRE(error.empty());
+
+    const auto sessions = list_saved_sessions(&error);
+    REQUIRE(error.empty());
+    REQUIRE(sessions.size() == 2);
+    CHECK(sessions[0].session_id == "alpha");
+    CHECK(sessions[1].session_id == "beta/dev");
+}
+
+TEST_CASE("session state: delete removes saved session state", "[session_state]")
+{
+    TempDir temp_dir("session-state-delete");
+    HomeDirRedirect redirect(temp_dir.path);
+
+    SplitTree tree;
+    const LeafId leaf = tree.reset(800, 600);
+
+    AppSessionState state;
+    state.session_id = "delete-me";
+    state.session_name = "delete-me";
+    state.active_workspace_id = 1;
+    state.next_workspace_id = 2;
+
+    WorkspaceSessionState workspace;
+    workspace.id = 1;
+    workspace.name = "delete-me";
+    workspace.name_user_set = true;
+    workspace.host_manager.tree = tree.snapshot();
+    workspace.host_manager.panes.push_back({
+        .leaf_id = leaf,
+        .launch = {
+            .kind = HostKind::PowerShell,
+            .command = "pwsh",
+            .working_dir = "D:/tmp",
+        },
+        .pane_name = "shell",
+    });
+    state.workspaces.push_back(std::move(workspace));
+
+    std::string error;
+    REQUIRE(save_session_state(state, &error));
+    REQUIRE(error.empty());
+    REQUIRE(std::filesystem::exists(session_state_path("delete-me")));
+
+    REQUIRE(delete_session_state("delete-me", &error));
+    REQUIRE(error.empty());
+    REQUIRE_FALSE(std::filesystem::exists(session_state_path("delete-me")));
+    REQUIRE_FALSE(load_session_state("delete-me", &error).has_value());
 }

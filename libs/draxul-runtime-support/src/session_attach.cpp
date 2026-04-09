@@ -42,23 +42,24 @@ uint64_t fnv1a_hash(std::string_view text)
     return hash;
 }
 
-std::string endpoint_suffix()
+std::string endpoint_suffix(std::string_view session_id)
 {
     std::ostringstream out;
-    out << std::hex << fnv1a_hash(ConfigDocument::default_path().parent_path().string());
+    out << std::hex << fnv1a_hash(
+        ConfigDocument::default_path().parent_path().string() + "|" + std::string(session_id));
     return out.str();
 }
 
 #ifdef _WIN32
 
-std::string mutex_name()
+std::string mutex_name(std::string_view session_id)
 {
-    return "Local\\DraxulSessionAttach-" + endpoint_suffix();
+    return "Local\\DraxulSessionAttach-" + endpoint_suffix(session_id);
 }
 
-std::string pipe_name()
+std::string pipe_name(std::string_view session_id)
 {
-    return "\\\\.\\pipe\\draxul-session-attach-" + endpoint_suffix();
+    return "\\\\.\\pipe\\draxul-session-attach-" + endpoint_suffix(session_id);
 }
 
 std::string win32_error_message(DWORD error)
@@ -76,10 +77,10 @@ std::string win32_error_message(DWORD error)
 
 #else
 
-std::string socket_path()
+std::string socket_path(std::string_view session_id)
 {
     return (std::filesystem::temp_directory_path()
-        / ("draxul-session-attach-" + endpoint_suffix() + ".sock"))
+        / ("draxul-session-attach-" + endpoint_suffix(session_id) + ".sock"))
         .string();
 }
 
@@ -90,6 +91,18 @@ std::string errno_message(int error)
 
 #endif
 
+const char* command_text(SessionAttachServer::Command command)
+{
+    switch (command)
+    {
+    case SessionAttachServer::Command::Activate:
+        return "activate";
+    case SessionAttachServer::Command::Shutdown:
+        return "shutdown";
+    }
+    return "activate";
+}
+
 } // namespace
 
 SessionAttachServer::~SessionAttachServer()
@@ -97,16 +110,18 @@ SessionAttachServer::~SessionAttachServer()
     stop();
 }
 
-bool SessionAttachServer::start(std::function<void()> on_attach_requested, std::string* error)
+bool SessionAttachServer::start(
+    std::string_view session_id, CommandHandler on_command_requested, std::string* error)
 {
     PERF_MEASURE();
     stop();
 
-    on_attach_requested_ = std::move(on_attach_requested);
+    session_id_ = session_id.empty() ? "default" : std::string(session_id);
+    on_command_requested_ = std::move(on_command_requested);
     stop_requested_ = false;
 
 #ifdef _WIN32
-    HANDLE mutex = CreateMutexA(nullptr, FALSE, mutex_name().c_str());
+    HANDLE mutex = CreateMutexA(nullptr, FALSE, mutex_name(session_id_).c_str());
     if (!mutex)
     {
         if (error)
@@ -125,7 +140,7 @@ bool SessionAttachServer::start(std::function<void()> on_attach_requested, std::
     std::promise<bool> ready_promise;
     auto ready_future = ready_promise.get_future();
     server_thread_ = std::thread([this, ready = std::move(ready_promise)]() mutable {
-        const std::string name = pipe_name();
+        const std::string name = pipe_name(session_id_);
         bool ready_signaled = false;
         while (!stop_requested_.load())
         {
@@ -173,8 +188,21 @@ bool SessionAttachServer::start(std::function<void()> on_attach_requested, std::
             char buffer[64] = {};
             DWORD bytes_read = 0;
             const BOOL read_ok = ReadFile(pipe, buffer, sizeof(buffer), &bytes_read, nullptr);
-            if (!stop_requested_.load() && read_ok && bytes_read > 0 && on_attach_requested_)
-                on_attach_requested_();
+            if (!stop_requested_.load() && read_ok && bytes_read > 0)
+            {
+                const std::string_view command(buffer, bytes_read);
+                if (command == "activate")
+                {
+                    if (on_command_requested_)
+                        on_command_requested_(Command::Activate);
+                }
+                else if (command == "shutdown")
+                {
+                    if (on_command_requested_)
+                        on_command_requested_(Command::Shutdown);
+                    stop_requested_ = true;
+                }
+            }
 
             FlushFileBuffers(pipe);
             DisconnectNamedPipe(pipe);
@@ -198,7 +226,7 @@ bool SessionAttachServer::start(std::function<void()> on_attach_requested, std::
     }
     running_ = true;
 #else
-    socket_path_ = socket_path();
+    socket_path_ = socket_path(session_id_);
     const int probe_fd = ::socket(AF_UNIX, SOCK_STREAM, 0);
     if (probe_fd >= 0)
     {
@@ -264,8 +292,21 @@ bool SessionAttachServer::start(std::function<void()> on_attach_requested, std::
 
             char buffer[64] = {};
             const ssize_t bytes_read = ::read(client_fd, buffer, sizeof(buffer));
-            if (!stop_requested_.load() && bytes_read > 0 && on_attach_requested_)
-                on_attach_requested_();
+            if (!stop_requested_.load() && bytes_read > 0)
+            {
+                const std::string_view command(buffer, static_cast<size_t>(bytes_read));
+                if (command == "activate")
+                {
+                    if (on_command_requested_)
+                        on_command_requested_(Command::Activate);
+                }
+                else if (command == "shutdown")
+                {
+                    if (on_command_requested_)
+                        on_command_requested_(Command::Shutdown);
+                    stop_requested_ = true;
+                }
+            }
             ::close(client_fd);
         }
 
@@ -284,7 +325,7 @@ void SessionAttachServer::stop()
 #ifdef _WIN32
     if (running())
     {
-        const auto status = try_attach();
+        const auto status = send_command(session_id_, Command::Shutdown);
         (void)status;
     }
 #else
@@ -329,11 +370,62 @@ void SessionAttachServer::stop()
     running_ = false;
 }
 
-SessionAttachServer::AttachStatus SessionAttachServer::try_attach(std::string* error)
+SessionAttachServer::ProbeStatus SessionAttachServer::probe(
+    std::string_view session_id, std::string* error)
 {
     PERF_MEASURE();
 #ifdef _WIN32
-    const std::string name = pipe_name();
+    const std::string name = pipe_name(session_id.empty() ? "default" : session_id);
+    if (!WaitNamedPipeA(name.c_str(), 50))
+    {
+        const DWORD wait_error = GetLastError();
+        if (wait_error == ERROR_FILE_NOT_FOUND)
+            return ProbeStatus::NoServer;
+        if (error)
+            *error = "Failed waiting for session-attach pipe: " + win32_error_message(wait_error);
+        return ProbeStatus::Error;
+    }
+    return ProbeStatus::Running;
+#else
+    const std::string path = socket_path(session_id.empty() ? "default" : session_id);
+    const int fd = ::socket(AF_UNIX, SOCK_STREAM, 0);
+    if (fd < 0)
+    {
+        if (error)
+            *error = "Failed creating session-attach client socket: " + errno_message(errno);
+        return ProbeStatus::Error;
+    }
+
+    sockaddr_un addr = {};
+    addr.sun_family = AF_UNIX;
+    std::snprintf(addr.sun_path, sizeof(addr.sun_path), "%s", path.c_str());
+    if (::connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0)
+    {
+        const int connect_error = errno;
+        ::close(fd);
+        if (connect_error == ENOENT || connect_error == ECONNREFUSED)
+            return ProbeStatus::NoServer;
+        if (error)
+            *error = "Failed connecting to session-attach socket: " + errno_message(connect_error);
+        return ProbeStatus::Error;
+    }
+    ::close(fd);
+    return ProbeStatus::Running;
+#endif
+}
+
+SessionAttachServer::AttachStatus SessionAttachServer::try_attach(
+    std::string_view session_id, std::string* error)
+{
+    return send_command(session_id, Command::Activate, error);
+}
+
+SessionAttachServer::AttachStatus SessionAttachServer::send_command(
+    std::string_view session_id, Command command, std::string* error)
+{
+    PERF_MEASURE();
+#ifdef _WIN32
+    const std::string name = pipe_name(session_id.empty() ? "default" : session_id);
     if (!WaitNamedPipeA(name.c_str(), 50))
     {
         const DWORD wait_error = GetLastError();
@@ -354,10 +446,10 @@ SessionAttachServer::AttachStatus SessionAttachServer::try_attach(std::string* e
             *error = "Failed opening session-attach pipe: " + win32_error_message(create_error);
         return AttachStatus::Error;
     }
-
-    const char* command = "activate";
     DWORD bytes_written = 0;
-    const BOOL ok = WriteFile(pipe, command, static_cast<DWORD>(std::strlen(command)), &bytes_written, nullptr);
+    const char* command_name = command_text(command);
+    const BOOL ok = WriteFile(
+        pipe, command_name, static_cast<DWORD>(std::strlen(command_name)), &bytes_written, nullptr);
     CloseHandle(pipe);
     if (!ok)
     {
@@ -367,7 +459,7 @@ SessionAttachServer::AttachStatus SessionAttachServer::try_attach(std::string* e
     }
     return AttachStatus::Attached;
 #else
-    const std::string path = socket_path();
+    const std::string path = socket_path(session_id.empty() ? "default" : session_id);
     const int fd = ::socket(AF_UNIX, SOCK_STREAM, 0);
     if (fd < 0)
     {
@@ -390,8 +482,8 @@ SessionAttachServer::AttachStatus SessionAttachServer::try_attach(std::string* e
         return AttachStatus::Error;
     }
 
-    const char* command = "activate";
-    if (::write(fd, command, std::strlen(command)) < 0)
+    const char* command_name = command_text(command);
+    if (::write(fd, command_name, std::strlen(command_name)) < 0)
     {
         const int write_error = errno;
         ::close(fd);

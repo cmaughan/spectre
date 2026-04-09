@@ -104,3 +104,31 @@ TEST_CASE("cli: --smoke-test sets the flag", "[cli]")
     REQUIRE_FALSE(r.error.has_value());
     REQUIRE(r.args.smoke_test);
 }
+
+TEST_CASE("cli: --session stores the requested session id", "[cli]")
+{
+    auto r = parse({ "--session", "workbench" });
+    REQUIRE_FALSE(r.error.has_value());
+    REQUIRE(r.args.session_id == "workbench");
+}
+
+TEST_CASE("cli: --list-sessions sets the flag", "[cli]")
+{
+    auto r = parse({ "--list-sessions" });
+    REQUIRE_FALSE(r.error.has_value());
+    REQUIRE(r.args.list_sessions);
+}
+
+TEST_CASE("cli: --attach-session sets the flag", "[cli]")
+{
+    auto r = parse({ "--attach-session" });
+    REQUIRE_FALSE(r.error.has_value());
+    REQUIRE(r.args.attach_session);
+}
+
+TEST_CASE("cli: --kill-session sets the flag", "[cli]")
+{
+    auto r = parse({ "--kill-session" });
+    REQUIRE_FALSE(r.error.has_value());
+    REQUIRE(r.args.kill_session);
+}

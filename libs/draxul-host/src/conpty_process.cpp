@@ -106,6 +106,16 @@ bool ConPtyProcess::spawn(const std::string& command, const std::vector<std::str
 
     STARTUPINFOEXA startup = {};
     startup.StartupInfo.cb = sizeof(startup);
+    // When attaching a child to a pseudoconsole, leave the standard handles
+    // explicitly null so Windows doesn't duplicate the GUI parent's stdio into
+    // the child behind our backs. Also ask Windows to hide any transient
+    // console window if the child momentarily falls back to normal console
+    // startup before the pseudoconsole path fully settles.
+    startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
+    startup.StartupInfo.wShowWindow = SW_HIDE;
+    startup.StartupInfo.hStdInput = nullptr;
+    startup.StartupInfo.hStdOutput = nullptr;
+    startup.StartupInfo.hStdError = nullptr;
     startup.lpAttributeList = reinterpret_cast<PPROC_THREAD_ATTRIBUTE_LIST>(attribute_storage_.data());
     if (!InitializeProcThreadAttributeList(startup.lpAttributeList, 1, 0, &attribute_bytes))
     {
@@ -124,9 +134,13 @@ bool ConPtyProcess::spawn(const std::string& command, const std::vector<std::str
     for (const auto& arg : args)
         command_line += " " + quote_windows_arg(arg);
 
+    // ConPTY child creation is supposed to use the pseudoconsole attribute with
+    // EXTENDED_STARTUPINFO_PRESENT. CREATE_NO_WINDOW severs the child from the
+    // console environment that ConPTY is trying to provide.
+    const DWORD creation_flags = EXTENDED_STARTUPINFO_PRESENT;
     const char* cwd = working_dir.empty() ? nullptr : working_dir.c_str();
     const bool created = CreateProcessA(nullptr, command_line.data(), nullptr, nullptr, FALSE,
-        EXTENDED_STARTUPINFO_PRESENT, nullptr, cwd, &startup.StartupInfo, &proc_info_);
+        creation_flags, nullptr, cwd, &startup.StartupInfo, &proc_info_);
 
     DeleteProcThreadAttributeList(startup.lpAttributeList);
     attribute_storage_.clear();
@@ -153,6 +167,9 @@ void ConPtyProcess::shutdown()
 {
     PERF_MEASURE();
     reader_running_ = false;
+
+    if (reader_thread_.joinable())
+        CancelSynchronousIo(static_cast<HANDLE>(reader_thread_.native_handle()));
 
     if (pty_)
     {

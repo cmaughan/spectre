@@ -23,6 +23,12 @@ ParseArgsResult parse_args(const std::vector<std::string>& args)
             parsed.no_vblank = true;
         else if (args[i] == "--no-ui")
             parsed.no_ui = true;
+        else if (args[i] == "--list-sessions")
+            parsed.list_sessions = true;
+        else if (args[i] == "--attach-session")
+            parsed.attach_session = true;
+        else if (args[i] == "--kill-session")
+            parsed.kill_session = true;
 #ifdef DRAXUL_ENABLE_RENDER_TESTS
         else if (args[i] == "--bless-render-test")
             parsed.bless_render_test = true;
@@ -53,6 +59,16 @@ ParseArgsResult parse_args(const std::vector<std::string>& args)
         {
             ++i;
             parsed.host_source_path = args[i];
+        }
+        else if (args[i] == "--session" && i + 1 < args.size())
+        {
+            ++i;
+            parsed.session_id = args[i];
+            if (parsed.session_id.empty())
+            {
+                result.error = "error: --session requires a non-empty session id";
+                return result;
+            }
         }
         else if (args[i] == "--log-file" && i + 1 < args.size())
         {

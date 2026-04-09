@@ -1,5 +1,6 @@
 #include "app.h"
 #include "cli_args.h"
+#include "session_state.h"
 #include <SDL3/SDL.h>
 #include <chrono>
 #include <cstdio>
@@ -24,6 +25,7 @@
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
+#include <cstdio>
 #include <windows.h>
 
 // This must come after shellapi!
@@ -38,6 +40,30 @@ namespace
 {
 
 #ifdef _WIN32
+void ensure_console_io(bool allow_alloc_console)
+{
+    static bool configured = false;
+    if (configured)
+        return;
+
+    if (!GetConsoleWindow())
+    {
+        if (!AttachConsole(ATTACH_PARENT_PROCESS) && allow_alloc_console)
+            AllocConsole();
+    }
+
+    if (GetConsoleWindow())
+    {
+        FILE* stream = nullptr;
+        freopen_s(&stream, "CONOUT$", "w", stdout);
+        freopen_s(&stream, "CONOUT$", "w", stderr);
+        freopen_s(&stream, "CONIN$", "r", stdin);
+        SetConsoleOutputCP(CP_UTF8);
+        SetConsoleCP(CP_UTF8);
+        configured = true;
+    }
+}
+
 std::vector<std::string> command_line_args()
 {
     PERF_MEASURE();
@@ -139,21 +165,21 @@ static int draxul_main(std::vector<std::string> args)
 {
     PERF_MEASURE();
     auto parse_result = draxul::parse_args(args);
+#ifdef _WIN32
+    const bool needs_console_output = parse_result.error.has_value()
+        || parse_result.args.want_console
+        || parse_result.args.list_sessions
+        || parse_result.args.attach_session
+        || parse_result.args.kill_session;
+    if (needs_console_output)
+        ensure_console_io(true);
+#endif
     if (parse_result.error)
     {
         std::fprintf(stderr, "%s\n", parse_result.error->c_str());
         return 1;
     }
     draxul::ParsedArgs& parsed = parse_result.args;
-
-#ifdef _WIN32
-    if (parsed.want_console)
-    {
-        AllocConsole();
-        freopen("CONOUT$", "w", stdout);
-        freopen("CONOUT$", "w", stderr);
-    }
-#endif
 
     draxul::configure_default_logging();
 
@@ -182,6 +208,102 @@ static int draxul_main(std::vector<std::string> args)
         log_overrides.enable_file = !parsed.log_file.empty();
         log_overrides.file_path = parsed.log_file;
         draxul::configure_logging(log_overrides);
+    }
+
+    if (parsed.list_sessions)
+    {
+        std::string list_error;
+        const auto sessions = draxul::list_saved_sessions(&list_error);
+        if (!list_error.empty())
+        {
+            std::fprintf(stderr, "Failed to list sessions: %s\n", list_error.c_str());
+            draxul::shutdown_logging();
+            return 1;
+        }
+        if (sessions.empty())
+        {
+            std::printf("No saved sessions.\n");
+            draxul::shutdown_logging();
+            return 0;
+        }
+
+        for (const auto& session : sessions)
+        {
+            const auto probe_status = draxul::SessionAttachServer::probe(session.session_id);
+            const char* state = "saved";
+            if (probe_status == draxul::SessionAttachServer::ProbeStatus::Running)
+                state = "live";
+            else if (probe_status == draxul::SessionAttachServer::ProbeStatus::Error)
+                state = "saved?";
+
+            std::printf("%s\t%s\t%d workspace%s\t%d pane%s\n",
+                session.session_id.c_str(),
+                state,
+                session.workspace_count,
+                session.workspace_count == 1 ? "" : "s",
+                session.pane_count,
+                session.pane_count == 1 ? "" : "s");
+        }
+        draxul::shutdown_logging();
+        return 0;
+    }
+
+    if (parsed.attach_session)
+    {
+        std::string attach_error;
+        const auto attach_status = draxul::SessionAttachServer::try_attach(
+            parsed.session_id, &attach_error);
+        if (attach_status == draxul::SessionAttachServer::AttachStatus::Attached)
+        {
+            std::printf("Attached to session '%s'.\n", parsed.session_id.c_str());
+            draxul::shutdown_logging();
+            return 0;
+        }
+        if (attach_status == draxul::SessionAttachServer::AttachStatus::NoServer)
+        {
+            std::fprintf(stderr, "No running session '%s'.\n", parsed.session_id.c_str());
+            draxul::shutdown_logging();
+            return 1;
+        }
+        std::fprintf(stderr, "Failed to attach to session '%s': %s\n",
+            parsed.session_id.c_str(), attach_error.empty() ? "unknown error" : attach_error.c_str());
+        draxul::shutdown_logging();
+        return 1;
+    }
+
+    if (parsed.kill_session)
+    {
+        std::string command_error;
+        const auto kill_status = draxul::SessionAttachServer::send_command(
+            parsed.session_id, draxul::SessionAttachServer::Command::Shutdown, &command_error);
+        if (kill_status == draxul::SessionAttachServer::AttachStatus::Attached)
+        {
+            std::printf("Killed running session '%s'.\n", parsed.session_id.c_str());
+            (void)draxul::delete_session_state(parsed.session_id);
+            draxul::shutdown_logging();
+            return 0;
+        }
+
+        std::string delete_error;
+        const bool deleted_saved_state = draxul::delete_session_state(parsed.session_id, &delete_error);
+        if (kill_status == draxul::SessionAttachServer::AttachStatus::NoServer && deleted_saved_state)
+        {
+            std::printf("Deleted saved session '%s'.\n", parsed.session_id.c_str());
+            draxul::shutdown_logging();
+            return 0;
+        }
+
+        if (kill_status == draxul::SessionAttachServer::AttachStatus::NoServer)
+        {
+            std::fprintf(stderr, "No running or saved session '%s'.\n", parsed.session_id.c_str());
+            draxul::shutdown_logging();
+            return 1;
+        }
+
+        std::fprintf(stderr, "Failed to kill session '%s': %s\n",
+            parsed.session_id.c_str(), command_error.empty() ? "unknown error" : command_error.c_str());
+        draxul::shutdown_logging();
+        return 1;
     }
 
 #ifdef DRAXUL_ENABLE_RENDER_TESTS
@@ -241,6 +363,7 @@ static int draxul_main(std::vector<std::string> args)
         if (std::filesystem::exists(bundled_font))
             options.config_overrides.font_path = bundled_font.string();
     }
+    options.session_id = parsed.session_id;
 
 #ifdef DRAXUL_ENABLE_RENDER_TESTS
     const bool allow_session_attach = !parsed.smoke_test
@@ -253,7 +376,8 @@ static int draxul_main(std::vector<std::string> args)
     if (allow_session_attach)
     {
         std::string attach_error;
-        const auto attach_status = draxul::SessionAttachServer::try_attach(&attach_error);
+        const auto attach_status = draxul::SessionAttachServer::try_attach(
+            parsed.session_id, &attach_error);
         if (attach_status == draxul::SessionAttachServer::AttachStatus::Attached)
         {
             draxul::shutdown_logging();

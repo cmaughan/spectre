@@ -45,6 +45,8 @@ struct AppOptions
     // When true, hosts that have an optional ImGui/debug overlay should hide it
     // on startup. Hosts without such overlays ignore the flag.
     bool hide_host_ui_panels = false;
+    // Stable session id for the shell-session attach/restore flow.
+    std::string session_id = "default";
     std::optional<float> override_display_ppi;
     int render_target_pixel_width = 0;
     int render_target_pixel_height = 0;

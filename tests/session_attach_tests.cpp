@@ -15,6 +15,7 @@
 #include <chrono>
 #include <filesystem>
 #include <mutex>
+#include <thread>
 
 using namespace draxul;
 using namespace draxul::tests;
@@ -73,7 +74,7 @@ TEST_CASE("session attach: no server reports no server", "[session_attach]")
     TempDir temp_dir("session-attach-no-server");
     HomeDirRedirect redirect(temp_dir.path);
 
-    REQUIRE(SessionAttachServer::try_attach() == SessionAttachServer::AttachStatus::NoServer);
+    REQUIRE(SessionAttachServer::try_attach("default") == SessionAttachServer::AttachStatus::NoServer);
 }
 
 TEST_CASE("session attach: server accepts an attach request", "[session_attach]")
@@ -86,17 +87,61 @@ TEST_CASE("session attach: server accepts an attach request", "[session_attach]"
     std::condition_variable cv;
     int attach_count = 0;
 
-    REQUIRE(server.start([&]() {
+    REQUIRE(server.start("alpha", [&]() {
         std::lock_guard lock(mutex);
         ++attach_count;
         cv.notify_one();
     }));
 
-    REQUIRE(SessionAttachServer::try_attach() == SessionAttachServer::AttachStatus::Attached);
+    REQUIRE(SessionAttachServer::try_attach("alpha") == SessionAttachServer::AttachStatus::Attached);
 
     std::unique_lock lock(mutex);
     REQUIRE(cv.wait_for(lock, std::chrono::milliseconds(500), [&]() { return attach_count == 1; }));
 
+    server.stop();
+}
+
+TEST_CASE("session attach: shutdown command stops the server", "[session_attach]")
+{
+    TempDir temp_dir("session-attach-shutdown");
+    HomeDirRedirect redirect(temp_dir.path);
+
+    SessionAttachServer server;
+    REQUIRE(server.start("alpha", []() {}));
+    REQUIRE(SessionAttachServer::send_command("alpha", SessionAttachServer::Command::Shutdown)
+        == SessionAttachServer::AttachStatus::Attached);
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+    while (server.running() && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+    REQUIRE_FALSE(server.running());
+    server.stop();
+}
+
+TEST_CASE("session attach: different session ids stay isolated", "[session_attach]")
+{
+    TempDir temp_dir("session-attach-isolated");
+    HomeDirRedirect redirect(temp_dir.path);
+
+    SessionAttachServer server;
+    REQUIRE(server.start("workbench", []() {}));
+
+    REQUIRE(SessionAttachServer::probe("workbench") == SessionAttachServer::ProbeStatus::Running);
+    REQUIRE(SessionAttachServer::try_attach("other") == SessionAttachServer::AttachStatus::NoServer);
+
+    server.stop();
+}
+
+TEST_CASE("session attach: probe reports a running session server", "[session_attach]")
+{
+    TempDir temp_dir("session-attach-probe");
+    HomeDirRedirect redirect(temp_dir.path);
+
+    SessionAttachServer server;
+    REQUIRE(server.start("alpha", []() {}));
+    REQUIRE(SessionAttachServer::probe("alpha") == SessionAttachServer::ProbeStatus::Running);
+    REQUIRE(SessionAttachServer::probe("beta") == SessionAttachServer::ProbeStatus::NoServer);
     server.stop();
 }
 
@@ -130,6 +175,30 @@ TEST_CASE("app session attach: close request detaches a shell session", "[sessio
     REQUIRE_FALSE(created_window->is_visible());
     REQUIRE(g_last_attach_host->shutdown_calls == 0);
     REQUIRE(g_last_attach_host->request_close_calls == 0);
+
+    app.shutdown();
+}
+
+TEST_CASE("app session attach: shutdown command kills the session", "[session_attach][app]")
+{
+    const std::string font = bundled_font_path();
+    if (!std::filesystem::exists(font))
+        SKIP("bundled font not found");
+
+    TempDir temp_dir("app-session-shutdown");
+    HomeDirRedirect redirect(temp_dir.path);
+
+    g_last_attach_host = nullptr;
+
+    App app(make_attach_options());
+    REQUIRE(app.initialize());
+    REQUIRE(g_last_attach_host != nullptr);
+    REQUIRE(app.run_smoke_test(std::chrono::milliseconds(200)));
+
+    REQUIRE(SessionAttachServer::send_command("default", SessionAttachServer::Command::Shutdown)
+        == SessionAttachServer::AttachStatus::Attached);
+    app.run();
+    REQUIRE(g_last_attach_host->request_close_calls == 1);
 
     app.shutdown();
 }
