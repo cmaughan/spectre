@@ -22,23 +22,24 @@ return (int)bytes_read;
 
 ## Investigation
 
-- [ ] Read `libs/draxul-nvim/src/nvim_process.cpp` lines 195–224 (Windows `write` and `read` functions) to confirm the cast pattern.
-- [ ] Check `libs/draxul-nvim/src/rpc.cpp` to confirm the read buffer size constant (expected ~256 KB).
+- [x] Read `libs/draxul-nvim/src/nvim_process.cpp` lines 195–224 (Windows `write` and `read` functions) to confirm the cast pattern.
+- [x] Check `libs/draxul-nvim/src/rpc.cpp` to confirm the read buffer size constant (expected ~256 KB).
 
 ---
 
 ## Fix Strategy
 
-- [ ] Guard the return cast:
+- [x] Guard the return cast:
   ```cpp
   return (bytes_read > static_cast<DWORD>(INT_MAX)) ? -1 : static_cast<int>(bytes_read);
   ```
-- [ ] Optionally add a `static_assert` that the read buffer size is ≤ INT_MAX to make the constraint explicit.
+- [x] Optionally add a `static_assert` that the read buffer size is ≤ INT_MAX to make the constraint explicit.
+  - Skipped: buffer size is a runtime value (256 * 1024), not a compile-time constant. The return guard is sufficient.
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] `read()` never returns a negative value due to `DWORD` → `int` narrowing for any valid read size.
+- [x] `read()` never returns a negative value due to `DWORD` → `int` narrowing for any valid read size.
 - [ ] Windows build passes: `cmake --preset release && cmake --build build --config Release --target draxul`.
-- [ ] macOS build and smoke test also pass (no regressions): `py do.py smoke`.
+- [x] macOS build and smoke test also pass (no regressions): `py do.py smoke`.

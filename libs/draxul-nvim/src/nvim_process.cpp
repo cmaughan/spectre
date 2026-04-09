@@ -222,7 +222,7 @@ int NvimProcess::read(uint8_t* buffer, size_t max_len) const
     {
         return -1;
     }
-    return (int)bytes_read;
+    return (bytes_read > static_cast<DWORD>(INT_MAX)) ? -1 : static_cast<int>(bytes_read);
 }
 
 bool NvimProcess::is_running() const
