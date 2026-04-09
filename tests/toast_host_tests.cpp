@@ -9,6 +9,7 @@
 
 #include "toast_host.h"
 
+#include <array>
 #include <chrono>
 #include <draxul/app_config.h>
 #include <draxul/gui/toast_renderer.h>
