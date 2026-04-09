@@ -10,6 +10,11 @@
 #include <cstring>
 #include <initializer_list>
 
+#ifdef _WIN32
+#define popen _popen
+#define pclose _pclose
+#endif
+
 namespace draxul
 {
 
