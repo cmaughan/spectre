@@ -56,6 +56,11 @@ public:
 
     std::string written;
 
+    HostLaunchOptions& launch_options()
+    {
+        return GridHostBase::launch_options();
+    }
+
     int cols_ = 40;
     int rows_ = 10;
 
@@ -251,4 +256,68 @@ TEST_CASE("terminal vt: PSReadLine-style startup sequence renders prompt correct
     REQUIRE(ts.host.col() == 0);
     INFO("cursor on row 0 after ESC 8");
     REQUIRE(ts.host.row() == 0);
+}
+
+// ---------------------------------------------------------------------------
+// Paste confirmation / pending-paste-overwrite tests (WI 05)
+// ---------------------------------------------------------------------------
+
+TEST_CASE("terminal vt: double large paste warns about overwrite", "[terminal][paste]")
+{
+    PsSetup ts;
+    REQUIRE(ts.ok);
+
+    // Set paste_confirm_lines to 3 so pastes with >= 3 lines trigger confirm.
+    ts.host.launch_options().paste_confirm_lines = 3;
+
+    // First large paste (4 lines = 3 newlines).
+    ts.window.clipboard_ = "line1\nline2\nline3\nline4";
+    ts.host.dispatch_action("paste");
+    INFO("first large paste must trigger a confirmation toast");
+    REQUIRE(ts.callbacks.push_toast_calls == 1);
+    REQUIRE(ts.callbacks.last_toast_message.find("Paste 4 lines?") != std::string::npos);
+
+    // Second large paste while first is still pending.
+    ts.window.clipboard_ = "a\nb\nc\nd\ne";
+    ts.host.dispatch_action("paste");
+    INFO("second large paste must warn about replacement");
+    REQUIRE(ts.callbacks.push_toast_calls == 3); // replacement warning + new confirmation
+    // The replacement warning toast.
+    // Note: push_toast_calls == 3 because: 1st confirm + replacement warning + 2nd confirm.
+    // The last toast is the new confirmation.
+    REQUIRE(ts.callbacks.last_toast_message.find("Paste 5 lines?") != std::string::npos);
+}
+
+TEST_CASE("terminal vt: confirm_paste sends new payload after overwrite", "[terminal][paste]")
+{
+    PsSetup ts;
+    REQUIRE(ts.ok);
+    ts.host.launch_options().paste_confirm_lines = 2;
+
+    // First large paste.
+    ts.window.clipboard_ = "aaa\nbbb";
+    ts.host.dispatch_action("paste");
+    // Overwrite with second large paste.
+    ts.window.clipboard_ = "xxx\nyyy";
+    ts.host.dispatch_action("paste");
+
+    // Confirm — should send the SECOND paste, not the first.
+    ts.host.written.clear();
+    ts.host.dispatch_action("confirm_paste");
+    INFO("confirm must send the second (replacement) payload");
+    REQUIRE(ts.host.written.find("xxx\nyyy") != std::string::npos);
+    REQUIRE(ts.host.written.find("aaa\nbbb") == std::string::npos);
+}
+
+TEST_CASE("terminal vt: single large paste has no overwrite warning", "[terminal][paste]")
+{
+    PsSetup ts;
+    REQUIRE(ts.ok);
+    ts.host.launch_options().paste_confirm_lines = 2;
+
+    ts.window.clipboard_ = "line1\nline2";
+    ts.host.dispatch_action("paste");
+    INFO("single large paste should only show confirmation, no overwrite warning");
+    REQUIRE(ts.callbacks.push_toast_calls == 1);
+    REQUIRE(ts.callbacks.last_toast_message.find("replaced") == std::string::npos);
 }

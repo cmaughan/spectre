@@ -135,6 +135,11 @@ bool TerminalHostBase::dispatch_action(std::string_view action)
             // A clipboard payload of N newlines pastes N+1 logical lines.
             if (newlines + 1 >= threshold)
             {
+                if (!pending_paste_.empty())
+                {
+                    callbacks().push_toast(
+                        1, "Previous pending paste was replaced by a new paste.");
+                }
                 pending_paste_ = clip;
                 char msg[160];
                 std::snprintf(msg, sizeof(msg),

@@ -35,9 +35,19 @@ public:
         last_text_input_area = { x, y, w, h };
     }
 
+    void push_toast(int level, std::string_view message) override
+    {
+        ++push_toast_calls;
+        last_toast_level = level;
+        last_toast_message = std::string(message);
+    }
+
     int request_frame_calls = 0;
     int request_quit_calls = 0;
     int wake_window_calls = 0;
+    int push_toast_calls = 0;
+    int last_toast_level = -1;
+    std::string last_toast_message;
     std::string last_window_title;
     struct Rect
     {

@@ -15,18 +15,18 @@
 
 ## Investigation
 
-- [ ] Read `libs/draxul-host/src/terminal_host_base.cpp` lines 125–165 to confirm the overwrite and the confirm/cancel logic.
-- [ ] Check how `paste_confirm_lines` is configured (default value in `LaunchOptions` or config).
-- [ ] Confirm that the main thread is the only thread that can call `dispatch_action`.
+- [x] Read `libs/draxul-host/src/terminal_host_base.cpp` lines 125–165 to confirm the overwrite and the confirm/cancel logic.
+- [x] Check how `paste_confirm_lines` is configured (default value in `LaunchOptions` or config).
+- [x] Confirm that the main thread is the only thread that can call `dispatch_action`.
 
 ---
 
 ## Fix Strategy
 
-- [ ] Before overwriting `pending_paste_`, check if it is non-empty and warn the user:
+- [x] Before overwriting `pending_paste_`, check if it is non-empty and warn the user:
   ```cpp
   if (!pending_paste_.empty())
-      callbacks().push_toast(0, "Previous pending paste was replaced by a new paste.");
+      callbacks().push_toast(1, "Previous pending paste was replaced by a new paste.");
   pending_paste_ = clip;
   ```
 - [ ] Alternative (stronger): auto-send the previous pending paste before storing the new one. Choose based on UX preference.
@@ -35,6 +35,6 @@
 
 ## Acceptance Criteria
 
-- [ ] A second large paste while one is pending does not silently discard the first.
-- [ ] The user receives a toast or other feedback when a pending paste is replaced.
-- [ ] Build and smoke test pass: `cmake --build build --target draxul draxul-tests && py do.py smoke`.
+- [x] A second large paste while one is pending does not silently discard the first.
+- [x] The user receives a toast or other feedback when a pending paste is replaced.
+- [x] Build and smoke test pass: `cmake --build build --target draxul draxul-tests && py do.py smoke`.
