@@ -219,10 +219,21 @@ bool HostManager::close_leaf(LeafId id)
     pane_user_names_.erase(id);
 
     // Collapse the tree (this also updates focus if needed)
+    LeafId old_focus = tree_.focused();
     if (!tree_.close_leaf(id))
         return false;
 
     update_all_viewports();
+
+    // The tree may have shifted focus to the surviving leaf. Notify it so
+    // the cursor blinker restarts and the cursor becomes visible.
+    LeafId new_focus = tree_.focused();
+    if (new_focus != kInvalidLeaf && new_focus != old_focus)
+    {
+        if (IHost* h = host_for(new_focus))
+            h->on_focus_gained();
+    }
+
     return true;
 }
 
