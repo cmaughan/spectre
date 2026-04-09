@@ -16,7 +16,7 @@ namespace draxul
 // Usage:
 //   weather.start("York, UK");   // or "51.5,-0.1"
 //   ...
-//   auto text = weather.display_text();  // "🌡️ 18°C" or ""
+//   auto text = weather.display_text();  // "\U0001F321\uFE0F 18°C" or ""
 class WeatherService
 {
 public:

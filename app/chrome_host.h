@@ -45,7 +45,8 @@ public:
         const int* active_workspace_id = nullptr;
         const SystemResourceSnapshot* system_resource_snapshot = nullptr;
         std::function<std::optional<std::pair<std::string, float>>()> chord_indicator = nullptr;
-        // Weather callbacks — return emoji ("☀️") and temperature ("18°C") separately
+        // Weather callbacks — return emoji (for example "\u2600\uFE0F") and
+        // temperature ("18°C") separately
         // for split-styled rendering. Both empty = no weather pill shown.
         std::function<std::string()> weather_emoji;
         std::function<std::string()> weather_temperature;

@@ -599,10 +599,14 @@ void ChromeHost::draw(IFrameContext& frame)
             const int total_cols = std::max(1, pill.col_end - pill.col_begin);
             const float pill_h = static_cast<float>(ch_shared) - 4.0f;
             const float pill_y = 2.0f;
-            const float pill_x = std::max(0.0f, static_cast<float>(pill.col_begin * cw_shared));
+            const float half_gap = static_cast<float>(cw_shared) * 0.25f;
+            // Mirror the workspace-tab inset so the shared top-bar grid lands
+            // pill text at the same visual offset from the background.
+            const float pill_x = std::max(
+                0.0f, static_cast<float>(pill.col_begin * cw_shared + kGridPadding) + half_gap);
             const float pill_w = pill.flat_right_edge && pill.col_end >= bar_w / cw_shared
                 ? static_cast<float>(bar_w) - pill_x
-                : static_cast<float>(total_cols * cw_shared);
+                : static_cast<float>(total_cols * cw_shared) - half_gap * 2.0f;
             const float accent_w = pill.accent_cols > 0
                 ? static_cast<float>(pill.accent_cols * cw_shared)
                 : 0.0f;

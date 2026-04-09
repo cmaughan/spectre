@@ -2,14 +2,83 @@
 
 #include <draxul/log.h>
 
+#include <algorithm>
 #include <array>
 #include <charconv>
+#include <cctype>
 #include <cstdio>
 #include <cstring>
+#include <initializer_list>
 #include <sstream>
 
 namespace draxul
 {
+
+namespace
+{
+
+#ifdef _WIN32
+constexpr const char* kNullDevice = "NUL";
+
+FILE* pipe_open(const char* command, const char* mode)
+{
+    return _popen(command, mode);
+}
+
+int pipe_close(FILE* pipe)
+{
+    return _pclose(pipe);
+}
+#else
+constexpr const char* kNullDevice = "/dev/null";
+
+FILE* pipe_open(const char* command, const char* mode)
+{
+    return popen(command, mode);
+}
+
+int pipe_close(FILE* pipe)
+{
+    return pclose(pipe);
+}
+#endif
+
+void append_utf8_codepoint(std::string& out, uint32_t codepoint)
+{
+    if (codepoint <= 0x7F)
+    {
+        out.push_back(static_cast<char>(codepoint));
+    }
+    else if (codepoint <= 0x7FF)
+    {
+        out.push_back(static_cast<char>(0xC0 | (codepoint >> 6)));
+        out.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
+    }
+    else if (codepoint <= 0xFFFF)
+    {
+        out.push_back(static_cast<char>(0xE0 | (codepoint >> 12)));
+        out.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)));
+        out.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
+    }
+    else
+    {
+        out.push_back(static_cast<char>(0xF0 | (codepoint >> 18)));
+        out.push_back(static_cast<char>(0x80 | ((codepoint >> 12) & 0x3F)));
+        out.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)));
+        out.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
+    }
+}
+
+std::string utf8_from_codepoints(std::initializer_list<uint32_t> codepoints)
+{
+    std::string out;
+    out.reserve(codepoints.size() * 4);
+    for (uint32_t codepoint : codepoints)
+        append_utf8_codepoint(out, codepoint);
+    return out;
+}
+
+} // namespace
 
 WeatherService::~WeatherService()
 {
@@ -286,11 +355,12 @@ bool WeatherService::fetch_temperature(double lat, double lon, double& temp_c, i
 
 std::string WeatherService::run_curl(const std::string& url)
 {
-    std::string cmd = "curl -s --max-time 5 --connect-timeout 3 '";
+    std::string cmd = "curl -s --max-time 5 --connect-timeout 3 \"";
     cmd += url;
-    cmd += "' 2>/dev/null";
+    cmd += "\" 2>";
+    cmd += kNullDevice;
 
-    FILE* pipe = popen(cmd.c_str(), "r");
+    FILE* pipe = pipe_open(cmd.c_str(), "r");
     if (!pipe)
         return {};
 
@@ -298,7 +368,7 @@ std::string WeatherService::run_curl(const std::string& url)
     std::array<char, 4096> buf{};
     while (auto n = fread(buf.data(), 1, buf.size(), pipe))
         result.append(buf.data(), n);
-    int status = pclose(pipe);
+    int status = pipe_close(pipe);
     if (status != 0)
         return {};
     return result;
@@ -306,27 +376,37 @@ std::string WeatherService::run_curl(const std::string& url)
 
 std::string WeatherService::weather_emoji(int code)
 {
+    // Keep these weather icons ASCII-only in source so MSVC does not warn
+    // about the active code page when compiling Windows builds.
+    static const std::string kClear = utf8_from_codepoints({ 0x2600, 0xFE0F });
+    static const std::string kPartlyCloudy = utf8_from_codepoints({ 0x26C5 });
+    static const std::string kCloud = utf8_from_codepoints({ 0x2601, 0xFE0F });
+    static const std::string kRain = utf8_from_codepoints({ 0x1F327, 0xFE0F });
+    static const std::string kSnow = utf8_from_codepoints({ 0x2744, 0xFE0F });
+    static const std::string kThunder = utf8_from_codepoints({ 0x26A1 });
+    static const std::string kFallback = utf8_from_codepoints({ 0x1F321, 0xFE0F });
+
     // WMO weather interpretation codes:
     // https://open-meteo.com/en/docs#weathervariables
     if (code == 0)
-        return "\u2600\uFE0F"; // ☀️ clear
+        return kClear; // sun / clear
     if (code <= 3)
-        return "\u26C5"; // ⛅ partly cloudy
+        return kPartlyCloudy; // partly cloudy
     if (code <= 48)
-        return "\u2601\uFE0F"; // ☁️ fog/overcast
+        return kCloud; // cloud / fog / overcast
     if (code <= 57)
-        return "\U0001F327\uFE0F"; // 🌧️ drizzle
+        return kRain; // rain cloud / drizzle
     if (code <= 67)
-        return "\U0001F327\uFE0F"; // 🌧️ rain
+        return kRain; // rain cloud / rain
     if (code <= 77)
-        return "\u2744\uFE0F"; // ❄️ snow
+        return kSnow; // snowflake / snow
     if (code <= 82)
-        return "\U0001F327\uFE0F"; // 🌧️ rain showers
+        return kRain; // rain cloud / rain showers
     if (code <= 86)
-        return "\u2744\uFE0F"; // ❄️ snow showers
+        return kSnow; // snowflake / snow showers
     if (code <= 99)
-        return "\u26A1"; // ⚡ thunderstorm
-    return "\U0001F321\uFE0F"; // 🌡️ fallback
+        return kThunder; // thunderstorm
+    return kFallback; // thermometer / fallback
 }
 
 } // namespace draxul

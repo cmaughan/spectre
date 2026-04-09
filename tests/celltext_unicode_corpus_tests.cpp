@@ -99,7 +99,7 @@ static const std::string kFamilyEmoji = "\xF0\x9F\x91\xA8" // U+1F468
                                         "\xE2\x80\x8D" // U+200D ZWJ
                                         "\xF0\x9F\x91\xA6"; // U+1F466
 
-// 2. Eye-in-speech-bubble ZWJ sequence: 👁️‍🗨️
+// 2. Eye-in-speech-bubble ZWJ sequence.
 //    U+1F441 U+FE0F U+200D U+1F5E8 U+FE0F
 //    4 + 3 + 3 + 4 + 3 = 17 bytes.
 static const std::string kEyeSpeechBubble = "\xF0\x9F\x91\x81" // U+1F441
