@@ -165,8 +165,34 @@ void VtParser::feed(std::string_view bytes)
             break;
         case State::OscEsc:
             if (ch == '\\')
+            {
                 cbs_.on_osc(osc_buffer_);
-            state_ = State::Ground;
+                state_ = State::Ground;
+            }
+            else
+            {
+                // The ESC we consumed was not the start of a String Terminator
+                // (ESC \).  Treat it as an implicit OSC terminator, then
+                // re-dispatch the current character as the start of a new
+                // escape sequence rather than silently dropping it.
+                cbs_.on_osc(osc_buffer_);
+                if (ch == '[')
+                {
+                    csi_buffer_.clear();
+                    state_ = State::Csi;
+                }
+                else if (ch == ']')
+                {
+                    osc_buffer_.clear();
+                    state_ = State::Osc;
+                }
+                else
+                {
+                    if (cbs_.on_esc)
+                        cbs_.on_esc(ch);
+                    state_ = State::Ground;
+                }
+            }
             break;
         }
     }

@@ -17,15 +17,15 @@
 
 ## Investigation
 
-- [ ] Read `libs/draxul-host/src/vt_parser.cpp` lines 155–175 to confirm the `OscEsc` state body.
-- [ ] Check what other states transition into `OscEsc` (should be only from `Osc` on `ESC` byte).
-- [ ] Look at VT parser test fixtures in `tests/` to understand how to write a regression test.
+- [x] Read `libs/draxul-host/src/vt_parser.cpp` lines 155–175 to confirm the `OscEsc` state body.
+- [x] Check what other states transition into `OscEsc` (should be only from `Osc` on `ESC` byte).
+- [x] Look at VT parser test fixtures in `tests/` to understand how to write a regression test.
 
 ---
 
 ## Fix Strategy
 
-- [ ] In `State::OscEsc`, re-route the non-`\\` character instead of discarding it:
+- [x] In `State::OscEsc`, re-route the non-`\\` character instead of discarding it:
   ```cpp
   case State::OscEsc:
       if (ch == '\\') {
@@ -39,13 +39,13 @@
       state_ = State::Ground;
       break;
   ```
-- [ ] Add a VT parser unit test covering `\x1B]0;title\x1B[A` that verifies both the OSC and CSI are processed (or at minimum that the non-ST path does not drop sequences).
+- [x] Add a VT parser unit test covering `\x1B]0;title\x1B[A` that verifies both the OSC and CSI are processed (or at minimum that the non-ST path does not drop sequences).
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] A non-`\\` character in `OscEsc` state is re-dispatched, not dropped.
-- [ ] Unit test covers the `ESC ] ... ESC [ A` sequence and asserts the CSI is delivered.
-- [ ] Existing VT parser tests still pass: `ctest --test-dir build -R draxul-tests`.
-- [ ] Build and smoke test pass: `cmake --build build --target draxul draxul-tests && py do.py smoke`.
+- [x] A non-`\\` character in `OscEsc` state is re-dispatched, not dropped.
+- [x] Unit test covers the `ESC ] ... ESC [ A` sequence and asserts the CSI is delivered.
+- [x] Existing VT parser tests still pass: `ctest --test-dir build -R draxul-tests`.
+- [x] Build and smoke test pass: `cmake --build build --target draxul draxul-tests && py do.py smoke`.
