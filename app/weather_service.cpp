@@ -3,10 +3,9 @@
 #include <draxul/log.h>
 
 #include <array>
-#include <charconv>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
-#include <sstream>
 
 namespace draxul
 {
@@ -61,11 +60,11 @@ void WeatherService::worker_func(std::string location)
         auto comma = location.find(',');
         if (comma != std::string::npos)
         {
-            double a = 0.0, b = 0.0;
-            auto [p1, ec1] = std::from_chars(location.data(), location.data() + comma, a);
-            auto [p2, ec2] = std::from_chars(
-                location.data() + comma + 1, location.data() + location.size(), b);
-            if (ec1 == std::errc{} && ec2 == std::errc{})
+            char* end1 = nullptr;
+            char* end2 = nullptr;
+            double a = std::strtod(location.c_str(), &end1);
+            double b = std::strtod(location.c_str() + comma + 1, &end2);
+            if (end1 != location.c_str() && end2 != location.c_str() + comma + 1)
             {
                 lat = a;
                 lon = b;
@@ -179,9 +178,7 @@ bool WeatherService::try_geocode(const std::string& query, double& lat, double& 
         ++pos;
         while (pos < json.size() && (json[pos] == ' ' || json[pos] == '\t'))
             ++pos;
-        double val = 0.0;
-        std::from_chars(json.data() + pos, json.data() + json.size(), val);
-        return val;
+        return std::strtod(json.c_str() + pos, nullptr);
     };
     auto extract_string_at = [&](size_t search_from, const char* key) -> std::string {
         auto pos = json.find(key, search_from);
@@ -274,9 +271,9 @@ bool WeatherService::fetch_temperature(double lat, double lon, double& temp_c, i
         ++pos;
         while (pos < src.size() && (src[pos] == ' ' || src[pos] == '\t'))
             ++pos;
-        double val = 0.0;
-        std::from_chars(src.data() + pos, src.data() + src.size(), val);
-        return val;
+        // src is a string_view into json which is null-terminated, so
+        // strtod is safe as long as pos < json.size().
+        return std::strtod(src.data() + pos, nullptr);
     };
 
     temp_c = extract_number(cw_json, "\"temperature\"");
