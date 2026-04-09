@@ -1,103 +1,122 @@
-All findings confirmed. Here is the complete bug report:
+Now I have a thorough picture of the codebase. Let me compile the confirmed bugs.
 
 ---
 
-# Draxul Bug Report
+## Draxul Bug Report
 
-## BUG-1 — CRITICAL: `conpty_process.cpp` missing trailing-backslash escape before closing quote
+### MEDIUM — `libs/draxul-nvim/src/nvim_process.cpp:422` — POSIX write() silently fails on EINTR
 
-**File:** `libs/draxul-host/src/conpty_process.cpp:38`
-**Severity:** CRITICAL (command-line injection / process launch failure on Windows)
+**What goes wrong:** `NvimProcess::write()` (POSIX path) does not retry after a signal-interrupted syscall. SDL installs `SIGTERM`/`SIGINT` signal handlers. If any handled signal is delivered while the main thread is mid-write to nvim's stdin pipe, `write()` returns −1 with `errno == EINTR`. The code treats this as a hard error, returns `false`, and `NvimRpc::notify()`/`request()` then sets `read_failed_ = true` and tears down the RPC transport — crashing the session on a spurious signal.
 
-The `quote_windows_arg` function tracks consecutive backslashes in `backslashes` but never uses that counter before appending the closing `"`. When an argument ends with one or more backslashes (e.g. a working directory like `C:\Users\dev\`), those unescaped backslashes cause the closing `"` to be interpreted as a literal quote by `CommandLineToArgvW`, breaking the entire command line. The identical function in `libs/draxul-nvim/src/nvim_process.cpp:74` correctly has `quoted.append(backslashes, '\\');` before the closing `push_back('"')`. The `conpty_process.cpp` copy is missing that line.
-
-**Trigger:** Any argument passed to a ConPTY-launched process that ends with `\` (e.g. a `working_dir` value).
+`unix_pty_process.cpp:255` and `:292` correctly handle EINTR in their write loops; `nvim_process.cpp` does not.
 
 **Fix:**
 ```cpp
-// conpty_process.cpp line 37, before quoted.push_back('"')
-quoted.append(backslashes, '\\');   // <-- add this line
-quoted.push_back('"');
+ssize_t n = ::write(impl_->child_stdin_write_, data + total_written, len - total_written);
+if (n < 0) {
+    if (errno == EINTR) continue;   // add this
+    return false;
+}
+if (n == 0) return false;
 ```
 
 ---
 
-## BUG-2 — HIGH: Signed integer overflow in `CapturedFrame::valid()`
+### MEDIUM — `libs/draxul-nvim/src/nvim_process.cpp:432` — POSIX read() silently fails on EINTR
 
-**File:** `libs/draxul-types/include/draxul/types.h:92`
-**Severity:** HIGH (undefined behavior, incorrect validation result)
-
-```cpp
-return width > 0 && height > 0 && rgba.size() == static_cast<size_t>(width * height * 4);
-```
-
-`width * height * 4` is computed as `int * int * int` before the `static_cast<size_t>` is applied. For frames larger than ~23170×23170 the signed multiplication overflows — undefined behavior — so `valid()` can return `true` on a corrupt frame or `false` on a valid one.
-
-**Trigger:** Any render test or screenshot with dimensions whose product exceeds `INT_MAX / 4`.
+**What goes wrong:** `NvimProcess::read()` (POSIX path) makes a single `::read()` call and returns −1 on any error, including `EINTR`. The RPC reader thread calls this in a tight loop; if a signal is delivered while the call blocks, `read()` returns −1, the reader thread logs "nvim pipe read error", sets `read_failed_ = true`, and terminates the transport.
 
 **Fix:**
 ```cpp
-rgba.size() == static_cast<size_t>(width) * static_cast<size_t>(height) * 4
+ssize_t n;
+do { n = ::read(impl_->child_stdout_read_, buffer, max_len); }
+while (n < 0 && errno == EINTR);
+if (n < 0) return -1;
+return (int)n;
 ```
 
 ---
 
-## BUG-3 — HIGH: Signed integer overflow in `read_bmp_rgba` row-offset arithmetic
+### MEDIUM — `libs/draxul-types/src/bmp.cpp:126` — `std::abs(INT32_MIN)` is undefined behaviour
 
-**File:** `libs/draxul-types/src/bmp.cpp:137–138`
-**Severity:** HIGH (undefined behavior, out-of-bounds reads from `bytes[]`)
-
+**What goes wrong:** `read_bmp_rgba` reads `height` as `int32_t` from an untrusted file (render-test reference BMPs), then computes:
 ```cpp
-const auto src_row = pixel_offset + static_cast<size_t>(src_y * width * 4);
-const auto dst_row = static_cast<size_t>(y * width * 4);
+const int abs_height = std::abs(height);
+```
+If the file contains `height = INT32_MIN` (−2147483648), `std::abs(INT32_MIN)` is UB because the mathematical result (2147483648) is not representable in `int32_t`. The existing guard only rejects `height == 0`. In practice this only affects render-test inputs, but it is latent UB that a sanitizer build will flag.
+
+**Fix:** Add a guard before line 126:
+```cpp
+if (height == INT32_MIN)
+    return std::nullopt;
+const int abs_height = std::abs(height);
 ```
 
-Both expressions multiply `int * int * int`. The outer `static_cast<size_t>()` is applied to the already-overflowed result. For a BMP with `width × row_index × 4 > INT_MAX` (e.g. width ≥ 16384 at row ≥ 32768), the row offset wraps into garbage, causing `bytes[src]` to read from an earlier part of the buffer and silently produce wrong pixel data (or an out-of-bounds read if the wrapper value lands below `pixel_offset`).
+---
 
-The bounds check at line 125–126 uses correct `size_t` arithmetic and passes; only the per-row loop uses the broken `int` expression.
+### MEDIUM — `libs/draxul-nvim/src/nvim_process.cpp:220` (Windows) — `ReadFile` return value narrowing truncates large reads
+
+**What goes wrong:** `NvimProcess::read()` on Windows:
+```cpp
+DWORD bytes_read;
+if (!ReadFile(impl_->child_stdout_read_, buffer, (DWORD)max_len, &bytes_read, nullptr))
+    return -1;
+return (int)bytes_read;
+```
+`bytes_read` is `DWORD` (unsigned 32-bit). The return type is `int` (signed 32-bit). If `ReadFile` somehow returns more than `INT_MAX` bytes (impossible on Windows pipes in practice, but the cast is still formally wrong), the result becomes negative and the caller (rpc.cpp) interprets it as a read error. More concretely, if `max_len` is cast from `size_t` to `DWORD` and `max_len > UINT32_MAX`, the `(DWORD)max_len` truncation silently reduces the requested read size with no error.
+
+The read buffer (`impl_->read_buf_`) is 256 KB (line 115 in rpc.cpp), so `(DWORD)max_len` does not truncate in practice. However the return narrowing `(int)bytes_read` is the live footgun: any caller that passes `max_len > INT_MAX` would get a negative return value. The reader thread's `if (n <= 0)` check would then log a read error and tear down the transport.
 
 **Fix:**
 ```cpp
-const auto src_row = pixel_offset + static_cast<size_t>(src_y) * static_cast<size_t>(width) * 4;
-const auto dst_row = static_cast<size_t>(y) * static_cast<size_t>(width) * 4;
+return (bytes_read > (DWORD)INT_MAX) ? -1 : (int)bytes_read;
+```
+Or cap `max_len` to `INT_MAX` before the call.
+
+---
+
+### MEDIUM — `libs/draxul-host/src/scrollback_buffer.cpp:29` — Potential integer overflow in resize temporary allocation
+
+**What goes wrong:** In `ScrollbackBuffer::resize()`:
+```cpp
+std::vector<Cell> tmp((size_t)old_count * cols);
+```
+`old_count` is `int` (bounded by `kCapacity`) and `cols` is `int` (the new column count). The multiplication `old_count * cols` is performed in **signed int** before the cast to `size_t`. If `kCapacity * cols > INT_MAX` (e.g. `kCapacity = 10000`, `cols = 300000` — unrealistic but not guarded), this signed overflow is UB. The actual clamp on cols comes from the grid which limits cols to `kMaxGridDim = 10000` (grid.cpp:246), but that check lives in the Grid, not in ScrollbackBuffer; there is no corresponding guard in `resize()` itself.
+
+**Concrete trigger:** A malformed/fuzzed `grid_resize` event with cols > 200,000 could reach this code with a signed overflow before the size_t cast.
+
+**Fix:**
+```cpp
+std::vector<Cell> tmp(static_cast<size_t>(old_count) * static_cast<size_t>(cols));
 ```
 
 ---
 
-## BUG-4 — MEDIUM: Windows `NvimProcess::write` does not handle partial `WriteFile` results
+### LOW — `libs/draxul-host/src/vt_parser.cpp:168` — OSC escape-string terminator discards non-`\\` character silently
 
-**File:** `libs/draxul-nvim/src/nvim_process.cpp:187`
-**Severity:** MEDIUM (RPC stream corruption)
-
+**What goes wrong:** In `State::OscEsc`:
 ```cpp
-return WriteFile(impl_->child_stdin_write_, data, (DWORD)len, &written, nullptr) && written == len;
+case State::OscEsc:
+    if (ch == '\\')
+        cbs_.on_osc(osc_buffer_);
+    state_ = State::Ground;
+    break;
 ```
+If the character after `ESC` inside an OSC sequence is not `\\` (e.g. another printable char), the parser transitions to Ground without calling `on_osc` and without re-feeding the non-`\\` character to the Ground handler. The pending character is silently dropped. If that character was the start of a new escape sequence (`[`, `]`, etc.), the following sequence is lost entirely.
 
-`WriteFile` to a pipe is allowed to write fewer bytes than requested (partial write), in which case the call returns `TRUE` with `written < len`. The current code returns `false` in that case without retrying, so the tail of the msgpack message is silently dropped. The POSIX implementation (lines 378–386) loops until all bytes are delivered.
+**Concrete trigger:** Terminal output containing `\x1B]0;title\x1B[A` (an OSC 0 title followed immediately by a cursor-up CSI without a proper ST terminator) would silently drop the `[A` CSI if OSC parsing consumed the `\x1B` as the start of an ST.
 
-**Trigger:** Sending a large RPC request (e.g. pasting many lines) when the pipe's kernel buffer is nearly full.
-
-**Fix:** Wrap in a retry loop advancing the data pointer by `written` bytes each iteration, mirroring the POSIX implementation.
-
----
-
-## BUG-5 — MEDIUM: `dispatch_rpc_response` / `dispatch_rpc_request` cast `int64_t` message ID to `uint32_t` without validation
-
-**File:** `libs/draxul-nvim/src/rpc.cpp:212, 240`
-**Severity:** MEDIUM (response misrouting or silent discard)
-
+**Fix:** When `ch != '\\'`, push it into `plain_text_` (or re-enter the appropriate CSI/Escape state) instead of discarding:
 ```cpp
-uint32_t msgid = (uint32_t)msg_array[1].as_int();   // line 212
-auto req_msgid = (uint32_t)msg_array[1].as_int();   // line 240
-```
-
-`as_int()` returns `int64_t`. A negative or > 2³²−1 value from a corrupted stream truncates silently. A negative ID could collide with a valid in-flight `msgid`, causing the wrong waiting thread to be unblocked with another request's response.
-
-**Trigger:** Corrupted msgpack stream, or a future nvim version that uses 64-bit IDs.
-
-**Fix:** Validate before casting:
-```cpp
-int64_t raw_id = msg_array[1].as_int();
-if (raw_id < 0 || raw_id > UINT32_MAX) { /* log and discard */ return; }
-uint32_t msgid = static_cast<uint32_t>(raw_id);
+case State::OscEsc:
+    if (ch == '\\') {
+        cbs_.on_osc(osc_buffer_);
+    } else {
+        // ESC was consumed as potential ST; re-process ch as if in Escape state.
+        if (ch == '[') { csi_buffer_.clear(); state_ = State::Csi; return; }
+        else if (ch == ']') { osc_buffer_.clear(); state_ = State::Osc; return; }
+        else if (cbs_.on_esc) cbs_.on_esc(ch);
+    }
+    state_ = State::Ground;
+    break;
 ```

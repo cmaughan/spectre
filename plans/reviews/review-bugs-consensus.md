@@ -1,25 +1,28 @@
-All files are written. Here's a summary of what was produced:
+All files written. Here's a summary of what was produced:
 
 ---
 
-## Bug Consensus Results
+## Results
 
-**7 confirmed new bugs** (7 new work items created), **4 already tracked**, **5 dismissed**.
+**Consensus file:** `plans/reviews/review-bugs-consensus.md`
 
-### New Work Items
+**12 confirmed bugs** across three agent reviews, verified against source:
 
-| WI | Severity | Description | Agent(s) |
-|---|---|---|---|
-| **WI 100** | CRITICAL | `NvimHost` partial init → `std::terminate` from joinable `reader_thread_` in default destructor | GPT |
-| **WI 101** | CRITICAL | `reader_thread_func` — no `try/catch`, malformed msgpack causes `std::terminate` | Gemini + GPT |
-| **WI 102** | HIGH | `ui_events.cpp` redraw handlers call `as_int()`/`as_str()` without type checks (main thread crash) | GPT |
-| **WI 103** | HIGH | `on_notification_available` / `on_request` assigned *after* reader thread starts — data race | Gemini |
-| **WI 104** | MEDIUM | Windows `WriteFile` doesn't retry partial writes (RPC stream truncation) | Claude |
-| **WI 105** | MEDIUM | `int64_t` msgid silently truncated to `uint32_t` without range validation | Claude |
-| **WI 106** | MEDIUM | `write_bmp_rgba` throws `filesystem_error` on bare filenames | GPT |
+| # | Sev | Bug |
+|---|-----|-----|
+| BUG-01 | **CRITICAL** | `metal_renderer.mm:1000` — null-ptr `memcpy` in atlas staging (GPT) |
+| BUG-02 | **HIGH** | `metal_renderer.mm:285` — `initialize()` returns `true` with null Metal objects (GPT) |
+| BUG-03 | **HIGH** | `metal_renderer.mm:110` — grid-handle buffer size committed before alloc check (GPT) |
+| BUG-04 | **HIGH** | `nvim_process.cpp:422,432` — POSIX `EINTR` treated as fatal transport failure (Claude+Gemini) |
+| BUG-05 | MEDIUM | `grid.cpp:268` — `Grid::clear()` O(cells) dirty push on adversarial input (Gemini) |
+| BUG-06 | MEDIUM | `terminal_host_base.cpp:138` — `pending_paste_` silently overwritten (Gemini) |
+| BUG-07 | MEDIUM | `bmp.cpp:126` — `std::abs(INT32_MIN)` UB (Claude) |
+| BUG-08 | MEDIUM | `vt_parser.cpp:166` — `OscEsc` drops char after non-`\\` (Claude) |
+| BUG-09 | MEDIUM | `rpc.cpp:386` — unbounded `accum` buffer (Gemini) |
+| BUG-10 | MEDIUM | `unix_pty_process.cpp:121` — shutdown blocks main thread 600ms (Gemini) |
+| BUG-11 | MEDIUM | `nvim_rpc.h:97` — `as_int()` impl-defined for `uint64 > INT64_MAX` (Gemini) |
+| BUG-12 | MEDIUM | `nvim_process.cpp:219` — Windows `ReadFile` narrowing cast (Claude) |
 
-### Already Tracked (not duplicated)
-WI 84 (conpty backslash), WI 86 (signed overflow), WI 89 (callback under lock), WI 98 (scrollback wipe)
+**1 false positive dropped:** Gemini's scrollback_buffer.cpp "signed overflow" — the `(size_t)` cast applies before multiplication, so arithmetic is in unsigned space.
 
-### Recommended Fix Order
-1. WI 100 → 2. WI 101 + WI 89 + WI 103 (rpc.cpp batch) → 3. WI 102 → 4. WI 97 + WI 104 → 5. WI 105, WI 106
+**Work items created:** `plans/work-items/00` through `11` (all `-bug.md`), with BUG-01/02/03 flagged for joint Metal PR and BUG-04's rpc.cpp caller merged as a non-issue once nvim_process.cpp is fixed.
