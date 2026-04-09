@@ -146,6 +146,38 @@ TEST_CASE("session attach: probe reports a running session server", "[session_at
     server.stop();
 }
 
+TEST_CASE("session attach: live-session query returns server summary", "[session_attach]")
+{
+    TempDir temp_dir("session-attach-query");
+    HomeDirRedirect redirect(temp_dir.path);
+
+    SessionAttachServer server;
+    REQUIRE(server.start(
+        "alpha",
+        [](SessionAttachServer::Command) {},
+        []() {
+            SessionAttachServer::LiveSessionInfo info;
+            info.workspace_count = 2;
+            info.pane_count = 5;
+            info.detached = true;
+            info.owner_pid = 4242;
+            info.last_attached_unix_s = 111;
+            info.last_detached_unix_s = 222;
+            return info;
+        }));
+
+    SessionAttachServer::LiveSessionInfo info;
+    REQUIRE(SessionAttachServer::query_live_session("alpha", &info));
+    REQUIRE(info.workspace_count == 2);
+    REQUIRE(info.pane_count == 5);
+    REQUIRE(info.detached);
+    REQUIRE(info.owner_pid == 4242);
+    REQUIRE(info.last_attached_unix_s == 111);
+    REQUIRE(info.last_detached_unix_s == 222);
+
+    server.stop();
+}
+
 TEST_CASE("app session attach: close request detaches a shell session", "[session_attach][app]")
 {
     const std::string font = bundled_font_path();
@@ -178,6 +210,11 @@ TEST_CASE("app session attach: close request detaches a shell session", "[sessio
     REQUIRE(metadata);
     REQUIRE(metadata->live);
     REQUIRE(metadata->detached);
+    SessionAttachServer::LiveSessionInfo live_info;
+    REQUIRE(SessionAttachServer::query_live_session("default", &live_info));
+    REQUIRE(live_info.workspace_count == 1);
+    REQUIRE(live_info.pane_count == 1);
+    REQUIRE(live_info.detached);
     REQUIRE(g_last_attach_host->shutdown_calls == 0);
     REQUIRE(g_last_attach_host->request_close_calls == 0);
 

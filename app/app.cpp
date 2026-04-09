@@ -464,6 +464,9 @@ bool App::initialize_session_attach()
                     external_session_shutdown_requested_.store(true);
                 wake_window();
             },
+            [this]() {
+                return live_session_info();
+            },
             &error))
     {
         last_init_error_ = error.empty()
@@ -1963,6 +1966,19 @@ void App::mark_session_attached()
 void App::mark_session_detached()
 {
     session_last_detached_unix_s_ = unix_now_seconds();
+}
+
+SessionAttachServer::LiveSessionInfo App::live_session_info() const
+{
+    SessionAttachServer::LiveSessionInfo info;
+    info.workspace_count = static_cast<int>(workspaces_.size());
+    info.detached = detached_;
+    info.owner_pid = current_process_id();
+    info.last_attached_unix_s = session_last_attached_unix_s_;
+    info.last_detached_unix_s = session_last_detached_unix_s_;
+    for (const auto& ws : workspaces_)
+        info.pane_count += ws->host_manager.host_count();
+    return info;
 }
 
 bool App::restore_session_state(int pixel_w, int pixel_h, const AppSessionState& state)

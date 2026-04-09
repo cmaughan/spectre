@@ -406,8 +406,20 @@ static int draxul_main(std::vector<std::string> args)
             const auto probe_status = draxul::SessionAttachServer::probe(session.session_id);
             bool live = session.live;
             bool detached = session.detached;
+            int workspace_count = session.workspace_count;
+            int pane_count = session.pane_count;
             if (probe_status == draxul::SessionAttachServer::ProbeStatus::Running)
+            {
                 live = true;
+                draxul::SessionAttachServer::LiveSessionInfo live_info;
+                if (draxul::SessionAttachServer::query_live_session(
+                        session.session_id, &live_info))
+                {
+                    detached = live_info.detached;
+                    workspace_count = live_info.workspace_count;
+                    pane_count = live_info.pane_count;
+                }
+            }
             else if (probe_status == draxul::SessionAttachServer::ProbeStatus::NoServer)
                 live = false;
 
@@ -420,10 +432,10 @@ static int draxul_main(std::vector<std::string> args)
             std::printf("%s\t%s\t%d workspace%s\t%d pane%s\n",
                 session.session_id.c_str(),
                 state,
-                session.workspace_count,
-                session.workspace_count == 1 ? "" : "s",
-                session.pane_count,
-                session.pane_count == 1 ? "" : "s");
+                workspace_count,
+                workspace_count == 1 ? "" : "s",
+                pane_count,
+                pane_count == 1 ? "" : "s");
         }
         draxul::shutdown_logging();
         return 0;

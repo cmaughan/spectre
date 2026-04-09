@@ -5,6 +5,7 @@
 #include <draxul/perf_timing.h>
 
 #include <chrono>
+#include <charconv>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -99,8 +100,100 @@ const char* command_text(SessionAttachServer::Command command)
         return "activate";
     case SessionAttachServer::Command::Shutdown:
         return "shutdown";
+    case SessionAttachServer::Command::QueryLiveSession:
+        return "query-live-session";
     }
     return "activate";
+}
+
+std::string serialize_live_session_info(const SessionAttachServer::LiveSessionInfo& info)
+{
+    std::ostringstream out;
+    out << "workspace_count=" << info.workspace_count << '\n';
+    out << "pane_count=" << info.pane_count << '\n';
+    out << "detached=" << (info.detached ? 1 : 0) << '\n';
+    out << "owner_pid=" << info.owner_pid << '\n';
+    out << "last_attached_unix_s=" << info.last_attached_unix_s << '\n';
+    out << "last_detached_unix_s=" << info.last_detached_unix_s << '\n';
+    return out.str();
+}
+
+template <typename T>
+bool parse_integral(std::string_view text, T* value)
+{
+    T parsed{};
+    const auto* begin = text.data();
+    const auto* end = text.data() + text.size();
+    const auto result = std::from_chars(begin, end, parsed);
+    if (result.ec != std::errc() || result.ptr != end)
+        return false;
+    *value = parsed;
+    return true;
+}
+
+bool parse_live_session_info(std::string_view payload,
+    SessionAttachServer::LiveSessionInfo* info, std::string* error)
+{
+    SessionAttachServer::LiveSessionInfo parsed;
+    while (!payload.empty())
+    {
+        const size_t newline = payload.find('\n');
+        const std::string_view line = newline == std::string_view::npos
+            ? payload
+            : payload.substr(0, newline);
+        payload = newline == std::string_view::npos ? std::string_view{} : payload.substr(newline + 1);
+        if (line.empty())
+            continue;
+
+        const size_t equals = line.find('=');
+        if (equals == std::string_view::npos)
+        {
+            if (error)
+                *error = "Malformed live-session response line.";
+            return false;
+        }
+
+        const std::string_view key = line.substr(0, equals);
+        const std::string_view value = line.substr(equals + 1);
+        if (key == "workspace_count")
+        {
+            if (!parse_integral(value, &parsed.workspace_count))
+                return false;
+        }
+        else if (key == "pane_count")
+        {
+            if (!parse_integral(value, &parsed.pane_count))
+                return false;
+        }
+        else if (key == "detached")
+        {
+            if (value == "1" || value == "true")
+                parsed.detached = true;
+            else if (value == "0" || value == "false")
+                parsed.detached = false;
+            else
+                return false;
+        }
+        else if (key == "owner_pid")
+        {
+            if (!parse_integral(value, &parsed.owner_pid))
+                return false;
+        }
+        else if (key == "last_attached_unix_s")
+        {
+            if (!parse_integral(value, &parsed.last_attached_unix_s))
+                return false;
+        }
+        else if (key == "last_detached_unix_s")
+        {
+            if (!parse_integral(value, &parsed.last_detached_unix_s))
+                return false;
+        }
+    }
+
+    if (info)
+        *info = parsed;
+    return true;
 }
 
 } // namespace
@@ -113,11 +206,18 @@ SessionAttachServer::~SessionAttachServer()
 bool SessionAttachServer::start(
     std::string_view session_id, CommandHandler on_command_requested, std::string* error)
 {
+    return start(session_id, std::move(on_command_requested), QueryHandler{}, error);
+}
+
+bool SessionAttachServer::start(std::string_view session_id, CommandHandler on_command_requested,
+    QueryHandler on_query_requested, std::string* error)
+{
     PERF_MEASURE();
     stop();
 
     session_id_ = session_id.empty() ? "default" : std::string(session_id);
     on_command_requested_ = std::move(on_command_requested);
+    on_query_requested_ = std::move(on_query_requested);
     stop_requested_ = false;
 
 #ifdef _WIN32
@@ -188,6 +288,7 @@ bool SessionAttachServer::start(
             char buffer[64] = {};
             DWORD bytes_read = 0;
             const BOOL read_ok = ReadFile(pipe, buffer, sizeof(buffer), &bytes_read, nullptr);
+            std::string response = "ok";
             if (!stop_requested_.load() && read_ok && bytes_read > 0)
             {
                 const std::string_view command(buffer, bytes_read);
@@ -202,6 +303,17 @@ bool SessionAttachServer::start(
                         on_command_requested_(Command::Shutdown);
                     stop_requested_ = true;
                 }
+                else if (command == "query-live-session")
+                {
+                    response = serialize_live_session_info(
+                        on_query_requested_ ? on_query_requested_() : LiveSessionInfo{});
+                }
+            }
+
+            if (read_ok && bytes_read > 0)
+            {
+                DWORD bytes_written = 0;
+                (void)WriteFile(pipe, response.data(), static_cast<DWORD>(response.size()), &bytes_written, nullptr);
             }
 
             FlushFileBuffers(pipe);
@@ -292,6 +404,7 @@ bool SessionAttachServer::start(
 
             char buffer[64] = {};
             const ssize_t bytes_read = ::read(client_fd, buffer, sizeof(buffer));
+            std::string response = "ok";
             if (!stop_requested_.load() && bytes_read > 0)
             {
                 const std::string_view command(buffer, static_cast<size_t>(bytes_read));
@@ -306,7 +419,14 @@ bool SessionAttachServer::start(
                         on_command_requested_(Command::Shutdown);
                     stop_requested_ = true;
                 }
+                else if (command == "query-live-session")
+                {
+                    response = serialize_live_session_info(
+                        on_query_requested_ ? on_query_requested_() : LiveSessionInfo{});
+                }
             }
+            if (bytes_read > 0)
+                (void)::write(client_fd, response.data(), response.size());
             ::close(client_fd);
         }
 
@@ -494,6 +614,106 @@ SessionAttachServer::AttachStatus SessionAttachServer::send_command(
     ::close(fd);
     return AttachStatus::Attached;
 #endif
+}
+
+bool SessionAttachServer::query_live_session(
+    std::string_view session_id, LiveSessionInfo* info, std::string* error)
+{
+    PERF_MEASURE();
+    std::string response;
+#ifdef _WIN32
+    const std::string name = pipe_name(session_id.empty() ? "default" : session_id);
+    if (!WaitNamedPipeA(name.c_str(), 50))
+    {
+        const DWORD wait_error = GetLastError();
+        if (wait_error == ERROR_FILE_NOT_FOUND)
+            return false;
+        if (error)
+            *error = "Failed waiting for session-attach pipe: " + win32_error_message(wait_error);
+        return false;
+    }
+
+    HANDLE pipe = CreateFileA(name.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+    if (pipe == INVALID_HANDLE_VALUE)
+    {
+        if (error)
+            *error = "Failed opening session-attach pipe: " + win32_error_message(GetLastError());
+        return false;
+    }
+
+    DWORD bytes_written = 0;
+    const char* command_name = command_text(Command::QueryLiveSession);
+    if (!WriteFile(pipe, command_name, static_cast<DWORD>(std::strlen(command_name)), &bytes_written, nullptr))
+    {
+        if (error)
+            *error = "Failed writing live-session query: " + win32_error_message(GetLastError());
+        CloseHandle(pipe);
+        return false;
+    }
+
+    char buffer[256];
+    DWORD bytes_read = 0;
+    while (ReadFile(pipe, buffer, sizeof(buffer), &bytes_read, nullptr) && bytes_read > 0)
+        response.append(buffer, buffer + bytes_read);
+    const DWORD read_error = GetLastError();
+    CloseHandle(pipe);
+    if (response.empty() && read_error != ERROR_BROKEN_PIPE && read_error != ERROR_SUCCESS)
+    {
+        if (error)
+            *error = "Failed reading live-session response: " + win32_error_message(read_error);
+        return false;
+    }
+#else
+    const std::string path = socket_path(session_id.empty() ? "default" : session_id);
+    const int fd = ::socket(AF_UNIX, SOCK_STREAM, 0);
+    if (fd < 0)
+    {
+        if (error)
+            *error = "Failed creating session-attach client socket: " + errno_message(errno);
+        return false;
+    }
+
+    sockaddr_un addr = {};
+    addr.sun_family = AF_UNIX;
+    std::snprintf(addr.sun_path, sizeof(addr.sun_path), "%s", path.c_str());
+    if (::connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0)
+    {
+        if (error)
+            *error = "Failed connecting to session-attach socket: " + errno_message(errno);
+        ::close(fd);
+        return false;
+    }
+
+    const char* command_name = command_text(Command::QueryLiveSession);
+    if (::write(fd, command_name, std::strlen(command_name)) < 0)
+    {
+        if (error)
+            *error = "Failed writing live-session query: " + errno_message(errno);
+        ::close(fd);
+        return false;
+    }
+
+    char buffer[256];
+    ssize_t bytes_read = 0;
+    while ((bytes_read = ::read(fd, buffer, sizeof(buffer))) > 0)
+        response.append(buffer, buffer + bytes_read);
+    if (bytes_read < 0)
+    {
+        if (error)
+            *error = "Failed reading live-session response: " + errno_message(errno);
+        ::close(fd);
+        return false;
+    }
+    ::close(fd);
+#endif
+
+    if (!parse_live_session_info(response, info, error))
+    {
+        if (error && error->empty())
+            *error = "Failed to parse the live-session response.";
+        return false;
+    }
+    return true;
 }
 
 } // namespace draxul

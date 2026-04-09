@@ -137,6 +137,7 @@ private:
     void persist_session_runtime_metadata(bool live);
     void mark_session_attached();
     void mark_session_detached();
+    SessionAttachServer::LiveSessionInfo live_session_info() const;
     bool restore_session_state(int pixel_w, int pixel_h, const AppSessionState& state);
 
     // --- Workspace management (moved from ChromeHost) ---
