@@ -27,6 +27,8 @@ ParseArgsResult parse_args(const std::vector<std::string>& args)
             parsed.session_owner = true;
         else if (args[i] == "--list-sessions")
             parsed.list_sessions = true;
+        else if (args[i] == "--pick-session")
+            parsed.pick_session = true;
         else if (args[i] == "--new-session")
             parsed.new_session = true;
         else if (args[i] == "--attach-session")
@@ -166,6 +168,7 @@ ParseArgsResult parse_args(const std::vector<std::string>& args)
         return result;
     }
     const int session_mode_count = (parsed.list_sessions ? 1 : 0)
+        + (parsed.pick_session ? 1 : 0)
         + (parsed.new_session ? 1 : 0)
         + (parsed.attach_session ? 1 : 0)
         + (parsed.detach_session ? 1 : 0)
@@ -174,7 +177,7 @@ ParseArgsResult parse_args(const std::vector<std::string>& args)
     if (session_mode_count > 1)
     {
         result.error
-            = "error: choose only one of --list-sessions, --new-session, --attach-session, --detach-session, --rename-session, or --kill-session";
+            = "error: choose only one of --list-sessions, --pick-session, --new-session, --attach-session, --detach-session, --rename-session, or --kill-session";
         return result;
     }
     return result;

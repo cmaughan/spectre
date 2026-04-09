@@ -18,6 +18,7 @@ struct ParsedArgs
     bool no_ui = false;
     bool session_owner = false;
     bool list_sessions = false;
+    bool pick_session = false;
     bool new_session = false;
     bool attach_session = false;
     bool detach_session = false;

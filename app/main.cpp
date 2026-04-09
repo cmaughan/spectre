@@ -1,5 +1,7 @@
 #include "app.h"
 #include "cli_args.h"
+#include "session_listing.h"
+#include "session_picker_host.h"
 #include "session_state.h"
 #include <SDL3/SDL.h>
 #include <chrono>
@@ -596,7 +598,7 @@ static int draxul_main(std::vector<std::string> args)
     if (parsed.list_sessions)
     {
         std::string list_error;
-        const auto sessions = draxul::list_saved_sessions(&list_error);
+        const auto sessions = draxul::list_known_sessions(&list_error);
         if (!list_error.empty())
         {
             std::fprintf(stderr, "Failed to list sessions: %s\n", list_error.c_str());
@@ -612,39 +614,19 @@ static int draxul_main(std::vector<std::string> args)
 
         for (const auto& session : sessions)
         {
-            const auto probe_status = draxul::SessionAttachServer::probe(session.session_id);
-            bool live = session.live;
-            bool detached = session.detached;
-            int workspace_count = session.workspace_count;
-            int pane_count = session.pane_count;
-            if (probe_status == draxul::SessionAttachServer::ProbeStatus::Running)
-            {
-                live = true;
-                draxul::SessionAttachServer::LiveSessionInfo live_info;
-                if (draxul::SessionAttachServer::query_live_session(
-                        session.session_id, &live_info))
-                {
-                    detached = live_info.detached;
-                    workspace_count = live_info.workspace_count;
-                    pane_count = live_info.pane_count;
-                }
-            }
-            else if (probe_status == draxul::SessionAttachServer::ProbeStatus::NoServer)
-                live = false;
-
             const char* state = "saved";
-            if (live)
-                state = detached ? "detached" : "live";
+            if (session.live)
+                state = session.detached ? "detached" : "live";
             else if (!session.has_saved_state)
                 state = "live?";
 
             std::printf("%s\t%s\t%d workspace%s\t%d pane%s",
                 session.session_id.c_str(),
                 state,
-                workspace_count,
-                workspace_count == 1 ? "" : "s",
-                pane_count,
-                pane_count == 1 ? "" : "s");
+                session.workspace_count,
+                session.workspace_count == 1 ? "" : "s",
+                session.pane_count,
+                session.pane_count == 1 ? "" : "s");
             if (!session.session_name.empty() && session.session_name != session.session_id)
                 std::printf("\t%s", session.session_name.c_str());
             std::printf("\n");
@@ -851,14 +833,24 @@ static int draxul_main(std::vector<std::string> args)
     if (!parsed.session_name.empty())
         options.session_name = parsed.session_name;
     options.new_session_requested = parsed.new_session;
+    if (parsed.pick_session)
+    {
+        const auto picker_exe_path = executable_path(args);
+        options.enable_session_attach = false;
+        options.host_factory = [picker_exe_path](draxul::HostKind /*kind*/) {
+            return std::make_unique<draxul::SessionPickerHost>(picker_exe_path);
+        };
+    }
 
 #ifdef DRAXUL_ENABLE_RENDER_TESTS
     const bool allow_session_attach = !parsed.smoke_test
         && !render_test.has_value()
-        && parsed.screenshot_path.empty();
+        && parsed.screenshot_path.empty()
+        && !parsed.pick_session;
 #else
     const bool allow_session_attach = !parsed.smoke_test
-        && parsed.screenshot_path.empty();
+        && parsed.screenshot_path.empty()
+        && !parsed.pick_session;
 #endif
     if (allow_session_attach && !parsed.session_owner)
     {

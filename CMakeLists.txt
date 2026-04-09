@@ -204,6 +204,9 @@ add_library(draxul-app
     app/cli_args.cpp
     app/command_palette.cpp
     app/command_palette_host.cpp
+    app/session_listing.cpp
+    app/session_picker.cpp
+    app/session_picker_host.cpp
     app/toast_host.cpp
     app/weather_service.cpp
     app/diagnostics_panel_host.cpp
