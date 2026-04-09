@@ -109,8 +109,15 @@ public:
         const uint32_t slot = frame_index % MetalRenderer::MAX_FRAMES_IN_FLIGHT;
         if (buffer_sizes_[slot] < required_size)
         {
-            buffers_[slot].reset([renderer_->device_.get() newBufferWithLength:required_size
-                                                                       options:MTLResourceStorageModeShared]);
+            id<MTLBuffer> buf = [renderer_->device_.get() newBufferWithLength:required_size
+                                                                      options:MTLResourceStorageModeShared];
+            if (!buf)
+            {
+                DRAXUL_LOG_ERROR(LogCategory::Renderer,
+                    "MetalGridHandle::upload_state: buffer alloc failed (%zu bytes)", required_size);
+                return;
+            }
+            buffers_[slot].reset(buf);
             buffer_sizes_[slot] = required_size;
         }
 
@@ -999,13 +1006,28 @@ void MetalRenderer::flush_pending_atlas_uploads(void* cmd_buf_opaque)
     const uint32_t slot = current_frame_ % MAX_FRAMES_IN_FLIGHT;
     if (atlas_staging_sizes_[slot] < total_bytes)
     {
-        atlas_staging_[slot].reset([device_.get() newBufferWithLength:total_bytes
-                                                              options:MTLResourceStorageModeShared]);
+        id<MTLBuffer> buf = [device_.get() newBufferWithLength:total_bytes
+                                                       options:MTLResourceStorageModeShared];
+        if (!buf)
+        {
+            DRAXUL_LOG_ERROR(LogCategory::Renderer,
+                "flush_pending_atlas_uploads: staging buffer alloc failed (%zu bytes)", total_bytes);
+            pending_atlas_uploads_.clear();
+            return;
+        }
+        atlas_staging_[slot].reset(buf);
         atlas_staging_sizes_[slot] = total_bytes;
     }
 
     // Copy pixel data into the staging buffer.
     auto* dst = static_cast<uint8_t*>([atlas_staging_[slot].get() contents]);
+    if (!dst)
+    {
+        DRAXUL_LOG_ERROR(LogCategory::Renderer,
+            "flush_pending_atlas_uploads: staging buffer contents returned null");
+        pending_atlas_uploads_.clear();
+        return;
+    }
     size_t offset = 0;
     for (const auto& upload : pending_atlas_uploads_)
     {

@@ -15,16 +15,16 @@
 
 ## Investigation
 
-- [ ] Read `libs/draxul-renderer/src/metal/metal_renderer.mm` around lines 998–1016 to confirm the allocation, size-commit, and memcpy sequence.
-- [ ] Check if `atlas_staging_[slot]` is an ObjC smart pointer; confirm `.get()` on nil returns nil.
-- [ ] Confirm `[nil contents]` returns `nullptr` in ObjC (it does — all messages to nil return zero/nil).
-- [ ] Search the file for any other `newBufferWithLength:` calls that lack nil checks.
+- [x] Read `libs/draxul-renderer/src/metal/metal_renderer.mm` around lines 998–1016 to confirm the allocation, size-commit, and memcpy sequence.
+- [x] Check if `atlas_staging_[slot]` is an ObjC smart pointer; confirm `.get()` on nil returns nil.
+- [x] Confirm `[nil contents]` returns `nullptr` in ObjC (it does — all messages to nil return zero/nil).
+- [x] Search the file for any other `newBufferWithLength:` calls that lack nil checks.
 
 ---
 
 ## Fix Strategy
 
-- [ ] Move the size update to after a successful allocation check:
+- [x] Move the size update to after a successful allocation check:
   ```cpp
   id<MTLBuffer> buf = [device_.get() newBufferWithLength:total_bytes
                                                  options:MTLResourceStorageModeShared];
@@ -36,14 +36,14 @@
   atlas_staging_[slot].reset(buf);
   atlas_staging_sizes_[slot] = total_bytes;
   ```
-- [ ] While in the file, apply the same guard to `MetalGridHandle::upload_state()` (BUG-03) and `initialize()` (BUG-02) — fix all three Metal allocation paths in one PR.
+- [x] While in the file, apply the same guard to `MetalGridHandle::upload_state()` (BUG-03) and `initialize()` (BUG-02) — fix all three Metal allocation paths in one PR.
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] `flush_pending_atlas_uploads()` does not crash when Metal returns nil; logs an error and returns cleanly.
-- [ ] `atlas_staging_sizes_[slot]` is only updated after a confirmed non-nil allocation.
-- [ ] Build passes: `cmake --build build --target draxul draxul-tests`.
-- [ ] Smoke test passes: `py do.py smoke`.
-- [ ] No new ASan/UBSan findings from the changes.
+- [x] `flush_pending_atlas_uploads()` does not crash when Metal returns nil; logs an error and returns cleanly.
+- [x] `atlas_staging_sizes_[slot]` is only updated after a confirmed non-nil allocation.
+- [x] Build passes: `cmake --build build --target draxul draxul-tests`.
+- [x] Smoke test passes: `py do.py smoke`.
+- [x] No new ASan/UBSan findings from the changes.
