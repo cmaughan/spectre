@@ -126,6 +126,13 @@ TEST_CASE("cli: --list-sessions sets the flag", "[cli]")
     REQUIRE(r.args.list_sessions);
 }
 
+TEST_CASE("cli: --new-session sets the flag", "[cli]")
+{
+    auto r = parse({ "--new-session" });
+    REQUIRE_FALSE(r.error.has_value());
+    REQUIRE(r.args.new_session);
+}
+
 TEST_CASE("cli: --session-owner sets the internal owner flag", "[cli]")
 {
     auto r = parse({ "--session-owner" });
@@ -166,4 +173,11 @@ TEST_CASE("cli: --kill-session sets the flag", "[cli]")
     auto r = parse({ "--kill-session" });
     REQUIRE_FALSE(r.error.has_value());
     REQUIRE(r.args.kill_session);
+}
+
+TEST_CASE("cli: session control modes are mutually exclusive", "[cli]")
+{
+    auto r = parse({ "--new-session", "--list-sessions" });
+    REQUIRE(r.error.has_value());
+    REQUIRE(r.error->find("choose only one") != std::string::npos);
 }

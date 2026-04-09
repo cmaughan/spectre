@@ -18,6 +18,7 @@ struct ParsedArgs
     bool no_ui = false;
     bool session_owner = false;
     bool list_sessions = false;
+    bool new_session = false;
     bool attach_session = false;
     bool detach_session = false;
     bool rename_session = false;
@@ -32,6 +33,7 @@ struct ParsedArgs
     std::string host_command;
     std::filesystem::path host_source_path;
     std::string session_id = "default";
+    bool session_id_explicit = false;
     std::string session_name;
     std::string log_file;
     std::string log_level;

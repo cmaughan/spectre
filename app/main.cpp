@@ -3,8 +3,10 @@
 #include "session_state.h"
 #include <SDL3/SDL.h>
 #include <chrono>
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 #include <draxul/bmp.h>
 #include <draxul/host_registry.h>
 #include <draxul/log.h>
@@ -214,14 +216,161 @@ bool rename_saved_session_records(
     return updated;
 }
 
+std::string generated_session_slug(std::string_view text)
+{
+    std::string slug;
+    slug.reserve(text.size());
+    bool last_was_separator = false;
+    for (unsigned char ch : text)
+    {
+        if (std::isalnum(ch))
+        {
+            slug.push_back(static_cast<char>(std::tolower(ch)));
+            last_was_separator = false;
+        }
+        else if (!last_was_separator && !slug.empty())
+        {
+            slug.push_back('-');
+            last_was_separator = true;
+        }
+    }
+
+    while (!slug.empty() && slug.back() == '-')
+        slug.pop_back();
+    if (slug.empty())
+        slug = "session";
+    if (slug.size() > 40)
+        slug.resize(40);
+    return slug;
+}
+
+std::tm local_time_from_unix(int64_t unix_seconds)
+{
+    const std::time_t raw = static_cast<std::time_t>(unix_seconds);
+    std::tm local = {};
+#ifdef _WIN32
+    localtime_s(&local, &raw);
+#else
+    localtime_r(&raw, &local);
+#endif
+    return local;
+}
+
+std::string generated_session_timestamp(int64_t unix_seconds)
+{
+    const std::tm local = local_time_from_unix(unix_seconds);
+    char buffer[32];
+    std::snprintf(buffer, sizeof(buffer), "%04d%02d%02d-%02d%02d%02d",
+        local.tm_year + 1900,
+        local.tm_mon + 1,
+        local.tm_mday,
+        local.tm_hour,
+        local.tm_min,
+        local.tm_sec);
+    return buffer;
+}
+
+bool session_exists(std::string_view session_id, std::string* error)
+{
+    std::string probe_error;
+    const auto probe_status = draxul::SessionAttachServer::probe(session_id, &probe_error);
+    if (probe_status == draxul::SessionAttachServer::ProbeStatus::Running)
+        return true;
+    if (probe_status == draxul::SessionAttachServer::ProbeStatus::Error)
+    {
+        if (error)
+            *error = probe_error.empty()
+                ? "Failed probing for an existing session."
+                : probe_error;
+        return false;
+    }
+
+    std::string io_error;
+    if (draxul::load_session_state(session_id, &io_error).has_value())
+        return true;
+    if (!io_error.empty())
+    {
+        if (error)
+            *error = io_error;
+        return false;
+    }
+
+    io_error.clear();
+    if (draxul::load_session_runtime_metadata(session_id, &io_error).has_value())
+        return true;
+    if (!io_error.empty())
+    {
+        if (error)
+            *error = io_error;
+        return false;
+    }
+
+    return false;
+}
+
+bool prepare_new_session_launch(draxul::ParsedArgs& parsed, std::string* error)
+{
+    if (!parsed.new_session)
+        return true;
+
+    if (parsed.session_id_explicit)
+    {
+        std::string exists_error;
+        if (session_exists(parsed.session_id, &exists_error))
+        {
+            if (error)
+                *error = "Session '" + parsed.session_id
+                    + "' already exists. Use --session with a different id or omit it to generate one.";
+            return false;
+        }
+        if (!exists_error.empty())
+        {
+            if (error)
+                *error = exists_error;
+            return false;
+        }
+        return true;
+    }
+
+    const int64_t unix_seconds = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch())
+                                     .count();
+    const std::string stem = generated_session_slug(parsed.session_name);
+    const std::string candidate_base = stem + "-" + generated_session_timestamp(unix_seconds);
+    std::string candidate = candidate_base;
+    for (int suffix = 2;; ++suffix)
+    {
+        std::string exists_error;
+        if (!session_exists(candidate, &exists_error))
+        {
+            if (!exists_error.empty())
+            {
+                if (error)
+                    *error = exists_error;
+                return false;
+            }
+            parsed.session_id = candidate;
+            return true;
+        }
+        candidate = candidate_base + "-" + std::to_string(suffix);
+    }
+}
+
 std::vector<std::string> session_owner_args(
-    const std::vector<std::string>& args, const std::filesystem::path& exe_path)
+    const std::vector<std::string>& args, const std::filesystem::path& exe_path, const draxul::ParsedArgs& parsed)
 {
     std::vector<std::string> owner_args = args;
     if (owner_args.empty())
         owner_args.emplace_back(exe_path.string());
     else
         owner_args.front() = exe_path.string();
+    owner_args.emplace_back("--session");
+    owner_args.emplace_back(parsed.session_id);
+    if (!parsed.session_name.empty())
+    {
+        owner_args.emplace_back("--session-name");
+        owner_args.emplace_back(parsed.session_name);
+    }
     owner_args.emplace_back("--session-owner");
     return owner_args;
 }
@@ -343,7 +492,7 @@ enum class SessionOwnerLaunchStatus
 };
 
 SessionOwnerLaunchStatus launch_session_owner_and_attach(
-    const std::vector<std::string>& args, std::string_view session_id, std::string* error)
+    const std::vector<std::string>& args, const draxul::ParsedArgs& parsed, std::string* error)
 {
     PERF_MEASURE();
     const auto exe_path = executable_path(args);
@@ -354,7 +503,7 @@ SessionOwnerLaunchStatus launch_session_owner_and_attach(
         return SessionOwnerLaunchStatus::SpawnFailed;
     }
 
-    const auto owner_args = session_owner_args(args, exe_path);
+    const auto owner_args = session_owner_args(args, exe_path, parsed);
     if (!spawn_session_owner_process(exe_path, owner_args, error))
         return SessionOwnerLaunchStatus::SpawnFailed;
 
@@ -365,7 +514,7 @@ SessionOwnerLaunchStatus launch_session_owner_and_attach(
     while (std::chrono::steady_clock::now() < deadline)
     {
         last_error.clear();
-        const auto attach_status = draxul::SessionAttachServer::try_attach(session_id, &last_error);
+        const auto attach_status = draxul::SessionAttachServer::try_attach(parsed.session_id, &last_error);
         if (attach_status == draxul::SessionAttachServer::AttachStatus::Attached)
             return SessionOwnerLaunchStatus::Attached;
         std::this_thread::sleep_for(kAttachPoll);
@@ -403,6 +552,17 @@ static int draxul_main(std::vector<std::string> args)
         return 1;
     }
     draxul::ParsedArgs& parsed = parse_result.args;
+
+    std::string new_session_error;
+    if (!prepare_new_session_launch(parsed, &new_session_error))
+    {
+#ifdef _WIN32
+        ensure_console_io(true);
+#endif
+        std::fprintf(stderr, "Failed to start a new session: %s\n",
+            new_session_error.empty() ? "unknown error" : new_session_error.c_str());
+        return 1;
+    }
 
     draxul::configure_default_logging();
 
@@ -690,6 +850,7 @@ static int draxul_main(std::vector<std::string> args)
     options.session_id = parsed.session_id;
     if (!parsed.session_name.empty())
         options.session_name = parsed.session_name;
+    options.new_session_requested = parsed.new_session;
 
 #ifdef DRAXUL_ENABLE_RENDER_TESTS
     const bool allow_session_attach = !parsed.smoke_test
@@ -719,7 +880,7 @@ static int draxul_main(std::vector<std::string> args)
         {
             std::string launch_error;
             const auto launch_status = launch_session_owner_and_attach(
-                args, parsed.session_id, &launch_error);
+                args, parsed, &launch_error);
             if (launch_status == SessionOwnerLaunchStatus::Attached)
             {
                 draxul::shutdown_logging();

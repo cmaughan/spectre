@@ -727,6 +727,12 @@ bool App::initialize_chrome_host()
     const float font_size = imgui_font_size_from_metrics(text_service_.metrics());
     active_host_manager().host()->set_imgui_font(text_service_.primary_font_path(), font_size);
 
+    const std::string session_label = session_name_.empty() ? options_.session_id : session_name_;
+    if (restored_session)
+        push_toast(0, "Restored saved session '" + session_label + "'.");
+    else if (options_.new_session_requested)
+        push_toast(0, "Started new session '" + session_label + "'.");
+
     request_frame();
     return true;
 }
@@ -1868,6 +1874,8 @@ void App::reattach_window()
     {
         if (IHost* focused = active_host_manager().focused_host())
             focused->on_focus_gained();
+        const std::string session_label = session_name_.empty() ? options_.session_id : session_name_;
+        push_toast(0, "Reattached live session '" + session_label + "'.");
     }
     else if (window_ && !window_->is_visible())
     {

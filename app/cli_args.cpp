@@ -27,6 +27,8 @@ ParseArgsResult parse_args(const std::vector<std::string>& args)
             parsed.session_owner = true;
         else if (args[i] == "--list-sessions")
             parsed.list_sessions = true;
+        else if (args[i] == "--new-session")
+            parsed.new_session = true;
         else if (args[i] == "--attach-session")
             parsed.attach_session = true;
         else if (args[i] == "--detach-session")
@@ -70,6 +72,7 @@ ParseArgsResult parse_args(const std::vector<std::string>& args)
         {
             ++i;
             parsed.session_id = args[i];
+            parsed.session_id_explicit = true;
             if (parsed.session_id.empty())
             {
                 result.error = "error: --session requires a non-empty session id";
@@ -160,6 +163,18 @@ ParseArgsResult parse_args(const std::vector<std::string>& args)
     if (parsed.rename_session && parsed.session_name.empty())
     {
         result.error = "error: --rename-session requires --session-name <name>";
+        return result;
+    }
+    const int session_mode_count = (parsed.list_sessions ? 1 : 0)
+        + (parsed.new_session ? 1 : 0)
+        + (parsed.attach_session ? 1 : 0)
+        + (parsed.detach_session ? 1 : 0)
+        + (parsed.rename_session ? 1 : 0)
+        + (parsed.kill_session ? 1 : 0);
+    if (session_mode_count > 1)
+    {
+        result.error
+            = "error: choose only one of --list-sessions, --new-session, --attach-session, --detach-session, --rename-session, or --kill-session";
         return result;
     }
     return result;
