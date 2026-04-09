@@ -101,6 +101,12 @@ bool UnixPtyProcess::spawn(const std::string& command, const std::vector<std::st
         // terminate correctly. The parent set SIG_IGN before fork().
         signal(SIGPIPE, SIG_DFL);
 
+        // Tell the shell what terminal it's running in. Without this, the
+        // child inherits whatever TERM the parent had, which may be wrong
+        // or unset. xterm-256color matches our VT capabilities (ANSI color,
+        // DECSCUSR cursor shape, mouse reporting, etc.).
+        setenv("TERM", "xterm-256color", 1);
+
         if (!working_dir.empty() && chdir(working_dir.c_str()) != 0)
             _exit(127);
 
