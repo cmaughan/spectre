@@ -21,15 +21,15 @@ None of them are null-checked before `return true;` at line 406. Under resource 
 
 ## Investigation
 
-- [ ] Read `libs/draxul-renderer/src/metal/metal_renderer.mm` lines 278–410 to confirm which allocations lack nil checks.
-- [ ] Check all other `return true` and `return false` paths in `initialize()` to understand existing error handling.
-- [ ] Identify callers of `initialize()` (likely in `renderer_factory.cpp` or `app.cpp`) to see how they handle `false`.
+- [x] Read `libs/draxul-renderer/src/metal/metal_renderer.mm` lines 278–410 to confirm which allocations lack nil checks.
+- [x] Check all other `return true` and `return false` paths in `initialize()` to understand existing error handling.
+- [x] Identify callers of `initialize()` (likely in `renderer_factory.cpp` or `app.cpp`) to see how they handle `false`.
 
 ---
 
 ## Fix Strategy
 
-- [ ] After each mandatory allocation, add a null check with an error log and `return false`:
+- [x] After each mandatory allocation, add a null check with an error log and `return false`:
   ```cpp
   command_queue_.reset([device newCommandQueue]);
   if (!command_queue_) {
@@ -44,7 +44,7 @@ None of them are null-checked before `return true;` at line 406. Under resource 
 
 ## Acceptance Criteria
 
-- [ ] `initialize()` returns `false` (with an error log) if any of the four mandatory objects is nil.
-- [ ] The renderer never enters a partially-initialized broken state.
-- [ ] Build and smoke test pass: `cmake --build build --target draxul draxul-tests && py do.py smoke`.
+- [x] `initialize()` returns `false` (with an error log) if any of the four mandatory objects is nil.
+- [x] The renderer never enters a partially-initialized broken state.
+- [x] Build and smoke test pass: `cmake --build build --target draxul draxul-tests && py do.py smoke`.
 - [ ] No new ASan findings.

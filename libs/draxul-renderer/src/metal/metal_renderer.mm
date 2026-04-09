@@ -290,6 +290,11 @@ bool MetalRenderer::initialize(IWindow& window)
 
     // Create command queue
     command_queue_.reset([device newCommandQueue]);
+    if (!command_queue_)
+    {
+        DRAXUL_LOG_ERROR(LogCategory::Renderer, "MetalRenderer::initialize: newCommandQueue returned nil");
+        return false;
+    }
 
     // Load shader library from metallib
     NSError* error = nil;
@@ -393,6 +398,11 @@ bool MetalRenderer::initialize(IWindow& window)
         texDesc.storageMode = MTLStorageModePrivate;
 
         atlas_texture_.reset([device newTextureWithDescriptor:texDesc]);
+        if (!atlas_texture_)
+        {
+            DRAXUL_LOG_ERROR(LogCategory::Renderer, "MetalRenderer::initialize: newTextureWithDescriptor returned nil for atlas texture");
+            return false;
+        }
     }
 
     // Create atlas sampler
@@ -404,10 +414,20 @@ bool MetalRenderer::initialize(IWindow& window)
         sampDesc.tAddressMode = MTLSamplerAddressModeClampToEdge;
 
         atlas_sampler_.reset([device newSamplerStateWithDescriptor:sampDesc]);
+        if (!atlas_sampler_)
+        {
+            DRAXUL_LOG_ERROR(LogCategory::Renderer, "MetalRenderer::initialize: newSamplerStateWithDescriptor returned nil for atlas sampler");
+            return false;
+        }
     }
 
     // Allow a small number of frames in flight and only block when reusing a frame slot.
     frame_semaphore_.reset(dispatch_semaphore_create(MAX_FRAMES_IN_FLIGHT));
+    if (!frame_semaphore_)
+    {
+        DRAXUL_LOG_ERROR(LogCategory::Renderer, "MetalRenderer::initialize: dispatch_semaphore_create returned NULL");
+        return false;
+    }
 
     DRAXUL_LOG_INFO(LogCategory::Renderer, "Metal renderer initialized (%s)", [[device name] UTF8String]);
     return true;
