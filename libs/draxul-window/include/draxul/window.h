@@ -44,6 +44,18 @@ public:
     virtual std::string clipboard_text() const = 0;
     virtual bool set_clipboard_text(const std::string& text) = 0;
     virtual void set_text_input_area(int x, int y, int w, int h) = 0;
+    virtual void show()
+    {
+        // Default no-op; platform backends override when they can show the window.
+    }
+    virtual void hide()
+    {
+        // Default no-op; platform backends override when they can hide the window.
+    }
+    virtual bool is_visible() const
+    {
+        return true;
+    }
     virtual void normalize_render_target_window_size(int /*target_pixel_width*/, int /*target_pixel_height*/)
     {
         // Default no-op; window backends override when render tests need size normalization.
@@ -106,6 +118,7 @@ public:
     std::function<void(const MouseButtonEvent&)> on_mouse_button;
     std::function<void(const MouseMoveEvent&)> on_mouse_move;
     std::function<void(const MouseWheelEvent&)> on_mouse_wheel;
+    std::function<void()> on_close_requested;
     // Fired when a file is dropped onto the window or chosen via the open dialog.
     std::function<void(std::string_view path)> on_drop_file;
 };

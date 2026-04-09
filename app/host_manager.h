@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace draxul
 {
@@ -27,6 +28,31 @@ class HostManager
 public:
     static HostKind platform_default_split_host_kind();
     static HostKind split_host_kind_for(HostKind primary_kind);
+
+    struct SavedLaunchOptions
+    {
+        HostKind kind = HostKind::Nvim;
+        std::string command;
+        std::vector<std::string> args;
+        std::string working_dir;
+        std::string source_path;
+        std::vector<std::string> startup_commands;
+    };
+
+    struct PaneSessionState
+    {
+        LeafId leaf_id = kInvalidLeaf;
+        SavedLaunchOptions launch;
+        std::string pane_name;
+    };
+
+    struct SessionState
+    {
+        SplitTree::Snapshot tree;
+        std::vector<PaneSessionState> panes;
+        bool zoomed = false;
+        LeafId zoomed_leaf = kInvalidLeaf;
+    };
 
     struct Deps
     {
@@ -175,6 +201,10 @@ public:
     {
         return tree_.leaf_count();
     }
+    bool has_detachable_shell_session() const;
+    std::optional<SessionState> session_state() const;
+    bool restore_session_state(
+        IHostCallbacks& callbacks, int pixel_w, int pixel_h, const SessionState& state);
     const SplitTree& tree() const
     {
         return tree_;

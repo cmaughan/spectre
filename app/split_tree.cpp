@@ -4,6 +4,7 @@
 #include <cmath>
 #include <draxul/log.h>
 #include <draxul/perf_timing.h>
+#include <vector>
 
 namespace draxul
 {
@@ -342,6 +343,53 @@ int SplitTree::leaf_count() const
     return root_ ? count_leaves(root_.get()) : 0;
 }
 
+SplitTree::Snapshot SplitTree::snapshot() const
+{
+    PERF_MEASURE();
+    Snapshot snapshot;
+    snapshot.root = snapshot_node(root_.get());
+    snapshot.focused_id = focused_id_;
+    snapshot.next_leaf_id = next_id_;
+    return snapshot;
+}
+
+bool SplitTree::restore(const Snapshot& snapshot, int pixel_w, int pixel_h)
+{
+    return restore(snapshot, 0, 0, pixel_w, pixel_h);
+}
+
+bool SplitTree::restore(
+    const Snapshot& snapshot, int origin_x, int origin_y, int pixel_w, int pixel_h)
+{
+    PERF_MEASURE();
+    if (!snapshot.root)
+        return false;
+
+    LeafId max_leaf_id = kInvalidLeaf;
+    std::unique_ptr<Node> restored_root = restore_node(*snapshot.root, max_leaf_id);
+    if (!restored_root)
+        return false;
+
+    root_ = std::move(restored_root);
+    next_id_ = std::max(snapshot.next_leaf_id, max_leaf_id + 1);
+    focused_id_ = snapshot.focused_id;
+    if (!find_leaf_node(focused_id_))
+        focused_id_ = first_leaf(root_.get());
+
+    next_divider_id_ = 0;
+    const auto assign_divider_ids = [this](const auto& self, Node* node) -> void {
+        if (!node || node->is_leaf())
+            return;
+        node->split().divider_id = next_divider_id_++;
+        self(self, node->split().first.get());
+        self(self, node->split().second.get());
+    };
+    assign_divider_ids(assign_divider_ids, root_.get());
+
+    recompute(origin_x, origin_y, pixel_w, pixel_h);
+    return true;
+}
+
 // ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------
@@ -574,6 +622,57 @@ LeafId SplitTree::last_leaf(const Node* node)
     if (node->is_leaf())
         return node->leaf().id;
     return last_leaf(node->split().second.get());
+}
+
+std::unique_ptr<SplitTree::SnapshotNode> SplitTree::snapshot_node(const Node* node)
+{
+    if (!node)
+        return nullptr;
+
+    auto snapshot = std::make_unique<SnapshotNode>();
+    if (node->is_leaf())
+    {
+        snapshot->is_leaf = true;
+        snapshot->leaf_id = node->leaf().id;
+        return snapshot;
+    }
+
+    snapshot->is_leaf = false;
+    snapshot->direction = node->split().direction;
+    snapshot->ratio = node->split().ratio;
+    snapshot->first = snapshot_node(node->split().first.get());
+    snapshot->second = snapshot_node(node->split().second.get());
+    return snapshot;
+}
+
+std::unique_ptr<SplitTree::Node> SplitTree::restore_node(
+    const SnapshotNode& snapshot_node, LeafId& max_leaf_id)
+{
+    auto node = std::make_unique<Node>();
+    if (snapshot_node.is_leaf)
+    {
+        if (snapshot_node.leaf_id == kInvalidLeaf)
+            return nullptr;
+        node->data = Node::LeafData{ snapshot_node.leaf_id, {} };
+        max_leaf_id = std::max(max_leaf_id, snapshot_node.leaf_id);
+        return node;
+    }
+
+    if (!snapshot_node.first || !snapshot_node.second)
+        return nullptr;
+
+    auto first = restore_node(*snapshot_node.first, max_leaf_id);
+    auto second = restore_node(*snapshot_node.second, max_leaf_id);
+    if (!first || !second)
+        return nullptr;
+
+    Node::SplitData split_data;
+    split_data.direction = snapshot_node.direction;
+    split_data.ratio = std::clamp(snapshot_node.ratio, 0.1f, 0.9f);
+    split_data.first = std::move(first);
+    split_data.second = std::move(second);
+    node->data = std::move(split_data);
+    return node;
 }
 
 LeafId SplitTree::find_neighbor(LeafId id, FocusDirection direction) const

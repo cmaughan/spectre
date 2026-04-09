@@ -1,0 +1,135 @@
+#include "support/fake_host.h"
+#include "support/fake_renderer.h"
+#include "support/fake_window.h"
+#include "support/home_dir_redirect.h"
+#include "support/temp_dir.h"
+
+#include <catch2/catch_all.hpp>
+#include <draxul/app_options.h>
+#include <draxul/host.h>
+#include <draxul/session_attach.h>
+
+#include "app.h"
+
+#include <condition_variable>
+#include <chrono>
+#include <filesystem>
+#include <mutex>
+
+using namespace draxul;
+using namespace draxul::tests;
+
+namespace
+{
+
+std::string bundled_font_path()
+{
+    return std::string(DRAXUL_PROJECT_ROOT) + "/fonts/JetBrainsMonoNerdFont-Regular.ttf";
+}
+
+class SessionAttachHost final : public FakeHost
+{
+public:
+    SessionAttachHost()
+        : FakeHost("session-attach")
+    {
+    }
+};
+
+SessionAttachHost* g_last_attach_host = nullptr;
+
+RendererBundle make_fake_renderer(int /*atlas_size*/, RendererOptions /*renderer_options*/)
+{
+    return RendererBundle{ std::make_unique<FakeTermRenderer>() };
+}
+
+std::unique_ptr<IHost> make_attach_host(HostKind /*kind*/)
+{
+    auto host = std::make_unique<SessionAttachHost>();
+    g_last_attach_host = host.get();
+    return host;
+}
+
+AppOptions make_attach_options()
+{
+    AppOptions opts;
+    opts.load_user_config = false;
+    opts.save_user_config = false;
+    opts.activate_window_on_startup = false;
+    opts.clamp_window_to_display = false;
+    opts.override_display_ppi = 96.0f;
+    opts.config_overrides.font_path = bundled_font_path();
+    opts.renderer_create_fn = &make_fake_renderer;
+    opts.host_factory = &make_attach_host;
+    opts.host_kind = HostKind::PowerShell;
+    opts.enable_session_attach = true;
+    return opts;
+}
+
+} // namespace
+
+TEST_CASE("session attach: no server reports no server", "[session_attach]")
+{
+    TempDir temp_dir("session-attach-no-server");
+    HomeDirRedirect redirect(temp_dir.path);
+
+    REQUIRE(SessionAttachServer::try_attach() == SessionAttachServer::AttachStatus::NoServer);
+}
+
+TEST_CASE("session attach: server accepts an attach request", "[session_attach]")
+{
+    TempDir temp_dir("session-attach-server");
+    HomeDirRedirect redirect(temp_dir.path);
+
+    SessionAttachServer server;
+    std::mutex mutex;
+    std::condition_variable cv;
+    int attach_count = 0;
+
+    REQUIRE(server.start([&]() {
+        std::lock_guard lock(mutex);
+        ++attach_count;
+        cv.notify_one();
+    }));
+
+    REQUIRE(SessionAttachServer::try_attach() == SessionAttachServer::AttachStatus::Attached);
+
+    std::unique_lock lock(mutex);
+    REQUIRE(cv.wait_for(lock, std::chrono::milliseconds(500), [&]() { return attach_count == 1; }));
+
+    server.stop();
+}
+
+TEST_CASE("app session attach: close request detaches a shell session", "[session_attach][app]")
+{
+    const std::string font = bundled_font_path();
+    if (!std::filesystem::exists(font))
+        SKIP("bundled font not found");
+
+    TempDir temp_dir("app-session-attach");
+    HomeDirRedirect redirect(temp_dir.path);
+
+    FakeWindow* created_window = nullptr;
+    g_last_attach_host = nullptr;
+
+    AppOptions opts = make_attach_options();
+    opts.window_factory = [&]() {
+        auto window = std::make_unique<FakeWindow>();
+        created_window = window.get();
+        return window;
+    };
+
+    App app(std::move(opts));
+    REQUIRE(app.initialize());
+    REQUIRE(created_window != nullptr);
+    REQUIRE(g_last_attach_host != nullptr);
+    REQUIRE(app.run_smoke_test(std::chrono::milliseconds(200)));
+
+    created_window->queue_close_request();
+    REQUIRE(app.run_smoke_test(std::chrono::milliseconds(200)));
+    REQUIRE_FALSE(created_window->is_visible());
+    REQUIRE(g_last_attach_host->shutdown_calls == 0);
+    REQUIRE(g_last_attach_host->request_close_calls == 0);
+
+    app.shutdown();
+}

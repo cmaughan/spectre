@@ -42,6 +42,23 @@ public:
         SplitDirection direction = SplitDirection::Vertical;
     };
 
+    struct SnapshotNode
+    {
+        bool is_leaf = true;
+        LeafId leaf_id = kInvalidLeaf;
+        SplitDirection direction = SplitDirection::Vertical;
+        float ratio = 0.5f;
+        std::unique_ptr<SnapshotNode> first;
+        std::unique_ptr<SnapshotNode> second;
+    };
+
+    struct Snapshot
+    {
+        std::unique_ptr<SnapshotNode> root;
+        LeafId focused_id = kInvalidLeaf;
+        LeafId next_leaf_id = 0;
+    };
+
     struct LeafHit
     {
         LeafId id;
@@ -130,6 +147,10 @@ public:
     // Visit all dividers in the tree. Only called when there are splits.
     void for_each_divider(const std::function<void(const DividerRect&)>& fn) const;
 
+    [[nodiscard]] Snapshot snapshot() const;
+    bool restore(const Snapshot& snapshot, int pixel_w, int pixel_h);
+    bool restore(const Snapshot& snapshot, int origin_x, int origin_y, int pixel_w, int pixel_h);
+
 private:
     struct Node;
 
@@ -160,6 +181,8 @@ private:
     static int count_leaves(const Node* node);
     static LeafId first_leaf(const Node* node);
     static LeafId last_leaf(const Node* node);
+    static std::unique_ptr<SnapshotNode> snapshot_node(const Node* node);
+    std::unique_ptr<Node> restore_node(const SnapshotNode& snapshot_node, LeafId& max_leaf_id);
 };
 
 } // namespace draxul

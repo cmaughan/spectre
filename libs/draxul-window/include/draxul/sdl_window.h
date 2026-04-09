@@ -24,6 +24,9 @@ public:
     void shutdown() override;
     bool poll_events() override;
     bool wait_events(int timeout_ms) override;
+    void show() override;
+    void hide() override;
+    bool is_visible() const override;
     void activate() override;
     void wake() override;
     void* native_handle() override // NOSONAR cpp:S5008
@@ -53,6 +56,7 @@ private:
     SDL_Cursor* cursor_ew_ = nullptr;
     SDL_Cursor* cursor_ns_ = nullptr;
     MouseCursor active_cursor_ = MouseCursor::Default;
+    bool visible_ = true;
 };
 
 } // namespace draxul

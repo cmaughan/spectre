@@ -32,6 +32,11 @@ struct AppOptions
     bool show_diagnostics_in_render_test = false;
     bool clamp_window_to_display = true;
     bool show_render_test_window = false;
+    // When true, a normal desktop launch participates in the lightweight
+    // single-session attach flow: closing the main window detaches shell
+    // sessions into a hidden background instance, and a later Draxul launch
+    // reactivates that instance instead of starting a second one.
+    bool enable_session_attach = false;
     // Request that the renderer skip vblank waiting so a host can drive
     // continuous refresh (3D scenes, animation-heavy hosts). The host kind
     // doesn't matter — any host that wants to render every frame can opt in.

@@ -6,6 +6,7 @@
 #include "host_manager.h"
 #include "input_dispatcher.h"
 #include "render_tree.h"
+#include "session_state.h"
 #include "toast_host.h"
 #include "workspace.h"
 #include <chrono>
@@ -16,9 +17,11 @@
 #include <draxul/host.h>
 #include <draxul/renderer.h>
 #include <draxul/result.h>
+#include <draxul/session_attach.h>
 #include <draxul/system_resource_monitor.h>
 
 #include "weather_service.h"
+#include <atomic>
 #include <draxul/text_service.h>
 #include <draxul/window.h>
 #include <memory>
@@ -86,6 +89,7 @@ public:
 private:
     bool initialize_text_service();
     bool initialize_chrome_host();
+    bool initialize_session_attach();
     void wire_window_callbacks();
     // Returns a TextServiceConfig populated from config_. Used by initialize_text_service() and
     // on_display_scale_changed() to avoid duplicating the field assignment at both call sites.
@@ -103,6 +107,7 @@ private:
     void on_display_scale_changed(float new_ppi);
     void request_frame() override;
     void request_quit() override;
+    void on_window_close_requested();
     void wake_window() override;
     void set_window_title(const std::string& title) override;
     void set_text_input_area(int x, int y, int w, int h) override;
@@ -122,6 +127,12 @@ private:
     // (OSC 7) when the user has not explicitly renamed the tab. Cheap to
     // call every frame — bails out as soon as the cwd basename matches.
     void refresh_workspace_default_names();
+    bool can_detach_window() const;
+    void detach_window();
+    void reattach_window();
+    std::optional<AppSessionState> snapshot_session_state() const;
+    void persist_session_state();
+    bool restore_session_state(int pixel_w, int pixel_h, const AppSessionState& state);
 
     // --- Workspace management (moved from ChromeHost) ---
     HostManager::Deps make_host_manager_deps();
@@ -190,6 +201,9 @@ private:
     int next_workspace_id_ = 0;
     RenderNode render_root_;
     DiagnosticsCollector diagnostics_collector_;
+    SessionAttachServer session_attach_server_;
+    std::atomic<bool> external_attach_requested_ = false;
+    bool detached_ = false;
 };
 
 } // namespace draxul

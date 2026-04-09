@@ -107,6 +107,8 @@ A standalone GUI library for rendering UI items that do not depend on ImGui. It 
 - Keyboard-driven pane resizing via `resize_pane_left`, `resize_pane_right`, `resize_pane_up`, `resize_pane_down` actions (each nudges the nearest enclosing divider by 5%)
 - **Pane zoom**: `toggle_zoom` action (default `Ctrl+S, z`) expands the focused pane to fill the full window; toggling again restores the previous split layout exactly (like tmux `Ctrl+B z`)
 - **Close pane**: Closes the focused pane and its host; if last pane, exits the app
+- **Shell session detach/reattach**: On normal desktop launches, closing the main window hides Draxul and keeps shell-pane workspaces alive in the background; launching Draxul again reactivates that existing session instead of starting a second instance.
+- **Shell session restore from saved topology**: Clean shutdowns and detach store shell-session tabs, split layout, focus, pane names, tab names, launch commands, and working directories in a local session-state file. If no live background instance exists on the next launch, Draxul restores that saved shell layout by respawning the panes. This is still shell-host only and not full crash recovery yet.
 - **Restart host**: Kills the current host in the focused pane and relaunches with the same arguments
 - **Swap pane**: Swaps the focused pane with the next pane in spatial order
 

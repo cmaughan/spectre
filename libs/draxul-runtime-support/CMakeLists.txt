@@ -1,6 +1,7 @@
 add_library(draxul-runtime-support
     src/cursor_blinker.cpp
     src/grid_rendering_pipeline.cpp
+    src/session_attach.cpp
     src/system_resource_monitor.cpp
     src/ui_request_worker.cpp
 )

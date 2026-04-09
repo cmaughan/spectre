@@ -61,6 +61,38 @@ void apply_global_host_options(HostLaunchOptions& launch, const AppOptions& opti
     launch.show_host_ui_panels = !options.hide_host_ui_panels;
 }
 
+HostManager::SavedLaunchOptions save_launch_options(const HostLaunchOptions& launch)
+{
+    HostManager::SavedLaunchOptions saved;
+    saved.kind = launch.kind;
+    saved.command = launch.command;
+    saved.args = launch.args;
+    saved.working_dir = launch.working_dir;
+    saved.source_path = launch.source_path;
+    saved.startup_commands = launch.startup_commands;
+    return saved;
+}
+
+HostLaunchOptions restore_launch_options(const HostManager::SavedLaunchOptions& saved,
+    const HostManager::Deps& deps)
+{
+    HostLaunchOptions launch;
+    launch.kind = saved.kind;
+    launch.command = saved.command;
+    launch.args = saved.args;
+    launch.working_dir = saved.working_dir;
+    launch.source_path = saved.source_path;
+    launch.startup_commands = saved.startup_commands;
+    launch.enable_ligatures = deps.config ? deps.config->enable_ligatures : true;
+    if (deps.config)
+        apply_terminal_config(launch, *deps.config);
+    if (deps.options)
+        apply_global_host_options(launch, *deps.options);
+    if (deps.options && launch.working_dir.empty())
+        launch.working_dir = deps.options->host_working_dir;
+    return launch;
+}
+
 float imgui_font_size_from_metrics(const FontMetrics& metrics)
 {
     return static_cast<float>(metrics.ascender + metrics.descender);
@@ -358,6 +390,123 @@ void HostManager::shutdown()
     hosts_.clear();
     launch_options_.clear();
     pane_user_names_.clear();
+}
+
+bool HostManager::has_detachable_shell_session() const
+{
+    if (hosts_.empty() || launch_options_.empty())
+        return false;
+
+    for (const auto& [id, launch] : launch_options_)
+    {
+        if (!hosts_.contains(id))
+            return false;
+        if (!is_terminal_shell_host(launch.kind))
+            return false;
+    }
+
+    return true;
+}
+
+std::optional<HostManager::SessionState> HostManager::session_state() const
+{
+    PERF_MEASURE();
+    if (hosts_.empty() || launch_options_.empty())
+        return std::nullopt;
+
+    SessionState state;
+    state.tree = tree_.snapshot();
+    state.zoomed = zoomed_;
+    state.zoomed_leaf = zoomed_leaf_;
+    bool valid = true;
+
+    tree_.for_each_leaf([this, &state, &valid](LeafId id, const PaneDescriptor&) {
+        if (!valid)
+            return;
+
+        const auto launch_it = launch_options_.find(id);
+        const auto host_it = hosts_.find(id);
+        if (launch_it == launch_options_.end() || host_it == hosts_.end() || !host_it->second)
+        {
+            valid = false;
+            return;
+        }
+
+        PaneSessionState pane;
+        pane.leaf_id = id;
+        pane.launch = save_launch_options(launch_it->second);
+        const std::string current_cwd = host_it->second->current_working_directory();
+        if (!current_cwd.empty())
+            pane.launch.working_dir = current_cwd;
+        pane.pane_name = pane_name(id);
+        state.panes.push_back(std::move(pane));
+    });
+
+    if (!valid)
+        return std::nullopt;
+
+    return state;
+}
+
+bool HostManager::restore_session_state(
+    IHostCallbacks& callbacks, int pixel_w, int pixel_h, const SessionState& state)
+{
+    PERF_MEASURE();
+    error_.clear();
+    shutdown();
+
+    if (!tree_.restore(state.tree, pixel_w, pixel_h))
+    {
+        error_ = "Failed to restore the saved split layout.";
+        return false;
+    }
+
+    if (state.panes.empty())
+    {
+        error_ = "Saved session has no panes.";
+        return false;
+    }
+
+    bool is_primary = true;
+    const auto leaf_exists = [this](LeafId target) {
+        bool found = false;
+        tree_.for_each_leaf([&found, target](LeafId id, const PaneDescriptor&) {
+            if (id == target)
+                found = true;
+        });
+        return found;
+    };
+    for (const PaneSessionState& pane : state.panes)
+    {
+        if (!leaf_exists(pane.leaf_id))
+        {
+            error_ = "Saved session references an unknown pane id.";
+            shutdown();
+            return false;
+        }
+
+        HostLaunchOptions launch = restore_launch_options(pane.launch, deps_);
+        if (!create_host_for_leaf(pane.leaf_id, callbacks, std::move(launch), is_primary))
+        {
+            shutdown();
+            return false;
+        }
+        is_primary = false;
+
+        if (!pane.pane_name.empty())
+            pane_user_names_[pane.leaf_id] = pane.pane_name;
+    }
+
+    zoomed_leaf_ = state.zoomed && leaf_exists(state.zoomed_leaf)
+        ? state.zoomed_leaf
+        : kInvalidLeaf;
+    zoomed_ = zoomed_leaf_ != kInvalidLeaf;
+    if (!zoomed_)
+        zoomed_leaf_ = kInvalidLeaf;
+    zoom_pixel_w_ = pixel_w;
+    zoom_pixel_h_ = pixel_h;
+    update_all_viewports();
+    return true;
 }
 
 void HostManager::set_pane_name(LeafId id, std::string name)

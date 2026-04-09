@@ -361,6 +361,9 @@ bool App::initialize()
 
     wire_window_callbacks();
 
+    if (!initialize_session_attach())
+        return false;
+
     // Snapshot the initial window size so the pump loop's size-change check
     // has a correct baseline (avoids a spurious on_resize on the first frame).
     std::tie(last_pixel_w_, last_pixel_h_) = window_->size_pixels();
@@ -410,6 +413,28 @@ bool App::initialize_text_service()
     renderer_.grid()->set_cell_size(metrics.cell_width, metrics.cell_height);
     renderer_.grid()->set_ascender(metrics.ascender);
     refresh_window_layout();
+    return true;
+}
+
+bool App::initialize_session_attach()
+{
+    PERF_MEASURE();
+    if (!options_.enable_session_attach)
+        return true;
+
+    std::string error;
+    if (!session_attach_server_.start([this]() {
+            external_attach_requested_.store(true);
+            wake_window();
+        },
+            &error))
+    {
+        last_init_error_ = error.empty()
+            ? "Failed to start the session attach server."
+            : error;
+        return false;
+    }
+
     return true;
 }
 
@@ -592,7 +617,30 @@ bool App::initialize_chrome_host()
         chrome_host_->set_viewport(vp);
     }
 
-    if (!create_initial_workspace(window_->width_pixels(), diagnostics_host_->layout().terminal_height))
+    bool restored_session = false;
+    if (options_.enable_session_attach)
+    {
+        std::string session_error;
+        if (auto saved_session = load_session_state(&session_error);
+            saved_session && !saved_session->workspaces.empty())
+        {
+            restored_session = restore_session_state(
+                window_->width_pixels(), diagnostics_host_->layout().terminal_height, *saved_session);
+            if (!restored_session)
+            {
+                DRAXUL_LOG_WARN(LogCategory::App,
+                    "Failed to restore saved shell session state; starting a fresh session.");
+            }
+        }
+        else if (!session_error.empty())
+        {
+            DRAXUL_LOG_WARN(LogCategory::App,
+                "Failed to load saved shell session state: %s", session_error.c_str());
+        }
+    }
+
+    if (!restored_session
+        && !create_initial_workspace(window_->width_pixels(), diagnostics_host_->layout().terminal_height))
         return false;
 
     {
@@ -687,7 +735,7 @@ void App::wire_gui_actions()
         const int tab_y = chrome_host_->tab_bar_height();
         active_host_manager().toggle_zoom(
             window_->width_pixels(), diagnostics_host_->layout().terminal_height - tab_y);
-        input_dispatcher_.set_host(active_host_manager().focused_host());
+        input_dispatcher_.set_host(detached_ ? nullptr : active_host_manager().focused_host());
         request_frame();
     };
     gui_deps.on_close_pane = [this]() {
@@ -713,7 +761,7 @@ void App::wire_gui_actions()
         }
         input_dispatcher_.set_host(nullptr);
         active_host_manager().close_focused();
-        input_dispatcher_.set_host(active_host_manager().focused_host());
+        input_dispatcher_.set_host(detached_ ? nullptr : active_host_manager().focused_host());
         request_frame();
     };
     gui_deps.on_restart_host = [this]() {
@@ -925,6 +973,7 @@ void App::wire_window_callbacks()
     input_dispatcher_ = InputDispatcher(std::move(disp_deps));
     input_dispatcher_.set_chord_indicator_fade_ms(config_.chord_indicator_fade_ms);
     input_dispatcher_.connect(*window_);
+    window_->on_close_requested = [this]() { on_window_close_requested(); };
 }
 
 void App::run()
@@ -1276,6 +1325,9 @@ bool App::pump_once(std::optional<std::chrono::steady_clock::time_point> wait_de
     PERF_MEASURE();
     while (running_)
     {
+        if (external_attach_requested_.exchange(false))
+            reattach_window();
+
         if (pending_window_activation_)
         {
             window_->activate();
@@ -1324,7 +1376,10 @@ bool App::pump_once(std::optional<std::chrono::steady_clock::time_point> wait_de
 
         if (frame_requested_)
         {
-            render_frame();
+            if (detached_)
+                frame_requested_ = false;
+            else
+                render_frame();
             return running_;
         }
 
@@ -1421,6 +1476,16 @@ void App::request_quit()
         h.request_close();
     });
     running_ = false;
+}
+
+void App::on_window_close_requested()
+{
+    if (can_detach_window())
+    {
+        detach_window();
+        return;
+    }
+    request_quit();
 }
 
 void App::wake_window()
@@ -1669,6 +1734,142 @@ void App::refresh_workspace_default_names()
     }
 }
 
+bool App::can_detach_window() const
+{
+    if (!options_.enable_session_attach || workspaces_.empty())
+        return false;
+
+    for (const auto& ws : workspaces_)
+    {
+        if (!ws->host_manager.has_detachable_shell_session())
+            return false;
+    }
+
+    return true;
+}
+
+void App::detach_window()
+{
+    PERF_MEASURE();
+    if (detached_)
+        return;
+
+    persist_session_state();
+    input_dispatcher_.set_host(nullptr);
+    detached_ = true;
+    pending_window_activation_ = false;
+    frame_requested_ = false;
+    window_->hide();
+}
+
+void App::reattach_window()
+{
+    PERF_MEASURE();
+    const bool was_detached = detached_;
+    detached_ = false;
+    pending_window_activation_ = true;
+    input_dispatcher_.set_host(active_host_manager().focused_host());
+    if (was_detached)
+    {
+        if (IHost* focused = active_host_manager().focused_host())
+            focused->on_focus_gained();
+    }
+    else if (window_ && !window_->is_visible())
+    {
+        window_->show();
+    }
+    request_frame();
+}
+
+std::optional<AppSessionState> App::snapshot_session_state() const
+{
+    PERF_MEASURE();
+    if (!can_detach_window())
+        return std::nullopt;
+
+    AppSessionState state;
+    state.active_workspace_id = active_workspace_;
+    state.next_workspace_id = next_workspace_id_;
+
+    for (const auto& ws : workspaces_)
+    {
+        auto host_manager_state = ws->host_manager.session_state();
+        if (!host_manager_state)
+            return std::nullopt;
+
+        WorkspaceSessionState workspace_state;
+        workspace_state.id = ws->id;
+        workspace_state.name = ws->name;
+        workspace_state.name_user_set = ws->name_user_set;
+        workspace_state.host_manager = std::move(*host_manager_state);
+        state.workspaces.push_back(std::move(workspace_state));
+    }
+
+    return state;
+}
+
+void App::persist_session_state()
+{
+    PERF_MEASURE();
+    if (!options_.enable_session_attach)
+        return;
+
+    auto state = snapshot_session_state();
+    if (!state)
+        return;
+
+    std::string error;
+    if (!save_session_state(*state, &error))
+    {
+        DRAXUL_LOG_WARN(LogCategory::App,
+            "Failed to save shell session state: %s",
+            error.empty() ? "unknown error" : error.c_str());
+    }
+}
+
+bool App::restore_session_state(int pixel_w, int pixel_h, const AppSessionState& state)
+{
+    PERF_MEASURE();
+    if (state.workspaces.empty())
+        return false;
+
+    for (auto& ws : workspaces_)
+        ws->host_manager.shutdown();
+    workspaces_.clear();
+    active_workspace_ = -1;
+
+    int max_workspace_id = -1;
+    for (const WorkspaceSessionState& workspace_state : state.workspaces)
+    {
+        auto ws = std::make_unique<Workspace>(workspace_state.id, make_host_manager_deps());
+        if (!ws->host_manager.restore_session_state(*this, pixel_w, pixel_h, workspace_state.host_manager))
+        {
+            for (auto& created_workspace : workspaces_)
+                created_workspace->host_manager.shutdown();
+            workspaces_.clear();
+            active_workspace_ = -1;
+            return false;
+        }
+
+        ws->initialized = true;
+        ws->name = workspace_state.name.empty() ? "tab" : workspace_state.name;
+        ws->name_user_set = workspace_state.name_user_set;
+        max_workspace_id = std::max(max_workspace_id, workspace_state.id);
+        workspaces_.push_back(std::move(ws));
+    }
+
+    next_workspace_id_ = std::max(state.next_workspace_id, max_workspace_id + 1);
+    int restored_active_workspace = state.active_workspace_id;
+    const bool has_restored_active_workspace = std::any_of(workspaces_.begin(), workspaces_.end(),
+        [restored_active_workspace](const auto& ws) {
+            return ws->id == restored_active_workspace;
+        });
+    if (!has_restored_active_workspace)
+        restored_active_workspace = workspaces_.front()->id;
+    activate_workspace(restored_active_workspace);
+    return true;
+}
+
 bool App::create_initial_workspace(int pixel_w, int pixel_h)
 {
     auto ws = std::make_unique<Workspace>(next_workspace_id_++, make_host_manager_deps());
@@ -1854,6 +2055,9 @@ void App::shutdown()
 #ifdef __APPLE__
     macos_menu_.reset(); // tear down menu before handler goes away
 #endif
+
+    persist_session_state();
+    session_attach_server_.stop();
 
     for (auto& ws : workspaces_)
         ws->host_manager.shutdown();

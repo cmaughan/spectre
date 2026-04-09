@@ -362,6 +362,37 @@ TEST_CASE("SplitTree: find_ancestor_divider walks up the tree", "[split_tree]")
     CHECK(tree.find_ancestor_divider(a, FocusDirection::Down) == kInvalidDivider);
 }
 
+TEST_CASE("SplitTree: snapshot restore preserves layout, ids, and focus", "[split_tree]")
+{
+    SplitTree original;
+    auto left = original.reset(1000, 800);
+    auto right = original.split_leaf(left, SplitDirection::Vertical);
+    auto bottom_right = original.split_leaf(right, SplitDirection::Horizontal);
+
+    const auto root_divider_hit = original.hit_test(499, 400);
+    REQUIRE(std::holds_alternative<SplitTree::DividerHit>(root_divider_hit));
+    original.set_divider_ratio(std::get<SplitTree::DividerHit>(root_divider_hit).id, 0.3f);
+    original.set_focused(bottom_right);
+
+    const auto snapshot = original.snapshot();
+
+    SplitTree restored;
+    REQUIRE(restored.restore(snapshot, 1000, 800));
+    REQUIRE(restored.leaf_count() == 3);
+    CHECK(restored.focused() == bottom_right);
+
+    const auto left_desc = restored.descriptor_for(left);
+    const auto right_desc = restored.descriptor_for(right);
+    const auto bottom_right_desc = restored.descriptor_for(bottom_right);
+
+    CHECK(left_desc.pixel_pos.x == 0);
+    CHECK(left_desc.pixel_size.x == original.descriptor_for(left).pixel_size.x);
+    CHECK(right_desc.pixel_pos.x == original.descriptor_for(right).pixel_pos.x);
+    CHECK(right_desc.pixel_size.y == original.descriptor_for(right).pixel_size.y);
+    CHECK(bottom_right_desc.pixel_pos.y == original.descriptor_for(bottom_right).pixel_pos.y);
+    CHECK(bottom_right_desc.pixel_size.y == original.descriptor_for(bottom_right).pixel_size.y);
+}
+
 TEST_CASE("SplitTree: stale divider id is ignored", "[split_tree]")
 {
     SplitTree tree;

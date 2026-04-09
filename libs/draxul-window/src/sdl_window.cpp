@@ -141,6 +141,9 @@ bool SdlWindow::initialize(const std::string& title, int width, int height)
     PERF_MEASURE();
     SDL_SetHint(SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN, "1");
     SDL_SetHint(SDL_HINT_WINDOW_ACTIVATE_WHEN_RAISED, "1");
+    // Closing the last window should not auto-post SDL_EVENT_QUIT; Draxul's
+    // app layer decides whether a close request means detach or full shutdown.
+    SDL_SetHint(SDL_HINT_QUIT_ON_LAST_WINDOW_CLOSE, "0");
 
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS))
     {
@@ -206,6 +209,7 @@ bool SdlWindow::initialize(const std::string& title, int width, int height)
         DRAXUL_LOG_ERROR(LogCategory::Window, "SDL_CreateWindow failed: %s", SDL_GetError());
         return false;
     }
+    visible_ = !hidden_;
 
     // Enable text input events (required in SDL3)
     SDL_StartTextInput(window_);
@@ -234,7 +238,7 @@ void SdlWindow::activate()
     if (!window_)
         return;
 
-    SDL_ShowWindow(window_);
+    show();
     SDL_RaiseWindow(window_);
     SDL_SyncWindow(window_);
 
@@ -262,6 +266,29 @@ void SdlWindow::activate()
             AttachThreadInput(foreground_thread, current_thread, FALSE);
     }
 #endif
+}
+
+void SdlWindow::show()
+{
+    PERF_MEASURE();
+    if (!window_)
+        return;
+    SDL_ShowWindow(window_);
+    visible_ = true;
+}
+
+void SdlWindow::hide()
+{
+    PERF_MEASURE();
+    if (!window_)
+        return;
+    SDL_HideWindow(window_);
+    visible_ = false;
+}
+
+bool SdlWindow::is_visible() const
+{
+    return window_ ? visible_ : false;
 }
 
 void SdlWindow::shutdown()
@@ -334,6 +361,19 @@ bool SdlWindow::handle_event(const SDL_Event& event)
     {
     case SDL_EVENT_QUIT:
         return false;
+
+    case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
+        if (on_close_requested)
+            on_close_requested();
+        break;
+
+    case SDL_EVENT_WINDOW_SHOWN:
+        visible_ = true;
+        break;
+
+    case SDL_EVENT_WINDOW_HIDDEN:
+        visible_ = false;
+        break;
 
     case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
         if (on_resize)

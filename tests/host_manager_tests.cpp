@@ -309,6 +309,57 @@ TEST_CASE("host manager: callbacks remain valid across pane teardown", "[host_ma
     REQUIRE(harness.callbacks.request_frame_calls == 2);
 }
 
+TEST_CASE("host manager: session state round-trips layout and pane metadata", "[host_manager]")
+{
+    HostManagerHarness harness;
+
+    REQUIRE(harness.manager.create(harness.callbacks, 800, 600));
+    const LeafId root = harness.manager.focused_leaf();
+
+    HostLaunchOptions launch;
+    launch.kind = HostKind::PowerShell;
+    launch.command = "pwsh";
+    launch.args = { "-NoLogo" };
+    launch.working_dir = "D:/dev/Draxul";
+    launch.startup_commands = { "echo ready" };
+
+    const LeafId split = harness.manager.split_focused(
+        SplitDirection::Vertical, std::move(launch), harness.callbacks);
+    REQUIRE(split != kInvalidLeaf);
+
+    harness.manager.set_pane_name(root, "left");
+    harness.manager.set_pane_name(split, "right");
+    harness.manager.set_focused(split);
+    harness.manager.toggle_zoom(800, 600);
+
+    auto saved = harness.manager.session_state();
+    REQUIRE(saved);
+    REQUIRE(saved->panes.size() == 2);
+
+    HostManagerHarness restored_harness;
+    REQUIRE(restored_harness.manager.restore_session_state(
+        restored_harness.callbacks, 800, 600, *saved));
+    REQUIRE(restored_harness.manager.host_count() == 2);
+    CHECK(restored_harness.manager.focused_leaf() == split);
+    CHECK(restored_harness.manager.pane_name(root) == "left");
+    CHECK(restored_harness.manager.pane_name(split) == "right");
+    CHECK(restored_harness.manager.is_zoomed());
+    CHECK(restored_harness.manager.zoomed_leaf() == split);
+
+    auto restored = restored_harness.manager.session_state();
+    REQUIRE(restored);
+    REQUIRE(restored->panes.size() == 2);
+
+    const auto restored_split = std::find_if(restored->panes.begin(), restored->panes.end(),
+        [split](const HostManager::PaneSessionState& pane) { return pane.leaf_id == split; });
+    REQUIRE(restored_split != restored->panes.end());
+    CHECK(restored_split->launch.kind == HostKind::PowerShell);
+    CHECK(restored_split->launch.command == "pwsh");
+    CHECK(restored_split->launch.args == (std::vector<std::string>{ "-NoLogo" }));
+    CHECK(restored_split->launch.working_dir == "D:/dev/Draxul");
+    CHECK(restored_split->launch.startup_commands == (std::vector<std::string>{ "echo ready" }));
+}
+
 TEST_CASE("grid host base: invalidated owner lifetime blocks renderer and callback use", "[host_manager]")
 {
     FakeWindow window;

@@ -9,6 +9,7 @@
 #include <draxul/log.h>
 #include <draxul/nanovg_demo_host.h>
 #include <draxul/perf_timing.h>
+#include <draxul/session_attach.h>
 #ifdef DRAXUL_ENABLE_MEGACITY
 #include <draxul/megacity_host.h>
 #endif
@@ -240,6 +241,32 @@ static int draxul_main(std::vector<std::string> args)
         if (std::filesystem::exists(bundled_font))
             options.config_overrides.font_path = bundled_font.string();
     }
+
+#ifdef DRAXUL_ENABLE_RENDER_TESTS
+    const bool allow_session_attach = !parsed.smoke_test
+        && !render_test.has_value()
+        && parsed.screenshot_path.empty();
+#else
+    const bool allow_session_attach = !parsed.smoke_test
+        && parsed.screenshot_path.empty();
+#endif
+    if (allow_session_attach)
+    {
+        std::string attach_error;
+        const auto attach_status = draxul::SessionAttachServer::try_attach(&attach_error);
+        if (attach_status == draxul::SessionAttachServer::AttachStatus::Attached)
+        {
+            draxul::shutdown_logging();
+            return 0;
+        }
+        if (attach_status == draxul::SessionAttachServer::AttachStatus::Error
+            && !attach_error.empty())
+        {
+            DRAXUL_LOG_WARN(draxul::LogCategory::App,
+                "Session attach probe failed: %s", attach_error.c_str());
+        }
+    }
+    options.enable_session_attach = allow_session_attach;
 
     draxul::App app(std::move(options));
 

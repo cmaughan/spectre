@@ -21,6 +21,12 @@ public:
     void shutdown() override {}
     bool poll_events() override
     {
+        if (queued_close_request_)
+        {
+            queued_close_request_ = false;
+            if (on_close_requested)
+                on_close_requested();
+        }
         return true;
     }
     void* native_handle() override
@@ -53,6 +59,22 @@ public:
         return true;
     }
     void set_text_input_area(int, int, int, int) override {}
+    void activate() override
+    {
+        visible_ = true;
+    }
+    void show() override
+    {
+        visible_ = true;
+    }
+    void hide() override
+    {
+        visible_ = false;
+    }
+    bool is_visible() const override
+    {
+        return visible_;
+    }
 
     // Configurable state — set by tests to simulate different display configurations.
     int pixel_w_ = 800;
@@ -64,11 +86,20 @@ public:
     // Recorded state — read by tests.
     std::string clipboard_;
     std::string last_title_;
+    bool visible_ = true;
+    bool queued_close_request_ = false;
 
     void reset()
     {
         clipboard_.clear();
         last_title_.clear();
+        visible_ = true;
+        queued_close_request_ = false;
+    }
+
+    void queue_close_request()
+    {
+        queued_close_request_ = true;
     }
 };
 
