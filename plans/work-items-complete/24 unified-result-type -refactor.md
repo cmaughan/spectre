@@ -33,15 +33,15 @@ This inconsistency means error-path auditing requires knowing which pattern each
 
 **Phase B — migrate high-value call sites:**
 - [x] `NvimProcess::spawn()` — currently returns `bool`; migrate to `Result<void, SpawnError>`. *(Now `Result<void, Error>`; contextual bool conversion keeps existing `REQUIRE(spawn(...))` and `if (!spawn(...))` call sites compiling.)*
-- [ ] `NvimRpc::send_request()` — returns `RpcResult`; ensure it's consistent with `Result`.
+- [x] `NvimRpc::send_request()` — returns `RpcResult`; ensure it's consistent with `Result`. *(Replaced `RpcResult` struct with `using RpcResult = Result<MpackValue, Error>`. Transport failures → `ErrorKind::IoError`; remote Neovim errors → `ErrorKind::RpcError` with stringified message. All call sites, test mocks, and FakeRpcChannel updated.)*
 - [x] `AppConfig::reload()` — currently silent; migrate to `Result<void, ConfigError>`. *(Migrated `App::reload_config()` — the actual reload entry point — to `Result<void, Error>`; the closest `AppConfig::load()` static returns a value with defaults and was left alone.)*
-- [ ] `GlyphCache::rasterize_cluster()` — currently returns sentinel; migrate to `Result<AtlasRegion, RasterError>`.
+- [x] `GlyphCache::rasterize_cluster()` — currently returns sentinel; migrate to `Result<AtlasRegion, RasterError>`. *(Now returns `Result<AtlasRegion, Error>`. FreeType load/render failures, bitmap conversion, and atlas overflow each produce a structured error. `get_cluster()` logs the error on failure; public API (`const AtlasRegion&` return) unchanged.)*
 
 **Phase C — update callers:**
 - [x] For each migrated function, update all call sites to handle the error or explicitly propagate it. *(Scoped to the migrated sites: `NvimHost::initialize` now logs the structured spawn error; the GUI action lambda for `reload_config` now surfaces failure as a toast. Remaining call sites kept via bool conversion.)*
 - [x] Convert previously-silent failures to either return an error to the caller or show a toast notification. *(`reload_config` now shows a toast on font-reload failure instead of only logging.)*
 
-**Status (2026-04-08):** Phase A complete, 2/4 Phase B sites complete, Phase C scoped to migrated sites only. Remaining Phase B sites (`NvimRpc::send_request`, `GlyphCache::rasterize_cluster`) deferred — `rpc.cpp` migration in particular is a larger surface that should land as its own PR.
+**Status (2026-04-09):** All phases complete. Phase A defined `Result<T, E>` and `Error`. Phase B migrated all four call sites: `spawn`, `reload_config`, `NvimRpc::request`, `GlyphCache::rasterize_cluster`. Phase C updated all callers including tests. `Result<T, E>` also gained a default constructor (error state) to support declare-then-assign patterns. Added `stringify_rpc_error()` helper for converting Neovim's mpack error payloads to strings.
 
 ---
 
