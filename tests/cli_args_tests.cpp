@@ -119,6 +119,13 @@ TEST_CASE("cli: --list-sessions sets the flag", "[cli]")
     REQUIRE(r.args.list_sessions);
 }
 
+TEST_CASE("cli: --session-owner sets the internal owner flag", "[cli]")
+{
+    auto r = parse({ "--session-owner" });
+    REQUIRE_FALSE(r.error.has_value());
+    REQUIRE(r.args.session_owner);
+}
+
 TEST_CASE("cli: --attach-session sets the flag", "[cli]")
 {
     auto r = parse({ "--attach-session" });

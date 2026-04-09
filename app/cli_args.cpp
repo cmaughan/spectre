@@ -23,6 +23,8 @@ ParseArgsResult parse_args(const std::vector<std::string>& args)
             parsed.no_vblank = true;
         else if (args[i] == "--no-ui")
             parsed.no_ui = true;
+        else if (args[i] == "--session-owner")
+            parsed.session_owner = true;
         else if (args[i] == "--list-sessions")
             parsed.list_sessions = true;
         else if (args[i] == "--attach-session")

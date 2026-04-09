@@ -16,6 +16,7 @@ struct ParsedArgs
     bool continuous_refresh = false;
     bool no_vblank = false;
     bool no_ui = false;
+    bool session_owner = false;
     bool list_sessions = false;
     bool attach_session = false;
     bool kill_session = false;

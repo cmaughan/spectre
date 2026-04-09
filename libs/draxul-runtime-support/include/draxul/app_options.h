@@ -28,6 +28,7 @@ struct AppOptions
     bool load_user_config = true;
     bool save_user_config = true;
     bool activate_window_on_startup = true;
+    bool start_hidden_window = false;
     bool show_diagnostics_on_startup = false;
     bool show_diagnostics_in_render_test = false;
     bool clamp_window_to_display = true;

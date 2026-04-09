@@ -20,6 +20,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 #ifdef _WIN32
@@ -32,6 +33,7 @@
 #include <shellapi.h>
 #elif defined(__APPLE__)
 #include <mach-o/dyld.h>
+#include <unistd.h>
 #elif defined(__linux__)
 #include <unistd.h>
 #endif
@@ -109,7 +111,7 @@ std::vector<std::string> command_line_args(int argc, char* argv[])
 // CLI parsing has moved to app/cli_args.{h,cpp} so it can be unit-tested
 // without spawning a subprocess. See draxul::parse_args() / ParseArgsResult.
 
-std::filesystem::path executable_dir(const std::vector<std::string>& args)
+std::filesystem::path executable_path(const std::vector<std::string>& args)
 {
     PERF_MEASURE();
 #ifdef _WIN32
@@ -126,7 +128,7 @@ std::filesystem::path executable_dir(const std::vector<std::string>& args)
         }
         exe_path.resize(exe_path.size() * 2);
     }
-    return std::filesystem::path(exe_path).parent_path();
+    return std::filesystem::path(exe_path);
 #elif defined(__APPLE__)
     uint32_t size = 0;
     _NSGetExecutablePath(nullptr, &size);
@@ -137,7 +139,7 @@ std::filesystem::path executable_dir(const std::vector<std::string>& args)
     if (_NSGetExecutablePath(exe_path.data(), &size) != 0)
         return {};
     exe_path.resize(std::char_traits<char>::length(exe_path.c_str()));
-    return std::filesystem::path(exe_path).parent_path();
+    return std::filesystem::path(exe_path);
 #elif defined(__linux__)
     std::vector<char> exe_path(256, '\0');
     for (;;)
@@ -146,17 +148,189 @@ std::filesystem::path executable_dir(const std::vector<std::string>& args)
         if (size < 0)
             break;
         if (static_cast<size_t>(size) < exe_path.size())
-            return std::filesystem::path(std::string(exe_path.data(), static_cast<size_t>(size))).parent_path();
+            return std::filesystem::path(std::string(exe_path.data(), static_cast<size_t>(size)));
         exe_path.resize(exe_path.size() * 2);
     }
     if (args.empty())
         return {};
-    return std::filesystem::absolute(std::filesystem::path(args.front())).parent_path();
+    return std::filesystem::absolute(std::filesystem::path(args.front()));
 #else
     if (args.empty())
         return {};
-    return std::filesystem::absolute(std::filesystem::path(args.front())).parent_path();
+    return std::filesystem::absolute(std::filesystem::path(args.front()));
 #endif
+}
+
+std::filesystem::path executable_dir(const std::vector<std::string>& args)
+{
+    const auto path = executable_path(args);
+    return path.empty() ? path : path.parent_path();
+}
+
+std::vector<std::string> session_owner_args(
+    const std::vector<std::string>& args, const std::filesystem::path& exe_path)
+{
+    std::vector<std::string> owner_args = args;
+    if (owner_args.empty())
+        owner_args.emplace_back(exe_path.string());
+    else
+        owner_args.front() = exe_path.string();
+    owner_args.emplace_back("--session-owner");
+    return owner_args;
+}
+
+#ifdef _WIN32
+std::wstring widen_utf8(std::string_view text)
+{
+    if (text.empty())
+        return {};
+    const int size = MultiByteToWideChar(
+        CP_UTF8, 0, text.data(), static_cast<int>(text.size()), nullptr, 0);
+    if (size <= 0)
+        return {};
+    std::wstring wide(static_cast<size_t>(size), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), wide.data(), size);
+    return wide;
+}
+
+std::string quote_windows_arg(std::string_view arg)
+{
+    const bool needs_quotes = arg.empty()
+        || arg.find_first_of(" \t\n\v\"") != std::string_view::npos;
+    if (!needs_quotes)
+        return std::string(arg);
+
+    std::string quoted;
+    quoted.push_back('"');
+    size_t pending_backslashes = 0;
+    for (char ch : arg)
+    {
+        if (ch == '\\')
+        {
+            ++pending_backslashes;
+            continue;
+        }
+
+        if (ch == '"')
+            quoted.append(pending_backslashes * 2 + 1, '\\');
+        else
+            quoted.append(pending_backslashes, '\\');
+        pending_backslashes = 0;
+        quoted.push_back(ch);
+    }
+    quoted.append(pending_backslashes * 2, '\\');
+    quoted.push_back('"');
+    return quoted;
+}
+#endif
+
+bool spawn_session_owner_process(
+    const std::filesystem::path& exe_path, const std::vector<std::string>& owner_args, std::string* error)
+{
+    PERF_MEASURE();
+#ifdef _WIN32
+    std::string command_line_utf8;
+    for (const auto& arg : owner_args)
+    {
+        if (!command_line_utf8.empty())
+            command_line_utf8.push_back(' ');
+        command_line_utf8 += quote_windows_arg(arg);
+    }
+
+    std::wstring exe_path_w = exe_path.wstring();
+    std::wstring command_line = widen_utf8(command_line_utf8);
+    std::vector<wchar_t> command_line_buffer(command_line.begin(), command_line.end());
+    command_line_buffer.push_back(L'\0');
+
+    STARTUPINFOW startup_info = {};
+    startup_info.cb = sizeof(startup_info);
+    PROCESS_INFORMATION process_info = {};
+    const BOOL ok = CreateProcessW(
+        exe_path_w.c_str(),
+        command_line_buffer.data(),
+        nullptr,
+        nullptr,
+        FALSE,
+        0,
+        nullptr,
+        nullptr,
+        &startup_info,
+        &process_info);
+    if (!ok)
+    {
+        if (error)
+            *error = "CreateProcessW failed: " + std::to_string(GetLastError());
+        return false;
+    }
+    CloseHandle(process_info.hThread);
+    CloseHandle(process_info.hProcess);
+    return true;
+#else
+    const pid_t child = fork();
+    if (child < 0)
+    {
+        if (error)
+            *error = "fork() failed";
+        return false;
+    }
+    if (child == 0)
+    {
+        std::vector<std::string> argv_storage = owner_args;
+        std::vector<char*> argv;
+        argv.reserve(argv_storage.size() + 1);
+        for (auto& arg : argv_storage)
+            argv.push_back(arg.data());
+        argv.push_back(nullptr);
+        execv(exe_path.string().c_str(), argv.data());
+        _exit(127);
+    }
+    return true;
+#endif
+}
+
+enum class SessionOwnerLaunchStatus
+{
+    Attached,
+    SpawnFailed,
+    AttachFailed,
+};
+
+SessionOwnerLaunchStatus launch_session_owner_and_attach(
+    const std::vector<std::string>& args, std::string_view session_id, std::string* error)
+{
+    PERF_MEASURE();
+    const auto exe_path = executable_path(args);
+    if (exe_path.empty())
+    {
+        if (error)
+            *error = "Failed to resolve the Draxul executable path.";
+        return SessionOwnerLaunchStatus::SpawnFailed;
+    }
+
+    const auto owner_args = session_owner_args(args, exe_path);
+    if (!spawn_session_owner_process(exe_path, owner_args, error))
+        return SessionOwnerLaunchStatus::SpawnFailed;
+
+    constexpr auto kAttachTimeout = std::chrono::seconds(10);
+    constexpr auto kAttachPoll = std::chrono::milliseconds(50);
+    const auto deadline = std::chrono::steady_clock::now() + kAttachTimeout;
+    std::string last_error;
+    while (std::chrono::steady_clock::now() < deadline)
+    {
+        last_error.clear();
+        const auto attach_status = draxul::SessionAttachServer::try_attach(session_id, &last_error);
+        if (attach_status == draxul::SessionAttachServer::AttachStatus::Attached)
+            return SessionOwnerLaunchStatus::Attached;
+        std::this_thread::sleep_for(kAttachPoll);
+    }
+
+    if (error)
+    {
+        *error = last_error.empty()
+            ? "Timed out waiting for the session owner to accept an attach request."
+            : ("Timed out waiting for the session owner to accept an attach request: " + last_error);
+    }
+    return SessionOwnerLaunchStatus::AttachFailed;
 }
 
 } // namespace
@@ -341,6 +515,11 @@ static int draxul_main(std::vector<std::string> args)
     {
         options.activate_window_on_startup = false;
     }
+    if (parsed.session_owner)
+    {
+        options.activate_window_on_startup = false;
+        options.start_hidden_window = true;
+    }
 
     if (parsed.host_kind)
         options.host_kind = *parsed.host_kind;
@@ -383,7 +562,7 @@ static int draxul_main(std::vector<std::string> args)
     const bool allow_session_attach = !parsed.smoke_test
         && parsed.screenshot_path.empty();
 #endif
-    if (allow_session_attach)
+    if (allow_session_attach && !parsed.session_owner)
     {
         std::string attach_error;
         const auto attach_status = draxul::SessionAttachServer::try_attach(
@@ -398,6 +577,33 @@ static int draxul_main(std::vector<std::string> args)
         {
             DRAXUL_LOG_WARN(draxul::LogCategory::App,
                 "Session attach probe failed: %s", attach_error.c_str());
+        }
+        else if (attach_status == draxul::SessionAttachServer::AttachStatus::NoServer)
+        {
+            std::string launch_error;
+            const auto launch_status = launch_session_owner_and_attach(
+                args, parsed.session_id, &launch_error);
+            if (launch_status == SessionOwnerLaunchStatus::Attached)
+            {
+                draxul::shutdown_logging();
+                return 0;
+            }
+            if (launch_status == SessionOwnerLaunchStatus::SpawnFailed)
+            {
+                DRAXUL_LOG_WARN(draxul::LogCategory::App,
+                    "Failed to launch the session owner for '%s'; falling back to in-process startup: %s",
+                    parsed.session_id.c_str(),
+                    launch_error.empty() ? "unknown error" : launch_error.c_str());
+            }
+            else
+            {
+                DRAXUL_LOG_ERROR(draxul::LogCategory::App,
+                    "Launched the session owner for '%s' but could not attach: %s",
+                    parsed.session_id.c_str(),
+                    launch_error.empty() ? "unknown error" : launch_error.c_str());
+                draxul::shutdown_logging();
+                return 1;
+            }
         }
     }
     options.enable_session_attach = allow_session_attach;

@@ -265,9 +265,12 @@ bool App::initialize()
             {
                 auto sdl = std::make_unique<SdlWindow>();
                 sdl->set_clamp_to_display(options_.clamp_window_to_display);
+                const bool start_hidden = options_.start_hidden_window
 #ifdef DRAXUL_ENABLE_RENDER_TESTS
-                sdl->set_hidden(options_.render_target_pixel_width > 0 && !options_.show_render_test_window);
+                    || (options_.render_target_pixel_width > 0 && !options_.show_render_test_window)
 #endif
+                    ;
+                sdl->set_hidden(start_hidden);
                 if (!sdl->initialize("Draxul", config_.window_width, config_.window_height))
                 {
                     last_init_error_ = "Failed to create the application window.";
@@ -332,6 +335,9 @@ bool App::initialize()
         }))
         return false;
 
+    if (!time_step("Session Attach", [this]() { return initialize_session_attach(); }))
+        return false;
+
     if (!time_step("Host", [this]() { return initialize_chrome_host(); }))
         return false;
 
@@ -384,9 +390,6 @@ bool App::initialize()
 #endif
 
     wire_window_callbacks();
-
-    if (!initialize_session_attach())
-        return false;
 
     // Snapshot the initial window size so the pump loop's size-change check
     // has a correct baseline (avoids a spurious on_resize on the first frame).
