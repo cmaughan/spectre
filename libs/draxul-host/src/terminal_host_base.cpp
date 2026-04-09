@@ -250,6 +250,8 @@ void TerminalHostBase::reset_terminal_state()
     vt_.auto_wrap_mode = true;
     vt_.origin_mode = false;
     vt_.cursor_app_mode = false;
+    vt_.cursor_shape = CursorShape::Block;
+    vt_.cursor_blink = true;
     bracketed_paste_mode_ = false;
     alt_screen_.reset();
 }
@@ -258,11 +260,21 @@ void TerminalHostBase::update_cursor_style()
 {
     PERF_MEASURE();
     CursorStyle style = {};
-    style.shape = CursorShape::Block;
+    style.shape = vt_.cursor_shape;
     style.bg = highlights().default_fg();
     style.fg = highlights().default_bg();
     set_cursor_position(vt_.col, vt_.row);
-    set_cursor_style(style, {}, !vt_.cursor_visible);
+
+    // Apply blink timing when the shell requests a blinking cursor shape
+    // (DECSCUSR odd Ps values). Standard terminal blink cadence: 530ms.
+    BlinkTiming blink{};
+    if (vt_.cursor_blink)
+    {
+        blink.blinkwait = 530;
+        blink.blinkon = 530;
+        blink.blinkoff = 530;
+    }
+    set_cursor_style(style, blink, !vt_.cursor_visible);
 }
 
 // ---------------------------------------------------------------------------

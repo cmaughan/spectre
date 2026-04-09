@@ -177,6 +177,45 @@ void TerminalHostBase::handle_csi(char final_char, std::string_view body)
     case 'r':
         csi_margins(private_mode, params);
         break;
+    case 'q':
+        // DECSCUSR (CSI Ps SP q) — Set Cursor Style.
+        // The space intermediate byte is included in the body, so check for it.
+        if (!body.empty() && body.back() == ' ')
+        {
+            const int ps = params.empty() ? 0 : params[0];
+            switch (ps)
+            {
+            case 0: // default → blinking block
+            case 1:
+                vt_.cursor_shape = CursorShape::Block;
+                vt_.cursor_blink = true;
+                break;
+            case 2:
+                vt_.cursor_shape = CursorShape::Block;
+                vt_.cursor_blink = false;
+                break;
+            case 3:
+                vt_.cursor_shape = CursorShape::Horizontal;
+                vt_.cursor_blink = true;
+                break;
+            case 4:
+                vt_.cursor_shape = CursorShape::Horizontal;
+                vt_.cursor_blink = false;
+                break;
+            case 5:
+                vt_.cursor_shape = CursorShape::Vertical;
+                vt_.cursor_blink = true;
+                break;
+            case 6:
+                vt_.cursor_shape = CursorShape::Vertical;
+                vt_.cursor_blink = false;
+                break;
+            default:
+                break;
+            }
+            update_cursor_style();
+        }
+        break;
     default:
         break;
     }

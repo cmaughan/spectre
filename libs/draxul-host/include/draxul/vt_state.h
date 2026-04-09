@@ -1,5 +1,7 @@
 #pragma once
 
+#include <draxul/types.h>
+
 namespace draxul
 {
 
@@ -16,6 +18,10 @@ struct VtState
     bool auto_wrap_mode = true;
     bool origin_mode = false;
     bool cursor_app_mode = false;
+
+    // DECSCUSR — cursor shape set by the shell via CSI Ps SP q.
+    CursorShape cursor_shape = CursorShape::Block;
+    bool cursor_blink = true; // blinking by default (DECSCUSR 0/1)
 };
 
 } // namespace draxul
