@@ -106,6 +106,8 @@ void TerminalHostBase::handle_esc(char ch)
 void TerminalHostBase::handle_csi(char final_char, std::string_view body)
 {
     PERF_MEASURE();
+    DRAXUL_LOG_DEBUG(LogCategory::App, "terminal: CSI %.*s %c",
+        static_cast<int>(body.size()), body.data(), final_char);
     bool private_mode = !body.empty() && body.front() == '?';
     if (private_mode)
         body.remove_prefix(1);

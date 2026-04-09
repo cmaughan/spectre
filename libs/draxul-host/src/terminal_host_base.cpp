@@ -203,6 +203,10 @@ void TerminalHostBase::on_viewport_changed()
     if (new_cols == grid_cols() && new_rows == grid_rows())
         return;
 
+    DRAXUL_LOG_DEBUG(LogCategory::App,
+        "terminal: on_viewport_changed %dx%d -> %dx%d",
+        grid_cols(), grid_rows(), new_cols, new_rows);
+
     // If we are in alt-screen mode the saved main-screen snapshot must be
     // re-dimensioned to match the new terminal size so that restoring it on
     // alt-screen exit does not produce misaligned content.
@@ -445,6 +449,9 @@ void TerminalHostBase::erase_line(int mode)
 void TerminalHostBase::erase_display(int mode)
 {
     PERF_MEASURE();
+    DRAXUL_LOG_DEBUG(LogCategory::App,
+        "terminal: erase_display(%d) grid=%dx%d cursor=(%d,%d)",
+        mode, grid_cols(), grid_rows(), vt_.col, vt_.row);
     if (mode == 2)
     {
         grid().clear();
