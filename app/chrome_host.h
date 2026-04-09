@@ -45,6 +45,10 @@ public:
         const int* active_workspace_id = nullptr;
         const SystemResourceSnapshot* system_resource_snapshot = nullptr;
         std::function<std::optional<std::pair<std::string, float>>()> chord_indicator = nullptr;
+        // Weather callbacks — return emoji ("☀️") and temperature ("18°C") separately
+        // for split-styled rendering. Both empty = no weather pill shown.
+        std::function<std::string()> weather_emoji;
+        std::function<std::string()> weather_temperature;
 
         // Apply a user-typed name to a workspace tab. Owner (App) sets
         // workspace.name and marks workspace.name_user_set so subsequent OSC 7
@@ -169,6 +173,8 @@ public:
         int col_end = 0;
         int text_col = 0;
         Color bg{};
+        Color accent_bg{}; // optional left accent color (drawn if accent_cols > 0)
+        int accent_cols = 0; // number of columns covered by the left accent
         bool flat_right_edge = false;
         std::vector<LabelCluster> clusters;
     };

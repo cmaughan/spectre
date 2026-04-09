@@ -17,6 +17,8 @@
 #include <draxul/renderer.h>
 #include <draxul/result.h>
 #include <draxul/system_resource_monitor.h>
+
+#include "weather_service.h"
 #include <draxul/text_service.h>
 #include <draxul/window.h>
 #include <memory>
@@ -170,6 +172,7 @@ private:
     std::shared_ptr<void> host_owner_lifetime_;
     SystemResourceMonitor system_resource_monitor_;
     SystemResourceSnapshot system_resource_snapshot_{};
+    WeatherService weather_service_;
     std::chrono::steady_clock::time_point last_activity_time_ = std::chrono::steady_clock::now();
     std::string last_render_test_error_;
     std::string last_init_error_;

@@ -33,7 +33,7 @@ constexpr float kMaxFontPointSize = 72.0f;
 // kGuiModifierMask is defined in input_types.h as kGuiModifierMask (same bit values).
 // The list of known GUI action keys lives in <draxul/gui_actions.h> as the canonical
 // source of truth. Use is_known_gui_action_config_key() / for_each_gui_action_config_key().
-constexpr std::array<std::string_view, 21> kKnownTopLevelKeys = {
+constexpr std::array<std::string_view, 22> kKnownTopLevelKeys = {
     "window_width",
     "window_height",
     "font_size",
@@ -53,6 +53,7 @@ constexpr std::array<std::string_view, 21> kKnownTopLevelKeys = {
     "show_pane_status",
     "chord_timeout_ms",
     "chord_indicator_fade_ms",
+    "weather_location",
     "keybindings",
     "terminal",
 };
@@ -376,6 +377,9 @@ AppConfig config_from_toml(const toml::table& document)
         else if (auto parsed_int = toml_support::get_int(document, "toast_duration_s"); parsed_int.has_value())
             config.toast_duration_s = std::clamp(static_cast<float>(*parsed_int), kMinToastDuration, kMaxToastDuration);
     }
+
+    if (auto loc = toml_support::get_string(document, "weather_location"))
+        config.weather_location = *loc;
 
     if (auto font_path = toml_support::get_string(document, "font_path"))
         config.font_path = *font_path;

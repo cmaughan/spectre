@@ -205,6 +205,7 @@ add_library(draxul-app
     app/command_palette.cpp
     app/command_palette_host.cpp
     app/toast_host.cpp
+    app/weather_service.cpp
     app/diagnostics_panel_host.cpp
     app/fuzzy_match.cpp
     app/gui_action_handler.cpp

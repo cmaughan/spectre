@@ -80,6 +80,9 @@ struct AppConfig
     // How long the top-bar chord indicator remains visible while fading out
     // after a chord completes or times out. Clamped to >= 100 ms on parse.
     int chord_indicator_fade_ms = 2500;
+    // Weather pill: set to a city name ("York, UK") or lat,lon ("53.96,-1.08")
+    // to show current temperature in the top-right chrome bar. Empty = disabled.
+    std::string weather_location;
     std::vector<GuiKeybinding> keybindings = {}; // populated by AppConfig()
     TerminalConfig terminal; // [terminal] section -- fg/bg hex colors
 

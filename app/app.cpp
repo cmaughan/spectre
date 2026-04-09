@@ -538,6 +538,12 @@ bool App::initialize_chrome_host()
     chrome_deps.workspaces = &workspaces_;
     chrome_deps.active_workspace_id = &active_workspace_;
     chrome_deps.system_resource_snapshot = &system_resource_snapshot_;
+    chrome_deps.weather_emoji = [this]() -> std::string {
+        return weather_service_.emoji();
+    };
+    chrome_deps.weather_temperature = [this]() -> std::string {
+        return weather_service_.temperature();
+    };
     chrome_deps.chord_indicator = [this]() -> std::optional<std::pair<std::string, float>> {
         const auto state = input_dispatcher_.chord_indicator_state(std::chrono::steady_clock::now());
         if (!state.visible())
@@ -567,6 +573,9 @@ bool App::initialize_chrome_host()
     };
     chrome_deps.request_frame = [this]() { request_frame(); };
     chrome_host_ = std::make_unique<ChromeHost>(std::move(chrome_deps));
+
+    if (!config_.weather_location.empty())
+        weather_service_.start(config_.weather_location);
 
     {
         HostContext chrome_ctx{};

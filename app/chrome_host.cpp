@@ -452,6 +452,32 @@ void ChromeHost::draw(IFrameContext& frame)
                 right_pills.push_back(std::move(layout));
             }
 
+            if (deps_.weather_emoji && deps_.weather_temperature && grid_cols > 0)
+            {
+                auto emoji = deps_.weather_emoji();
+                auto temp = deps_.weather_temperature();
+                if (!temp.empty())
+                {
+                    RightPillLayout layout;
+                    layout.bg = Color(0.28f, 0.30f, 0.38f, 1.0f); // dark grey
+                    layout.flat_right_edge = false;
+                    const Color fg = Color(1.0f, 1.0f, 1.0f, 1.0f);
+                    if (!emoji.empty())
+                    {
+                        append_label_clusters(layout.clusters, emoji, fg);
+                        append_label_clusters(layout.clusters, " ", fg);
+                    }
+                    append_label_clusters(layout.clusters, temp, fg);
+
+                    const int total_cols = label_cluster_columns(layout.clusters) + kTabPadCols * 2;
+                    layout.col_end = right_col_cursor;
+                    layout.col_begin = std::max(0, right_col_cursor - total_cols);
+                    layout.text_col = layout.col_begin + kTabPadCols;
+                    right_col_cursor = std::max(0, layout.col_begin - 1);
+                    right_pills.push_back(std::move(layout));
+                }
+            }
+
             if (deps_.chord_indicator && grid_cols > 0)
             {
                 if (auto state = deps_.chord_indicator(); state && state->second > 0.0f)
@@ -560,6 +586,8 @@ void ChromeHost::draw(IFrameContext& frame)
         float w = 0.0f;
         float h = 0.0f;
         Color bg{};
+        Color accent_bg{};
+        float accent_w = 0.0f;
         bool flat_right_edge = false;
     };
     std::vector<RightPillRect> right_pill_rects;
@@ -575,7 +603,11 @@ void ChromeHost::draw(IFrameContext& frame)
             const float pill_w = pill.flat_right_edge && pill.col_end >= bar_w / cw_shared
                 ? static_cast<float>(bar_w) - pill_x
                 : static_cast<float>(total_cols * cw_shared);
-            right_pill_rects.push_back(RightPillRect{ pill_x, pill_y, pill_w, pill_h, pill.bg, pill.flat_right_edge });
+            const float accent_w = pill.accent_cols > 0
+                ? static_cast<float>(pill.accent_cols * cw_shared)
+                : 0.0f;
+            right_pill_rects.push_back(RightPillRect{
+                pill_x, pill_y, pill_w, pill_h, pill.bg, pill.accent_bg, accent_w, pill.flat_right_edge });
         }
     }
 

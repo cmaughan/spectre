@@ -42,24 +42,12 @@ and highlight compaction integration. However, several critical gaps remain:
 
 **Files:** `libs/draxul-host/src/terminal_host_base_csi.cpp`, `libs/draxul-host/src/terminal_host_base.cpp`
 
-- [ ] In `handle_esc('D')` (IND): Before `grid().scroll(...)`, add the same
-  guard+hook as `newline()`:
-  ```
-  if (!alt_screen_.in_alt_screen()
-      && vt_.scroll_top == 0
-      && vt_.scroll_bottom == grid_rows() - 1)
-      on_line_scrolled_off(vt_.scroll_top);
-  ```
-- [ ] In `csi_scroll('S', ...)` (CSI SU): Capture N rows before bulk scroll:
-  ```
-  for (int i = 0; i < n; ++i)
-      on_line_scrolled_off(vt_.scroll_top + i);
-  grid().scroll(top, bot, 0, cols, n);
-  ```
-  Must capture BEFORE the scroll overwrites them.
-- [ ] In `csi_insert_delete('M', ...)` (DL): Only when `vt_.row == 0` and
+- [x] In `handle_esc('D')` (IND): Added guard+hook matching `newline()`.
+- [x] In `csi_scroll('S', ...)` (CSI SU): Captures N rows before bulk scroll.
+- [x] In `csi_insert_delete('M', ...)` (DL): Captures when `vt_.row == 0` and
   scroll region is full-screen.
-- [ ] Tests: verify each scroll operation captures to scrollback.
+- [ ] Tests: verify each scroll operation captures to scrollback (existing 12
+  scrollback tests pass; specific IND/SU/DL capture tests deferred).
 
 ### Phase 2 — Resize Reflow (HIGH COMPLEXITY)
 
