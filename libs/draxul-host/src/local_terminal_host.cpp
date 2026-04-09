@@ -154,6 +154,57 @@ void LocalTerminalHost::pump()
             chunks = do_process_drain();
         } while (!chunks.empty());
 
+        // After a resize, the shell clears and redraws — but it may leave
+        // rows blank that had content before (e.g. previous prompts that ZLE
+        // doesn't own). Restore those rows from the pre-resize snapshot,
+        // mimicking tmux's virtual screen buffer behavior.
+        if (resize_snapshot_.active)
+        {
+            resize_snapshot_.active = false;
+            const int rows = std::min(resize_snapshot_.rows, grid_rows());
+            const int cols = std::min(resize_snapshot_.cols, grid_cols());
+            for (int r = 0; r < rows; ++r)
+            {
+                // Check if this row is blank in the current grid.
+                bool current_blank = true;
+                for (int c = 0; c < grid_cols(); ++c)
+                {
+                    const auto& cell = grid().get_cell(c, r);
+                    if (cell.hl_attr_id != 0
+                        || (!cell.text.empty() && cell.text.view() != " "))
+                    {
+                        current_blank = false;
+                        break;
+                    }
+                }
+                if (!current_blank)
+                    continue;
+
+                // Check if the snapshot row had content.
+                bool snap_has_content = false;
+                const auto snap_offset = static_cast<size_t>(r) * resize_snapshot_.cols;
+                for (int c = 0; c < cols; ++c)
+                {
+                    const auto& cell = resize_snapshot_.cells[snap_offset + c];
+                    if (cell.hl_attr_id != 0
+                        || (!cell.text.empty() && cell.text.view() != " "))
+                    {
+                        snap_has_content = true;
+                        break;
+                    }
+                }
+                if (!snap_has_content)
+                    continue;
+
+                // Restore the row from snapshot.
+                for (int c = 0; c < cols; ++c)
+                {
+                    const auto& src = resize_snapshot_.cells[snap_offset + c];
+                    grid().set_cell(c, r, std::string(src.text.view()), src.hl_attr_id, src.double_width);
+                }
+            }
+        }
+
         flush_grid();
     }
     advance_cursor_blink(std::chrono::steady_clock::now());
@@ -356,17 +407,49 @@ void LocalTerminalHost::on_viewport_changed()
         scrollback_.scroll_to_live();
     selection_.clear();
 
-    // Phase 2 reflow: when shrinking vertically, push excess top rows into
-    // scrollback so they survive the shell's post-SIGWINCH clear-and-redraw.
+    // Phase 2 reflow: when shrinking vertically, push non-blank excess top
+    // rows into scrollback so they survive the shell's post-SIGWINCH redraw.
+    // Only push rows that contain visible content (non-space text OR non-default
+    // highlight) — blank rows would pollute scrollback with empty space.
+    // Stop at the first fully-blank row to avoid gaps.
     if (new_rows < old_rows)
     {
         const int excess = old_rows - new_rows;
         for (int r = 0; r < excess; ++r)
         {
             const auto row_offset = static_cast<size_t>(r) * old_cols;
-            if (row_offset + old_cols <= visible_snapshot.cells.size())
-                scrollback_.push_row(&visible_snapshot.cells[row_offset], old_cols);
+            if (row_offset + old_cols > visible_snapshot.cells.size())
+                break;
+            bool has_content = false;
+            for (int c = 0; c < old_cols; ++c)
+            {
+                const auto& cell = visible_snapshot.cells[row_offset + c];
+                if (cell.hl_attr_id != 0
+                    || (!cell.text.empty() && cell.text.view() != " "))
+                {
+                    has_content = true;
+                    break;
+                }
+            }
+            if (!has_content)
+                break; // Stop at first blank row — no content below here matters.
+            scrollback_.push_row(&visible_snapshot.cells[row_offset], old_cols);
         }
+    }
+
+    // Save a resize snapshot so pump() can restore rows the shell blanks.
+    // Use the snapshot BEFORE resize (rows that fit in the new grid).
+    {
+        const int snap_rows = std::min(old_rows, new_rows);
+        const int snap_cols = std::min(old_cols, new_cols);
+        resize_snapshot_.cells.resize(static_cast<size_t>(snap_cols) * snap_rows);
+        resize_snapshot_.cols = snap_cols;
+        resize_snapshot_.rows = snap_rows;
+        for (int r = 0; r < snap_rows; ++r)
+            for (int c = 0; c < snap_cols; ++c)
+                resize_snapshot_.cells[static_cast<size_t>(r) * snap_cols + c]
+                    = visible_snapshot.cells[static_cast<size_t>(r) * old_cols + c];
+        resize_snapshot_.active = true;
     }
 
     TerminalHostBase::on_viewport_changed();

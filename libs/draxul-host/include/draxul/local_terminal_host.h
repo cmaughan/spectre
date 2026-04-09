@@ -74,6 +74,19 @@ private:
     SelectionManager selection_;
     ScrollbackBuffer scrollback_;
     CopyMode copy_mode_;
+
+    // Snapshot of the grid taken before SIGWINCH. After the shell redraws,
+    // pump() restores rows that the shell left blank but had content before.
+    // This mimics tmux's virtual screen buffer: the shell's erase-and-redraw
+    // doesn't destroy content the shell didn't explicitly overwrite.
+    struct ResizeSnapshot
+    {
+        std::vector<Cell> cells;
+        int cols = 0;
+        int rows = 0;
+        bool active = false;
+    };
+    ResizeSnapshot resize_snapshot_;
 };
 
 } // namespace draxul
