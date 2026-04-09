@@ -660,12 +660,16 @@ bool App::initialize_chrome_host()
         chrome_host_->set_viewport(vp);
     }
 
+    session_name_ = options_.session_name.empty() ? options_.session_id : options_.session_name;
+
     bool restored_session = false;
     if (options_.enable_session_attach)
     {
         std::string metadata_error;
         if (auto metadata = load_session_runtime_metadata(options_.session_id, &metadata_error))
         {
+            if (options_.session_name.empty() && !metadata->session_name.empty())
+                session_name_ = metadata->session_name;
             session_last_attached_unix_s_ = metadata->last_attached_unix_s;
             session_last_detached_unix_s_ = metadata->last_detached_unix_s;
         }
@@ -688,6 +692,8 @@ bool App::initialize_chrome_host()
         if (auto saved_session = load_session_state(options_.session_id, &session_error);
             saved_session && !saved_session->workspaces.empty())
         {
+            if (options_.session_name.empty() && !saved_session->session_name.empty())
+                session_name_ = saved_session->session_name;
             restored_session = restore_session_state(
                 window_->width_pixels(), diagnostics_host_->layout().terminal_height, *saved_session);
             if (!restored_session)
@@ -1897,7 +1903,7 @@ std::optional<AppSessionState> App::snapshot_session_state() const
 
     AppSessionState state;
     state.session_id = options_.session_id;
-    state.session_name = options_.session_id;
+    state.session_name = session_name_.empty() ? options_.session_id : session_name_;
     state.active_workspace_id = active_workspace_;
     state.next_workspace_id = next_workspace_id_;
 
@@ -1941,6 +1947,7 @@ SessionRuntimeMetadata App::snapshot_session_runtime_metadata(bool live) const
 {
     SessionRuntimeMetadata metadata;
     metadata.session_id = options_.session_id;
+    metadata.session_name = session_name_.empty() ? options_.session_id : session_name_;
     metadata.live = live;
     metadata.detached = live && detached_;
     metadata.owner_pid = live ? current_process_id() : 0;

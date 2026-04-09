@@ -112,6 +112,13 @@ TEST_CASE("cli: --session stores the requested session id", "[cli]")
     REQUIRE(r.args.session_id == "workbench");
 }
 
+TEST_CASE("cli: --session-name stores the requested session name", "[cli]")
+{
+    auto r = parse({ "--session-name", "Work Bench" });
+    REQUIRE_FALSE(r.error.has_value());
+    REQUIRE(r.args.session_name == "Work Bench");
+}
+
 TEST_CASE("cli: --list-sessions sets the flag", "[cli]")
 {
     auto r = parse({ "--list-sessions" });

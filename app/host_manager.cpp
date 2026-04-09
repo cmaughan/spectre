@@ -11,6 +11,8 @@
 #include <draxul/renderer.h>
 #include <draxul/text_service.h>
 
+#include <charconv>
+
 namespace draxul
 {
 
@@ -98,6 +100,26 @@ float imgui_font_size_from_metrics(const FontMetrics& metrics)
     return static_cast<float>(metrics.ascender + metrics.descender);
 }
 
+std::string legacy_pane_id_for_leaf(LeafId leaf_id)
+{
+    return "pane-" + std::to_string(static_cast<int>(leaf_id));
+}
+
+bool parse_generated_pane_id(std::string_view text, uint64_t* value)
+{
+    constexpr std::string_view prefix = "pane-";
+    if (!text.starts_with(prefix))
+        return false;
+
+    uint64_t parsed = 0;
+    const auto number = text.substr(prefix.size());
+    const auto result = std::from_chars(number.data(), number.data() + number.size(), parsed);
+    if (result.ec != std::errc() || result.ptr != number.data() + number.size())
+        return false;
+    *value = parsed;
+    return true;
+}
+
 } // namespace
 
 HostManager::HostManager(Deps deps)
@@ -125,6 +147,8 @@ bool HostManager::create(IHostCallbacks& callbacks, int pixel_w, int pixel_h,
     hosts_.clear();
     launch_options_.clear();
     pane_user_names_.clear();
+    pane_ids_.clear();
+    next_pane_serial_ = 1;
 
     LeafId root_id = tree_.reset(pixel_w, pixel_h);
 
@@ -249,6 +273,7 @@ bool HostManager::close_leaf(LeafId id)
     hosts_.erase(it);
     launch_options_.erase(id);
     pane_user_names_.erase(id);
+    pane_ids_.erase(id);
 
     // Collapse the tree (this also updates focus if needed)
     LeafId old_focus = tree_.focused();
@@ -390,6 +415,8 @@ void HostManager::shutdown()
     hosts_.clear();
     launch_options_.clear();
     pane_user_names_.clear();
+    pane_ids_.clear();
+    next_pane_serial_ = 1;
 }
 
 bool HostManager::has_detachable_shell_session() const
@@ -439,6 +466,7 @@ std::optional<HostManager::SessionState> HostManager::session_state() const
         if (!current_cwd.empty())
             pane.launch.working_dir = current_cwd;
         pane.pane_name = pane_name(id);
+        pane.pane_id = pane_id(id);
         state.panes.push_back(std::move(pane));
     });
 
@@ -468,6 +496,7 @@ bool HostManager::restore_session_state(
     }
 
     bool is_primary = true;
+    next_pane_serial_ = 1;
     const auto leaf_exists = [this](LeafId target) {
         bool found = false;
         tree_.for_each_leaf([&found, target](LeafId id, const PaneDescriptor&) {
@@ -486,6 +515,12 @@ bool HostManager::restore_session_state(
         }
 
         HostLaunchOptions launch = restore_launch_options(pane.launch, deps_);
+        pane_ids_[pane.leaf_id] = pane.pane_id.empty()
+            ? legacy_pane_id_for_leaf(pane.leaf_id)
+            : pane.pane_id;
+        uint64_t parsed_id = 0;
+        if (parse_generated_pane_id(pane_ids_[pane.leaf_id], &parsed_id))
+            next_pane_serial_ = std::max(next_pane_serial_, parsed_id + 1);
         if (!create_host_for_leaf(pane.leaf_id, callbacks, std::move(launch), is_primary))
         {
             shutdown();
@@ -527,6 +562,13 @@ const std::string& HostManager::pane_name(LeafId id) const
 bool HostManager::has_pane_name(LeafId id) const
 {
     return pane_user_names_.find(id) != pane_user_names_.end();
+}
+
+const std::string& HostManager::pane_id(LeafId id) const
+{
+    static const std::string empty;
+    auto it = pane_ids_.find(id);
+    return it == pane_ids_.end() ? empty : it->second;
 }
 
 IHost* HostManager::focused_host() const
@@ -643,6 +685,23 @@ bool HostManager::create_host_for_leaf(LeafId id, IHostCallbacks& callbacks,
     HostLaunchOptions launch, bool is_primary)
 {
     PERF_MEASURE();
+    if (!pane_ids_.contains(id))
+    {
+        for (;;)
+        {
+            const std::string candidate = "pane-" + std::to_string(next_pane_serial_++);
+            const bool in_use = std::any_of(pane_ids_.begin(), pane_ids_.end(),
+                [&candidate](const auto& entry) {
+                    return entry.second == candidate;
+                });
+            if (!in_use)
+            {
+                pane_ids_[id] = candidate;
+                break;
+            }
+        }
+    }
+
     std::unique_ptr<IHost> new_host;
 
     if (deps_.options && deps_.options->host_factory)
@@ -656,6 +715,7 @@ bool HostManager::create_host_for_leaf(LeafId id, IHostCallbacks& callbacks,
 
     if (!new_host)
     {
+        pane_ids_.erase(id);
         if (HostProviderRegistry::global().has(launch.kind))
             error_ = std::string("The selected host could not be created: ") + to_string(launch.kind);
         else
@@ -685,6 +745,7 @@ bool HostManager::create_host_for_leaf(LeafId id, IHostCallbacks& callbacks,
         };
         !new_host->initialize(context, callbacks))
     {
+        pane_ids_.erase(id);
         error_ = new_host->init_error();
         if (error_.empty())
             error_ = "Failed to initialize the selected host.";

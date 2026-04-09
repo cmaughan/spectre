@@ -33,6 +33,7 @@ TEST_CASE("session state: save/load round-trip preserves workspace topology", "[
             .startup_commands = { "echo left" },
         },
         .pane_name = "left",
+        .pane_id = "pane-left",
     });
     host_manager_state.panes.push_back({
         .leaf_id = right,
@@ -45,6 +46,7 @@ TEST_CASE("session state: save/load round-trip preserves workspace topology", "[
             .startup_commands = { "echo right" },
         },
         .pane_name = "right",
+        .pane_id = "pane-right",
     });
 
     WorkspaceSessionState workspace;
@@ -69,6 +71,7 @@ TEST_CASE("session state: save/load round-trip preserves workspace topology", "[
     REQUIRE(loaded);
     REQUIRE(load_error.empty());
     REQUIRE(loaded->session_id == "workbench");
+    REQUIRE(loaded->session_name == "workbench");
     REQUIRE(loaded->active_workspace_id == 7);
     REQUIRE(loaded->next_workspace_id == 8);
     REQUIRE(loaded->workspaces.size() == 1);
@@ -89,14 +92,17 @@ TEST_CASE("session state: save/load round-trip preserves workspace topology", "[
     CHECK(restored_tree.descriptor_for(right).pixel_pos.x == tree.descriptor_for(right).pixel_pos.x);
 
     CHECK(loaded_workspace.host_manager.panes[0].pane_name == "left");
+    CHECK(loaded_workspace.host_manager.panes[0].pane_id == "pane-left");
     CHECK(loaded_workspace.host_manager.panes[0].launch.working_dir == "D:/left");
     CHECK(loaded_workspace.host_manager.panes[1].pane_name == "right");
+    CHECK(loaded_workspace.host_manager.panes[1].pane_id == "pane-right");
     CHECK(loaded_workspace.host_manager.panes[1].launch.args == (std::vector<std::string>{ "-NoProfile" }));
 
     const auto sessions = list_saved_sessions(&load_error);
     REQUIRE(load_error.empty());
     REQUIRE(sessions.size() == 1);
     CHECK(sessions[0].session_id == "workbench");
+    CHECK(sessions[0].session_name == "workbench");
     CHECK(sessions[0].workspace_count == 1);
     CHECK(sessions[0].pane_count == 2);
 }
@@ -131,7 +137,7 @@ TEST_CASE("session state: distinct session ids persist separately", "[session_st
 
     AppSessionState alpha;
     alpha.session_id = "alpha";
-    alpha.session_name = "alpha";
+    alpha.session_name = "Alpha Session";
     alpha.active_workspace_id = 1;
     alpha.next_workspace_id = 2;
     alpha.workspaces.push_back(make_workspace(1, "alpha"));
@@ -153,6 +159,7 @@ TEST_CASE("session state: distinct session ids persist separately", "[session_st
     REQUIRE(error.empty());
     REQUIRE(sessions.size() == 2);
     CHECK(sessions[0].session_id == "alpha");
+    CHECK(sessions[0].session_name == "Alpha Session");
     CHECK(sessions[1].session_id == "beta/dev");
 }
 
@@ -204,6 +211,7 @@ TEST_CASE("session state: metadata-only live session appears in listings", "[ses
 
     SessionRuntimeMetadata metadata;
     metadata.session_id = "live-only";
+    metadata.session_name = "Live Only";
     metadata.live = true;
     metadata.detached = true;
     metadata.owner_pid = 4242;
@@ -218,6 +226,7 @@ TEST_CASE("session state: metadata-only live session appears in listings", "[ses
     auto loaded = load_session_runtime_metadata("live-only", &error);
     REQUIRE(loaded);
     REQUIRE(error.empty());
+    CHECK(loaded->session_name == "Live Only");
     CHECK(loaded->live);
     CHECK(loaded->detached);
     CHECK(loaded->owner_pid == 4242);
@@ -226,6 +235,7 @@ TEST_CASE("session state: metadata-only live session appears in listings", "[ses
     REQUIRE(error.empty());
     REQUIRE(sessions.size() == 1);
     CHECK(sessions[0].session_id == "live-only");
+    CHECK(sessions[0].session_name == "Live Only");
     CHECK(sessions[0].live);
     CHECK(sessions[0].detached);
     CHECK_FALSE(sessions[0].has_saved_state);
@@ -265,6 +275,7 @@ TEST_CASE("session state: metadata merges into saved session summary", "[session
 
     SessionRuntimeMetadata metadata;
     metadata.session_id = "merge-me";
+    metadata.session_name = "Merge Session";
     metadata.live = true;
     metadata.detached = false;
     metadata.owner_pid = 999;
@@ -280,6 +291,7 @@ TEST_CASE("session state: metadata merges into saved session summary", "[session
     REQUIRE(error.empty());
     REQUIRE(sessions.size() == 1);
     CHECK(sessions[0].session_id == "merge-me");
+    CHECK(sessions[0].session_name == "Merge Session");
     CHECK(sessions[0].has_saved_state);
     CHECK(sessions[0].live);
     CHECK_FALSE(sessions[0].detached);

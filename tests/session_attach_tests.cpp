@@ -338,3 +338,29 @@ TEST_CASE("app session attach: periodic checkpoint refreshes saved state", "[ses
 
     app.shutdown();
 }
+
+TEST_CASE("app session attach: configured session name is persisted", "[session_attach][app]")
+{
+    const std::string font = bundled_font_path();
+    if (!std::filesystem::exists(font))
+        SKIP("bundled font not found");
+
+    TempDir temp_dir("app-session-name");
+    HomeDirRedirect redirect(temp_dir.path);
+
+    AppOptions opts = make_attach_options();
+    opts.session_name = "Work Bench";
+
+    App app(std::move(opts));
+    REQUIRE(app.initialize());
+
+    auto saved_state = load_session_state("default");
+    REQUIRE(saved_state);
+    CHECK(saved_state->session_name == "Work Bench");
+
+    auto metadata = load_session_runtime_metadata("default");
+    REQUIRE(metadata);
+    CHECK(metadata->session_name == "Work Bench");
+
+    app.shutdown();
+}

@@ -34,6 +34,7 @@ struct SessionRuntimeMetadata
 {
     int version = 1;
     std::string session_id = "default";
+    std::string session_name = "default";
     bool live = false;
     bool detached = false;
     uint64_t owner_pid = 0;

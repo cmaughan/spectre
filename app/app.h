@@ -214,6 +214,7 @@ private:
     std::atomic<bool> external_session_shutdown_requested_ = false;
     bool detached_ = false;
     bool session_killed_ = false;
+    std::string session_name_;
     int64_t session_last_attached_unix_s_ = 0;
     int64_t session_last_detached_unix_s_ = 0;
     std::chrono::steady_clock::time_point last_session_checkpoint_time_{};

@@ -335,6 +335,9 @@ TEST_CASE("host manager: session state round-trips layout and pane metadata", "[
     auto saved = harness.manager.session_state();
     REQUIRE(saved);
     REQUIRE(saved->panes.size() == 2);
+    CHECK(!saved->panes[0].pane_id.empty());
+    CHECK(!saved->panes[1].pane_id.empty());
+    CHECK(saved->panes[0].pane_id != saved->panes[1].pane_id);
 
     HostManagerHarness restored_harness;
     REQUIRE(restored_harness.manager.restore_session_state(
@@ -353,6 +356,10 @@ TEST_CASE("host manager: session state round-trips layout and pane metadata", "[
     const auto restored_split = std::find_if(restored->panes.begin(), restored->panes.end(),
         [split](const HostManager::PaneSessionState& pane) { return pane.leaf_id == split; });
     REQUIRE(restored_split != restored->panes.end());
+    const auto original_split = std::find_if(saved->panes.begin(), saved->panes.end(),
+        [split](const HostManager::PaneSessionState& pane) { return pane.leaf_id == split; });
+    REQUIRE(original_split != saved->panes.end());
+    CHECK(restored_split->pane_id == original_split->pane_id);
     CHECK(restored_split->launch.kind == HostKind::PowerShell);
     CHECK(restored_split->launch.command == "pwsh");
     CHECK(restored_split->launch.args == (std::vector<std::string>{ "-NoLogo" }));

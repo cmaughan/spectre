@@ -31,6 +31,7 @@ struct ParsedArgs
     std::string host_command;
     std::filesystem::path host_source_path;
     std::string session_id = "default";
+    std::string session_name;
     std::string log_file;
     std::string log_level;
     std::filesystem::path screenshot_path;

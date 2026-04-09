@@ -44,6 +44,7 @@ public:
         LeafId leaf_id = kInvalidLeaf;
         SavedLaunchOptions launch;
         std::string pane_name;
+        std::string pane_id;
     };
 
     struct SessionState
@@ -155,6 +156,7 @@ public:
     void set_pane_name(LeafId id, std::string name);
     const std::string& pane_name(LeafId id) const;
     bool has_pane_name(LeafId id) const;
+    const std::string& pane_id(LeafId id) const;
 
     // Hit-test a point (physical pixels). Updates focus if a new leaf is hit.
     // Returns the host under the point, or null.
@@ -226,7 +228,9 @@ private:
     std::unordered_map<LeafId, std::unique_ptr<IHost>> hosts_;
     std::unordered_map<LeafId, HostLaunchOptions> launch_options_;
     std::unordered_map<LeafId, std::string> pane_user_names_;
+    std::unordered_map<LeafId, std::string> pane_ids_;
     std::string error_;
+    uint64_t next_pane_serial_ = 1;
 
     // Zoom state: when zoomed, the focused pane fills the full window.
     bool zoomed_ = false;

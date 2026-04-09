@@ -74,6 +74,16 @@ ParseArgsResult parse_args(const std::vector<std::string>& args)
                 return result;
             }
         }
+        else if (args[i] == "--session-name" && i + 1 < args.size())
+        {
+            ++i;
+            parsed.session_name = args[i];
+            if (parsed.session_name.empty())
+            {
+                result.error = "error: --session-name requires a non-empty session name";
+                return result;
+            }
+        }
         else if (args[i] == "--log-file" && i + 1 < args.size())
         {
             ++i;

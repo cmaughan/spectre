@@ -430,13 +430,16 @@ static int draxul_main(std::vector<std::string> args)
             else if (!session.has_saved_state)
                 state = "live?";
 
-            std::printf("%s\t%s\t%d workspace%s\t%d pane%s\n",
+            std::printf("%s\t%s\t%d workspace%s\t%d pane%s",
                 session.session_id.c_str(),
                 state,
                 workspace_count,
                 workspace_count == 1 ? "" : "s",
                 pane_count,
                 pane_count == 1 ? "" : "s");
+            if (!session.session_name.empty() && session.session_name != session.session_id)
+                std::printf("\t%s", session.session_name.c_str());
+            std::printf("\n");
         }
         draxul::shutdown_logging();
         return 0;
@@ -606,6 +609,8 @@ static int draxul_main(std::vector<std::string> args)
             options.config_overrides.font_path = bundled_font.string();
     }
     options.session_id = parsed.session_id;
+    if (!parsed.session_name.empty())
+        options.session_name = parsed.session_name;
 
 #ifdef DRAXUL_ENABLE_RENDER_TESTS
     const bool allow_session_attach = !parsed.smoke_test

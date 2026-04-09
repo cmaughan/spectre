@@ -212,6 +212,8 @@ toml::table serialize_host_manager_state(const HostManager::SessionState& state)
                 "startup_commands", make_string_array(pane.launch.startup_commands));
         if (!pane.pane_name.empty())
             pane_table.insert_or_assign("pane_name", pane.pane_name);
+        if (!pane.pane_id.empty())
+            pane_table.insert_or_assign("pane_id", pane.pane_id);
         panes.push_back(std::move(pane_table));
     }
     table.insert_or_assign("panes", std::move(panes));
@@ -283,6 +285,8 @@ std::optional<HostManager::SessionState> parse_host_manager_state(
             *pane_table, "startup_commands")
                                          .value_or(std::vector<std::string>{});
         pane.pane_name = toml_support::get_string(*pane_table, "pane_name").value_or("");
+        pane.pane_id = toml_support::get_string(*pane_table, "pane_id").value_or(
+            "pane-" + std::to_string(static_cast<int>(pane.leaf_id)));
         state.panes.push_back(std::move(pane));
     }
 
@@ -377,6 +381,8 @@ SessionSummary summarize_session_state(const AppSessionState& state)
 
 void merge_runtime_metadata(SessionSummary& summary, const SessionRuntimeMetadata& metadata)
 {
+    if (!metadata.session_name.empty())
+        summary.session_name = metadata.session_name;
     summary.live = metadata.live;
     summary.detached = metadata.detached;
     summary.owner_pid = metadata.owner_pid;
@@ -409,6 +415,7 @@ std::optional<SessionRuntimeMetadata> load_session_runtime_metadata_from_path(
     }
 
     metadata.session_id = toml_support::get_string(*document, "session_id").value_or("default");
+    metadata.session_name = toml_support::get_string(*document, "session_name").value_or(metadata.session_id);
     metadata.live = toml_support::get_bool(*document, "live").value_or(false);
     metadata.detached = toml_support::get_bool(*document, "detached").value_or(false);
     metadata.owner_pid = static_cast<uint64_t>(toml_support::get_int(*document, "owner_pid").value_or(0));
@@ -542,6 +549,8 @@ bool save_session_runtime_metadata(
         toml::table document;
         document.insert_or_assign("version", metadata.version);
         document.insert_or_assign("session_id", normalized_id);
+        document.insert_or_assign(
+            "session_name", metadata.session_name.empty() ? normalized_id : metadata.session_name);
         document.insert_or_assign("live", metadata.live);
         document.insert_or_assign("detached", metadata.detached);
         document.insert_or_assign("owner_pid", static_cast<int64_t>(metadata.owner_pid));
@@ -663,7 +672,8 @@ std::vector<SessionSummary> list_saved_sessions(std::string* error)
                     SessionSummary summary = summarize_session_state(*state);
                     SessionSummary& slot = by_id[summary.session_id];
                     slot.session_id = summary.session_id;
-                    slot.session_name = summary.session_name;
+                    if (slot.session_name.empty() || slot.session_name == slot.session_id)
+                        slot.session_name = summary.session_name;
                     slot.workspace_count = summary.workspace_count;
                     slot.pane_count = summary.pane_count;
                     slot.has_saved_state = true;

@@ -49,6 +49,7 @@ struct AppOptions
     bool hide_host_ui_panels = false;
     // Stable session id for the shell-session attach/restore flow.
     std::string session_id = "default";
+    std::string session_name;
     std::chrono::milliseconds session_checkpoint_interval = std::chrono::seconds(2);
     std::optional<float> override_display_ppi;
     int render_target_pixel_width = 0;
