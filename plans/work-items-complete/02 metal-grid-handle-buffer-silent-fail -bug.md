@@ -15,15 +15,15 @@
 
 ## Investigation
 
-- [ ] Read `libs/draxul-renderer/src/metal/metal_renderer.mm` lines 103–128 to confirm the allocation, size-commit, and contents-check sequence.
-- [ ] Verify that `[nil contents]` returns nullptr (all ObjC messages to nil return zero).
-- [ ] Confirm there is no retry path once `buffer_sizes_[slot]` is set to `required_size` with a nil buffer.
+- [x] Read `libs/draxul-renderer/src/metal/metal_renderer.mm` lines 103–128 to confirm the allocation, size-commit, and contents-check sequence.
+- [x] Verify that `[nil contents]` returns nullptr (all ObjC messages to nil return zero).
+- [x] Confirm there is no retry path once `buffer_sizes_[slot]` is set to `required_size` with a nil buffer.
 
 ---
 
 ## Fix Strategy
 
-- [ ] Only commit `buffer_sizes_[slot]` after verifying the allocation succeeded:
+- [x] Only commit `buffer_sizes_[slot]` after verifying the allocation succeeded:
   ```cpp
   buffers_[slot].reset([renderer_->device_.get() newBufferWithLength:required_size
                                                              options:MTLResourceStorageModeShared]);
@@ -34,13 +34,13 @@
   }
   buffer_sizes_[slot] = required_size;
   ```
-- [ ] Coordinate with WI 00 (BUG-01) and WI 01 (BUG-02) — fix all three Metal allocation issues in one PR.
+- [ ] Coordinate with WI 00 (BUG-01) and WI 01 (BUG-02) — fix all three Metal allocation issues in one PR. *(deferred to merge time)*
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] `upload_state()` logs an error and returns without committing the size when allocation fails.
-- [ ] On the next frame, the size check still fires and a retry is attempted.
-- [ ] Build and smoke test pass: `cmake --build build --target draxul draxul-tests && py do.py smoke`.
+- [x] `upload_state()` logs an error and returns without committing the size when allocation fails.
+- [x] On the next frame, the size check still fires and a retry is attempted.
+- [x] Build and smoke test pass: `cmake --build build --target draxul draxul-tests && py do.py smoke`.
 - [ ] No new ASan findings.
