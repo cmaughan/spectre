@@ -310,3 +310,31 @@ TEST_CASE("app session attach: detach command hides the session window", "[sessi
 
     app.shutdown();
 }
+
+TEST_CASE("app session attach: periodic checkpoint refreshes saved state", "[session_attach][app]")
+{
+    const std::string font = bundled_font_path();
+    if (!std::filesystem::exists(font))
+        SKIP("bundled font not found");
+
+    TempDir temp_dir("app-session-checkpoint");
+    HomeDirRedirect redirect(temp_dir.path);
+
+    AppOptions opts = make_attach_options();
+    opts.session_checkpoint_interval = std::chrono::milliseconds(50);
+
+    App app(std::move(opts));
+    REQUIRE(app.initialize());
+
+    const auto state_path = session_state_path("default");
+    REQUIRE(std::filesystem::exists(state_path));
+    const auto before = std::filesystem::last_write_time(state_path);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(80));
+    REQUIRE(app.run_smoke_test(std::chrono::milliseconds(120)));
+
+    const auto after = std::filesystem::last_write_time(state_path);
+    REQUIRE(after > before);
+
+    app.shutdown();
+}

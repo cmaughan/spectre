@@ -406,6 +406,7 @@ bool App::initialize()
         mark_session_attached();
         persist_session_state();
         persist_session_runtime_metadata(true);
+        last_session_checkpoint_time_ = std::chrono::steady_clock::now();
     }
 
     init_completed_ = true;
@@ -1432,6 +1433,7 @@ bool App::pump_once(std::optional<std::chrono::steady_clock::time_point> wait_de
         walk_pump(render_root_);
         refresh_workspace_default_names();
         const auto now = std::chrono::steady_clock::now();
+        maybe_checkpoint_session(now);
         refresh_system_resource_snapshot(now);
         if (input_dispatcher_.update(now, config_.chord_timeout_ms))
             request_frame();
@@ -1970,6 +1972,19 @@ void App::mark_session_attached()
 void App::mark_session_detached()
 {
     session_last_detached_unix_s_ = unix_now_seconds();
+}
+
+void App::maybe_checkpoint_session(std::chrono::steady_clock::time_point now)
+{
+    if (!options_.enable_session_attach || detached_ || session_killed_ || !can_detach_window())
+        return;
+    if (last_session_checkpoint_time_.time_since_epoch().count() != 0
+        && now - last_session_checkpoint_time_ < options_.session_checkpoint_interval)
+        return;
+
+    persist_session_state();
+    persist_session_runtime_metadata(true);
+    last_session_checkpoint_time_ = now;
 }
 
 SessionAttachServer::LiveSessionInfo App::live_session_info() const

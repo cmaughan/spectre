@@ -137,6 +137,7 @@ private:
     void persist_session_runtime_metadata(bool live);
     void mark_session_attached();
     void mark_session_detached();
+    void maybe_checkpoint_session(std::chrono::steady_clock::time_point now);
     SessionAttachServer::LiveSessionInfo live_session_info() const;
     bool restore_session_state(int pixel_w, int pixel_h, const AppSessionState& state);
 
@@ -215,6 +216,7 @@ private:
     bool session_killed_ = false;
     int64_t session_last_attached_unix_s_ = 0;
     int64_t session_last_detached_unix_s_ = 0;
+    std::chrono::steady_clock::time_point last_session_checkpoint_time_{};
 };
 
 } // namespace draxul

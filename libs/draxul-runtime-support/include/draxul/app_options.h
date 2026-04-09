@@ -8,6 +8,7 @@
 #include <draxul/host_kind.h>
 #include <draxul/renderer.h>
 #include <draxul/window.h>
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -48,6 +49,7 @@ struct AppOptions
     bool hide_host_ui_panels = false;
     // Stable session id for the shell-session attach/restore flow.
     std::string session_id = "default";
+    std::chrono::milliseconds session_checkpoint_interval = std::chrono::seconds(2);
     std::optional<float> override_display_ppi;
     int render_target_pixel_width = 0;
     int render_target_pixel_height = 0;
