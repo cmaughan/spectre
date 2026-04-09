@@ -109,7 +109,7 @@ A standalone GUI library for rendering UI items that do not depend on ImGui. It 
 - **Close pane**: Closes the focused pane and its host; if last pane, exits the app
 - **Shell session detach/reattach**: On normal desktop launches, closing the main window hides Draxul and keeps shell-pane workspaces alive in a dedicated session-owner process; launching Draxul again reattaches to that existing session instead of starting a second instance.
 - **Shell session restore from saved topology**: Clean shutdowns and detach store shell-session tabs, split layout, focus, pane names, tab names, launch commands, and working directories in a local session-state file. If no live background instance exists on the next launch, Draxul restores that saved shell layout by respawning the panes. This is still shell-host only and not full crash recovery yet.
-- **Session-scoped shell restore CLI**: `--session <id>` selects which persistent shell session Draxul should attach to or restore, `--session-name <name>` sets the saved display name for a newly launched or restored session, `--list-sessions` prints known sessions with live/detached/saved status and workspace/pane counts (preferring live owner summaries when available), `--attach-session` explicitly activates a running session, `--detach-session` explicitly detaches a running session without killing it, and `--kill-session` explicitly kills a live session or deletes its saved topology.
+- **Session-scoped shell restore CLI**: `--session <id>` selects which persistent shell session Draxul should attach to or restore, `--session-name <name>` sets the saved display name for a newly launched or restored session, `--rename-session --session-name <name>` renames a running or saved session, `--list-sessions` prints known sessions with live/detached/saved status and workspace/pane counts (preferring live owner summaries when available), `--attach-session` explicitly activates a running session, `--detach-session` explicitly detaches a running session without killing it, and `--kill-session` explicitly kills a live session or deletes its saved topology.
 - **Restart host**: Kills the current host in the focused pane and relaunches with the same arguments
 - **Swap pane**: Swaps the focused pane with the next pane in spatial order
 
@@ -259,6 +259,7 @@ Customizable in `config.toml` under `[keybindings]`. Chord syntax: `"prefix, key
 | `--source <path>` | Override the MegaCity Tree-sitter scan root when launching `--host megacity` |
 | `--session <id>` | Select which persistent shell session to activate or restore |
 | `--session-name <name>` | Set the saved display name for the launched or restored persistent shell session |
+| `--rename-session` | Rename the selected running or saved persistent shell session using `--session-name <name>` |
 | `--list-sessions` | Print saved sessions with live/saved state plus workspace and pane counts |
 | `--attach-session` | Explicitly activate a running persistent shell session |
 | `--detach-session` | Explicitly detach a running persistent shell session without killing it |

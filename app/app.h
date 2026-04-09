@@ -25,6 +25,7 @@
 #include <draxul/text_service.h>
 #include <draxul/window.h>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 
@@ -131,6 +132,7 @@ private:
     void detach_window();
     void reattach_window();
     void kill_session();
+    void rename_session(std::string name);
     std::optional<AppSessionState> snapshot_session_state() const;
     void persist_session_state();
     SessionRuntimeMetadata snapshot_session_runtime_metadata(bool live) const;
@@ -212,6 +214,8 @@ private:
     std::atomic<bool> external_attach_requested_ = false;
     std::atomic<bool> external_detach_requested_ = false;
     std::atomic<bool> external_session_shutdown_requested_ = false;
+    std::mutex external_session_rename_mutex_;
+    std::optional<std::string> external_session_rename_requested_;
     bool detached_ = false;
     bool session_killed_ = false;
     std::string session_name_;

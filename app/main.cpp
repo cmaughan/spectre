@@ -167,6 +167,53 @@ std::filesystem::path executable_dir(const std::vector<std::string>& args)
     return path.empty() ? path : path.parent_path();
 }
 
+bool rename_saved_session_records(
+    std::string_view session_id, std::string_view session_name, std::string* error)
+{
+    bool updated = false;
+    std::string io_error;
+    if (auto state = draxul::load_session_state(session_id, &io_error))
+    {
+        state->session_name = std::string(session_name);
+        if (!draxul::save_session_state(*state, &io_error))
+        {
+            if (error)
+                *error = io_error;
+            return false;
+        }
+        updated = true;
+    }
+    else if (!io_error.empty())
+    {
+        if (error)
+            *error = io_error;
+        return false;
+    }
+
+    io_error.clear();
+    if (auto metadata = draxul::load_session_runtime_metadata(session_id, &io_error))
+    {
+        metadata->session_name = std::string(session_name);
+        if (!draxul::save_session_runtime_metadata(*metadata, &io_error))
+        {
+            if (error)
+                *error = io_error;
+            return false;
+        }
+        updated = true;
+    }
+    else if (!io_error.empty())
+    {
+        if (error)
+            *error = io_error;
+        return false;
+    }
+
+    if (!updated && error)
+        *error = "No running or saved session was found.";
+    return updated;
+}
+
 std::vector<std::string> session_owner_args(
     const std::vector<std::string>& args, const std::filesystem::path& exe_path)
 {
@@ -345,6 +392,7 @@ static int draxul_main(std::vector<std::string> args)
         || parse_result.args.list_sessions
         || parse_result.args.attach_session
         || parse_result.args.detach_session
+        || parse_result.args.rename_session
         || parse_result.args.kill_session;
     if (needs_console_output)
         ensure_console_io(true);
@@ -504,6 +552,37 @@ static int draxul_main(std::vector<std::string> args)
         }
         std::fprintf(stderr, "Failed to detach session '%s': %s\n",
             parsed.session_id.c_str(), command_error.empty() ? "unknown error" : command_error.c_str());
+        draxul::shutdown_logging();
+        return 1;
+    }
+
+    if (parsed.rename_session)
+    {
+        std::string command_error;
+        if (draxul::SessionAttachServer::rename_session(
+                parsed.session_id, parsed.session_name, &command_error))
+        {
+            std::printf("Renamed session '%s' to '%s'.\n",
+                parsed.session_id.c_str(),
+                parsed.session_name.c_str());
+            draxul::shutdown_logging();
+            return 0;
+        }
+
+        std::string rename_error;
+        if (rename_saved_session_records(parsed.session_id, parsed.session_name, &rename_error))
+        {
+            std::printf("Renamed saved session '%s' to '%s'.\n",
+                parsed.session_id.c_str(),
+                parsed.session_name.c_str());
+            draxul::shutdown_logging();
+            return 0;
+        }
+
+        const char* message = !rename_error.empty() ? rename_error.c_str()
+            : (!command_error.empty() ? command_error.c_str() : "unknown error");
+        std::fprintf(stderr, "Failed to rename session '%s': %s\n",
+            parsed.session_id.c_str(), message);
         draxul::shutdown_logging();
         return 1;
     }

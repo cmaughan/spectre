@@ -20,6 +20,7 @@ struct ParsedArgs
     bool list_sessions = false;
     bool attach_session = false;
     bool detach_session = false;
+    bool rename_session = false;
     bool kill_session = false;
 #ifdef DRAXUL_ENABLE_RENDER_TESTS
     bool bless_render_test = false;

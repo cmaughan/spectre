@@ -205,6 +205,36 @@ TEST_CASE("session attach: live-session query returns server summary", "[session
     server.stop();
 }
 
+TEST_CASE("session attach: rename request reaches the server", "[session_attach]")
+{
+    TempDir temp_dir("session-attach-rename");
+    HomeDirRedirect redirect(temp_dir.path);
+
+    SessionAttachServer server;
+    std::mutex mutex;
+    std::condition_variable cv;
+    std::string renamed_to;
+
+    REQUIRE(server.start(
+        "alpha",
+        [](SessionAttachServer::Command) {},
+        []() { return SessionAttachServer::LiveSessionInfo{}; },
+        [&](std::string_view session_name) {
+            std::lock_guard lock(mutex);
+            renamed_to = std::string(session_name);
+            cv.notify_one();
+        }));
+
+    std::string error;
+    REQUIRE(SessionAttachServer::rename_session("alpha", "Work Bench", &error));
+    REQUIRE(error.empty());
+
+    std::unique_lock lock(mutex);
+    REQUIRE(cv.wait_for(lock, std::chrono::milliseconds(500), [&]() { return renamed_to == "Work Bench"; }));
+
+    server.stop();
+}
+
 TEST_CASE("app session attach: close request detaches a shell session", "[session_attach][app]")
 {
     const std::string font = bundled_font_path();
@@ -361,6 +391,42 @@ TEST_CASE("app session attach: configured session name is persisted", "[session_
     auto metadata = load_session_runtime_metadata("default");
     REQUIRE(metadata);
     CHECK(metadata->session_name == "Work Bench");
+
+    app.shutdown();
+}
+
+TEST_CASE("app session attach: rename command updates persisted session name", "[session_attach][app]")
+{
+    const std::string font = bundled_font_path();
+    if (!std::filesystem::exists(font))
+        SKIP("bundled font not found");
+
+    TempDir temp_dir("app-session-rename");
+    HomeDirRedirect redirect(temp_dir.path);
+
+    AppOptions opts = make_attach_options();
+    opts.session_name = "Before";
+
+    App app(std::move(opts));
+    REQUIRE(app.initialize());
+
+    std::string error;
+    REQUIRE(SessionAttachServer::rename_session("default", "After", &error));
+    REQUIRE(error.empty());
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+    for (;;)
+    {
+        auto metadata = load_session_runtime_metadata("default");
+        if (metadata && metadata->session_name == "After")
+            break;
+        REQUIRE(std::chrono::steady_clock::now() < deadline);
+        REQUIRE(app.run_smoke_test(std::chrono::milliseconds(50)));
+    }
+
+    auto saved_state = load_session_state("default");
+    REQUIRE(saved_state);
+    CHECK(saved_state->session_name == "After");
 
     app.shutdown();
 }

@@ -147,6 +147,20 @@ TEST_CASE("cli: --detach-session sets the flag", "[cli]")
     REQUIRE(r.args.detach_session);
 }
 
+TEST_CASE("cli: --rename-session sets the flag", "[cli]")
+{
+    auto r = parse({ "--rename-session", "--session-name", "Renamed" });
+    REQUIRE_FALSE(r.error.has_value());
+    REQUIRE(r.args.rename_session);
+}
+
+TEST_CASE("cli: --rename-session without --session-name reports an error", "[cli]")
+{
+    auto r = parse({ "--rename-session" });
+    REQUIRE(r.error.has_value());
+    REQUIRE(r.error->find("--rename-session") != std::string::npos);
+}
+
 TEST_CASE("cli: --kill-session sets the flag", "[cli]")
 {
     auto r = parse({ "--kill-session" });

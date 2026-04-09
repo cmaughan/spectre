@@ -470,6 +470,11 @@ bool App::initialize_session_attach()
             [this]() {
                 return live_session_info();
             },
+            [this](std::string_view session_name) {
+                std::lock_guard lock(external_session_rename_mutex_);
+                external_session_rename_requested_ = std::string(session_name);
+                wake_window();
+            },
             &error))
     {
         last_init_error_ = error.empty()
@@ -1399,6 +1404,15 @@ bool App::pump_once(std::optional<std::chrono::steady_clock::time_point> wait_de
             reattach_window();
         if (external_detach_requested_.exchange(false))
             detach_window();
+        {
+            std::optional<std::string> renamed_session;
+            {
+                std::lock_guard lock(external_session_rename_mutex_);
+                renamed_session.swap(external_session_rename_requested_);
+            }
+            if (renamed_session)
+                rename_session(std::move(*renamed_session));
+        }
         if (external_session_shutdown_requested_.exchange(false))
         {
             kill_session();
@@ -1893,6 +1907,18 @@ void App::kill_session()
         h.request_close();
     });
     running_ = false;
+}
+
+void App::rename_session(std::string name)
+{
+    PERF_MEASURE();
+    if (name.empty() || name == session_name_)
+        return;
+
+    session_name_ = std::move(name);
+    persist_session_state();
+    persist_session_runtime_metadata(true);
+    request_frame();
 }
 
 std::optional<AppSessionState> App::snapshot_session_state() const

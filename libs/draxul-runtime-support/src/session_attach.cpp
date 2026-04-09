@@ -32,6 +32,8 @@ namespace draxul
 namespace
 {
 
+constexpr std::string_view kRenameSessionPrefix = "rename-session:";
+
 uint64_t fnv1a_hash(std::string_view text)
 {
     uint64_t hash = 14695981039346656037ull;
@@ -208,11 +210,21 @@ SessionAttachServer::~SessionAttachServer()
 bool SessionAttachServer::start(
     std::string_view session_id, CommandHandler on_command_requested, std::string* error)
 {
-    return start(session_id, std::move(on_command_requested), QueryHandler{}, error);
+    return start(session_id, std::move(on_command_requested), QueryHandler{}, RenameHandler{}, error);
 }
 
 bool SessionAttachServer::start(std::string_view session_id, CommandHandler on_command_requested,
     QueryHandler on_query_requested, std::string* error)
+{
+    return start(session_id,
+        std::move(on_command_requested),
+        std::move(on_query_requested),
+        RenameHandler{},
+        error);
+}
+
+bool SessionAttachServer::start(std::string_view session_id, CommandHandler on_command_requested,
+    QueryHandler on_query_requested, RenameHandler on_rename_requested, std::string* error)
 {
     PERF_MEASURE();
     stop();
@@ -220,6 +232,7 @@ bool SessionAttachServer::start(std::string_view session_id, CommandHandler on_c
     session_id_ = session_id.empty() ? "default" : std::string(session_id);
     on_command_requested_ = std::move(on_command_requested);
     on_query_requested_ = std::move(on_query_requested);
+    on_rename_requested_ = std::move(on_rename_requested);
     stop_requested_ = false;
 
 #ifdef _WIN32
@@ -287,7 +300,7 @@ bool SessionAttachServer::start(std::string_view session_id, CommandHandler on_c
                 continue;
             }
 
-            char buffer[64] = {};
+            char buffer[1024] = {};
             DWORD bytes_read = 0;
             const BOOL read_ok = ReadFile(pipe, buffer, sizeof(buffer), &bytes_read, nullptr);
             std::string response = "ok";
@@ -298,6 +311,11 @@ bool SessionAttachServer::start(std::string_view session_id, CommandHandler on_c
                 {
                     if (on_command_requested_)
                         on_command_requested_(Command::Activate);
+                }
+                else if (command.starts_with(kRenameSessionPrefix))
+                {
+                    if (on_rename_requested_)
+                        on_rename_requested_(command.substr(kRenameSessionPrefix.size()));
                 }
                 else if (command == "detach")
                 {
@@ -409,7 +427,7 @@ bool SessionAttachServer::start(std::string_view session_id, CommandHandler on_c
                 continue;
             }
 
-            char buffer[64] = {};
+            char buffer[1024] = {};
             const ssize_t bytes_read = ::read(client_fd, buffer, sizeof(buffer));
             std::string response = "ok";
             if (!stop_requested_.load() && bytes_read > 0)
@@ -419,6 +437,11 @@ bool SessionAttachServer::start(std::string_view session_id, CommandHandler on_c
                 {
                     if (on_command_requested_)
                         on_command_requested_(Command::Activate);
+                }
+                else if (command.starts_with(kRenameSessionPrefix))
+                {
+                    if (on_rename_requested_)
+                        on_rename_requested_(command.substr(kRenameSessionPrefix.size()));
                 }
                 else if (command == "detach")
                 {
@@ -723,6 +746,102 @@ bool SessionAttachServer::query_live_session(
     {
         if (error && error->empty())
             *error = "Failed to parse the live-session response.";
+        return false;
+    }
+    return true;
+}
+
+bool SessionAttachServer::rename_session(
+    std::string_view session_id, std::string_view session_name, std::string* error)
+{
+    PERF_MEASURE();
+    if (session_name.empty())
+    {
+        if (error)
+            *error = "Session name must not be empty.";
+        return false;
+    }
+
+    const std::string request = std::string(kRenameSessionPrefix) + std::string(session_name);
+    std::string response;
+#ifdef _WIN32
+    const std::string name = pipe_name(session_id.empty() ? "default" : session_id);
+    if (!WaitNamedPipeA(name.c_str(), 50))
+    {
+        const DWORD wait_error = GetLastError();
+        if (wait_error == ERROR_FILE_NOT_FOUND)
+        {
+            if (error)
+                *error = "No running session.";
+            return false;
+        }
+        if (error)
+            *error = "Failed waiting for session-attach pipe: " + win32_error_message(wait_error);
+        return false;
+    }
+
+    HANDLE pipe = CreateFileA(name.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+    if (pipe == INVALID_HANDLE_VALUE)
+    {
+        if (error)
+            *error = "Failed opening session-attach pipe: " + win32_error_message(GetLastError());
+        return false;
+    }
+
+    DWORD bytes_written = 0;
+    if (!WriteFile(pipe, request.data(), static_cast<DWORD>(request.size()), &bytes_written, nullptr))
+    {
+        if (error)
+            *error = "Failed writing rename-session request: " + win32_error_message(GetLastError());
+        CloseHandle(pipe);
+        return false;
+    }
+
+    char buffer[256];
+    DWORD bytes_read = 0;
+    while (ReadFile(pipe, buffer, sizeof(buffer), &bytes_read, nullptr) && bytes_read > 0)
+        response.append(buffer, buffer + bytes_read);
+    CloseHandle(pipe);
+#else
+    const std::string path = socket_path(session_id.empty() ? "default" : session_id);
+    const int fd = ::socket(AF_UNIX, SOCK_STREAM, 0);
+    if (fd < 0)
+    {
+        if (error)
+            *error = "Failed creating session-attach client socket: " + errno_message(errno);
+        return false;
+    }
+
+    sockaddr_un addr = {};
+    addr.sun_family = AF_UNIX;
+    std::snprintf(addr.sun_path, sizeof(addr.sun_path), "%s", path.c_str());
+    if (::connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0)
+    {
+        if (error)
+            *error = "Failed connecting to session-attach socket: " + errno_message(errno);
+        ::close(fd);
+        return false;
+    }
+
+    if (::write(fd, request.data(), request.size()) < 0)
+    {
+        if (error)
+            *error = "Failed writing rename-session request: " + errno_message(errno);
+        ::close(fd);
+        return false;
+    }
+
+    char buffer[256];
+    ssize_t bytes_read = 0;
+    while ((bytes_read = ::read(fd, buffer, sizeof(buffer))) > 0)
+        response.append(buffer, buffer + bytes_read);
+    ::close(fd);
+#endif
+
+    if (!response.empty() && response != "ok")
+    {
+        if (error)
+            *error = response;
         return false;
     }
     return true;

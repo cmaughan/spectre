@@ -31,6 +31,8 @@ ParseArgsResult parse_args(const std::vector<std::string>& args)
             parsed.attach_session = true;
         else if (args[i] == "--detach-session")
             parsed.detach_session = true;
+        else if (args[i] == "--rename-session")
+            parsed.rename_session = true;
         else if (args[i] == "--kill-session")
             parsed.kill_session = true;
 #ifdef DRAXUL_ENABLE_RENDER_TESTS
@@ -154,6 +156,11 @@ ParseArgsResult parse_args(const std::vector<std::string>& args)
                 return result;
             }
         }
+    }
+    if (parsed.rename_session && parsed.session_name.empty())
+    {
+        result.error = "error: --rename-session requires --session-name <name>";
+        return result;
     }
     return result;
 }
