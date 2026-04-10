@@ -217,14 +217,20 @@ bool GridHostBase::advance_cursor_blink(std::chrono::steady_clock::time_point no
     return true;
 }
 
-void GridHostBase::set_cursor_position(int col, int row)
+void GridHostBase::set_cursor_position(int col, int row, CursorBlinkUpdate blink_update)
 {
     PERF_MEASURE();
     if (!dependencies_available("set_cursor_position"))
         return;
-    cursor_col_ = std::max(0, col);
-    cursor_row_ = std::max(0, row);
-    restart_cursor_blink(std::chrono::steady_clock::now());
+    const int new_col = std::max(0, col);
+    const int new_row = std::max(0, row);
+    const bool changed = cursor_col_ != new_col || cursor_row_ != new_row;
+    cursor_col_ = new_col;
+    cursor_row_ = new_row;
+    if (blink_update == CursorBlinkUpdate::Restart)
+        restart_cursor_blink(std::chrono::steady_clock::now());
+    else if (changed)
+        apply_cursor_visibility();
     update_text_input_area();
 }
 

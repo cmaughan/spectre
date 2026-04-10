@@ -81,6 +81,27 @@ public:
         apply_grid_size(cols, rows);
     }
 
+    void exercise_set_cursor_position(int col, int row)
+    {
+        set_cursor_position(col, row);
+    }
+
+    void exercise_set_cursor_position_preserve_blink(int col, int row)
+    {
+        set_cursor_position(col, row, CursorBlinkUpdate::Preserve);
+    }
+
+    void exercise_set_cursor_style(const CursorStyle& style, const BlinkTiming& timing,
+        bool busy = false)
+    {
+        set_cursor_style(style, timing, busy);
+    }
+
+    bool exercise_advance_cursor_blink(std::chrono::steady_clock::time_point now)
+    {
+        return advance_cursor_blink(now);
+    }
+
     // ---- Behaviour injection -----------------------------------------------
 
     bool fail_initialize_host = false;

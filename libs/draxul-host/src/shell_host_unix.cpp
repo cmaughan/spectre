@@ -63,6 +63,10 @@ protected:
     {
         return process_.is_running();
     }
+    std::optional<int> do_process_exit_code() const override
+    {
+        return process_.exit_code();
+    }
     void do_process_shutdown() override
     {
         process_.shutdown();

@@ -49,7 +49,6 @@ void TerminalHostBase::handle_control(char ch)
         vt_.col = std::min(std::max(0, grid_cols() - 1), ((vt_.col / 8) + 1) * 8);
         vt_.pending_wrap = false;
     }
-    set_cursor_position(vt_.col, vt_.row);
 }
 
 void TerminalHostBase::handle_esc(char ch)
@@ -66,7 +65,6 @@ void TerminalHostBase::handle_esc(char ch)
         vt_.col = vt_.saved_col;
         vt_.row = vt_.saved_row;
         vt_.pending_wrap = false;
-        set_cursor_position(vt_.col, vt_.row);
         DRAXUL_LOG_TRACE(draxul::LogCategory::App, "DECRC restore row=%d col=%d", vt_.row, vt_.col);
     }
     else if (ch == 'D') // IND - Index: move cursor down, scroll up at scroll_bottom
@@ -85,7 +83,6 @@ void TerminalHostBase::handle_esc(char ch)
         {
             ++vt_.row;
         }
-        set_cursor_position(vt_.col, vt_.row);
         DRAXUL_LOG_TRACE(draxul::LogCategory::App, "IND row=%d stbm=[%d..%d]", vt_.row, vt_.scroll_top, vt_.scroll_bottom);
     }
     else if (ch == 'M') // RI - Reverse Index: move cursor up, scroll down at scroll_top
@@ -99,7 +96,6 @@ void TerminalHostBase::handle_esc(char ch)
         {
             --vt_.row;
         }
-        set_cursor_position(vt_.col, vt_.row);
         DRAXUL_LOG_TRACE(draxul::LogCategory::App, "RI row=%d stbm=[%d..%d]", vt_.row, vt_.scroll_top, vt_.scroll_bottom);
     }
     else
@@ -227,7 +223,6 @@ void TerminalHostBase::handle_csi(char final_char, std::string_view body)
         break;
     }
 
-    set_cursor_position(vt_.col, vt_.row);
 }
 
 void TerminalHostBase::csi_cursor_move(char final_char, const std::vector<int>& params)
@@ -703,8 +698,11 @@ void TerminalHostBase::handle_osc(std::string_view body)
 void TerminalHostBase::consume_output(std::string_view bytes)
 {
     PERF_MEASURE();
+    if (bytes.empty())
+        return;
     mark_activity();
     vt_parser_.feed(bytes);
+    set_cursor_position(vt_.col, vt_.row, CursorBlinkUpdate::Preserve);
 }
 
 } // namespace draxul

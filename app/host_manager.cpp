@@ -435,6 +435,22 @@ bool HostManager::has_detachable_shell_session() const
     return true;
 }
 
+bool HostManager::should_preserve_dead_leaf(LeafId id) const
+{
+    const auto host_it = hosts_.find(id);
+    const auto launch_it = launch_options_.find(id);
+    if (host_it == hosts_.end() || launch_it == launch_options_.end() || !host_it->second)
+        return false;
+    if (host_it->second->is_running())
+        return false;
+    if (is_terminal_shell_host(launch_it->second.kind))
+    {
+        const std::optional<int> exit_code = host_it->second->exit_code();
+        return !exit_code.has_value() || *exit_code != 0;
+    }
+    return true;
+}
+
 std::optional<HostManager::SessionState> HostManager::session_state() const
 {
     PERF_MEASURE();

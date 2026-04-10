@@ -850,8 +850,24 @@ IFrameContext* VkRenderer::begin_frame()
 
         bool had_pending_atlas_uploads = false;
         VkCommandBufferBeginInfo begin_info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+        VkResult result = VK_NOT_READY;
 
-        VkResult result = vkAcquireNextImageKHR(
+        // Recreate frame resources BEFORE acquiring if the window has been
+        // resized. Acquiring from a stale swapchain whose extent is smaller
+        // than the current surface can crash the Nvidia driver inside
+        // vkCmdBeginRenderPass (the framebuffer/surface extent mismatch
+        // triggers undefined behaviour in the ICD).
+        if (framebuffer_resized_)
+        {
+            framebuffer_resized_ = false;
+            if (!recreate_frame_resources())
+            {
+                DRAXUL_LOG_ERROR(LogCategory::Renderer, "Failed to rebuild Vulkan frame resources before acquire");
+                goto finish_begin_frame;
+            }
+        }
+
+        result = vkAcquireNextImageKHR(
             ctx_.device(), ctx_.swapchain().swapchain, UINT64_MAX,
             image_available_sem_[current_frame_], VK_NULL_HANDLE, &current_image_);
 

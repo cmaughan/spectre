@@ -204,6 +204,7 @@ public:
         return tree_.leaf_count();
     }
     bool has_detachable_shell_session() const;
+    bool should_preserve_dead_leaf(LeafId id) const;
     std::optional<SessionState> session_state() const;
     bool restore_session_state(
         IHostCallbacks& callbacks, int pixel_w, int pixel_h, const SessionState& state);

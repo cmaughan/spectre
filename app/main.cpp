@@ -288,7 +288,7 @@ bool session_exists(std::string_view session_id, std::string* error)
     }
 
     std::string io_error;
-    if (draxul::load_session_state(session_id, &io_error).has_value())
+    if (draxul::has_saved_session_state(session_id, &io_error))
         return true;
     if (!io_error.empty())
     {
@@ -297,15 +297,7 @@ bool session_exists(std::string_view session_id, std::string* error)
         return false;
     }
 
-    io_error.clear();
-    if (draxul::load_session_runtime_metadata(session_id, &io_error).has_value())
-        return true;
-    if (!io_error.empty())
-    {
-        if (error)
-            *error = io_error;
-        return false;
-    }
+    (void)draxul::clear_session_runtime_liveness(session_id);
 
     return false;
 }
@@ -361,11 +353,22 @@ bool prepare_new_session_launch(draxul::ParsedArgs& parsed, std::string* error)
 std::vector<std::string> session_owner_args(
     const std::vector<std::string>& args, const std::filesystem::path& exe_path, const draxul::ParsedArgs& parsed)
 {
-    std::vector<std::string> owner_args = args;
-    if (owner_args.empty())
-        owner_args.emplace_back(exe_path.string());
-    else
-        owner_args.front() = exe_path.string();
+    std::vector<std::string> owner_args;
+    owner_args.reserve(args.size() + 4);
+    owner_args.emplace_back(exe_path.string());
+    for (size_t i = 1; i < args.size(); ++i)
+    {
+        if (args[i] == "--console")
+            continue;
+        if (args[i] == "--session-owner")
+            continue;
+        if (args[i] == "--session" && i + 1 < args.size())
+        {
+            ++i;
+            continue;
+        }
+        owner_args.push_back(args[i]);
+    }
     owner_args.emplace_back("--session");
     owner_args.emplace_back(parsed.session_id);
     if (!parsed.session_name.empty())
@@ -545,7 +548,7 @@ static int draxul_main(std::vector<std::string> args)
         || parse_result.args.detach_session
         || parse_result.args.rename_session
         || parse_result.args.kill_session;
-    if (needs_console_output)
+    if (needs_console_output && !parse_result.args.session_owner)
         ensure_console_io(true);
 #endif
     if (parse_result.error)
@@ -611,26 +614,8 @@ static int draxul_main(std::vector<std::string> args)
             draxul::shutdown_logging();
             return 0;
         }
-
-        for (const auto& session : sessions)
-        {
-            const char* state = "saved";
-            if (session.live)
-                state = session.detached ? "detached" : "live";
-            else if (!session.has_saved_state)
-                state = "live?";
-
-            std::printf("%s\t%s\t%d workspace%s\t%d pane%s",
-                session.session_id.c_str(),
-                state,
-                session.workspace_count,
-                session.workspace_count == 1 ? "" : "s",
-                session.pane_count,
-                session.pane_count == 1 ? "" : "s");
-            if (!session.session_name.empty() && session.session_name != session.session_id)
-                std::printf("\t%s", session.session_name.c_str());
-            std::printf("\n");
-        }
+        const std::string table = draxul::format_session_listing_table(sessions);
+        std::fputs(table.c_str(), stdout);
         draxul::shutdown_logging();
         return 0;
     }
@@ -799,7 +784,10 @@ static int draxul_main(std::vector<std::string> args)
     }
 
     if (parsed.host_kind)
+    {
         options.host_kind = *parsed.host_kind;
+        options.host_kind_explicit = true;
+    }
     if (!parsed.host_command.empty())
         options.host_command = parsed.host_command;
     if (!parsed.host_source_path.empty())

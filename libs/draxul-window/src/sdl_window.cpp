@@ -360,7 +360,9 @@ bool SdlWindow::handle_event(const SDL_Event& event)
     switch (event.type)
     {
     case SDL_EVENT_QUIT:
-        return false;
+        if (on_close_requested)
+            on_close_requested();
+        return true;
 
     case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
         if (on_close_requested)
@@ -375,6 +377,7 @@ bool SdlWindow::handle_event(const SDL_Event& event)
         visible_ = false;
         break;
 
+    case SDL_EVENT_WINDOW_RESIZED:
     case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
         if (on_resize)
             if (auto e = sdl::translate_resize(window_, event))
@@ -441,6 +444,7 @@ bool SdlWindow::handle_event(const SDL_Event& event)
 bool SdlWindow::poll_events()
 {
     PERF_MEASURE();
+    flush_text_input_area();
     SDL_Event event;
     while (SDL_PollEvent(&event))
     {
@@ -453,6 +457,7 @@ bool SdlWindow::poll_events()
 bool SdlWindow::wait_events(int timeout_ms)
 {
     PERF_MEASURE();
+    flush_text_input_area();
     SDL_Event event;
     SDL_ClearError();
     bool got_event = timeout_ms < 0 ? SDL_WaitEvent(&event) : SDL_WaitEventTimeout(&event, timeout_ms);
@@ -539,11 +544,24 @@ bool SdlWindow::set_clipboard_text(const std::string& text)
 
 void SdlWindow::set_text_input_area(int x, int y, int w, int h)
 {
-    PERF_MEASURE();
-    if (!window_)
-        return;
+    // Defer the actual SDL call to avoid deadlocking inside Windows IME
+    // infrastructure. SDL_SetTextInputArea dispatches a synchronous window
+    // message via IME_SetTextInputArea → WIN_WindowProc which can block
+    // when called during terminal output processing. We buffer the area
+    // and flush it once per frame at the start of poll_events/wait_events.
+    text_input_x_ = x;
+    text_input_y_ = y;
+    text_input_w_ = w;
+    text_input_h_ = h;
+    text_input_area_dirty_ = true;
+}
 
-    SDL_Rect area = { x, y, w, h };
+void SdlWindow::flush_text_input_area()
+{
+    if (!text_input_area_dirty_ || !window_)
+        return;
+    text_input_area_dirty_ = false;
+    SDL_Rect area = { text_input_x_, text_input_y_, text_input_w_, text_input_h_ };
     SDL_SetTextInputArea(window_, &area, 0);
 }
 

@@ -46,6 +46,7 @@ public:
 
 private:
     bool handle_event(const SDL_Event& event);
+    void flush_text_input_area();
     SDL_Cursor* ensure_cursor(MouseCursor cursor);
     SDL_Window* window_ = nullptr;
     unsigned int wake_event_type_ = 0;
@@ -57,6 +58,11 @@ private:
     SDL_Cursor* cursor_ns_ = nullptr;
     MouseCursor active_cursor_ = MouseCursor::Default;
     bool visible_ = true;
+    bool text_input_area_dirty_ = false;
+    int text_input_x_ = 0;
+    int text_input_y_ = 0;
+    int text_input_w_ = 0;
+    int text_input_h_ = 0;
 };
 
 } // namespace draxul

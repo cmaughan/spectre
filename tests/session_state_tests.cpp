@@ -241,6 +241,40 @@ TEST_CASE("session state: metadata-only live session appears in listings", "[ses
     CHECK_FALSE(sessions[0].has_saved_state);
     CHECK(sessions[0].owner_pid == 4242);
     CHECK(sessions[0].pane_count == 0);
+    CHECK_FALSE(has_saved_session_state("live-only", &error));
+    REQUIRE(error.empty());
+}
+
+TEST_CASE("session state: clearing runtime liveness preserves session metadata history", "[session_state]")
+{
+    TempDir temp_dir("session-state-clear-liveness");
+    HomeDirRedirect redirect(temp_dir.path);
+
+    SessionRuntimeMetadata metadata;
+    metadata.session_id = "clear-me";
+    metadata.session_name = "Clear Me";
+    metadata.live = true;
+    metadata.detached = true;
+    metadata.owner_pid = 4242;
+    metadata.last_attached_unix_s = 111;
+    metadata.last_detached_unix_s = 222;
+
+    std::string error;
+    REQUIRE(save_session_runtime_metadata(metadata, &error));
+    REQUIRE(error.empty());
+
+    REQUIRE(clear_session_runtime_liveness("clear-me", &error));
+    REQUIRE(error.empty());
+
+    auto loaded = load_session_runtime_metadata("clear-me", &error);
+    REQUIRE(loaded);
+    REQUIRE(error.empty());
+    CHECK(loaded->session_name == "Clear Me");
+    CHECK_FALSE(loaded->live);
+    CHECK_FALSE(loaded->detached);
+    CHECK(loaded->owner_pid == 0);
+    CHECK(loaded->last_attached_unix_s == 111);
+    CHECK(loaded->last_detached_unix_s == 222);
 }
 
 TEST_CASE("session state: metadata merges into saved session summary", "[session_state]")

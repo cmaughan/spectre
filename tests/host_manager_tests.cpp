@@ -36,6 +36,26 @@ using LifetimeTestHost = draxul::tests::FakeHost;
 // Alias for the shared FakeGridHost (replaces the ad-hoc GuardedGridHost).
 using GuardedGridHost = draxul::tests::FakeGridHost;
 
+class ExitableTestHost final : public draxul::tests::FakeHost
+{
+public:
+    using FakeHost::FakeHost;
+
+    void simulate_exit(int exit_code = 1)
+    {
+        running_ = false;
+        exit_code_ = exit_code;
+    }
+
+    std::optional<int> exit_code() const override
+    {
+        return exit_code_;
+    }
+
+private:
+    std::optional<int> exit_code_;
+};
+
 struct HostManagerHarness
 {
     FakeWindow window;
@@ -68,6 +88,56 @@ struct HostManagerHarness
             auto host = std::make_unique<LifetimeTestHost>("lifetime-test");
             host->on_shutdown_callback = [counter] { ++(*counter); };
             shutdown_counters.push_back(counter);
+            created_hosts.push_back(host.get());
+            return host;
+        };
+
+        HostManager::Deps deps;
+        deps.options = &options;
+        deps.config = &config;
+        deps.window = &window;
+        deps.grid_renderer = &renderer;
+        deps.text_service = &text_service;
+        deps.display_ppi = &display_ppi;
+        deps.compute_viewport = [](const PaneDescriptor& desc) {
+            HostViewport viewport;
+            viewport.pixel_pos = desc.pixel_pos;
+            viewport.pixel_size = desc.pixel_size;
+            viewport.grid_size = { 80, 24 };
+            return viewport;
+        };
+        return deps;
+    }
+};
+
+struct ShellHostManagerHarness
+{
+    FakeWindow window;
+    FakeTermRenderer renderer;
+    TextService text_service;
+    TestHostCallbacks callbacks;
+    AppOptions options;
+    AppConfig config;
+    float display_ppi = 96.0f;
+    std::vector<ExitableTestHost*> created_hosts;
+    HostManager manager;
+
+    ShellHostManagerHarness()
+        : manager(make_deps())
+    {
+        TextServiceConfig ts_cfg;
+        ts_cfg.font_path = bundled_font_path();
+        const bool ok = text_service.initialize(ts_cfg, TextService::DEFAULT_POINT_SIZE, display_ppi);
+        REQUIRE(ok);
+    }
+
+    HostManager::Deps make_deps()
+    {
+        options.load_user_config = false;
+        options.save_user_config = false;
+        options.host_kind = HostKind::PowerShell;
+        options.host_factory = [this](HostKind) -> std::unique_ptr<IHost> {
+            auto host = std::make_unique<ExitableTestHost>("shell-test");
             created_hosts.push_back(host.get());
             return host;
         };
@@ -365,6 +435,53 @@ TEST_CASE("host manager: session state round-trips layout and pane metadata", "[
     CHECK(restored_split->launch.args == (std::vector<std::string>{ "-NoLogo" }));
     CHECK(restored_split->launch.working_dir == "D:/dev/Draxul");
     CHECK(restored_split->launch.startup_commands == (std::vector<std::string>{ "echo ready" }));
+}
+
+TEST_CASE("host manager: dead shell panes are preserved for restart", "[host_manager]")
+{
+    ShellHostManagerHarness harness;
+
+    REQUIRE(harness.manager.create(harness.callbacks, 800, 600));
+    REQUIRE(harness.created_hosts.size() == 1);
+
+    const LeafId root = harness.manager.focused_leaf();
+    auto* root_host = harness.created_hosts.front();
+    REQUIRE(root_host != nullptr);
+    REQUIRE_FALSE(harness.manager.should_preserve_dead_leaf(root));
+
+    root_host->simulate_exit();
+    CHECK(harness.manager.should_preserve_dead_leaf(root));
+}
+
+TEST_CASE("host manager: clean shell exits are not preserved", "[host_manager]")
+{
+    ShellHostManagerHarness harness;
+
+    REQUIRE(harness.manager.create(harness.callbacks, 800, 600));
+    REQUIRE(harness.created_hosts.size() == 1);
+
+    const LeafId root = harness.manager.focused_leaf();
+    auto* root_host = harness.created_hosts.front();
+    REQUIRE(root_host != nullptr);
+
+    root_host->simulate_exit(0);
+    CHECK_FALSE(harness.manager.should_preserve_dead_leaf(root));
+}
+
+TEST_CASE("host manager: dead nvim panes are preserved for restart", "[host_manager]")
+{
+    HostManagerHarness harness;
+
+    REQUIRE(harness.manager.create(harness.callbacks, 800, 600));
+    REQUIRE(harness.created_hosts.size() == 1);
+
+    const LeafId root = harness.manager.focused_leaf();
+    auto* root_host = harness.created_hosts.front();
+    REQUIRE(root_host != nullptr);
+    REQUIRE_FALSE(harness.manager.should_preserve_dead_leaf(root));
+
+    root_host->request_close();
+    CHECK(harness.manager.should_preserve_dead_leaf(root));
 }
 
 TEST_CASE("grid host base: invalidated owner lifetime blocks renderer and callback use", "[host_manager]")

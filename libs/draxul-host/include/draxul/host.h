@@ -206,6 +206,10 @@ public:
     {
         return {};
     }
+    virtual std::optional<int> exit_code() const
+    {
+        return std::nullopt;
+    }
 
     // Most recent OSC 7-reported working directory, if any. Returned empty
     // when the host is not a terminal or no cwd has been seen yet. Used by

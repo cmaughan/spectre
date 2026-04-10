@@ -225,6 +225,7 @@ void TerminalHostBase::on_viewport_changed()
     vt_.saved_row = std::clamp(vt_.saved_row, 0, std::max(0, grid_rows() - 1));
     vt_.scroll_top = 0;
     vt_.scroll_bottom = grid_rows() - 1;
+    set_cursor_position(vt_.col, vt_.row, CursorBlinkUpdate::Preserve);
     do_process_resize(new_cols, new_rows);
     force_full_redraw();
     flush_grid();
@@ -272,7 +273,6 @@ void TerminalHostBase::update_cursor_style()
     style.shape = vt_.cursor_shape;
     style.bg = highlights().default_fg();
     style.fg = highlights().default_bg();
-    set_cursor_position(vt_.col, vt_.row);
 
     // Apply blink timing when the shell requests a blinking cursor shape
     // (DECSCUSR odd Ps values). Standard terminal blink cadence: 530ms.
@@ -296,7 +296,6 @@ void TerminalHostBase::enter_alt_screen()
     alt_screen_.enter(vt_.col, vt_.row, vt_.scroll_top, vt_.scroll_bottom, vt_.pending_wrap);
     vt_.col = 0;
     vt_.row = 0;
-    set_cursor_position(vt_.col, vt_.row);
 }
 
 void TerminalHostBase::leave_alt_screen()
@@ -387,7 +386,6 @@ void TerminalHostBase::newline(bool carriage_return)
     {
         ++vt_.row;
     }
-    set_cursor_position(vt_.col, vt_.row);
 }
 
 void TerminalHostBase::write_cluster(const std::string& cluster)
@@ -429,8 +427,6 @@ void TerminalHostBase::write_cluster(const std::string& cluster)
     {
         vt_.col = new_col;
     }
-
-    set_cursor_position(vt_.col, vt_.row);
 }
 
 void TerminalHostBase::erase_line(int mode)

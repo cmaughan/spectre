@@ -31,6 +31,24 @@ TEST_CASE("terminal: plain text writes to grid cells", "[terminal]")
     REQUIRE(ts.host.col() == 5);
 }
 
+TEST_CASE("terminal: plain text batch coalesces cursor publication", "[terminal][cursor]")
+{
+    VtTerminalSetup ts;
+    INFO("host must initialize");
+    REQUIRE(ts.ok);
+    REQUIRE(ts.renderer.last_handle != nullptr);
+
+    ts.renderer.last_handle->reset();
+
+    ts.host.feed("Hello");
+
+    INFO("one terminal output burst should publish one cursor update");
+    REQUIRE(ts.renderer.last_handle->set_cursor_calls == 1);
+    INFO("cursor ends after the written text");
+    REQUIRE(ts.renderer.last_handle->last_cursor.x == 5);
+    REQUIRE(ts.renderer.last_handle->last_cursor.y == 0);
+}
+
 TEST_CASE("terminal: carriage return moves cursor to column 0", "[terminal]")
 {
     VtTerminalSetup ts;

@@ -693,24 +693,31 @@ bool App::initialize_chrome_host()
             pending_window_activation_ = false;
         }
 
-        std::string session_error;
-        if (auto saved_session = load_session_state(options_.session_id, &session_error);
-            saved_session && !saved_session->workspaces.empty())
+        // Skip session restore when the user explicitly specified --host on the
+        // command line. The explicit host kind should win over a saved session
+        // that may contain a different host type (e.g. --host megacity should
+        // not restore a saved shell session).
+        if (!options_.host_kind_explicit)
         {
-            if (options_.session_name.empty() && !saved_session->session_name.empty())
-                session_name_ = saved_session->session_name;
-            restored_session = restore_session_state(
-                window_->width_pixels(), diagnostics_host_->layout().terminal_height, *saved_session);
-            if (!restored_session)
+            std::string session_error;
+            if (auto saved_session = load_session_state(options_.session_id, &session_error);
+                saved_session && !saved_session->workspaces.empty())
+            {
+                if (options_.session_name.empty() && !saved_session->session_name.empty())
+                    session_name_ = saved_session->session_name;
+                restored_session = restore_session_state(
+                    window_->width_pixels(), diagnostics_host_->layout().terminal_height, *saved_session);
+                if (!restored_session)
+                {
+                    DRAXUL_LOG_WARN(LogCategory::App,
+                        "Failed to restore saved shell session state; starting a fresh session.");
+                }
+            }
+            else if (!session_error.empty())
             {
                 DRAXUL_LOG_WARN(LogCategory::App,
-                    "Failed to restore saved shell session state; starting a fresh session.");
+                    "Failed to load saved shell session state: %s", session_error.c_str());
             }
-        }
-        else if (!session_error.empty())
-        {
-            DRAXUL_LOG_WARN(LogCategory::App,
-                "Failed to load saved shell session state: %s", session_error.c_str());
         }
     }
 
@@ -1296,7 +1303,25 @@ bool App::close_dead_panes()
 {
     PERF_MEASURE();
     std::vector<LeafId> dead;
-    active_host_manager().for_each_host([&dead](LeafId id, const IHost& h) {
+    active_host_manager().for_each_host([this, &dead](LeafId id, const IHost& h) {
+        const std::string pane_id = active_host_manager().pane_id(id);
+        if (h.is_running())
+        {
+            if (!pane_id.empty())
+                announced_dead_panes_.erase(pane_id);
+            return;
+        }
+        if (active_host_manager().should_preserve_dead_leaf(id))
+        {
+            if (!pane_id.empty() && announced_dead_panes_.insert(pane_id).second)
+            {
+                const std::string pane_label = active_host_manager().pane_name(id).empty()
+                    ? pane_id
+                    : active_host_manager().pane_name(id);
+                push_toast(1, "Pane '" + pane_label + "' exited unexpectedly. Use restart_host to respawn it.");
+            }
+            return;
+        }
         if (!h.is_running())
             dead.push_back(id);
     });
@@ -1308,6 +1333,7 @@ bool App::close_dead_panes()
     }
     for (LeafId id : dead)
     {
+        announced_dead_panes_.erase(active_host_manager().pane_id(id));
         if (active_host_manager().host_count() == 1)
         {
             // Last pane in this workspace died.
@@ -1444,6 +1470,7 @@ bool App::pump_once(std::optional<std::chrono::steady_clock::time_point> wait_de
             if (pw != last_pixel_w_ || ph != last_pixel_h_)
                 on_resize(pw, ph);
         }
+        apply_pending_resize();
 
         runtime_perf_collector().begin_frame();
 
@@ -1511,13 +1538,26 @@ void App::on_resize(int pixel_w, int pixel_h)
     PERF_MEASURE();
     if (pixel_w == last_pixel_w_ && pixel_h == last_pixel_h_)
         return;
+    pending_window_resize_ = std::pair{ pixel_w, pixel_h };
+}
+
+void App::apply_pending_resize()
+{
+    if (!pending_window_resize_)
+        return;
+
+    const auto [pixel_w, pixel_h] = *pending_window_resize_;
+    pending_window_resize_.reset();
+    if (pixel_w == last_pixel_w_ && pixel_h == last_pixel_h_)
+        return;
+
     last_pixel_w_ = pixel_w;
     last_pixel_h_ = pixel_h;
     renderer_.grid()->resize(pixel_w, pixel_h);
     refresh_window_layout();
     {
         const int tab_y = chrome_host_->tab_bar_height();
-        active_host_manager().recompute_viewports(
+        recompute_all_viewports(
             0, tab_y, pixel_w, diagnostics_host_->layout().terminal_height - tab_y);
     }
     if (chrome_host_)

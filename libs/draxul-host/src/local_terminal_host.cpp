@@ -370,6 +370,8 @@ void LocalTerminalHost::on_mouse_wheel(const MouseWheelEvent& event)
 std::string LocalTerminalHost::status_text() const
 {
     std::string result(host_name());
+    if (!is_running())
+        result += " [exited]";
     if (!current_cwd_.empty())
     {
         result += " | ";

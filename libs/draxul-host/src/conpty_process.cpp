@@ -53,6 +53,7 @@ bool ConPtyProcess::spawn(const std::string& command, const std::vector<std::str
 {
     PERF_MEASURE();
     shutdown();
+    last_exit_code_.reset();
 
     SECURITY_ATTRIBUTES sa = {};
     sa.nLength = sizeof(sa);
@@ -231,7 +232,16 @@ bool ConPtyProcess::is_running() const
         return false;
     DWORD exit_code = 0;
     GetExitCodeProcess(proc_info_.hProcess, &exit_code);
+    if (exit_code != STILL_ACTIVE)
+        last_exit_code_ = static_cast<int>(exit_code);
     return exit_code == STILL_ACTIVE;
+}
+
+std::optional<int> ConPtyProcess::exit_code() const
+{
+    if (is_running())
+        return std::nullopt;
+    return last_exit_code_;
 }
 
 bool ConPtyProcess::resize(int cols, int rows)

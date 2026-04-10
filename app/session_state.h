@@ -59,11 +59,13 @@ struct SessionSummary
 std::filesystem::path session_state_directory();
 std::filesystem::path session_state_path(std::string_view session_id);
 std::filesystem::path session_metadata_path(std::string_view session_id);
+bool has_saved_session_state(std::string_view session_id, std::string* error = nullptr);
 bool save_session_state(const AppSessionState& state, std::string* error = nullptr);
 bool delete_session_state(std::string_view session_id, std::string* error = nullptr);
 bool save_session_runtime_metadata(
     const SessionRuntimeMetadata& metadata, std::string* error = nullptr);
 bool delete_session_runtime_metadata(std::string_view session_id, std::string* error = nullptr);
+bool clear_session_runtime_liveness(std::string_view session_id, std::string* error = nullptr);
 std::optional<SessionRuntimeMetadata> load_session_runtime_metadata(
     std::string_view session_id, std::string* error = nullptr);
 std::optional<AppSessionState> load_session_state(

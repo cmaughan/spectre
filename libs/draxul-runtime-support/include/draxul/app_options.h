@@ -51,6 +51,7 @@ struct AppOptions
     std::string session_id = "default";
     std::string session_name;
     bool new_session_requested = false;
+    bool host_kind_explicit = false;
     std::chrono::milliseconds session_checkpoint_interval = std::chrono::seconds(2);
     std::optional<float> override_display_ppi;
     int render_target_pixel_width = 0;

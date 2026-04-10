@@ -42,6 +42,12 @@ public:
     void set_overlay_cells(std::span<const CellUpdate> cells);
 
 protected:
+    enum class CursorBlinkUpdate
+    {
+        Restart,
+        Preserve,
+    };
+
     virtual bool initialize_host() = 0;
     virtual void on_viewport_changed() = 0;
     virtual void on_font_metrics_changed_impl() = 0;
@@ -97,7 +103,7 @@ protected:
     void flush_grid();
     void mark_activity();
     bool advance_cursor_blink(std::chrono::steady_clock::time_point now);
-    void set_cursor_position(int col, int row);
+    void set_cursor_position(int col, int row, CursorBlinkUpdate blink_update = CursorBlinkUpdate::Restart);
     void set_cursor_style(const CursorStyle& style, const BlinkTiming& timing, bool busy = false);
     void set_cursor_busy(bool busy);
     void set_content_ready(bool ready)

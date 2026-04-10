@@ -401,6 +401,12 @@ void ChromeHost::draw(IFrameContext& frame)
                     if (deps_.get_pane_name)
                         override_name = deps_.get_pane_name(id);
                     e.text = override_name.empty() ? h->status_text() : std::move(override_name);
+                    if (!h->is_running() && e.text.find("[exited]") == std::string::npos)
+                    {
+                        if (!e.text.empty())
+                            e.text += " ";
+                        e.text += "[exited]";
+                    }
                     e.focused = (id == focused_leaf);
                     e.leaf = id;
                     status_entries.push_back(std::move(e));

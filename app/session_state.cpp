@@ -448,6 +448,22 @@ std::filesystem::path session_metadata_path(std::string_view session_id)
     return session_state_directory() / session_metadata_file_name(normalized_id);
 }
 
+bool has_saved_session_state(std::string_view session_id, std::string* error)
+{
+    PERF_MEASURE();
+    std::string load_error;
+    const bool exists = load_session_state(session_id, &load_error).has_value();
+    if (!load_error.empty())
+    {
+        if (error)
+            *error = load_error;
+        return false;
+    }
+    if (error)
+        error->clear();
+    return exists;
+}
+
 bool save_session_state(const AppSessionState& state, std::string* error)
 {
     PERF_MEASURE();
@@ -604,6 +620,46 @@ bool delete_session_runtime_metadata(std::string_view session_id, std::string* e
             *error = ex.what();
         return false;
     }
+}
+
+bool clear_session_runtime_liveness(std::string_view session_id, std::string* error)
+{
+    PERF_MEASURE();
+    std::string io_error;
+    auto metadata = load_session_runtime_metadata(session_id, &io_error);
+    if (!metadata)
+    {
+        if (!io_error.empty())
+        {
+            if (error)
+                *error = io_error;
+            return false;
+        }
+        if (error)
+            error->clear();
+        return true;
+    }
+
+    if (!metadata->live && !metadata->detached && metadata->owner_pid == 0)
+    {
+        if (error)
+            error->clear();
+        return true;
+    }
+
+    metadata->live = false;
+    metadata->detached = false;
+    metadata->owner_pid = 0;
+    if (!save_session_runtime_metadata(*metadata, &io_error))
+    {
+        if (error)
+            *error = io_error;
+        return false;
+    }
+
+    if (error)
+        error->clear();
+    return true;
 }
 
 std::optional<SessionRuntimeMetadata> load_session_runtime_metadata(

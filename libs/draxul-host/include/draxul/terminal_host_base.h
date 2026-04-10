@@ -34,6 +34,10 @@ public:
     {
         return do_process_is_running();
     }
+    std::optional<int> exit_code() const override
+    {
+        return do_process_exit_code();
+    }
     void shutdown() override
     {
         do_process_shutdown();
@@ -59,6 +63,10 @@ protected:
     virtual std::vector<std::string> do_process_drain() = 0;
     virtual bool do_process_resize(int cols, int rows) = 0;
     virtual bool do_process_is_running() const = 0;
+    virtual std::optional<int> do_process_exit_code() const
+    {
+        return std::nullopt;
+    }
     virtual void do_process_shutdown() = 0;
     virtual void do_process_request_close()
     {

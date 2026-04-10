@@ -33,6 +33,7 @@ bool UnixPtyProcess::spawn(const std::string& command, const std::vector<std::st
 {
     PERF_MEASURE();
     shutdown();
+    last_exit_code_.reset();
 
     // Suppress SIGPIPE so writes to a closed PTY master return EPIPE instead
     // of delivering a fatal signal. Safe for a GUI application.
@@ -257,10 +258,14 @@ void UnixPtyProcess::request_close()
 
 bool UnixPtyProcess::is_running() const
 {
-    if (pid_ <= 0)
-        return false;
-    int status = 0;
-    return waitpid(pid_, &status, WNOHANG) == 0;
+    update_exit_status();
+    return pid_ > 0;
+}
+
+std::optional<int> UnixPtyProcess::exit_code() const
+{
+    update_exit_status();
+    return last_exit_code_;
 }
 
 bool UnixPtyProcess::resize(int cols, int rows) const
@@ -354,6 +359,29 @@ void UnixPtyProcess::reader_main()
             break;
         }
     }
+}
+
+void UnixPtyProcess::update_exit_status() const
+{
+    if (pid_ <= 0 || last_exit_code_.has_value())
+        return;
+
+    int status = 0;
+    const pid_t result = waitpid(pid_, &status, WNOHANG);
+    if (result == 0)
+        return;
+    if (result < 0)
+    {
+        if (errno == ECHILD)
+            pid_ = -1;
+        return;
+    }
+
+    if (WIFEXITED(status))
+        last_exit_code_ = WEXITSTATUS(status);
+    else if (WIFSIGNALED(status))
+        last_exit_code_ = 128 + WTERMSIG(status);
+    pid_ = -1;
 }
 
 } // namespace draxul

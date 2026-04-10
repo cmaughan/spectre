@@ -2,6 +2,7 @@
 
 #include <draxul/window.h>
 
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -21,6 +22,16 @@ public:
     void shutdown() override {}
     bool poll_events() override
     {
+        if (queued_resize_)
+        {
+            pixel_w_ = queued_resize_->first;
+            pixel_h_ = queued_resize_->second;
+            logical_w_ = queued_resize_->first;
+            logical_h_ = queued_resize_->second;
+            if (on_resize)
+                on_resize(WindowResizeEvent{ { pixel_w_, pixel_h_ } });
+            queued_resize_.reset();
+        }
         if (queued_close_request_)
         {
             queued_close_request_ = false;
@@ -88,6 +99,7 @@ public:
     std::string last_title_;
     bool visible_ = true;
     bool queued_close_request_ = false;
+    std::optional<std::pair<int, int>> queued_resize_;
 
     void reset()
     {
@@ -95,11 +107,17 @@ public:
         last_title_.clear();
         visible_ = true;
         queued_close_request_ = false;
+        queued_resize_.reset();
     }
 
     void queue_close_request()
     {
         queued_close_request_ = true;
+    }
+
+    void queue_resize(int pixel_w, int pixel_h)
+    {
+        queued_resize_ = std::make_pair(pixel_w, pixel_h);
     }
 };
 

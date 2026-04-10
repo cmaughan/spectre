@@ -1,9 +1,50 @@
 #include "session_listing.h"
 
+#include <draxul/log.h>
 #include <draxul/session_attach.h>
+
+#include <algorithm>
+#include <iomanip>
+#include <sstream>
 
 namespace draxul
 {
+
+namespace
+{
+
+const char* session_state_text(const SessionSummary& session)
+{
+    if (session.live)
+        return session.detached ? "detached" : "live";
+    if (!session.has_saved_state)
+        return "live?";
+    return "saved";
+}
+
+std::string display_name_text(const SessionSummary& session)
+{
+    if (!session.session_name.empty() && session.session_name != session.session_id)
+        return session.session_name;
+    return {};
+}
+
+void scrub_stale_runtime_metadata(const SessionSummary& session)
+{
+    if (!session.live && !session.detached && session.owner_pid == 0)
+        return;
+
+    std::string scrub_error;
+    if (!clear_session_runtime_liveness(session.session_id, &scrub_error) && !scrub_error.empty())
+    {
+        DRAXUL_LOG_WARN(LogCategory::App,
+            "Failed to scrub stale session metadata for %s: %s",
+            session.session_id.c_str(),
+            scrub_error.c_str());
+    }
+}
+
+} // namespace
 
 std::vector<SessionSummary> list_known_sessions(std::string* error)
 {
@@ -35,13 +76,70 @@ std::vector<SessionSummary> list_known_sessions(std::string* error)
         }
         else if (probe_status == SessionAttachServer::ProbeStatus::NoServer)
         {
+            scrub_stale_runtime_metadata(session);
             session.live = false;
+            session.detached = false;
+            session.owner_pid = 0;
         }
     }
+
+    sessions.erase(std::remove_if(sessions.begin(), sessions.end(), [](const SessionSummary& session) {
+        return !session.live && !session.has_saved_state;
+    }),
+        sessions.end());
 
     if (error)
         error->clear();
     return sessions;
+}
+
+std::string format_session_listing_table(const std::vector<SessionSummary>& sessions)
+{
+    size_t id_width = std::string_view("SESSION ID").size();
+    size_t state_width = std::string_view("STATE").size();
+    size_t workspace_width = std::string_view("WORKSPACES").size();
+    size_t pane_width = std::string_view("PANES").size();
+
+    for (const auto& session : sessions)
+    {
+        id_width = std::max(id_width, session.session_id.size());
+        state_width = std::max(state_width, std::char_traits<char>::length(session_state_text(session)));
+    }
+
+    std::ostringstream out;
+    out << std::left << std::setw(static_cast<int>(id_width)) << "SESSION ID"
+        << "  "
+        << std::left << std::setw(static_cast<int>(state_width)) << "STATE"
+        << "  "
+        << std::left << std::setw(static_cast<int>(workspace_width)) << "WORKSPACES"
+        << "  "
+        << std::left << std::setw(static_cast<int>(pane_width)) << "PANES"
+        << "  NAME\n";
+
+    out << std::string(id_width, '-')
+        << "  "
+        << std::string(state_width, '-')
+        << "  "
+        << std::string(workspace_width, '-')
+        << "  "
+        << std::string(pane_width, '-')
+        << "  ----\n";
+
+    for (const auto& session : sessions)
+    {
+        out << std::left << std::setw(static_cast<int>(id_width)) << session.session_id
+            << "  "
+            << std::left << std::setw(static_cast<int>(state_width)) << session_state_text(session)
+            << "  "
+            << std::right << std::setw(static_cast<int>(workspace_width)) << session.workspace_count
+            << "  "
+            << std::right << std::setw(static_cast<int>(pane_width)) << session.pane_count
+            << "  "
+            << display_name_text(session)
+            << '\n';
+    }
+
+    return out.str();
 }
 
 } // namespace draxul

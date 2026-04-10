@@ -80,6 +80,7 @@ std::filesystem::path canonical_path(const std::filesystem::path& path)
 // renderer/host state after App takes ownership.
 SmokeTestHost* g_last_smoke_host = nullptr;
 FakeTermRenderer* g_last_fake_renderer = nullptr;
+FakeWindow* g_last_fake_window = nullptr;
 class ReloadTrackingHost;
 ReloadTrackingHost* g_last_reload_host = nullptr;
 
@@ -184,7 +185,11 @@ AppOptions make_smoke_options()
     opts.clamp_window_to_display = false;
     opts.override_display_ppi = 96.0f;
     opts.config_overrides.font_path = bundled_font_path();
-    opts.window_factory = []() { return std::make_unique<FakeWindow>(); };
+    opts.window_factory = []() {
+        auto window = std::make_unique<FakeWindow>();
+        g_last_fake_window = window.get();
+        return window;
+    };
     opts.renderer_create_fn = &make_fake_renderer;
     opts.host_factory = &make_smoke_host;
     opts.host_kind = HostKind::Nvim; // value is irrelevant — factory ignores it
@@ -277,6 +282,34 @@ TEST_CASE("app smoke: pump_once runs without crash after successful init", "[app
     app.shutdown();
 }
 
+TEST_CASE("app smoke: queued window resize updates the host viewport", "[app_smoke]")
+{
+    const std::string font = bundled_font_path();
+    if (!std::filesystem::exists(font))
+        SKIP("bundled font not found");
+
+    g_last_smoke_host = nullptr;
+    g_last_fake_window = nullptr;
+    App app(make_smoke_options());
+    REQUIRE(app.initialize());
+    REQUIRE(g_last_smoke_host != nullptr);
+    REQUIRE(g_last_fake_window != nullptr);
+
+    const HostViewport before = g_last_smoke_host->last_viewport;
+    g_last_fake_window->queue_resize(1200, 900);
+
+    const bool smoke_ok = app.run_smoke_test(std::chrono::milliseconds(200));
+    REQUIRE(smoke_ok);
+
+    const HostViewport after = g_last_smoke_host->last_viewport;
+    CHECK(after.pixel_size.x > before.pixel_size.x);
+    CHECK(after.pixel_size.y > before.pixel_size.y);
+    CHECK(after.grid_size.x >= before.grid_size.x);
+    CHECK(after.grid_size.y >= before.grid_size.y);
+
+    app.shutdown();
+}
+
 TEST_CASE("app smoke: shutdown after successful init is clean", "[app_smoke]")
 {
     const std::string font = bundled_font_path();
@@ -357,10 +390,10 @@ TEST_CASE("app smoke: initialization fails when host init fails", "[app_smoke]")
 }
 
 // ---------------------------------------------------------------------------
-// Host dies mid-pump — App exits gracefully
+// Host dies mid-pump — App survives gracefully
 // ---------------------------------------------------------------------------
 
-TEST_CASE("app smoke: host death during pump_once causes clean exit", "[app_smoke]")
+TEST_CASE("app smoke: host death during pump_once does not crash the app", "[app_smoke]")
 {
     const std::string font = bundled_font_path();
     if (!std::filesystem::exists(font))
@@ -374,10 +407,10 @@ TEST_CASE("app smoke: host death during pump_once causes clean exit", "[app_smok
     // Simulate host process death.
     g_last_smoke_host->shutdown();
 
-    // run_smoke_test pumps until content_ready + saw_frame, or timeout.
-    // With a dead host, it should time out (return false) rather than crash.
+    // A dead host should not crash the app loop. The current remain-on-exit
+    // behavior preserves the pane so the app can keep pumping and rendering.
     const bool smoke_ok = app.run_smoke_test(std::chrono::milliseconds(200));
-    REQUIRE_FALSE(smoke_ok);
+    REQUIRE(smoke_ok);
 
     app.shutdown();
 }

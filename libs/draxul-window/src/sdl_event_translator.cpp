@@ -87,7 +87,8 @@ std::optional<MouseWheelEvent> translate_mouse_wheel(const SDL_Event& event)
 std::optional<WindowResizeEvent> translate_resize(SDL_Window* window, const SDL_Event& event)
 {
     PERF_MEASURE();
-    if (event.type != SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED)
+    if (event.type != SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED
+        && event.type != SDL_EVENT_WINDOW_RESIZED)
         return std::nullopt;
     int pw, ph;
     SDL_GetWindowSizeInPixels(window, &pw, &ph);

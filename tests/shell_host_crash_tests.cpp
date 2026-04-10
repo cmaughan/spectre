@@ -136,6 +136,11 @@ private:
 class FakeLocalShellHost final : public LocalTerminalHost
 {
 public:
+    void simulate_process_exit()
+    {
+        process_alive_ = false;
+    }
+
     void feed(std::string_view bytes)
     {
         consume_output(bytes);
@@ -168,7 +173,7 @@ protected:
 
     bool do_process_write(std::string_view) override
     {
-        return true;
+        return process_alive_;
     }
     std::vector<std::string> do_process_drain() override
     {
@@ -181,9 +186,15 @@ protected:
     }
     bool do_process_is_running() const override
     {
-        return true;
+        return process_alive_;
     }
-    void do_process_shutdown() override {}
+    void do_process_shutdown() override
+    {
+        process_alive_ = false;
+    }
+
+private:
+    bool process_alive_ = true;
 };
 
 struct ShCrashSetup
@@ -319,6 +330,18 @@ TEST_CASE("shell host: grid is not mutated after process exits", "[shell_host]")
 
     // The process is no longer running.
     REQUIRE_FALSE(ts.host.is_running());
+}
+
+TEST_CASE("local shell: status text shows exited after process exit", "[shell_host]")
+{
+    LocalResizeSetup ts;
+    REQUIRE(ts.ok);
+
+    CHECK(ts.host.status_text().find("[exited]") == std::string::npos);
+
+    ts.host.simulate_process_exit();
+
+    CHECK(ts.host.status_text().find("[exited]") != std::string::npos);
 }
 
 TEST_CASE("local shell: viewport resize preserves visible text", "[shell_host]")

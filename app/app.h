@@ -28,6 +28,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <unordered_set>
 
 namespace draxul
 {
@@ -92,6 +93,7 @@ private:
     bool initialize_chrome_host();
     bool initialize_session_attach();
     void wire_window_callbacks();
+    void apply_pending_resize();
     // Returns a TextServiceConfig populated from config_. Used by initialize_text_service() and
     // on_display_scale_changed() to avoid duplicating the field assignment at both call sites.
     TextServiceConfig make_text_service_config() const;
@@ -222,6 +224,8 @@ private:
     int64_t session_last_attached_unix_s_ = 0;
     int64_t session_last_detached_unix_s_ = 0;
     std::chrono::steady_clock::time_point last_session_checkpoint_time_{};
+    std::unordered_set<std::string> announced_dead_panes_;
+    std::optional<std::pair<int, int>> pending_window_resize_;
 };
 
 } // namespace draxul
