@@ -445,13 +445,11 @@ bool HostManager::should_preserve_dead_leaf(LeafId id) const
         return false;
     if (is_terminal_shell_host(launch_it->second.kind))
     {
-        const std::optional<int> exit_code = host_it->second->exit_code();
-        // If the shell stopped but we haven't reaped the exit code yet,
-        // treat it as a clean exit (don't preserve). The alternative
-        // (preserving on unknown exit code) causes a visible "dead pane"
-        // flash before the exit code is available.
-        return exit_code.has_value() && *exit_code != 0;
+        // Never preserve dead shell panes — close them immediately regardless
+        // of exit code. The toast for non-zero exits is handled by the caller.
+        return false;
     }
+    // Non-shell hosts (nvim, megacity) are always preserved when they die.
     return true;
 }
 
