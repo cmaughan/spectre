@@ -119,6 +119,9 @@ public:
     std::function<void(const MouseMoveEvent&)> on_mouse_move;
     std::function<void(const MouseWheelEvent&)> on_mouse_wheel;
     std::function<void()> on_close_requested;
+    // Fired on Cmd+Q / menu Quit / Dock right-click Quit. Unlike close_requested
+    // (which may detach), this always terminates the application.
+    std::function<void()> on_quit_requested;
     // macOS: fired when the user clicks the Dock icon while no windows are visible.
     // The handler should create/show a window (e.g. reattach a session).
     std::function<void()> on_dock_reopen;

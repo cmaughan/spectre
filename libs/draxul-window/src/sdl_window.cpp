@@ -362,11 +362,15 @@ bool SdlWindow::handle_event(const SDL_Event& event)
     switch (event.type)
     {
     case SDL_EVENT_QUIT:
-        if (on_close_requested)
+        // Cmd+Q / menu Quit / Dock Quit — always terminate, never detach.
+        if (on_quit_requested)
+            on_quit_requested();
+        else if (on_close_requested)
             on_close_requested();
         return true;
 
     case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
+        // Window close button — may detach instead of quit.
         if (on_close_requested)
             on_close_requested();
         break;

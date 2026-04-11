@@ -1054,6 +1054,7 @@ void App::wire_window_callbacks()
     input_dispatcher_.set_chord_indicator_fade_ms(config_.chord_indicator_fade_ms);
     input_dispatcher_.connect(*window_);
     window_->on_close_requested = [this]() { on_window_close_requested(); };
+    window_->on_quit_requested = [this]() { request_quit(); };
     window_->on_dock_reopen = [this]() {
         if (detached_)
             external_attach_requested_ = true;
