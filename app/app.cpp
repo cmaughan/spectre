@@ -1475,6 +1475,7 @@ bool App::pump_once(std::optional<std::chrono::steady_clock::time_point> wait_de
         if (external_session_shutdown_requested_.exchange(false))
         {
             kill_session();
+            running_ = false;
             return false;
         }
 
@@ -1981,7 +1982,9 @@ void App::kill_session()
     active_host_manager().for_each_host([](LeafId, IHost& h) {
         h.request_close();
     });
-    running_ = false;
+    // Note: callers decide whether to set running_ = false (quit) or
+    // hide the window (Ghostty-style stay-in-Dock). kill_session() only
+    // cleans up session state; it does not stop the event loop.
 }
 
 void App::rename_session(std::string name)
