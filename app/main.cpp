@@ -4,8 +4,8 @@
 #include "session_picker_host.h"
 #include "session_state.h"
 #include <SDL3/SDL.h>
-#include <chrono>
 #include <cctype>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
@@ -707,7 +707,7 @@ static int draxul_main(std::vector<std::string> args)
         }
 
         const char* message = !rename_error.empty() ? rename_error.c_str()
-            : (!command_error.empty() ? command_error.c_str() : "unknown error");
+                                                    : (!command_error.empty() ? command_error.c_str() : "unknown error");
         std::fprintf(stderr, "Failed to rename session '%s': %s\n",
             parsed.session_id.c_str(), message);
         draxul::shutdown_logging();
@@ -854,9 +854,10 @@ static int draxul_main(std::vector<std::string> args)
             && !attach_error.empty())
         {
             DRAXUL_LOG_WARN(draxul::LogCategory::App,
-                "Session attach probe failed: %s", attach_error.c_str());
+                "Session attach probe failed: %s — treating as no server", attach_error.c_str());
         }
-        else if (attach_status == draxul::SessionAttachServer::AttachStatus::NoServer)
+        if (attach_status == draxul::SessionAttachServer::AttachStatus::NoServer
+            || attach_status == draxul::SessionAttachServer::AttachStatus::Error)
         {
             std::string launch_error;
             const auto launch_status = launch_session_owner_and_attach(
