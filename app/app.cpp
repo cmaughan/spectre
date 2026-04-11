@@ -946,6 +946,28 @@ void App::wire_gui_actions()
             chrome_host_->begin_tab_rename_by_id(active_workspace_);
         request_frame();
     };
+    gui_deps.on_move_tab_left = [this]() {
+        move_workspace(-1);
+        request_frame();
+    };
+    gui_deps.on_move_tab_right = [this]() {
+        move_workspace(1);
+        request_frame();
+    };
+    gui_deps.on_duplicate_pane = [this]() {
+        if (auto* host = active_host_manager().focused_host())
+        {
+            const std::string cwd = host->current_working_directory();
+            HostLaunchOptions launch;
+            launch.kind = HostManager::platform_default_split_host_kind();
+            launch.enable_ligatures = config_.enable_ligatures;
+            if (!cwd.empty())
+                launch.working_dir = cwd;
+            active_host_manager().split_focused(SplitDirection::Vertical, std::move(launch), *this);
+            input_dispatcher_.set_host(active_host_manager().focused_host());
+            request_frame();
+        }
+    };
     gui_deps.on_rename_pane = [this]() {
         if (!chrome_host_)
             return;
@@ -2225,6 +2247,22 @@ void App::prev_workspace()
         {
             size_t prev = (i == 0) ? workspaces_.size() - 1 : i - 1;
             activate_workspace(workspaces_[prev]->id);
+            return;
+        }
+    }
+}
+
+void App::move_workspace(int direction)
+{
+    if (workspaces_.size() <= 1)
+        return;
+    for (size_t i = 0; i < workspaces_.size(); ++i)
+    {
+        if (workspaces_[i]->id == active_workspace_)
+        {
+            const auto n = static_cast<int>(workspaces_.size());
+            const int target = (static_cast<int>(i) + direction + n) % n;
+            std::swap(workspaces_[i], workspaces_[target]);
             return;
         }
     }

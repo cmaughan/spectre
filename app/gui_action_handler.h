@@ -59,6 +59,9 @@ public:
         std::function<void(int)> on_activate_tab; // switch to tab by 1-based index
         std::function<void()> on_rename_tab; // begin inline rename of the active tab
         std::function<void()> on_rename_pane; // begin inline rename of the focused pane
+        std::function<void()> on_move_tab_left; // move active tab one position left
+        std::function<void()> on_move_tab_right; // move active tab one position right
+        std::function<void()> on_duplicate_pane; // split with same shell + cwd
         std::function<void(std::string_view)> broadcast_action; // dispatch action to all hosts
         std::function<void()> on_test_toast; // emit a sample toast (palette/keybinding test hook)
     };

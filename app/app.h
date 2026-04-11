@@ -153,6 +153,7 @@ private:
     void activate_workspace(int workspace_id);
     void next_workspace();
     void prev_workspace();
+    void move_workspace(int direction); // -1 = left, +1 = right
     void activate_workspace_by_index(int one_based_index);
     void activate_pane_by_index(int one_based_index);
     void recompute_all_viewports(int origin_x, int origin_y, int pixel_w, int pixel_h);

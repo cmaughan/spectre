@@ -64,6 +64,9 @@ const std::unordered_map<std::string_view, GuiActionHandler::ActionFn>& GuiActio
         {"activate_tab",       [](auto& h, auto args) { h.activate_tab(args); }},
         {"rename_tab",         [](auto& h, auto) { if (h.deps_.on_rename_tab) h.deps_.on_rename_tab(); }},
         {"rename_pane",        [](auto& h, auto) { if (h.deps_.on_rename_pane) h.deps_.on_rename_pane(); }},
+        {"move_tab_left",      [](auto& h, auto) { if (h.deps_.on_move_tab_left) h.deps_.on_move_tab_left(); }},
+        {"move_tab_right",     [](auto& h, auto) { if (h.deps_.on_move_tab_right) h.deps_.on_move_tab_right(); }},
+        {"duplicate_pane",     [](auto& h, auto) { if (h.deps_.on_duplicate_pane) h.deps_.on_duplicate_pane(); }},
         {"test_toast",         [](auto& h, auto) { h.test_toast(); }},
     };
     // clang-format on
