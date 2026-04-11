@@ -867,21 +867,12 @@ static int draxul_main(std::vector<std::string> args)
                 draxul::shutdown_logging();
                 return 0;
             }
-            if (launch_status == SessionOwnerLaunchStatus::SpawnFailed)
+            if (launch_status != SessionOwnerLaunchStatus::Attached)
             {
                 DRAXUL_LOG_WARN(draxul::LogCategory::App,
-                    "Failed to launch the session owner for '%s'; falling back to in-process startup: %s",
+                    "Session owner launch/attach failed for '%s'; falling back to in-process startup: %s",
                     parsed.session_id.c_str(),
                     launch_error.empty() ? "unknown error" : launch_error.c_str());
-            }
-            else
-            {
-                DRAXUL_LOG_ERROR(draxul::LogCategory::App,
-                    "Launched the session owner for '%s' but could not attach: %s",
-                    parsed.session_id.c_str(),
-                    launch_error.empty() ? "unknown error" : launch_error.c_str());
-                draxul::shutdown_logging();
-                return 1;
             }
         }
     }
