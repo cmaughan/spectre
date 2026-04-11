@@ -823,9 +823,10 @@ void App::wire_gui_actions()
         {
             if (workspace_count() <= 1)
             {
-                // Last pane in last workspace — clean exit.
+                // Last pane in last workspace — Ghostty-style: stay
+                // alive with no window so the Dock/tray icon can reopen.
                 kill_session();
-                running_ = false;
+                window_->hide();
                 return;
             }
             // Last pane in this workspace — close the workspace, switch to another.
@@ -1363,11 +1364,10 @@ bool App::close_dead_panes()
             // Last pane in this workspace died.
             if (workspace_count() <= 1)
             {
-                // Last pane in the last workspace — clean exit.
-                // Kill the session so stale state files are deleted and
-                // the next launch starts fresh.
+                // Last pane in the last workspace — Ghostty-style: stay
+                // alive with no window so the Dock/tray icon can reopen.
                 kill_session();
-                running_ = false;
+                window_->hide();
                 return false;
             }
             // Close this workspace and switch to another.
