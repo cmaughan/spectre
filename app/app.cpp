@@ -825,7 +825,10 @@ void App::wire_gui_actions()
             {
                 // Last pane in last workspace — Ghostty-style: stay
                 // alive with no window so the Dock/tray icon can reopen.
-                kill_session();
+                session_killed_ = true;
+                delete_session_state(options_.session_id);
+                delete_session_runtime_metadata(options_.session_id);
+                input_dispatcher_.set_host(nullptr);
                 window_->hide();
                 return;
             }
@@ -1368,7 +1371,12 @@ bool App::close_dead_panes()
             {
                 // Last pane in the last workspace — Ghostty-style: stay
                 // alive with no window so the Dock/tray icon can reopen.
-                kill_session();
+                // Don't call kill_session() — it request_close()s all hosts
+                // which would kill freshly-created ones on reattach.
+                session_killed_ = true;
+                delete_session_state(options_.session_id);
+                delete_session_runtime_metadata(options_.session_id);
+                input_dispatcher_.set_host(nullptr);
                 window_->hide();
                 return false;
             }
