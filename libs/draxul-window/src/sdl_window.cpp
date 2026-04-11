@@ -28,6 +28,11 @@ namespace draxul
 extern void apply_title_bar_color_macos(SDL_Window*, Color);
 extern void disable_press_and_hold_macos();
 extern void install_dock_reopen_handler(std::function<void()>* callback);
+#elif defined(_WIN32)
+extern void create_system_tray_icon(std::function<void()>* on_attach, std::function<void()>* on_quit);
+extern void destroy_system_tray_icon();
+extern bool has_system_tray_icon();
+extern void pump_tray_messages();
 #endif
 
 #if defined(_WIN32) || defined(__APPLE__)
@@ -277,6 +282,9 @@ void SdlWindow::show()
         return;
     SDL_ShowWindow(window_);
     visible_ = true;
+#ifdef _WIN32
+    destroy_system_tray_icon();
+#endif
 }
 
 void SdlWindow::hide()
@@ -286,6 +294,9 @@ void SdlWindow::hide()
         return;
     SDL_HideWindow(window_);
     visible_ = false;
+#ifdef _WIN32
+    create_system_tray_icon(&on_dock_reopen, &on_quit_requested);
+#endif
 }
 
 bool SdlWindow::is_visible() const
@@ -316,6 +327,9 @@ void SdlWindow::shutdown()
         SDL_DestroyWindow(window_);
         window_ = nullptr;
     }
+#ifdef _WIN32
+    destroy_system_tray_icon();
+#endif
     SDL_Quit();
 }
 
@@ -451,6 +465,9 @@ bool SdlWindow::poll_events()
 {
     PERF_MEASURE();
     flush_text_input_area();
+#ifdef _WIN32
+    pump_tray_messages();
+#endif
     SDL_Event event;
     while (SDL_PollEvent(&event))
     {
