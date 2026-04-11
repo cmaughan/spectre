@@ -1084,8 +1084,10 @@ void App::wire_window_callbacks()
     window_->on_close_requested = [this]() { on_window_close_requested(); };
     window_->on_quit_requested = [this]() { request_quit(); };
     window_->on_dock_reopen = [this]() {
-        if (detached_)
-            external_attach_requested_ = true;
+        // Fires when the user clicks the Dock icon with no visible windows.
+        // Works both when detached (session alive) and when the session was
+        // killed (all panes closed, window hidden).
+        external_attach_requested_ = true;
     };
 }
 
@@ -1837,7 +1839,14 @@ int App::wait_timeout_ms(std::optional<std::chrono::steady_clock::time_point> wa
         deadline = wait_deadline;
 
     if (!deadline)
-        return any_host_running ? kHostPollIntervalMs : -1;
+    {
+        if (any_host_running)
+            return kHostPollIntervalMs;
+        // When no hosts are running (e.g. window hidden after all panes
+        // closed), use a short poll interval so we can respond to dock
+        // reopen / tray icon clicks promptly.
+        return window_ && !window_->is_visible() ? 200 : -1;
+    }
 
     const auto now = std::chrono::steady_clock::now();
     if (now >= *deadline)
