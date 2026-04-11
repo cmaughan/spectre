@@ -177,6 +177,141 @@ TEST_CASE("grid rendering pipeline redraws the leader when a continuation change
     REQUIRE(handle.update_batches[0][1].glyph.size.x > 0);
 }
 
+Grid make_three_cell_ligature_grid()
+{
+    Grid grid;
+    grid.resize(5, 1);
+    grid.clear_dirty();
+    grid.set_cell(0, 0, "=", 0, false);
+    grid.set_cell(1, 0, "=", 0, false);
+    grid.set_cell(2, 0, "=", 0, false);
+    grid.set_cell(3, 0, " ", 0, false);
+    grid.set_cell(4, 0, " ", 0, false);
+    return grid;
+}
+
+Grid make_highlight_boundary_ligature_grid()
+{
+    // "===" where the middle '=' has a different highlight
+    Grid grid;
+    grid.resize(5, 1);
+    grid.clear_dirty();
+    grid.set_cell(0, 0, "=", 0, false);
+    grid.set_cell(1, 0, "=", 1, false); // different highlight
+    grid.set_cell(2, 0, "=", 1, false);
+    grid.set_cell(3, 0, " ", 0, false);
+    grid.set_cell(4, 0, " ", 0, false);
+    return grid;
+}
+
+TEST_CASE("grid rendering pipeline combines three-cell ligatures", "[grid]")
+{
+    Grid grid = make_three_cell_ligature_grid();
+    HighlightTable highlights;
+    FakeGlyphAtlas atlas;
+    atlas.register_glyph("===", { { 0.0f, 0.5f, 0.5f, 1.0f }, { 1, 2 }, { 27, 9 }, false });
+    atlas.set_ligature_span("===", 3);
+    FakeGridPipelineRenderer renderer;
+    FakeGridPipelineHandle handle;
+    GridRenderingPipeline pipeline(grid, highlights, atlas);
+    pipeline.set_renderer(&renderer);
+    pipeline.set_grid_handle(&handle);
+    pipeline.set_enable_ligatures(true);
+
+    pipeline.flush();
+
+    INFO("three-cell ligature should resolve as one combined cluster");
+    REQUIRE(atlas.resolve_calls == 1);
+    REQUIRE(static_cast<int>(atlas.resolved_texts.size()) == 1);
+    REQUIRE(atlas.resolved_texts[0] == std::string("==="));
+    REQUIRE(static_cast<int>(handle.update_batches.size()) == 1);
+    INFO("leader + 2 continuation cells + 2 space cells should all be updated");
+    REQUIRE(static_cast<int>(handle.update_batches[0].size()) == 5);
+    INFO("leader cell stores the 3-cell ligature atlas region");
+    REQUIRE(handle.update_batches[0][0].glyph.size.x == 27);
+    INFO("first continuation cell renders no glyph");
+    REQUIRE(handle.update_batches[0][1].glyph.size.x == 0);
+    INFO("second continuation cell renders no glyph");
+    REQUIRE(handle.update_batches[0][2].glyph.size.x == 0);
+}
+
+TEST_CASE("grid rendering pipeline breaks ligature at highlight boundary", "[grid]")
+{
+    Grid grid = make_highlight_boundary_ligature_grid();
+    HighlightTable highlights;
+    FakeGlyphAtlas atlas;
+    atlas.register_glyph("=", { { 0.5f, 0.0f, 0.625f, 0.5f }, { 1, 1 }, { 7, 9 }, false });
+    atlas.register_glyph("===", { { 0.0f, 0.5f, 0.5f, 1.0f }, { 1, 2 }, { 27, 9 }, false });
+    atlas.set_ligature_span("===", 3);
+    atlas.register_glyph("==", { { 0.0f, 0.5f, 0.375f, 1.0f }, { 1, 2 }, { 18, 9 }, false });
+    atlas.set_ligature_span("==", 2);
+    FakeGridPipelineRenderer renderer;
+    FakeGridPipelineHandle handle;
+    GridRenderingPipeline pipeline(grid, highlights, atlas);
+    pipeline.set_renderer(&renderer);
+    pipeline.set_grid_handle(&handle);
+    pipeline.set_enable_ligatures(true);
+
+    pipeline.flush();
+
+    INFO("highlight boundary should prevent the 3-cell ligature");
+    // Cell 0 has hl_attr_id=0, cells 1-2 have hl_attr_id=1, so:
+    // - Cell 0 cannot form a ligature with cell 1 (different highlights)
+    // - Cells 1-2 can form a 2-cell ligature "=="
+    // So we expect: cell 0 shaped individually, cells 1-2 as "==" ligature
+    REQUIRE(static_cast<int>(handle.update_batches.size()) == 1);
+    auto& batch = handle.update_batches[0];
+
+    // Cell 0: standalone "="
+    bool found_standalone = false;
+    bool found_ligature = false;
+    for (auto& u : batch)
+    {
+        if (u.col == 0 && u.glyph.size.x == 7)
+            found_standalone = true;
+        if (u.col == 1 && u.glyph.size.x == 18)
+            found_ligature = true;
+    }
+    INFO("cell 0 should render as standalone glyph");
+    REQUIRE(found_standalone);
+    INFO("cells 1-2 should form a 2-cell ligature");
+    REQUIRE(found_ligature);
+}
+
+TEST_CASE("grid rendering pipeline prefers longest ligature match", "[grid]")
+{
+    Grid grid;
+    grid.resize(4, 1);
+    grid.clear_dirty();
+    grid.set_cell(0, 0, "=", 0, false);
+    grid.set_cell(1, 0, "=", 0, false);
+    grid.set_cell(2, 0, "=", 0, false);
+    grid.set_cell(3, 0, " ", 0, false);
+
+    HighlightTable highlights;
+    FakeGlyphAtlas atlas;
+    atlas.register_glyph("=", { { 0.5f, 0.0f, 0.625f, 0.5f }, { 1, 1 }, { 7, 9 }, false });
+    atlas.register_glyph("==", { { 0.0f, 0.5f, 0.375f, 1.0f }, { 1, 2 }, { 18, 9 }, false });
+    atlas.set_ligature_span("==", 2);
+    atlas.register_glyph("===", { { 0.0f, 0.5f, 0.5f, 1.0f }, { 1, 2 }, { 27, 9 }, false });
+    atlas.set_ligature_span("===", 3);
+    FakeGridPipelineRenderer renderer;
+    FakeGridPipelineHandle handle;
+    GridRenderingPipeline pipeline(grid, highlights, atlas);
+    pipeline.set_renderer(&renderer);
+    pipeline.set_grid_handle(&handle);
+    pipeline.set_enable_ligatures(true);
+
+    pipeline.flush();
+
+    INFO("should prefer === (3-cell) over == (2-cell)");
+    REQUIRE(atlas.resolve_calls == 1);
+    REQUIRE(atlas.resolved_texts[0] == std::string("==="));
+    // 3 cells for the ligature + 1 trailing space = 4 total updates
+    REQUIRE(static_cast<int>(handle.update_batches[0].size()) == 4);
+    REQUIRE(handle.update_batches[0][0].glyph.size.x == 27);
+}
+
 TEST_CASE("grid rendering pipeline reuses scratch capacity for ligature expansion", "[grid]")
 {
     Grid grid = make_ligature_grid();

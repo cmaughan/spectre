@@ -17,13 +17,15 @@ bool should_shape_cell_text(const Cell& cell)
         && cell.text != " ";
 }
 
-bool can_form_two_cell_ligature(const Cell& leader, const Cell& continuation)
+// Maximum cells to consider for a multi-cell ligature.
+constexpr int kMaxLigatureCells = 6;
+
+bool can_extend_ligature(const Cell& leader, const Cell& next)
 {
-    return !leader.double_width
-        && !continuation.double_width
-        && should_shape_cell_text(leader)
-        && should_shape_cell_text(continuation)
-        && leader.hl_attr_id == continuation.hl_attr_id;
+    return !next.double_width
+        && !next.double_width_cont
+        && should_shape_cell_text(next)
+        && leader.hl_attr_id == next.hl_attr_id;
 }
 
 CellUpdate make_cell_update(int col, int row, const Cell& cell, HighlightTable& highlights)
@@ -51,17 +53,22 @@ void expand_dirty_cells_for_ligatures_impl(
 {
     PERF_MEASURE();
     expanded.clear();
-    const size_t needed = dirty.size() * 3;
+    // Each dirty cell can expand by up to (kMaxLigatureCells - 1) in each direction.
+    const int expand_radius = kMaxLigatureCells - 1;
+    const size_t needed = dirty.size() * (1 + 2 * expand_radius);
     if (expanded.capacity() < needed)
         expanded.reserve(needed);
     expanded.insert(expanded.end(), dirty.begin(), dirty.end());
 
     for (const auto& cell : dirty)
     {
-        if (cell.col > 0)
-            expanded.push_back({ cell.col - 1, cell.row });
-        if (cell.col + 1 < grid.cols())
-            expanded.push_back({ cell.col + 1, cell.row });
+        for (int d = 1; d <= expand_radius; ++d)
+        {
+            if (cell.col - d >= 0)
+                expanded.push_back({ cell.col - d, cell.row });
+            if (cell.col + d < grid.cols())
+                expanded.push_back({ cell.col + d, cell.row });
+        }
     }
 
     std::sort(expanded.begin(), expanded.end(), [](const Grid::DirtyCell& lhs, const Grid::DirtyCell& rhs) {
@@ -110,40 +117,81 @@ bool GridRenderingPipeline::try_shape_ligature(int col, int row, const Cell& cel
     bool is_italic, CellUpdate& update, std::vector<CellUpdate>& updates, bool& atlas_updated)
 {
     PERF_MEASURE();
-    if (col + 1 >= grid_.cols())
+    if (cell.double_width || !should_shape_cell_text(cell))
         return false;
 
-    const auto& next = grid_.get_cell(col + 1, row);
-    if (!can_form_two_cell_ligature(cell, next))
+    // Build a candidate string of up to kMaxLigatureCells cells, breaking at
+    // highlight boundaries or incompatible cells.
+    const int max_end = std::min(col + kMaxLigatureCells, grid_.cols());
+    std::string combined(cell.text.view());
+    int span_end = col + 1; // exclusive end of the current candidate window
+
+    for (int c = col + 1; c < max_end; ++c)
+    {
+        const auto& next = grid_.get_cell(c, row);
+        if (!can_extend_ligature(cell, next))
+            break;
+        combined += std::string(next.text.view());
+        span_end = c + 1;
+    }
+
+    // Need at least 2 cells for a ligature.
+    if (span_end - col < 2)
         return false;
 
-    const std::string combined = std::string(cell.text.view()) + std::string(next.text.view());
-    if (glyph_atlas_.ligature_cell_span(combined, is_bold, is_italic) != 2)
-        return false;
+    // Try the longest candidate first, then shrink until we find a ligature or
+    // exhaust the window down to a 2-cell pair.
+    for (int try_end = span_end; try_end >= col + 2; --try_end)
+    {
+        const int candidate_len = try_end - col;
 
-    update.glyph = glyph_atlas_.resolve_cluster(combined, is_bold, is_italic);
-    if (update.glyph.is_color)
-        update.style_flags |= STYLE_FLAG_COLOR_GLYPH;
-    atlas_updated = atlas_updated || glyph_atlas_.atlas_dirty();
-    updates.push_back(update);
-    updates.push_back(make_cell_update(col + 1, row, next, highlights_));
-    return true;
+        // Build the candidate string for this length.
+        std::string candidate;
+        if (try_end == span_end)
+        {
+            candidate = combined;
+        }
+        else
+        {
+            candidate.clear();
+            for (int c = col; c < try_end; ++c)
+                candidate += std::string(grid_.get_cell(c, row).text.view());
+        }
+
+        const int span = glyph_atlas_.ligature_cell_span(candidate, is_bold, is_italic);
+        if (span != candidate_len)
+            continue;
+
+        // Found a valid ligature spanning `span` cells.
+        update.glyph = glyph_atlas_.resolve_cluster(candidate, is_bold, is_italic);
+        if (update.glyph.is_color)
+            update.style_flags |= STYLE_FLAG_COLOR_GLYPH;
+        atlas_updated = atlas_updated || glyph_atlas_.atlas_dirty();
+        updates.push_back(update);
+
+        // Emit blank continuation updates for the remaining cells in the ligature.
+        for (int c = col + 1; c < try_end; ++c)
+            updates.push_back(make_cell_update(c, row, grid_.get_cell(c, row), highlights_));
+
+        return true;
+    }
+
+    return false;
 }
 
 void GridRenderingPipeline::build_cell_updates(const std::vector<Grid::DirtyCell>& dirty,
     std::vector<CellUpdate>& updates, bool& atlas_updated)
 {
     PERF_MEASURE();
-    bool skip_next_cell = false;
-    Grid::DirtyCell skipped_cell = {};
+    // Track the end column (exclusive) and row of cells consumed by the last ligature
+    // so we can skip continuation cells that were already emitted.
+    int skip_until_col = -1;
+    int skip_row = -1;
 
     for (auto& [col, row] : dirty)
     {
-        if (skip_next_cell && skipped_cell.col == col && skipped_cell.row == row)
-        {
-            skip_next_cell = false;
+        if (row == skip_row && col < skip_until_col)
             continue;
-        }
 
         const auto& cell = grid_.get_cell(col, row);
         CellUpdate update = make_cell_update(col, row, cell, highlights_);
@@ -151,12 +199,16 @@ void GridRenderingPipeline::build_cell_updates(const std::vector<Grid::DirtyCell
         const bool is_bold = (update.style_flags & STYLE_FLAG_BOLD) != 0;
         const bool is_italic = (update.style_flags & STYLE_FLAG_ITALIC) != 0;
 
-        if (enable_ligatures_
-            && try_shape_ligature(col, row, cell, is_bold, is_italic, update, updates, atlas_updated))
+        if (enable_ligatures_)
         {
-            skip_next_cell = true;
-            skipped_cell = { col + 1, row };
-            continue;
+            const size_t before = updates.size();
+            if (try_shape_ligature(col, row, cell, is_bold, is_italic, update, updates, atlas_updated))
+            {
+                const int ligature_cells = static_cast<int>(updates.size() - before);
+                skip_until_col = col + ligature_cells;
+                skip_row = row;
+                continue;
+            }
         }
 
         if (should_shape_cell_text(cell))

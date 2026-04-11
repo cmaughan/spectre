@@ -66,7 +66,10 @@ public:
         cache_limit_ = std::max<size_t>(1, limit);
     }
 
-    // Returns the ligature span width in cells (0 = no ligature, 2 = two-cell ligature).
+    // Maximum number of cells a ligature can span.
+    static constexpr int MAX_LIGATURE_CELLS = 6;
+
+    // Returns the ligature span width in cells (0 = no ligature, 2+ = multi-cell ligature).
     // Requires ligatures enabled; otherwise always returns 0.
     int ligature_cell_span(
         const std::string& text, bool enable_ligatures, FontSelector& selector, FontResolver& resolver,
@@ -131,7 +134,7 @@ public:
 
         const int cell_width = std::max(1, resolver.primary().metrics().cell_width);
         const int span = std::max(1, (advance + cell_width - 1) / cell_width);
-        const int ligature_span = span == 2 ? 2 : 0;
+        const int ligature_span = (span >= 2 && span <= MAX_LIGATURE_CELLS) ? span : 0;
         store(text, ligature_span);
         return ligature_span;
     }

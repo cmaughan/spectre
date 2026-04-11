@@ -56,7 +56,7 @@ A standalone GUI library for rendering UI items that do not depend on ImGui. It 
 ## Font Pipeline
 
 - **FreeType** loads faces, **HarfBuzz** shapes text, glyph cache rasterizes on demand
-- **Ligatures**: Programming ligatures via HarfBuzz (configurable, default on)
+- **Ligatures**: Programming ligatures via HarfBuzz (configurable, default on); supports multi-cell ligatures up to 6 cells (e.g. `===`, `!==`, `>>=`, `<<=`), with correct highlight-boundary breaking
 - **Multi-weight**: Bold, italic, bold+italic via separate font files
 - **Fallback chain**: Primary font + configurable fallback paths for missing glyphs
 - **Emoji**: Color glyph rendering, variation selectors (VS-16), ZWJ sequences
