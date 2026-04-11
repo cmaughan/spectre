@@ -138,8 +138,9 @@ void LocalTerminalHost::pump()
     auto chunks = do_process_drain();
     if (!chunks.empty())
     {
-        if (scrollback_.is_scrolled_back())
-            scrollback_.scroll_to_live();
+        // Don't snap to live view on output — only on user input (handled
+        // in on_key/on_text_input). This lets the user scroll back while
+        // a program is producing output (e.g. `while true; do date; sleep 1; done`).
         selection_.clear();
 
         // Process all available output, re-draining after each batch so that
