@@ -1949,6 +1949,21 @@ void App::reattach_window()
     {
         window_->show();
     }
+
+    // If the session was killed (all panes closed), create a fresh workspace
+    // so the user has something to interact with.
+    if (workspaces_.empty() || !active_host_manager().host())
+    {
+        session_killed_ = false;
+        const int pw = window_->width_pixels();
+        const int th = diagnostics_host_ ? diagnostics_host_->layout().terminal_height
+                                         : window_->height_pixels();
+        const int tab_y = chrome_host_ ? chrome_host_->tab_bar_height() : 0;
+        add_workspace(pw, th - tab_y);
+        recompute_all_viewports(0, tab_y, pw, th - tab_y);
+        input_dispatcher_.set_host(active_host_manager().focused_host());
+    }
+
     persist_session_runtime_metadata(true);
     request_frame();
 }
