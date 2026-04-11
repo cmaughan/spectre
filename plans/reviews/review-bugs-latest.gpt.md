@@ -1,24 +1,18 @@
-1. **CRITICAL** — [libs/draxul-renderer/src/metal/metal_renderer.mm:1000](/Users/cmaughan/dev/Draxul/libs/draxul-renderer/src/metal/metal_renderer.mm#L1000)  
-   **What goes wrong:** `flush_pending_atlas_uploads()` updates `atlas_staging_sizes_[slot]` immediately after `newBufferWithLength:`. If Metal returns `nil` under memory pressure, `atlas_staging_[slot]` stays null, `dst` becomes null at line 1008, and line 1014 does `memcpy(dst + offset, ...)`, which is a null-pointer write and crashes.  
-   **Trigger:** A large glyph-atlas upload or low-memory condition on macOS during text rendering.  
-   **Suggested fix:** Only publish the new size after the buffer allocation succeeds, and bail out before `memcpy` if the buffer or mapped pointer is null.
-   ```cpp
-   id<MTLBuffer> buf = [device_.get() newBufferWithLength:total_bytes options:MTLResourceStorageModeShared];
-   if (!buf) { DRAXUL_LOG_ERROR(...); return; }
-   atlas_staging_[slot].reset(buf);
-   atlas_staging_sizes_[slot] = total_bytes;
-   ```
+No `CRITICAL` findings stood out from static read-only inspection. The strongest untracked correctness bugs I found are:
 
-2. **HIGH** — [libs/draxul-renderer/src/metal/metal_renderer.mm:110](/Users/cmaughan/dev/Draxul/libs/draxul-renderer/src/metal/metal_renderer.mm#L110)  
-   **What goes wrong:** `MetalGridHandle::upload_state()` sets `buffer_sizes_[slot] = required_size` before verifying that `newBufferWithLength:` actually returned a buffer. If the allocation fails once, later frames stop retrying because the size check now passes, `current_buffer()` remains null, and the pane never renders again for that frame slot.  
-   **Trigger:** Transient Metal shared-buffer allocation failure while resizing, opening a split, or uploading a larger grid.  
-   **Suggested fix:** Update `buffer_sizes_[slot]` only after allocation succeeds; otherwise leave it unchanged or reset it to `0` so the next frame retries.
+1. `HIGH` Post-`fork()` child paths do non-async-signal-safe C++/libc work before `exec`, which can deadlock the child in a multithreaded parent.  
+   Files: [nvim_process.cpp](/Users/cmaughan/dev/Draxul/libs/draxul-nvim/src/nvim_process.cpp:303), [unix_pty_process.cpp](/Users/cmaughan/dev/Draxul/libs/draxul-host/src/unix_pty_process.cpp:73), also the same pattern appears in [session_picker_host.cpp](/Users/cmaughan/dev/Draxul/app/session_picker_host.cpp:323) and [main.cpp](/Users/cmaughan/dev/Draxul/app/main.cpp:470).  
+   What goes wrong: after `fork()`, these children build `std::vector`/`std::string` argv data, call `setenv`, and use `execvp`. Draxul is already multithreaded at runtime (RPC/PTy/weather/session threads), so if another thread is inside malloc/libc when a new shell pane or embedded nvim process is spawned, the child can hang before `exec`, leaving a blank pane or failed startup.  
+   Suggested fix: switch these launches to `posix_spawn` or prebuild argv/env in the parent and keep the child path to async-signal-safe syscalls plus `execve`.
 
-3. **HIGH** — [libs/draxul-renderer/src/metal/metal_renderer.mm:285](/Users/cmaughan/dev/Draxul/libs/draxul-renderer/src/metal/metal_renderer.mm#L285)  
-   **What goes wrong:** `initialize()` does not validate several mandatory Metal objects before returning success: `command_queue_` at line 285, `atlas_texture_` at line 388, `atlas_sampler_` at line 399, and `frame_semaphore_` at line 403. Line 406 returns `true` even if any of them are null. That leaves the renderer "initialized" in a broken state, so later frames silently no-op or fail unpredictably instead of surfacing startup failure.  
-   **Trigger:** Startup under resource pressure or device allocation failure on macOS.  
-   **Suggested fix:** Check each created object and `return false` with an error log if any allocation returns null.
-   ```cpp
-   command_queue_.reset([device newCommandQueue]);
-   if (!command_queue_) return false;
-   ```
+2. `HIGH` Windows ConPTY input writes assume `WriteFile` is all-or-nothing and silently truncate on short writes.  
+   Files: [conpty_process.cpp](/Users/cmaughan/dev/Draxul/libs/draxul-host/src/conpty_process.cpp:259), reached from [shell_host_win.cpp](/Users/cmaughan/dev/Draxul/libs/draxul-host/src/shell_host_win.cpp:79).  
+   What goes wrong: `ConPtyProcess::write()` performs a single `WriteFile(...) && written == size` check. On a pipe, `WriteFile` may succeed with `written < len` when the buffer is nearly full. Large pastes or startup command bursts into a Windows/WSL shell pane can therefore lose the tail of the input, corrupting commands at runtime.  
+   Suggested fix: use the same retry loop already present in [nvim_process.cpp](/Users/cmaughan/dev/Draxul/libs/draxul-nvim/src/nvim_process.cpp:187): advance the pointer until all bytes are written, and treat `written == 0` as a hard failure.
+
+3. `HIGH` Reinitializing `TextService` on config reload / DPI change reuses live font state without clearing old variant flags or freeing old font objects first.  
+   Files: [app.cpp](/Users/cmaughan/dev/Draxul/app/app.cpp:532), [app.cpp](/Users/cmaughan/dev/Draxul/app/app.cpp:1642), [text_service.cpp](/Users/cmaughan/dev/Draxul/libs/draxul-font/src/text_service.cpp:88), [font_resolver.cpp](/Users/cmaughan/dev/Draxul/libs/draxul-font/src/font_resolver.cpp:147), [font_selector.h](/Users/cmaughan/dev/Draxul/libs/draxul-font/src/font_selector.h:143), [font_manager.cpp](/Users/cmaughan/dev/Draxul/libs/draxul-font/src/font_manager.cpp:39).  
+   What goes wrong: `reload_config()` and `on_display_scale_changed()` call `text_service_.initialize(...)` on a live service, but `TextService::initialize()` never calls `shutdown()`. `FontResolver::initialize()` only ever sets `bold_loaded_` / `italic_loaded_` / `bold_italic_loaded_` to `true`; it does not clear them first. If the user reloads from a font family that had a bold/italic variant to one that does not, bold/italic rendering can keep using the old family’s faces via `FontSelector`, and the old FreeType/HarfBuzz objects leak on each reinit.  
+   Suggested fix: make reinit tear down old state first (`TextService::initialize()` or `FontResolver::initialize()` should call `shutdown()`), and explicitly reset variant-loaded flags/paths before probing optional bold/italic faces. `FontManager::initialize()` should also self-clean old state on entry/failure.
+
+No other concrete, untracked runtime-breaking defects were as solid as these from static inspection alone.
