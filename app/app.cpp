@@ -823,7 +823,8 @@ void App::wire_gui_actions()
         {
             if (workspace_count() <= 1)
             {
-                // Last pane in last workspace — exit.
+                // Last pane in last workspace — clean exit.
+                kill_session();
                 running_ = false;
                 return;
             }
