@@ -777,11 +777,8 @@ static int draxul_main(std::vector<std::string> args)
     {
         options.activate_window_on_startup = false;
     }
-    if (parsed.session_owner)
-    {
-        options.activate_window_on_startup = false;
-        options.start_hidden_window = true;
-    }
+    // --session-owner is no longer used (single-process model) but we still
+    // accept the flag silently so old scripts/shortcuts don't break.
 
     if (parsed.host_kind)
     {
@@ -842,6 +839,9 @@ static int draxul_main(std::vector<std::string> args)
 #endif
     if (allow_session_attach && !parsed.session_owner)
     {
+        // Single-process model: if another instance is already running for
+        // this session, tell it to show its window and exit. No background
+        // session-owner process is spawned.
         std::string attach_error;
         const auto attach_status = draxul::SessionAttachServer::try_attach(
             parsed.session_id, &attach_error);
@@ -850,30 +850,11 @@ static int draxul_main(std::vector<std::string> args)
             draxul::shutdown_logging();
             return 0;
         }
-        if (attach_status == draxul::SessionAttachServer::AttachStatus::Error
-            && !attach_error.empty())
+        // Any other status (NoServer, Error) — proceed with in-process startup.
+        if (!attach_error.empty())
         {
-            DRAXUL_LOG_WARN(draxul::LogCategory::App,
-                "Session attach probe failed: %s — treating as no server", attach_error.c_str());
-        }
-        if (attach_status == draxul::SessionAttachServer::AttachStatus::NoServer
-            || attach_status == draxul::SessionAttachServer::AttachStatus::Error)
-        {
-            std::string launch_error;
-            const auto launch_status = launch_session_owner_and_attach(
-                args, parsed, &launch_error);
-            if (launch_status == SessionOwnerLaunchStatus::Attached)
-            {
-                draxul::shutdown_logging();
-                return 0;
-            }
-            if (launch_status != SessionOwnerLaunchStatus::Attached)
-            {
-                DRAXUL_LOG_WARN(draxul::LogCategory::App,
-                    "Session owner launch/attach failed for '%s'; falling back to in-process startup: %s",
-                    parsed.session_id.c_str(),
-                    launch_error.empty() ? "unknown error" : launch_error.c_str());
-            }
+            DRAXUL_LOG_DEBUG(draxul::LogCategory::App,
+                "No running instance to attach to: %s", attach_error.c_str());
         }
     }
     options.enable_session_attach = allow_session_attach;
