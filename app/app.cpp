@@ -1363,9 +1363,9 @@ bool App::close_dead_panes()
             if (workspace_count() <= 1)
             {
                 // Last pane in the last workspace — clean exit.
-                // Mark the session as killed so no stale session state
-                // blocks the next launch.
-                session_killed_ = true;
+                // Kill the session so stale state files are deleted and
+                // the next launch starts fresh.
+                kill_session();
                 running_ = false;
                 return false;
             }
