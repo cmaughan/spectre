@@ -3,6 +3,7 @@
 #include <draxul/perf_timing.h>
 
 #include <algorithm>
+#include <atomic>
 #include <sstream>
 
 #ifdef _WIN32
@@ -25,16 +26,20 @@ namespace draxul
 
 struct NvimProcess::Impl
 {
+    // These fields are accessed from multiple threads (main thread via
+    // shutdown(), reader thread via read(), RPC request threads via write()
+    // and is_running()).  Using std::atomic eliminates the data races that
+    // TSan reports (WI 134).
 #ifdef _WIN32
-    HANDLE child_stdin_write_ = INVALID_HANDLE_VALUE;
-    HANDLE child_stdout_read_ = INVALID_HANDLE_VALUE;
+    std::atomic<HANDLE> child_stdin_write_{ INVALID_HANDLE_VALUE };
+    std::atomic<HANDLE> child_stdout_read_{ INVALID_HANDLE_VALUE };
     PROCESS_INFORMATION proc_info_ = {};
 #else
-    int child_stdin_write_ = -1;
-    int child_stdout_read_ = -1;
-    pid_t child_pid_ = -1;
+    std::atomic<int> child_stdin_write_{ -1 };
+    std::atomic<int> child_stdout_read_{ -1 };
+    std::atomic<pid_t> child_pid_{ -1 };
 #endif
-    bool started_ = false;
+    std::atomic<bool> started_{ false };
 };
 
 NvimProcess::NvimProcess()
@@ -148,9 +153,9 @@ Result<void, Error> NvimProcess::spawn(const std::string& nvim_path, const std::
     if (nul_handle != INVALID_HANDLE_VALUE)
         CloseHandle(nul_handle);
 
-    impl_->child_stdin_write_ = stdin_write;
-    impl_->child_stdout_read_ = stdout_read;
-    impl_->started_ = true;
+    impl_->child_stdin_write_.store(stdin_write, std::memory_order_relaxed);
+    impl_->child_stdout_read_.store(stdout_read, std::memory_order_relaxed);
+    impl_->started_.store(true, std::memory_order_release);
 
     DRAXUL_LOG_INFO(LogCategory::Nvim, "nvim spawned (PID %lu)", impl_->proc_info_.dwProcessId);
     return Result<void, Error>::ok();
@@ -159,19 +164,16 @@ Result<void, Error> NvimProcess::spawn(const std::string& nvim_path, const std::
 void NvimProcess::shutdown()
 {
     PERF_MEASURE();
-    if (!impl_->started_)
+    if (!impl_->started_.load(std::memory_order_acquire))
         return;
 
-    if (impl_->child_stdin_write_ != INVALID_HANDLE_VALUE)
-    {
-        CloseHandle(impl_->child_stdin_write_);
-        impl_->child_stdin_write_ = INVALID_HANDLE_VALUE;
-    }
-    if (impl_->child_stdout_read_ != INVALID_HANDLE_VALUE)
-    {
-        CloseHandle(impl_->child_stdout_read_);
-        impl_->child_stdout_read_ = INVALID_HANDLE_VALUE;
-    }
+    HANDLE stdin_h = impl_->child_stdin_write_.exchange(INVALID_HANDLE_VALUE, std::memory_order_acq_rel);
+    if (stdin_h != INVALID_HANDLE_VALUE)
+        CloseHandle(stdin_h);
+
+    HANDLE stdout_h = impl_->child_stdout_read_.exchange(INVALID_HANDLE_VALUE, std::memory_order_acq_rel);
+    if (stdout_h != INVALID_HANDLE_VALUE)
+        CloseHandle(stdout_h);
 
     if (impl_->proc_info_.hProcess)
     {
@@ -181,11 +183,14 @@ void NvimProcess::shutdown()
         CloseHandle(impl_->proc_info_.hThread);
     }
 
-    impl_->started_ = false;
+    impl_->started_.store(false, std::memory_order_release);
 }
 
 bool NvimProcess::write(const uint8_t* data, size_t len) const
 {
+    HANDLE h = impl_->child_stdin_write_.load(std::memory_order_acquire);
+    if (h == INVALID_HANDLE_VALUE)
+        return false;
     // WriteFile on an anonymous/named pipe is allowed to perform a partial
     // write: it may return TRUE with `written` < `to_write` when the pipe's
     // kernel buffer is nearly full (e.g. large msgpack-RPC payloads such as
@@ -205,8 +210,7 @@ bool NvimProcess::write(const uint8_t* data, size_t len) const
         DWORD written = 0;
         DWORD to_write = static_cast<DWORD>(
             std::min<size_t>(len - total_written, MAXDWORD));
-        if (!WriteFile(impl_->child_stdin_write_,
-                data + total_written, to_write, &written, nullptr))
+        if (!WriteFile(h, data + total_written, to_write, &written, nullptr))
             return false;
         if (written == 0)
             return false;
@@ -217,8 +221,11 @@ bool NvimProcess::write(const uint8_t* data, size_t len) const
 
 int NvimProcess::read(uint8_t* buffer, size_t max_len) const
 {
+    HANDLE h = impl_->child_stdout_read_.load(std::memory_order_acquire);
+    if (h == INVALID_HANDLE_VALUE)
+        return -1;
     DWORD bytes_read;
-    if (!ReadFile(impl_->child_stdout_read_, buffer, (DWORD)max_len, &bytes_read, nullptr))
+    if (!ReadFile(h, buffer, (DWORD)max_len, &bytes_read, nullptr))
     {
         return -1;
     }
@@ -227,7 +234,7 @@ int NvimProcess::read(uint8_t* buffer, size_t max_len) const
 
 bool NvimProcess::is_running() const
 {
-    if (!impl_->started_)
+    if (!impl_->started_.load(std::memory_order_acquire))
         return false;
     DWORD exit_code;
     GetExitCodeProcess(impl_->proc_info_.hProcess, &exit_code);
@@ -385,10 +392,10 @@ Result<void, Error> NvimProcess::spawn(const std::string& nvim_path, const std::
             std::string("execvp(") + nvim_path + ") failed: " + strerror(exec_errno)));
     }
 
-    impl_->child_stdin_write_ = stdin_pipe[1];
-    impl_->child_stdout_read_ = stdout_pipe[0];
-    impl_->child_pid_ = pid;
-    impl_->started_ = true;
+    impl_->child_stdin_write_.store(stdin_pipe[1], std::memory_order_relaxed);
+    impl_->child_stdout_read_.store(stdout_pipe[0], std::memory_order_relaxed);
+    impl_->child_pid_.store(pid, std::memory_order_relaxed);
+    impl_->started_.store(true, std::memory_order_release);
 
     DRAXUL_LOG_INFO(LogCategory::Nvim, "nvim spawned (PID %d)", (int)impl_->child_pid_);
     return Result<void, Error>::ok();
@@ -397,58 +404,60 @@ Result<void, Error> NvimProcess::spawn(const std::string& nvim_path, const std::
 void NvimProcess::shutdown()
 {
     PERF_MEASURE();
-    if (!impl_->started_)
+    if (!impl_->started_.load(std::memory_order_acquire))
         return;
 
-    if (impl_->child_stdin_write_ >= 0)
-    {
-        close(impl_->child_stdin_write_);
-        impl_->child_stdin_write_ = -1;
-    }
-    if (impl_->child_stdout_read_ >= 0)
-    {
-        close(impl_->child_stdout_read_);
-        impl_->child_stdout_read_ = -1;
-    }
+    // Atomically swap each fd to -1 so racing reader/writer threads see
+    // the sentinel and fail their syscall cleanly instead of using a
+    // closed fd.
+    int stdin_fd = impl_->child_stdin_write_.exchange(-1, std::memory_order_acq_rel);
+    if (stdin_fd >= 0)
+        close(stdin_fd);
 
-    if (impl_->child_pid_ > 0)
+    int stdout_fd = impl_->child_stdout_read_.exchange(-1, std::memory_order_acq_rel);
+    if (stdout_fd >= 0)
+        close(stdout_fd);
+
+    pid_t pid = impl_->child_pid_.exchange(-1, std::memory_order_acq_rel);
+    if (pid > 0)
     {
         int status;
-        pid_t result = waitpid(impl_->child_pid_, &status, WNOHANG);
+        pid_t result = waitpid(pid, &status, WNOHANG);
         if (result == 0)
         {
             // Send SIGTERM, then offload the timed wait + SIGKILL escalation
             // to a detached thread so the main thread does not block on a
             // stuck child. CLAUDE.md: "Keep shutdown paths non-blocking; a
             // stuck Neovim child must not hang the UI on exit."
-            kill(impl_->child_pid_, SIGTERM);
-            pid_t pid_copy = impl_->child_pid_;
-            std::thread([pid_copy]() {
+            kill(pid, SIGTERM);
+            std::thread([pid]() {
                 using namespace std::chrono;
                 const auto deadline = steady_clock::now() + milliseconds(500);
                 int s = 0;
                 while (steady_clock::now() < deadline)
                 {
-                    if (waitpid(pid_copy, &s, WNOHANG) != 0)
+                    if (waitpid(pid, &s, WNOHANG) != 0)
                         return;
                     std::this_thread::sleep_for(milliseconds(20));
                 }
-                kill(pid_copy, SIGKILL);
-                waitpid(pid_copy, &s, 0);
+                kill(pid, SIGKILL);
+                waitpid(pid, &s, 0);
             }).detach();
         }
-        impl_->child_pid_ = -1;
     }
 
-    impl_->started_ = false;
+    impl_->started_.store(false, std::memory_order_release);
 }
 
 bool NvimProcess::write(const uint8_t* data, size_t len) const
 {
+    int fd = impl_->child_stdin_write_.load(std::memory_order_acquire);
+    if (fd < 0)
+        return false;
     size_t total_written = 0;
     while (total_written < len)
     {
-        ssize_t n = ::write(impl_->child_stdin_write_, data + total_written, len - total_written);
+        ssize_t n = ::write(fd, data + total_written, len - total_written);
         if (n < 0)
         {
             if (errno == EINTR)
@@ -464,10 +473,13 @@ bool NvimProcess::write(const uint8_t* data, size_t len) const
 
 int NvimProcess::read(uint8_t* buffer, size_t max_len) const
 {
+    int fd = impl_->child_stdout_read_.load(std::memory_order_acquire);
+    if (fd < 0)
+        return -1;
     ssize_t n;
     do
     {
-        n = ::read(impl_->child_stdout_read_, buffer, max_len);
+        n = ::read(fd, buffer, max_len);
     } while (n < 0 && errno == EINTR);
     if (n < 0)
         return -1;
@@ -476,10 +488,13 @@ int NvimProcess::read(uint8_t* buffer, size_t max_len) const
 
 bool NvimProcess::is_running() const
 {
-    if (!impl_->started_ || impl_->child_pid_ <= 0)
+    if (!impl_->started_.load(std::memory_order_acquire))
+        return false;
+    pid_t pid = impl_->child_pid_.load(std::memory_order_acquire);
+    if (pid <= 0)
         return false;
     int status;
-    pid_t result = waitpid(impl_->child_pid_, &status, WNOHANG);
+    pid_t result = waitpid(pid, &status, WNOHANG);
     return result == 0;
 }
 

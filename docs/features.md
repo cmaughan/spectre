@@ -342,7 +342,7 @@ If `ccache` (or `sccache`) is found on `PATH`, the build automatically routes ev
 
 | Workflow | Description |
 |----------|-------------|
-| `build.yml` | Windows + macOS build/test pipeline; uploads config-matched app artifacts and render-test outputs |
+| `build.yml` | Windows + macOS build/test pipeline; uploads config-matched app artifacts and render-test outputs. Includes a `tsan-macos` job (non-gating, `continue-on-error: true`) that runs unit tests and the smoke test under ThreadSanitizer with `tsan.supp` suppressions |
 | `asan.yml` | AddressSanitizer builds (macOS) |
 | `coverage.yml` | LLVM coverage collection (macOS), uploads `build/coverage.lcov` as an artifact and to Codecov |
 | `format.yml` | clang-format lint |
