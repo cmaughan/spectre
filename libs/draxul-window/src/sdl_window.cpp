@@ -27,6 +27,7 @@ namespace draxul
 #ifdef __APPLE__
 extern void apply_title_bar_color_macos(SDL_Window*, Color);
 extern void disable_press_and_hold_macos();
+extern void install_dock_reopen_handler(std::function<void()>* callback);
 #endif
 
 #if defined(_WIN32) || defined(__APPLE__)
@@ -156,6 +157,7 @@ bool SdlWindow::initialize(const std::string& title, int width, int height)
     // registerDefaults:, which replaces key repeat with macOS accent pickers.
     // Override it to NO so that holding a key generates OS repeat events.
     disable_press_and_hold_macos();
+    install_dock_reopen_handler(&on_dock_reopen);
 #endif
 
     wake_event_type_ = SDL_RegisterEvents(2);

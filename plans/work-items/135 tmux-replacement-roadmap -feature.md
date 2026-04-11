@@ -94,6 +94,15 @@ Without this, Draxul is not a tmux replacement.
       - explicit "kill session"
       - explicit "detach client"
       - clear UX distinction so accidental window close does not kill work
+- [ ] Headless app lifecycle (no-window-open persistence):
+      - macOS (Ghostty model): app stays in Dock with no windows. Closing
+        a window detaches the session; clicking the Dock icon reopens a
+        window (session picker or last session). Cmd+Q quits and kills
+        sessions. Implemented via NSApplicationShouldTerminateAfterLastWindowClosed
+        → NO, and applicationShouldHandleReopen to create a window.
+      - Windows: system tray icon when all windows closed. Right-click
+        menu: list sessions, new session, attach, quit. Closing a window
+        minimizes to tray (detach). Implemented via Shell_NotifyIcon.
 
 ### Phase 2 — Session browser, restore, and failure UX (MVP-critical)
 

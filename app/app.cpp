@@ -457,25 +457,17 @@ bool App::initialize_session_attach()
         return true;
 
     std::string error;
-    if (!session_attach_server_.start(options_.session_id,
-            [this](SessionAttachServer::Command command) {
+    if (!session_attach_server_.start(options_.session_id, [this](SessionAttachServer::Command command) {
                 if (command == SessionAttachServer::Command::Activate)
                     external_attach_requested_.store(true);
                 else if (command == SessionAttachServer::Command::Detach)
                     external_detach_requested_.store(true);
                 else if (command == SessionAttachServer::Command::Shutdown)
                     external_session_shutdown_requested_.store(true);
-                wake_window();
-            },
-            [this]() {
-                return live_session_info();
-            },
-            [this](std::string_view session_name) {
+                wake_window(); }, [this]() { return live_session_info(); }, [this](std::string_view session_name) {
                 std::lock_guard lock(external_session_rename_mutex_);
                 external_session_rename_requested_ = std::string(session_name);
-                wake_window();
-            },
-            &error))
+                wake_window(); }, &error))
     {
         last_init_error_ = error.empty()
             ? "Failed to start the session attach server."
@@ -1062,6 +1054,10 @@ void App::wire_window_callbacks()
     input_dispatcher_.set_chord_indicator_fade_ms(config_.chord_indicator_fade_ms);
     input_dispatcher_.connect(*window_);
     window_->on_close_requested = [this]() { on_window_close_requested(); };
+    window_->on_dock_reopen = [this]() {
+        if (detached_)
+            external_attach_requested_ = true;
+    };
 }
 
 void App::run()

@@ -119,6 +119,9 @@ public:
     std::function<void(const MouseMoveEvent&)> on_mouse_move;
     std::function<void(const MouseWheelEvent&)> on_mouse_wheel;
     std::function<void()> on_close_requested;
+    // macOS: fired when the user clicks the Dock icon while no windows are visible.
+    // The handler should create/show a window (e.g. reattach a session).
+    std::function<void()> on_dock_reopen;
     // Fired when a file is dropped onto the window or chosen via the open dialog.
     std::function<void(std::string_view path)> on_drop_file;
 };
