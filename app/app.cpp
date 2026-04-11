@@ -1362,14 +1362,10 @@ bool App::close_dead_panes()
             // Last pane in this workspace died.
             if (workspace_count() <= 1)
             {
-                if (can_detach_window())
-                {
-                    // Session mode: detach instead of quitting so the app
-                    // stays in the Dock / tray and can be reattached.
-                    detach_window();
-                    return false;
-                }
-                // No session support — quit.
+                // Last pane in the last workspace — clean exit.
+                // Mark the session as killed so no stale session state
+                // blocks the next launch.
+                session_killed_ = true;
                 running_ = false;
                 return false;
             }
