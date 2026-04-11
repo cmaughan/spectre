@@ -206,7 +206,11 @@ void LocalTerminalHost::pump()
             }
         }
 
-        flush_grid();
+        // When scrolled back, don't flush the live grid to the renderer —
+        // the scrollback display is a static composite and flushing would
+        // cause visible stepping as new lines arrive at the bottom.
+        if (!scrollback_.is_scrolled_back())
+            flush_grid();
     }
     advance_cursor_blink(std::chrono::steady_clock::now());
 }
