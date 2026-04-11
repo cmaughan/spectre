@@ -968,6 +968,10 @@ void App::wire_gui_actions()
             request_frame();
         }
     };
+    gui_deps.on_equalize_panes = [this]() {
+        active_host_manager().equalize_splits(*this);
+        request_frame();
+    };
     gui_deps.on_rename_pane = [this]() {
         if (!chrome_host_)
             return;

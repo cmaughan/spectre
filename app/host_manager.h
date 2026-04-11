@@ -106,6 +106,9 @@ public:
     // Returns false if there are fewer than 2 panes.
     bool swap_focused_with_next();
 
+    // Reset all split ratios to 50/50 and recompute viewports.
+    void equalize_splits(IHostCallbacks& callbacks);
+
     // Recomputes the tree layout and updates all host viewports.
     void recompute_viewports(int pixel_w, int pixel_h);
     void recompute_viewports(int origin_x, int origin_y, int pixel_w, int pixel_h);

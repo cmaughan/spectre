@@ -62,6 +62,7 @@ public:
         std::function<void()> on_move_tab_left; // move active tab one position left
         std::function<void()> on_move_tab_right; // move active tab one position right
         std::function<void()> on_duplicate_pane; // split with same shell + cwd
+        std::function<void()> on_equalize_panes; // reset all split ratios to 50/50
         std::function<void(std::string_view)> broadcast_action; // dispatch action to all hosts
         std::function<void()> on_test_toast; // emit a sample toast (palette/keybinding test hook)
     };

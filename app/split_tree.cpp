@@ -198,6 +198,20 @@ SplitTree::HitResult SplitTree::hit_test(int px, int py) const
     return hit_test_node(root_.get(), px, py, kDividerWidth);
 }
 
+void SplitTree::equalize_splits()
+{
+    PERF_MEASURE();
+    std::function<void(Node*)> equalize = [&](Node* node) {
+        if (!node || node->is_leaf())
+            return;
+        node->split().ratio = 0.5f;
+        equalize(node->split().first.get());
+        equalize(node->split().second.get());
+    };
+    equalize(root_.get());
+    recompute(origin_x_, origin_y_, total_w_, total_h_);
+}
+
 void SplitTree::set_divider_ratio(DividerId id, float ratio)
 {
     PERF_MEASURE();

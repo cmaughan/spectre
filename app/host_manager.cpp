@@ -446,7 +446,11 @@ bool HostManager::should_preserve_dead_leaf(LeafId id) const
     if (is_terminal_shell_host(launch_it->second.kind))
     {
         const std::optional<int> exit_code = host_it->second->exit_code();
-        return !exit_code.has_value() || *exit_code != 0;
+        // If the shell stopped but we haven't reaped the exit code yet,
+        // treat it as a clean exit (don't preserve). The alternative
+        // (preserving on unknown exit code) causes a visible "dead pane"
+        // flash before the exit code is available.
+        return exit_code.has_value() && *exit_code != 0;
     }
     return true;
 }
@@ -783,6 +787,13 @@ bool HostManager::create_host_for_leaf(LeafId id, IHostCallbacks& callbacks,
     hosts_[id] = std::move(new_host);
     launch_options_[id] = std::move(saved_launch);
     return true;
+}
+
+void HostManager::equalize_splits(IHostCallbacks& /*callbacks*/)
+{
+    PERF_MEASURE();
+    tree_.equalize_splits();
+    update_all_viewports();
 }
 
 void HostManager::update_all_viewports()
