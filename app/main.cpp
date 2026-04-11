@@ -561,12 +561,12 @@ static int draxul_main(std::vector<std::string> args)
     std::string new_session_error;
     if (!prepare_new_session_launch(parsed, &new_session_error))
     {
-#ifdef _WIN32
-        ensure_console_io(true);
-#endif
-        std::fprintf(stderr, "Failed to start a new session: %s\n",
+        // Don't exit — fall back to a default session. The window must appear.
+        DRAXUL_LOG_WARN(draxul::LogCategory::App,
+            "Session launch preparation failed: %s — using default session",
             new_session_error.empty() ? "unknown error" : new_session_error.c_str());
-        return 1;
+        parsed.session_id = "default";
+        parsed.new_session = false;
     }
 
     draxul::configure_default_logging();

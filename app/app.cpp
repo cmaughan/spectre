@@ -715,7 +715,16 @@ bool App::initialize_chrome_host()
 
     if (!restored_session
         && !create_initial_workspace(window_->width_pixels(), diagnostics_host_->layout().terminal_height))
-        return false;
+    {
+        DRAXUL_LOG_ERROR(LogCategory::App,
+            "Failed to create initial workspace: %s — retrying with defaults", last_init_error_.c_str());
+        // Last resort: delete any stale session state that might be causing
+        // the failure and try once more with a clean slate.
+        delete_session_state(options_.session_id);
+        delete_session_runtime_metadata(options_.session_id);
+        if (!create_initial_workspace(window_->width_pixels(), diagnostics_host_->layout().terminal_height))
+            return false;
+    }
 
     {
         const int tab_y = chrome_host_->tab_bar_height();
