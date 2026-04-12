@@ -81,38 +81,40 @@ When `on_viewport_changed()` detects a vertical size change:
 **Critical timing:** Reflow must happen BEFORE `do_process_resize()` sends SIGWINCH
 so the grid is correct when the shell starts redrawing.
 
-- [ ] Add `pop_newest_rows` to ScrollbackBuffer
-- [ ] Implement shrink reflow: push excess top rows to scrollback
-- [ ] Implement grow reflow: pull rows back from scrollback
-- [ ] Adjust cursor position during reflow
+- [x] Add `pop_newest_rows` to ScrollbackBuffer
+- [x] Implement shrink reflow: push non-blank excess top rows to scrollback
+- [x] Implement grow reflow: pull rows back from scrollback
+- [x] Adjust cursor position during reflow
+- [x] Restore pre-resize content after shell's SIGWINCH clear-and-redraw
+- [x] Don't snap scrollback to live on PTY output, only on user input
+- [x] Don't flush grid to renderer while scrolled back
 - [ ] Tests: shrink→grow round-trip preserves content, cursor position correct
 
 ### Phase 3 — Keyboard Scrollback Navigation
 
 **Files:** `libs/draxul-host/src/local_terminal_host.cpp`
 
-- [ ] Shift+PageUp: scroll up by `grid_rows()` lines
-- [ ] Shift+PageDown: scroll down by `grid_rows()` lines
-- [ ] Shift+Home: scroll to top of scrollback
-- [ ] Shift+End: scroll to bottom (live view)
-- [ ] Handle in `on_key()` before forwarding to `TerminalHostBase::on_key()`
+- [x] Shift+PageUp: scroll up by `grid_rows()` lines
+- [x] Shift+PageDown: scroll down by `grid_rows()` lines
+- [x] Shift+Home: scroll to top of scrollback
+- [x] Shift+End: scroll to bottom (live view)
+- [x] Handle in `on_key()` before forwarding to `TerminalHostBase::on_key()`
+- [x] Show scrollback position [offset/total] in pane status pill
 
 ### Phase 4 — Configurable Capacity
 
 **Files:** `scrollback_buffer.h`, `scrollback_buffer.cpp`, `local_terminal_host.cpp`, config
 
-- [ ] Replace `kCapacity` with constructor parameter `capacity_`
-- [ ] Default: 10,000 lines
-- [ ] Add `scrollback_lines` to `HostLaunchOptions` and config TOML
-- [ ] Memory note: 10,000 lines x 200 cols x ~40 bytes/cell = ~80 MB. Consider
-  storing rows more compactly (only non-blank trailing cells) if this is too high.
-  At 2000 lines (~16 MB) this is fine. Start with 10,000 and monitor.
+- [x] Replace `kCapacity` with constructor parameter `capacity_`
+- [x] Default: 10,000 lines
+- [ ] Add `scrollback_lines` to `HostLaunchOptions` and config TOML (capacity is
+  constructor param but not yet wired to config file)
 
 ### Phase 5 — CSI 2 J Preserves Visible Content (Optional Polish)
 
 **Files:** `terminal_host_base.cpp`
 
-- [ ] In `erase_display(2)`, before `grid().clear()`, push all non-blank rows
+- [x] In `erase_display(2)`, before `grid().clear()`, push all non-blank rows
   to scrollback (guarded by `!alt_screen_.in_alt_screen()`)
 - [ ] Test: run `clear`, scroll up, verify previous output visible
 
@@ -132,14 +134,14 @@ Phase 2 is highest value but highest risk. Phases 1/3/4 are easy wins.
 
 ## Acceptance Criteria
 
-- [ ] IND, CSI SU, DL all capture to scrollback (Phase 1)
-- [ ] Horizontal split preserves top pane content via reflow (Phase 2)
-- [ ] Shrink→grow round-trip recovers original visible content (Phase 2)
-- [ ] Shift+PageUp/Down scrolls through scrollback (Phase 3)
-- [ ] `scrollback_lines` config option works (Phase 4)
-- [ ] `clear` command preserves output in scrollback (Phase 5)
-- [ ] All existing scrollback tests still pass
-- [ ] No performance regression on `yes | head -1000`
+- [x] IND, CSI SU, DL all capture to scrollback (Phase 1)
+- [x] Horizontal split preserves top pane content via reflow (Phase 2)
+- [x] Shrink→grow round-trip recovers original visible content (Phase 2)
+- [x] Shift+PageUp/Down scrolls through scrollback (Phase 3)
+- [ ] `scrollback_lines` config option works (Phase 4 — capacity param done, config wiring pending)
+- [x] `clear` command preserves output in scrollback (Phase 5)
+- [x] All existing scrollback tests still pass
+- [x] No performance regression on `yes | head -1000`
 
 ---
 
