@@ -119,7 +119,7 @@ void create_system_tray_icon(std::function<void()>* on_attach, std::function<voi
     // Use the application's main icon, falling back to a default.
     g_nid.hIcon = LoadIconW(GetModuleHandleW(nullptr), L"IDI_ICON1");
     if (!g_nid.hIcon)
-        g_nid.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+        g_nid.hIcon = LoadIconW(nullptr, MAKEINTRESOURCEW(32512)); // IDI_APPLICATION
     wcscpy_s(g_nid.szTip, L"Draxul — sessions running");
 
     if (!Shell_NotifyIconW(NIM_ADD, &g_nid))
