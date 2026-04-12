@@ -4,12 +4,21 @@
 #include <draxul/host_registry.h>
 #include <draxul/log.h>
 #include <draxul/nanovg_demo_host.h>
+
+#ifndef _WIN32
+#include <csignal>
+#endif
 #ifdef DRAXUL_ENABLE_MEGACITY
 #include <draxul/megacity_host.h>
 #endif
 
 int main(int argc, char* argv[])
 {
+#ifndef _WIN32
+    // Ignore SIGPIPE so tests that spawn child processes (rpc-fake, shell hosts)
+    // don't kill the entire test binary when a pipe breaks.
+    signal(SIGPIPE, SIG_IGN);
+#endif
     draxul::configure_logging();
 
     // Tests share the same provider registry as the app. Register the same
