@@ -212,6 +212,7 @@ private:
     int active_workspace_ = -1;
     int next_workspace_id_ = 0;
     RenderNode render_root_;
+    std::vector<uint8_t> atlas_upload_scratch_;
     DiagnosticsCollector diagnostics_collector_;
     SessionAttachServer session_attach_server_;
     std::atomic<bool> external_attach_requested_ = false;

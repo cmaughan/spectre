@@ -51,7 +51,6 @@ public:
 private:
     void refresh_open_palette();
     PaneDescriptor palette_pane_descriptor() const;
-    void flush_atlas_if_dirty();
 
     Deps deps_;
     CommandPalette palette_;

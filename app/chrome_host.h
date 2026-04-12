@@ -195,7 +195,6 @@ private:
 
     void update_tab_grid(std::span<const TabLayout> tabs, std::span<const RightPillLayout> right_pills);
     void update_pane_status_grids(IFrameContext& frame, std::span<const PaneStatusEntry> entries);
-    void flush_atlas_if_dirty();
 
     // Inline rename state. Either targets a workspace (Workspace) or a
     // pane (Pane); EditTarget::None means no rename in progress.

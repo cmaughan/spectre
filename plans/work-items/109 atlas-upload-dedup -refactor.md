@@ -23,31 +23,31 @@ Each path independently inspects atlas dirty state and clears it. There is no gu
 
 ## Investigation
 
-- [ ] Read each of the three files at the listed lines — understand the exact upload steps, what state they read and write, and whether any of the three has additional logic beyond a plain "upload dirty regions and clear dirty flag."
-- [ ] Determine whether the atlas dirty state is owned by the renderer or a shared object; confirm who is allowed to clear it and when.
-- [ ] Check `IGridRenderer` or `RendererBundle` for any existing "upload atlas if dirty" hook.
+- [x] Read each of the three files at the listed lines — understand the exact upload steps, what state they read and write, and whether any of the three has additional logic beyond a plain "upload dirty regions and clear dirty flag."
+- [x] Determine whether the atlas dirty state is owned by the renderer or a shared object; confirm who is allowed to clear it and when.
+- [x] Check `IGridRenderer` or `RendererBundle` for any existing "upload atlas if dirty" hook.
 
 ---
 
 ## Fix Strategy
 
-- [ ] Extract a single `upload_atlas_if_dirty(IGridRenderer& renderer)` helper (or equivalent method on the renderer/atlas interface) that:
+- [x] Extract a single `upload_atlas_if_dirty(IGridRenderer& renderer)` helper (or equivalent method on the renderer/atlas interface) that:
   1. Checks whether any regions are dirty.
   2. Uploads all dirty regions.
   3. Clears dirty state.
-- [ ] Call this helper exactly once per frame from a single call site (e.g., the frame orchestration loop in `App::render_frame()` or `grid_rendering_pipeline`), before any subsystem renders.
-- [ ] Remove the duplicate atlas-upload code from `chrome_host.cpp` and `command_palette_host.cpp`.
+- [x] Call this helper exactly once per frame from a single call site (e.g., the frame orchestration loop in `App::render_frame()` or `grid_rendering_pipeline`), before any subsystem renders.
+- [x] Remove the duplicate atlas-upload code from `chrome_host.cpp` and `command_palette_host.cpp`.
 - [ ] Write WI 108 (atlas-dirty-multi-subsystem -test) to validate the refactor.
-- [ ] Build: `cmake --build build --target draxul draxul-tests`
-- [ ] Run smoke: `py do.py smoke`
+- [x] Build: `cmake --build build --target draxul draxul-tests`
+- [x] Run smoke: `py do.py smoke`
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] Atlas upload logic exists in exactly one place.
-- [ ] `chrome_host.cpp` and `command_palette_host.cpp` no longer inspect or clear atlas dirty state directly.
-- [ ] No visual regressions in render snapshot tests.
+- [x] Atlas upload logic exists in exactly one place.
+- [x] `chrome_host.cpp` and `command_palette_host.cpp` no longer inspect or clear atlas dirty state directly.
+- [x] No visual regressions in render snapshot tests.
 - [ ] WI 108 test passes.
 
 ---

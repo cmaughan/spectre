@@ -1101,7 +1101,6 @@ void ChromeHost::update_pane_status_grids(IFrameContext& frame, std::span<const 
         const auto label_clusters = split_display_clusters(label);
         for (const auto& cluster_text : label_clusters)
             deps_.text_service->resolve_cluster(cluster_text);
-        flush_atlas_if_dirty();
 
         // Cells start fully transparent — the NanoVG pill provides the bg.
         const Color transparent{ 0.0f, 0.0f, 0.0f, 0.0f };
@@ -1142,8 +1141,6 @@ void ChromeHost::update_pane_status_grids(IFrameContext& frame, std::span<const 
 
         handle->update_cells(cells);
     }
-
-    flush_atlas_if_dirty();
 
     for (const auto& e : entries)
     {
@@ -1216,7 +1213,6 @@ void ChromeHost::update_tab_grid(std::span<const TabLayout> tabs, std::span<cons
         for (const auto& cluster : pill.clusters)
             deps_.text_service->resolve_cluster(cluster.text);
     }
-    flush_atlas_if_dirty();
 
     // Write text into grid cells using the shared column-based layout.
     // Foreground colors are picked from the underlying NanoVG fill via
@@ -1279,7 +1275,6 @@ void ChromeHost::update_tab_grid(std::span<const TabLayout> tabs, std::span<cons
     }
 
     tab_handle_->update_cells(cells);
-    flush_atlas_if_dirty();
 }
 
 // ---------------------------------------------------------------------------
@@ -1450,7 +1445,6 @@ bool ChromeHost::on_rename_text_input(const std::string& utf8)
     {
         for (const auto& cluster : split_display_clusters(utf8))
             deps_.text_service->resolve_cluster(cluster);
-        flush_atlas_if_dirty();
     }
 
     if (deps_.request_frame)
@@ -1530,33 +1524,6 @@ std::optional<std::chrono::steady_clock::time_point> ChromeHost::next_deadline()
         return std::nullopt;
     // Drive caret blink at ~2 Hz while editing.
     return std::chrono::steady_clock::now() + std::chrono::milliseconds(250);
-}
-
-void ChromeHost::flush_atlas_if_dirty()
-{
-    if (!deps_.text_service || !deps_.grid_renderer)
-        return;
-    if (!deps_.text_service->atlas_dirty())
-        return;
-
-    const auto dirty = deps_.text_service->atlas_dirty_rect();
-    if (dirty.size.x <= 0 || dirty.size.y <= 0)
-        return;
-
-    constexpr size_t kPixelSize = 4;
-    const size_t row_bytes = static_cast<size_t>(dirty.size.x) * kPixelSize;
-    std::vector<uint8_t> scratch(row_bytes * dirty.size.y);
-    const uint8_t* atlas = deps_.text_service->atlas_data();
-    const int atlas_w = deps_.text_service->atlas_width();
-    for (int r = 0; r < dirty.size.y; ++r)
-    {
-        const uint8_t* src = atlas
-            + (static_cast<size_t>(dirty.pos.y + r) * atlas_w + dirty.pos.x) * kPixelSize;
-        std::memcpy(scratch.data() + static_cast<size_t>(r) * row_bytes, src, row_bytes);
-    }
-    deps_.grid_renderer->update_atlas_region(
-        dirty.pos.x, dirty.pos.y, dirty.size.x, dirty.size.y, scratch.data());
-    deps_.text_service->clear_atlas_dirty();
 }
 
 } // namespace draxul

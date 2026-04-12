@@ -1,3 +1,4 @@
+#include <draxul/atlas_upload.h>
 #include <draxul/grid_rendering_pipeline.h>
 #include <draxul/perf_timing.h>
 
@@ -286,32 +287,13 @@ void GridRenderingPipeline::upload_atlas()
     {
         renderer_->set_atlas_texture(
             glyph_atlas_.atlas_data(), glyph_atlas_.atlas_width(), glyph_atlas_.atlas_height());
+        glyph_atlas_.clear_atlas_dirty();
+        force_full_atlas_upload_ = false;
     }
     else
     {
-        const auto dirty = glyph_atlas_.atlas_dirty_rect();
-        if (dirty.size.x > 0 && dirty.size.y > 0)
-        {
-            constexpr size_t atlas_pixel_size = 4;
-            atlas_upload_scratch_.resize((size_t)dirty.size.x * dirty.size.y * atlas_pixel_size);
-
-            const uint8_t* atlas = glyph_atlas_.atlas_data();
-            const int atlas_width = glyph_atlas_.atlas_width();
-            for (int row = 0; row < dirty.size.y; row++)
-            {
-                const uint8_t* src = atlas
-                    + (((size_t)(dirty.pos.y + row) * atlas_width) + dirty.pos.x) * atlas_pixel_size;
-                uint8_t* dst = atlas_upload_scratch_.data() + (size_t)row * dirty.size.x * atlas_pixel_size;
-                std::memcpy(dst, src, (size_t)dirty.size.x * atlas_pixel_size);
-            }
-
-            renderer_->update_atlas_region(
-                dirty.pos.x, dirty.pos.y, dirty.size.x, dirty.size.y, atlas_upload_scratch_.data());
-        }
+        upload_atlas_dirty_region(glyph_atlas_, *renderer_, atlas_upload_scratch_);
     }
-
-    glyph_atlas_.clear_atlas_dirty();
-    force_full_atlas_upload_ = false;
 }
 
 } // namespace draxul

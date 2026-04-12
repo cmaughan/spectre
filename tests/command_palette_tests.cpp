@@ -205,7 +205,10 @@ TEST_CASE("CommandPaletteHost: opening primes palette cells before first draw", 
     CHECK(renderer.last_handle->last_cursor == glm::ivec2(-1, -1));
     CHECK_FALSE(renderer.last_handle->update_batches.empty());
     CHECK(renderer.last_handle->total_cell_updates() > 0);
-    CHECK(renderer.region_uploads > 0);
+    // Atlas upload is now centralized in App::render_frame() (WI 109), so the
+    // host no longer uploads directly.  Verify that the atlas became dirty
+    // instead, proving glyphs were resolved.
+    CHECK(text_service.atlas_dirty());
 
     host.shutdown();
 }

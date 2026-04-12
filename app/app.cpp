@@ -12,6 +12,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <draxul/atlas_upload.h>
 #include <draxul/grid_host_base.h>
 #include <draxul/log.h>
 #include <draxul/perf_timing.h>
@@ -1459,6 +1460,11 @@ bool App::render_frame()
     input_dispatcher_.clear_scroll_event();
 
     rebuild_render_tree();
+
+    // Upload any dirty atlas regions once per frame, before begin_frame(),
+    // so all subsystems share a single upload and the GPU texture is current
+    // when rendering starts.
+    upload_atlas_dirty_region(text_service_, *renderer_.grid(), atlas_upload_scratch_);
 
     const auto frame_start = std::chrono::steady_clock::now();
     IFrameContext* frame = renderer_.grid()->begin_frame();
