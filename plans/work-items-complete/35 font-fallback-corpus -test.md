@@ -23,10 +23,10 @@ This is distinct from icebox WI 61 (font-fallback-inspector), which is a user-fa
 
 ## Investigation
 
-- [ ] Read `libs/draxul-font/src/glyph_cache.cpp` — understand `rasterize_cluster`: what it does when a glyph has no coverage in any font, and whether failed lookups are cached.
-- [ ] Read `libs/draxul-font/include/draxul/text_service.h` — find the fallback chain API.
-- [ ] Check whether existing tests exercise any non-ASCII, non-BMP, or RTL input.
-- [ ] Identify which test font(s) are staged in the build — they may not have broad Unicode coverage; the test may need to use a system font or a bundled Noto font.
+- [x] Read `libs/draxul-font/src/glyph_cache.cpp` — understand `rasterize_cluster`: what it does when a glyph has no coverage in any font, and whether failed lookups are cached.
+- [x] Read `libs/draxul-font/include/draxul/text_service.h` — find the fallback chain API.
+- [x] Check whether existing tests exercise any non-ASCII, non-BMP, or RTL input.
+- [x] Identify which test font(s) are staged in the build — they may not have broad Unicode coverage; the test may need to use a system font or a bundled Noto font.
 
 ---
 
@@ -80,7 +80,7 @@ This is distinct from icebox WI 61 (font-fallback-inspector), which is a user-fa
 
 ## Acceptance Criteria
 
-- [ ] All 8 cases pass under `ctest` on macOS (CI baseline).
+- [x] All 8 cases pass under `ctest` on macOS (CI baseline).
 - [ ] No crashes under ASan for any of the 8 cases.
-- [ ] Case 8 completes in < 5 seconds on a developer machine.
-- [ ] Smoke test passes.
+- [x] Case 8 completes in < 5 seconds on a developer machine.
+- [x] Smoke test passes.
