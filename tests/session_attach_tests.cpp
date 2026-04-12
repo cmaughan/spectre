@@ -265,12 +265,12 @@ TEST_CASE("app session attach: close request detaches a shell session", "[sessio
     REQUIRE(app.initialize());
     REQUIRE(created_window != nullptr);
     REQUIRE(g_last_attach_host != nullptr);
-    const bool smoke_ok = app.run_smoke_test(std::chrono::milliseconds(200));
-    REQUIRE(smoke_ok);
+    REQUIRE(app.run_smoke_test(std::chrono::milliseconds(200)));
+    );
 
     created_window->queue_close_request();
-    const bool smoke_ok = app.run_smoke_test(std::chrono::milliseconds(200));
-    REQUIRE(smoke_ok);
+    REQUIRE(app.run_smoke_test(std::chrono::milliseconds(200)));
+    );
     REQUIRE_FALSE(created_window->is_visible());
     auto metadata = load_session_runtime_metadata("default");
     REQUIRE(metadata);
@@ -301,8 +301,8 @@ TEST_CASE("app session attach: shutdown command kills the session", "[session_at
     App app(make_attach_options());
     REQUIRE(app.initialize());
     REQUIRE(g_last_attach_host != nullptr);
-    const bool smoke_ok = app.run_smoke_test(std::chrono::milliseconds(200));
-    REQUIRE(smoke_ok);
+    REQUIRE(app.run_smoke_test(std::chrono::milliseconds(200)));
+    );
 
     REQUIRE(SessionAttachServer::send_command("default", SessionAttachServer::Command::Shutdown)
         == SessionAttachServer::AttachStatus::Attached);
@@ -335,15 +335,15 @@ TEST_CASE("app session attach: detach command hides the session window", "[sessi
     App app(std::move(opts));
     REQUIRE(app.initialize());
     REQUIRE(created_window != nullptr);
-    const bool smoke_ok = app.run_smoke_test(std::chrono::milliseconds(200));
-    REQUIRE(smoke_ok);
+    REQUIRE(app.run_smoke_test(std::chrono::milliseconds(200)));
+    );
 
     REQUIRE(SessionAttachServer::send_command("default", SessionAttachServer::Command::Detach)
         == SessionAttachServer::AttachStatus::Attached);
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
     while (created_window->is_visible() && std::chrono::steady_clock::now() < deadline)
-        const bool smoke_ok = app.run_smoke_test(std::chrono::milliseconds(50));
-    REQUIRE(smoke_ok);
+        REQUIRE(app.run_smoke_test(std::chrono::milliseconds(50)));
+    );
     REQUIRE_FALSE(created_window->is_visible());
 
     SessionAttachServer::LiveSessionInfo live_info;
@@ -373,8 +373,8 @@ TEST_CASE("app session attach: periodic checkpoint refreshes saved state", "[ses
     const auto before = std::filesystem::last_write_time(state_path);
 
     std::this_thread::sleep_for(std::chrono::milliseconds(80));
-    const bool smoke_ok = app.run_smoke_test(std::chrono::milliseconds(120));
-    REQUIRE(smoke_ok);
+    REQUIRE(app.run_smoke_test(std::chrono::milliseconds(120)));
+    );
 
     const auto after = std::filesystem::last_write_time(state_path);
     REQUIRE(after > before);
@@ -433,10 +433,9 @@ TEST_CASE("app session attach: rename command updates persisted session name", "
         auto metadata = load_session_runtime_metadata("default");
         if (metadata && metadata->session_name == "After")
             break;
-        const bool before_deadline = std::chrono::steady_clock::now() < deadline;
-        REQUIRE(before_deadline);
-        const bool smoke_ok = app.run_smoke_test(std::chrono::milliseconds(50));
-        REQUIRE(smoke_ok);
+        REQUIRE(std::chrono::steady_clock::now() < deadline);
+        REQUIRE(app.run_smoke_test(std::chrono::milliseconds(50)));
+        );
     }
 
     auto saved_state = load_session_state("default");
