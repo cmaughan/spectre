@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <atomic>
+#include <draxul/log.h>
 #include <draxul/perf_timing.h>
+#include <filesystem>
 #include <mutex>
 #include <thread>
 
@@ -38,6 +40,78 @@ std::string quote_windows_arg(const std::string& value)
     quoted.append(backslashes, '\\');
     quoted.push_back('"');
     return quoted;
+}
+
+std::wstring widen_utf8(std::string_view text)
+{
+    if (text.empty())
+        return {};
+
+    const int size = MultiByteToWideChar(
+        CP_UTF8, 0, text.data(), static_cast<int>(text.size()), nullptr, 0);
+    if (size <= 0)
+        return {};
+
+    std::wstring wide(static_cast<size_t>(size), L'\0');
+    if (MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), wide.data(), size) <= 0)
+        return {};
+    return wide;
+}
+
+std::string narrow_utf8(std::wstring_view text)
+{
+    if (text.empty())
+        return {};
+
+    const int size = WideCharToMultiByte(
+        CP_UTF8, 0, text.data(), static_cast<int>(text.size()), nullptr, 0, nullptr, nullptr);
+    if (size <= 0)
+        return {};
+
+    std::string utf8(static_cast<size_t>(size), '\0');
+    if (WideCharToMultiByte(
+            CP_UTF8, 0, text.data(), static_cast<int>(text.size()), utf8.data(), size, nullptr, nullptr)
+        <= 0)
+        return {};
+    return utf8;
+}
+
+bool command_looks_like_path(std::string_view command)
+{
+    return command.find('\\') != std::string_view::npos
+        || command.find('/') != std::string_view::npos
+        || command.find(':') != std::string_view::npos;
+}
+
+bool path_looks_like_windows_apps_alias(std::wstring_view path)
+{
+    return path.find(L"\\WindowsApps\\") != std::wstring_view::npos;
+}
+
+std::wstring resolve_application_path(std::string_view command)
+{
+    const std::wstring requested = widen_utf8(command);
+    if (requested.empty())
+        return {};
+
+    if (command_looks_like_path(command))
+        return requested;
+
+    const bool has_extension = std::filesystem::path(requested).has_extension();
+    const wchar_t* extension = has_extension ? nullptr : L".exe";
+    DWORD required = SearchPathW(nullptr, requested.c_str(), extension, 0, nullptr, nullptr);
+    if (required == 0)
+        return {};
+
+    std::wstring resolved(static_cast<size_t>(required), L'\0');
+    required = SearchPathW(nullptr, requested.c_str(), extension,
+        static_cast<DWORD>(resolved.size()), resolved.data(), nullptr);
+    if (required == 0)
+        return {};
+
+    if (!resolved.empty() && resolved.back() == L'\0')
+        resolved.pop_back();
+    return resolved;
 }
 
 } // namespace
@@ -105,7 +179,7 @@ bool ConPtyProcess::spawn(const std::string& command, const std::vector<std::str
     InitializeProcThreadAttributeList(nullptr, 1, 0, &attribute_bytes);
     attribute_storage_.resize(attribute_bytes);
 
-    STARTUPINFOEXA startup = {};
+    STARTUPINFOEXW startup = {};
     startup.StartupInfo.cb = sizeof(startup);
     // When attaching a child to a pseudoconsole, leave the standard handles
     // explicitly null so Windows doesn't duplicate the GUI parent's stdio into
@@ -134,14 +208,46 @@ bool ConPtyProcess::spawn(const std::string& command, const std::vector<std::str
     std::string command_line = quote_windows_arg(command);
     for (const auto& arg : args)
         command_line += " " + quote_windows_arg(arg);
+    const std::wstring command_line_w = widen_utf8(command_line);
+    std::vector<wchar_t> command_line_buffer(command_line_w.begin(), command_line_w.end());
+    command_line_buffer.push_back(L'\0');
+
+    std::wstring application_path_w = resolve_application_path(command);
+    if (application_path_w.empty())
+        application_path_w = widen_utf8(command);
+    const std::string application_path_utf8 = narrow_utf8(application_path_w);
+    const std::wstring working_dir_w = widen_utf8(working_dir);
 
     // ConPTY child creation is supposed to use the pseudoconsole attribute with
     // EXTENDED_STARTUPINFO_PRESENT. CREATE_NO_WINDOW severs the child from the
     // console environment that ConPTY is trying to provide.
     const DWORD creation_flags = EXTENDED_STARTUPINFO_PRESENT;
-    const char* cwd = working_dir.empty() ? nullptr : working_dir.c_str();
-    const bool created = CreateProcessA(nullptr, command_line.data(), nullptr, nullptr, FALSE,
-        creation_flags, nullptr, cwd, &startup.StartupInfo, &proc_info_);
+    DRAXUL_LOG_DEBUG(LogCategory::App,
+        "ConPTY spawn request: command='%s' resolved='%s' cwd='%s' cols=%d rows=%d flags=0x%08lx",
+        command.c_str(),
+        application_path_utf8.empty() ? command.c_str() : application_path_utf8.c_str(),
+        working_dir.empty() ? "" : working_dir.c_str(),
+        static_cast<int>(size.X),
+        static_cast<int>(size.Y),
+        static_cast<unsigned long>(creation_flags));
+    if (path_looks_like_windows_apps_alias(application_path_w))
+    {
+        DRAXUL_LOG_WARN(LogCategory::App,
+            "ConPTY resolved '%s' through a WindowsApps alias: '%s'",
+            command.c_str(),
+            application_path_utf8.c_str());
+    }
+    const bool created = CreateProcessW(
+        application_path_w.empty() ? nullptr : application_path_w.c_str(),
+        command_line_buffer.data(),
+        nullptr,
+        nullptr,
+        FALSE,
+        creation_flags,
+        nullptr,
+        working_dir_w.empty() ? nullptr : working_dir_w.c_str(),
+        &startup.StartupInfo,
+        &proc_info_);
 
     DeleteProcThreadAttributeList(startup.lpAttributeList);
     attribute_storage_.clear();
@@ -152,9 +258,20 @@ bool ConPtyProcess::spawn(const std::string& command, const std::vector<std::str
 
     if (!created)
     {
+        DRAXUL_LOG_WARN(LogCategory::App,
+            "ConPTY CreateProcessW failed for '%s' (resolved='%s', error=%lu)",
+            command.c_str(),
+            application_path_utf8.empty() ? command.c_str() : application_path_utf8.c_str(),
+            static_cast<unsigned long>(GetLastError()));
         cleanup();
         return false;
     }
+
+    DRAXUL_LOG_DEBUG(LogCategory::App,
+        "ConPTY child started: pid=%lu command='%s' resolved='%s'",
+        static_cast<unsigned long>(proc_info_.dwProcessId),
+        command.c_str(),
+        application_path_utf8.empty() ? command.c_str() : application_path_utf8.c_str());
 
     input_write_ = pty_input_write;
     output_read_ = pty_output_read;

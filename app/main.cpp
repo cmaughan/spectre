@@ -534,6 +534,50 @@ SessionOwnerLaunchStatus launch_session_owner_and_attach(
     return SessionOwnerLaunchStatus::AttachFailed;
 }
 
+bool try_attach_with_retry(std::string_view session_id, std::chrono::milliseconds timeout, std::string* error)
+{
+    constexpr auto kPoll = std::chrono::milliseconds(50);
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    std::string last_error;
+    int attempt = 0;
+
+    DRAXUL_LOG_DEBUG(draxul::LogCategory::App,
+        "Retrying session attach for '%s' for up to %lld ms",
+        std::string(session_id).c_str(),
+        static_cast<long long>(timeout.count()));
+
+    while (std::chrono::steady_clock::now() < deadline)
+    {
+        ++attempt;
+        last_error.clear();
+        const auto attach_status = draxul::SessionAttachServer::try_attach(session_id, &last_error);
+        if (attach_status == draxul::SessionAttachServer::AttachStatus::Attached)
+        {
+            DRAXUL_LOG_DEBUG(draxul::LogCategory::App,
+                "Retry attach for '%s' succeeded on attempt %d",
+                std::string(session_id).c_str(),
+                attempt);
+            return true;
+        }
+        DRAXUL_LOG_DEBUG(draxul::LogCategory::App,
+            "Retry attach attempt %d for '%s' returned status=%d error='%s'",
+            attempt,
+            std::string(session_id).c_str(),
+            static_cast<int>(attach_status),
+            last_error.c_str());
+        std::this_thread::sleep_for(kPoll);
+    }
+
+    if (error)
+        *error = last_error;
+    DRAXUL_LOG_WARN(draxul::LogCategory::App,
+        "Retry attach for '%s' timed out after %d attempts; last error='%s'",
+        std::string(session_id).c_str(),
+        attempt,
+        last_error.c_str());
+    return false;
+}
+
 } // namespace
 
 static int draxul_main(std::vector<std::string> args)
@@ -837,25 +881,33 @@ static int draxul_main(std::vector<std::string> args)
         && parsed.screenshot_path.empty()
         && !parsed.pick_session;
 #endif
-    if (allow_session_attach && !parsed.session_owner)
+    if (allow_session_attach)
     {
         // Single-process model: if another instance is already running for
-        // this session, tell it to show its window and exit. No background
-        // session-owner process is spawned.
+        // this session, tell it to show its window and exit. This also
+        // applies to legacy shortcuts that still pass --session-owner; the
+        // flag is accepted for compatibility but no longer changes startup.
+        DRAXUL_LOG_DEBUG(draxul::LogCategory::App,
+            "Startup attach probe for session '%s' (session_owner=%d)",
+            parsed.session_id.c_str(),
+            parsed.session_owner ? 1 : 0);
         std::string attach_error;
         const auto attach_status = draxul::SessionAttachServer::try_attach(
             parsed.session_id, &attach_error);
         if (attach_status == draxul::SessionAttachServer::AttachStatus::Attached)
         {
+            DRAXUL_LOG_DEBUG(draxul::LogCategory::App,
+                "Startup attach to session '%s' succeeded; exiting helper process",
+                parsed.session_id.c_str());
             draxul::shutdown_logging();
             return 0;
         }
         // Any other status (NoServer, Error) — proceed with in-process startup.
-        if (!attach_error.empty())
-        {
-            DRAXUL_LOG_DEBUG(draxul::LogCategory::App,
-                "No running instance to attach to: %s", attach_error.c_str());
-        }
+        DRAXUL_LOG_DEBUG(draxul::LogCategory::App,
+            "Startup attach to session '%s' did not attach (status=%d, error='%s')",
+            parsed.session_id.c_str(),
+            static_cast<int>(attach_status),
+            attach_error.c_str());
     }
     options.enable_session_attach = allow_session_attach;
 
@@ -863,6 +915,29 @@ static int draxul_main(std::vector<std::string> args)
 
     if (!app.initialize())
     {
+        if (allow_session_attach
+            && app.init_error().find("session-attach") != std::string::npos)
+        {
+            DRAXUL_LOG_WARN(draxul::LogCategory::App,
+                "App initialization hit session-attach error for '%s': %s",
+                parsed.session_id.c_str(),
+                app.init_error().c_str());
+            std::string attach_error;
+            if (try_attach_with_retry(parsed.session_id, std::chrono::seconds(2), &attach_error))
+            {
+                DRAXUL_LOG_DEBUG(draxul::LogCategory::App,
+                    "Recovered from session-attach initialization error by attaching to '%s'",
+                    parsed.session_id.c_str());
+                draxul::shutdown_logging();
+                return 0;
+            }
+            if (!attach_error.empty())
+            {
+                DRAXUL_LOG_WARN(draxul::LogCategory::App,
+                    "Retry attach after session-server collision failed: %s", attach_error.c_str());
+            }
+        }
+
         DRAXUL_LOG_ERROR(draxul::LogCategory::App, "Failed to initialize draxul: %s", app.init_error().c_str());
 #ifdef DRAXUL_ENABLE_RENDER_TESTS
         const bool ci_mode = parsed.smoke_test || !parsed.render_test_path.empty() || !parsed.screenshot_path.empty();

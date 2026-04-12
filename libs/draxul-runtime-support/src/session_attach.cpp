@@ -10,14 +10,22 @@
 #include <cstring>
 #include <filesystem>
 #include <future>
+#include <optional>
 #include <sstream>
 #include <string_view>
 #include <thread>
+#include <vector>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT 0x0601
+#endif
+#include <aclapi.h>
 #include <windows.h>
+#include <sddl.h>
+#pragma comment(lib, "Advapi32.lib")
 #else
 #include <cerrno>
 #include <cstring>
@@ -76,6 +84,472 @@ std::string win32_error_message(DWORD error)
     while (!message.empty() && (message.back() == '\n' || message.back() == '\r'))
         message.pop_back();
     return message;
+}
+
+struct ScopedTokenHandle
+{
+    HANDLE handle = nullptr;
+
+    ~ScopedTokenHandle()
+    {
+        if (handle)
+            CloseHandle(handle);
+    }
+};
+
+struct ScopedLocalAlloc
+{
+    void* ptr = nullptr;
+
+    ~ScopedLocalAlloc()
+    {
+        if (ptr)
+            LocalFree(ptr);
+    }
+};
+
+struct ScopedSid
+{
+    PSID sid = nullptr;
+
+    ~ScopedSid()
+    {
+        if (sid)
+            FreeSid(sid);
+    }
+};
+
+struct OwnedSid
+{
+    std::vector<BYTE> bytes;
+
+    bool empty() const
+    {
+        return bytes.empty();
+    }
+
+    PSID get()
+    {
+        return bytes.empty() ? nullptr : static_cast<PSID>(bytes.data());
+    }
+
+    PSID get() const
+    {
+        return bytes.empty() ? nullptr : const_cast<BYTE*>(bytes.data());
+    }
+};
+
+struct PipeSecurityAttributes
+{
+    PACL dacl = nullptr;
+
+    PipeSecurityAttributes() = default;
+    PipeSecurityAttributes(const PipeSecurityAttributes&) = delete;
+    PipeSecurityAttributes& operator=(const PipeSecurityAttributes&) = delete;
+
+    PipeSecurityAttributes(PipeSecurityAttributes&& other) noexcept
+        : dacl(other.dacl)
+    {
+        other.dacl = nullptr;
+    }
+
+    PipeSecurityAttributes& operator=(PipeSecurityAttributes&& other) noexcept
+    {
+        if (this == &other)
+            return *this;
+        if (dacl)
+            LocalFree(dacl);
+        dacl = other.dacl;
+        other.dacl = nullptr;
+        return *this;
+    }
+
+    ~PipeSecurityAttributes()
+    {
+        if (dacl)
+            LocalFree(dacl);
+    }
+};
+
+std::string sid_to_string(PSID sid)
+{
+    if (!sid)
+        return {};
+
+    LPSTR text = nullptr;
+    if (!ConvertSidToStringSidA(sid, &text))
+        return {};
+
+    ScopedLocalAlloc owned_text{ text };
+    return static_cast<const char*>(owned_text.ptr);
+}
+
+OwnedSid copy_sid(PSID sid)
+{
+    OwnedSid copy;
+    if (!sid)
+        return copy;
+
+    const DWORD length = GetLengthSid(sid);
+    copy.bytes.resize(length);
+    if (!CopySid(length, copy.bytes.data(), sid))
+        copy.bytes.clear();
+    return copy;
+}
+
+OwnedSid current_user_sid()
+{
+    ScopedTokenHandle token;
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token.handle))
+        return {};
+
+    DWORD bytes = 0;
+    GetTokenInformation(token.handle, TokenUser, nullptr, 0, &bytes);
+    if (bytes == 0)
+        return {};
+
+    std::string buffer(bytes, '\0');
+    if (!GetTokenInformation(token.handle, TokenUser, buffer.data(), bytes, &bytes))
+        return {};
+
+    const auto* user = reinterpret_cast<const TOKEN_USER*>(buffer.data());
+    return copy_sid(user->User.Sid);
+}
+
+OwnedSid current_logon_sid()
+{
+    ScopedTokenHandle token;
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token.handle))
+        return {};
+
+    DWORD bytes = 0;
+    GetTokenInformation(token.handle, TokenGroups, nullptr, 0, &bytes);
+    if (bytes == 0)
+        return {};
+
+    std::string buffer(bytes, '\0');
+    if (!GetTokenInformation(token.handle, TokenGroups, buffer.data(), bytes, &bytes))
+        return {};
+
+    const auto* groups = reinterpret_cast<const TOKEN_GROUPS*>(buffer.data());
+    for (DWORD i = 0; i < groups->GroupCount; ++i)
+    {
+        if ((groups->Groups[i].Attributes & SE_GROUP_LOGON_ID) == SE_GROUP_LOGON_ID)
+            return copy_sid(groups->Groups[i].Sid);
+    }
+    return {};
+}
+
+std::optional<PipeSecurityAttributes> make_pipe_security_attributes()
+{
+    OwnedSid user_sid = current_user_sid();
+    OwnedSid logon_sid = current_logon_sid();
+    if (user_sid.empty() && logon_sid.empty())
+        return std::nullopt;
+
+    PipeSecurityAttributes security;
+    BYTE system_sid_buffer[SECURITY_MAX_SID_SIZE] = {};
+    DWORD system_sid_size = sizeof(system_sid_buffer);
+    if (!CreateWellKnownSid(
+            WinLocalSystemSid, nullptr, system_sid_buffer, &system_sid_size))
+    {
+        DRAXUL_LOG_WARN(LogCategory::App,
+            "Failed to build LocalSystem SID for session attach pipe security: %s",
+            win32_error_message(GetLastError()).c_str());
+        return std::nullopt;
+    }
+
+    BYTE admin_sid_buffer[SECURITY_MAX_SID_SIZE] = {};
+    DWORD admin_sid_size = sizeof(admin_sid_buffer);
+    if (!CreateWellKnownSid(
+            WinBuiltinAdministratorsSid, nullptr, admin_sid_buffer, &admin_sid_size))
+    {
+        DRAXUL_LOG_WARN(LogCategory::App,
+            "Failed to build Administrators SID for session attach pipe security: %s",
+            win32_error_message(GetLastError()).c_str());
+        return std::nullopt;
+    }
+
+    struct AccessEntry
+    {
+        PSID sid = nullptr;
+        DWORD permissions = 0;
+    };
+
+    std::vector<AccessEntry> entries;
+    entries.push_back({ system_sid_buffer, GENERIC_ALL });
+    entries.push_back({ admin_sid_buffer, GENERIC_ALL });
+    if (!user_sid.empty())
+        entries.push_back({ user_sid.get(), FILE_GENERIC_READ | FILE_GENERIC_WRITE | SYNCHRONIZE });
+    if (!logon_sid.empty())
+        entries.push_back({ logon_sid.get(), FILE_GENERIC_READ | FILE_GENERIC_WRITE | SYNCHRONIZE });
+
+    DWORD acl_size = sizeof(ACL);
+    for (const auto& entry : entries)
+        acl_size += sizeof(ACCESS_ALLOWED_ACE) + GetLengthSid(entry.sid) - sizeof(DWORD);
+
+    security.dacl = static_cast<PACL>(LocalAlloc(LPTR, acl_size));
+    if (!security.dacl)
+    {
+        DRAXUL_LOG_WARN(LogCategory::App,
+            "Failed to allocate session attach pipe DACL.");
+        return std::nullopt;
+    }
+    if (!InitializeAcl(security.dacl, acl_size, ACL_REVISION))
+    {
+        DRAXUL_LOG_WARN(LogCategory::App,
+            "Failed to initialize session attach pipe DACL: %s",
+            win32_error_message(GetLastError()).c_str());
+        return std::nullopt;
+    }
+    for (const auto& entry : entries)
+    {
+        if (!AddAccessAllowedAceEx(security.dacl, ACL_REVISION, 0, entry.permissions, entry.sid))
+        {
+            DRAXUL_LOG_WARN(LogCategory::App,
+                "Failed to add ACE to session attach pipe DACL: %s",
+                win32_error_message(GetLastError()).c_str());
+            return std::nullopt;
+        }
+    }
+    if (!IsValidAcl(security.dacl))
+    {
+        DRAXUL_LOG_WARN(LogCategory::App,
+            "Session attach pipe DACL is invalid before applying it.");
+        return std::nullopt;
+    }
+
+    DRAXUL_LOG_DEBUG(LogCategory::App,
+        "Using explicit session attach pipe security (user_sid=%s, logon_sid=%s)",
+        sid_to_string(user_sid.get()).c_str(),
+        sid_to_string(logon_sid.get()).c_str());
+    return security;
+}
+
+bool apply_pipe_dacl(HANDLE pipe, PACL dacl)
+{
+    if (!dacl)
+        return true;
+
+    SECURITY_DESCRIPTOR descriptor = {};
+    if (!InitializeSecurityDescriptor(&descriptor, SECURITY_DESCRIPTOR_REVISION))
+    {
+        DRAXUL_LOG_WARN(LogCategory::App,
+            "Failed to initialize session attach pipe DACL descriptor: %s",
+            win32_error_message(GetLastError()).c_str());
+        return false;
+    }
+    if (!SetSecurityDescriptorDacl(&descriptor, TRUE, dacl, FALSE))
+    {
+        DRAXUL_LOG_WARN(LogCategory::App,
+            "Failed to build session attach pipe DACL descriptor: %s",
+            win32_error_message(GetLastError()).c_str());
+        return false;
+    }
+    if (!SetKernelObjectSecurity(pipe, DACL_SECURITY_INFORMATION, &descriptor))
+    {
+        DRAXUL_LOG_WARN(LogCategory::App,
+            "Failed to apply session attach pipe DACL: %s",
+            win32_error_message(GetLastError()).c_str());
+        return false;
+    }
+
+    DRAXUL_LOG_DEBUG(LogCategory::App, "Applied session attach pipe DACL.");
+    return true;
+}
+
+bool apply_pipe_medium_integrity_label(HANDLE pipe)
+{
+    ScopedSid integrity_sid;
+    SID_IDENTIFIER_AUTHORITY mandatory_label_authority = SECURITY_MANDATORY_LABEL_AUTHORITY;
+    if (!AllocateAndInitializeSid(&mandatory_label_authority,
+            1,
+            SECURITY_MANDATORY_MEDIUM_RID,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            &integrity_sid.sid))
+    {
+        DRAXUL_LOG_WARN(LogCategory::App,
+            "Failed to build medium-integrity SID for session attach pipe label: %s",
+            win32_error_message(GetLastError()).c_str());
+        return false;
+    }
+
+    const DWORD sacl_size = sizeof(ACL)
+        + sizeof(SYSTEM_MANDATORY_LABEL_ACE)
+        + GetLengthSid(integrity_sid.sid)
+        - sizeof(DWORD);
+    PACL sacl = static_cast<PACL>(LocalAlloc(LPTR, sacl_size));
+    if (!sacl)
+    {
+        DRAXUL_LOG_WARN(LogCategory::App,
+            "Failed to allocate session attach pipe label SACL.");
+        return false;
+    }
+    ScopedLocalAlloc owned_sacl{ sacl };
+    if (!InitializeAcl(sacl, sacl_size, ACL_REVISION))
+    {
+        DRAXUL_LOG_WARN(LogCategory::App,
+            "Failed to initialize session attach pipe label SACL: %s",
+            win32_error_message(GetLastError()).c_str());
+        return false;
+    }
+    if (!AddMandatoryAce(
+            sacl, ACL_REVISION, 0, SYSTEM_MANDATORY_LABEL_NO_WRITE_UP, integrity_sid.sid))
+    {
+        DRAXUL_LOG_WARN(LogCategory::App,
+            "Failed to add medium-integrity label to session attach pipe: %s",
+            win32_error_message(GetLastError()).c_str());
+        return false;
+    }
+
+    SECURITY_DESCRIPTOR descriptor = {};
+    if (!InitializeSecurityDescriptor(&descriptor, SECURITY_DESCRIPTOR_REVISION))
+    {
+        DRAXUL_LOG_WARN(LogCategory::App,
+            "Failed to initialize session attach pipe label descriptor: %s",
+            win32_error_message(GetLastError()).c_str());
+        return false;
+    }
+    if (!SetSecurityDescriptorSacl(&descriptor, TRUE, sacl, FALSE))
+    {
+        DRAXUL_LOG_WARN(LogCategory::App,
+            "Failed to build session attach pipe label descriptor: %s",
+            win32_error_message(GetLastError()).c_str());
+        return false;
+    }
+    if (!SetKernelObjectSecurity(pipe, LABEL_SECURITY_INFORMATION, &descriptor))
+    {
+        DRAXUL_LOG_WARN(LogCategory::App,
+            "Failed to apply medium-integrity label to session attach pipe: %s",
+            win32_error_message(GetLastError()).c_str());
+        return false;
+    }
+
+    DRAXUL_LOG_DEBUG(LogCategory::App, "Applied medium-integrity label to session attach pipe.");
+    return true;
+}
+
+bool session_mutex_exists(std::string_view session_id)
+{
+    HANDLE mutex = OpenMutexA(SYNCHRONIZE, FALSE, mutex_name(session_id).c_str());
+    if (!mutex)
+        return false;
+    CloseHandle(mutex);
+    return true;
+}
+
+bool wait_for_pipe_server(std::string_view session_id, DWORD timeout_ms, DWORD* wait_error)
+{
+    const std::string name = pipe_name(session_id);
+    const ULONGLONG deadline = GetTickCount64() + timeout_ms;
+
+    for (;;)
+    {
+        const ULONGLONG now = GetTickCount64();
+        const DWORD slice = static_cast<DWORD>(std::min<ULONGLONG>(
+            200, now < deadline ? (deadline - now) : 0));
+        if (WaitNamedPipeA(name.c_str(), slice))
+            return true;
+
+        const DWORD error = GetLastError();
+        const bool another_instance_claimed = session_mutex_exists(session_id);
+        if ((error == ERROR_FILE_NOT_FOUND || error == ERROR_SEM_TIMEOUT)
+            && another_instance_claimed
+            && GetTickCount64() < deadline)
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            continue;
+        }
+
+        if (wait_error)
+            *wait_error = error;
+        DRAXUL_LOG_DEBUG(LogCategory::App,
+            "Session attach pipe wait for '%s' failed after %lu ms: %s (mutex_exists=%d)",
+            std::string(session_id).c_str(),
+            static_cast<unsigned long>(timeout_ms),
+            win32_error_message(error).c_str(),
+            another_instance_claimed ? 1 : 0);
+        return false;
+    }
+}
+
+HANDLE open_pipe_client(std::string_view session_id, DWORD timeout_ms, DWORD* open_error, bool* no_server)
+{
+    const std::string actual_session_id = session_id.empty() ? "default" : std::string(session_id);
+    const std::string name = pipe_name(actual_session_id);
+    const ULONGLONG deadline = GetTickCount64() + timeout_ms;
+    DWORD last_error = ERROR_SEM_TIMEOUT;
+    int attempts = 0;
+
+    if (no_server)
+        *no_server = false;
+
+    DRAXUL_LOG_DEBUG(LogCategory::App,
+        "Opening session attach pipe for '%s' with timeout %lu ms",
+        actual_session_id.c_str(),
+        static_cast<unsigned long>(timeout_ms));
+
+    for (;;)
+    {
+        const ULONGLONG now = GetTickCount64();
+        const DWORD remaining = static_cast<DWORD>(std::min<ULONGLONG>(
+            200, now < deadline ? (deadline - now) : 0));
+        if (remaining == 0)
+            break;
+        ++attempts;
+
+        DWORD wait_error = ERROR_SUCCESS;
+        if (!wait_for_pipe_server(actual_session_id, remaining, &wait_error))
+        {
+            last_error = wait_error;
+            if (wait_error == ERROR_FILE_NOT_FOUND)
+            {
+                if (no_server)
+                    *no_server = true;
+                break;
+            }
+            if (wait_error == ERROR_SEM_TIMEOUT)
+                continue;
+            break;
+        }
+
+        HANDLE pipe
+            = CreateFileA(name.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+        if (pipe != INVALID_HANDLE_VALUE)
+        {
+            DRAXUL_LOG_DEBUG(LogCategory::App,
+                "Opened session attach pipe for '%s' after %d attempts",
+                actual_session_id.c_str(),
+                attempts);
+            return pipe;
+        }
+
+        last_error = GetLastError();
+        if (last_error == ERROR_PIPE_BUSY || last_error == ERROR_SEM_TIMEOUT || last_error == ERROR_FILE_NOT_FOUND)
+        {
+            if (last_error == ERROR_FILE_NOT_FOUND && no_server)
+                *no_server = true;
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            continue;
+        }
+        break;
+    }
+
+    if (open_error)
+        *open_error = last_error;
+    DRAXUL_LOG_DEBUG(LogCategory::App,
+        "Opening session attach pipe for '%s' failed after %d attempts: %s (no_server=%d)",
+        actual_session_id.c_str(),
+        attempts,
+        win32_error_message(last_error).c_str(),
+        no_server && *no_server ? 1 : 0);
+    return INVALID_HANDLE_VALUE;
 }
 
 #else
@@ -235,6 +709,10 @@ bool SessionAttachServer::start(std::string_view session_id, CommandHandler on_c
     on_rename_requested_ = std::move(on_rename_requested);
     stop_requested_ = false;
 
+    DRAXUL_LOG_DEBUG(LogCategory::App,
+        "Starting session attach server for '%s'",
+        session_id_.c_str());
+
 #ifdef _WIN32
     HANDLE mutex = CreateMutexA(nullptr, FALSE, mutex_name(session_id_).c_str());
     if (!mutex)
@@ -245,23 +723,53 @@ bool SessionAttachServer::start(std::string_view session_id, CommandHandler on_c
     }
     if (GetLastError() == ERROR_ALREADY_EXISTS)
     {
-        CloseHandle(mutex);
-        if (error)
-            *error = "Another Draxul session-attach server is already running.";
-        return false;
+        // Another process holds the mutex. Check whether its pipe server is
+        // actually alive. If the pipe is gone the old server thread has died
+        // (crash, stuck process, etc.) and we should take over the session
+        // rather than refusing to start.
+        DWORD wait_error = ERROR_SUCCESS;
+        if (wait_for_pipe_server(session_id_, 2000, &wait_error))
+        {
+            // Pipe is alive — another server is truly running.
+            CloseHandle(mutex);
+            if (error)
+                *error = "Another Draxul session-attach server is already running.";
+            return false;
+        }
+        if (wait_error != ERROR_FILE_NOT_FOUND && wait_error != ERROR_SEM_TIMEOUT)
+        {
+            CloseHandle(mutex);
+            if (error)
+                *error = "Failed waiting for competing session-attach server: " + win32_error_message(wait_error);
+            return false;
+        }
+        // Pipe is still absent after a grace period — take over. Keep the
+        // mutex handle and proceed.
+        DRAXUL_LOG_WARN(LogCategory::App,
+            "Session-attach mutex exists but no pipe appeared after startup grace — taking over session '%s'",
+            session_id_.c_str());
     }
     instance_mutex_ = mutex;
 
+    auto pipe_security = make_pipe_security_attributes();
+    if (!pipe_security)
+    {
+        DRAXUL_LOG_WARN(LogCategory::App,
+            "Falling back to default session attach pipe security for '%s'",
+            session_id_.c_str());
+    }
+
     std::promise<bool> ready_promise;
     auto ready_future = ready_promise.get_future();
-    server_thread_ = std::thread([this, ready = std::move(ready_promise)]() mutable {
+    server_thread_ = std::thread([this, ready = std::move(ready_promise),
+                                     pipe_security = std::move(pipe_security)]() mutable {
         const std::string name = pipe_name(session_id_);
         bool ready_signaled = false;
         while (!stop_requested_.load())
         {
             HANDLE pipe = CreateNamedPipeA(name.c_str(),
-                PIPE_ACCESS_DUPLEX,
-                PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
+                PIPE_ACCESS_DUPLEX | WRITE_DAC | WRITE_OWNER,
+                PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
                 1,
                 256,
                 256,
@@ -279,10 +787,16 @@ bool SessionAttachServer::start(std::string_view session_id, CommandHandler on_c
                     win32_error_message(GetLastError()).c_str());
                 break;
             }
+            if (pipe_security)
+                (void)apply_pipe_dacl(pipe, pipe_security->dacl);
+            (void)apply_pipe_medium_integrity_label(pipe);
             if (!ready_signaled)
             {
                 ready.set_value(true);
                 ready_signaled = true;
+                DRAXUL_LOG_DEBUG(LogCategory::App,
+                    "Session attach server pipe ready for '%s'",
+                    session_id_.c_str());
             }
 
             const BOOL connected = ConnectNamedPipe(pipe, nullptr)
@@ -307,6 +821,11 @@ bool SessionAttachServer::start(std::string_view session_id, CommandHandler on_c
             if (!stop_requested_.load() && read_ok && bytes_read > 0)
             {
                 const std::string_view command(buffer, bytes_read);
+                DRAXUL_LOG_DEBUG(LogCategory::App,
+                    "Session attach server for '%s' received command '%.*s'",
+                    session_id_.c_str(),
+                    static_cast<int>(command.size()),
+                    command.data());
                 if (command == "activate")
                 {
                     if (on_command_requested_)
@@ -362,6 +881,9 @@ bool SessionAttachServer::start(std::string_view session_id, CommandHandler on_c
         return false;
     }
     running_ = true;
+    DRAXUL_LOG_DEBUG(LogCategory::App,
+        "Session attach server started for '%s'",
+        session_id_.c_str());
 #else
     socket_path_ = socket_path(session_id_);
     const int probe_fd = ::socket(AF_UNIX, SOCK_STREAM, 0);
@@ -530,10 +1052,10 @@ SessionAttachServer::ProbeStatus SessionAttachServer::probe(
 {
     PERF_MEASURE();
 #ifdef _WIN32
-    const std::string name = pipe_name(session_id.empty() ? "default" : session_id);
-    if (!WaitNamedPipeA(name.c_str(), 50))
+    const std::string actual_session_id = session_id.empty() ? "default" : std::string(session_id);
+    DWORD wait_error = ERROR_SUCCESS;
+    if (!wait_for_pipe_server(actual_session_id, 5000, &wait_error))
     {
-        const DWORD wait_error = GetLastError();
         if (wait_error == ERROR_FILE_NOT_FOUND)
             return ProbeStatus::NoServer;
         if (error)
@@ -580,25 +1102,26 @@ SessionAttachServer::AttachStatus SessionAttachServer::send_command(
 {
     PERF_MEASURE();
 #ifdef _WIN32
-    const std::string name = pipe_name(session_id.empty() ? "default" : session_id);
-    if (!WaitNamedPipeA(name.c_str(), 50))
-    {
-        const DWORD wait_error = GetLastError();
-        if (wait_error == ERROR_FILE_NOT_FOUND)
-            return AttachStatus::NoServer;
-        if (error)
-            *error = "Failed waiting for session-attach pipe: " + win32_error_message(wait_error);
-        return AttachStatus::Error;
-    }
-
-    HANDLE pipe = CreateFileA(name.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+    const std::string actual_session_id = session_id.empty() ? "default" : std::string(session_id);
+    DRAXUL_LOG_DEBUG(LogCategory::App,
+        "Sending session attach command '%s' to '%s'",
+        command_text(command),
+        actual_session_id.c_str());
+    DWORD open_error = ERROR_SUCCESS;
+    bool no_server = false;
+    HANDLE pipe = open_pipe_client(session_id, 5000, &open_error, &no_server);
     if (pipe == INVALID_HANDLE_VALUE)
     {
-        const DWORD create_error = GetLastError();
-        if (create_error == ERROR_FILE_NOT_FOUND)
+        DRAXUL_LOG_DEBUG(LogCategory::App,
+            "Session attach command '%s' to '%s' could not open pipe (no_server=%d, error=%s)",
+            command_text(command),
+            actual_session_id.c_str(),
+            no_server ? 1 : 0,
+            win32_error_message(open_error).c_str());
+        if (no_server)
             return AttachStatus::NoServer;
         if (error)
-            *error = "Failed opening session-attach pipe: " + win32_error_message(create_error);
+            *error = "Failed opening session-attach pipe: " + win32_error_message(open_error);
         return AttachStatus::Error;
     }
     DWORD bytes_written = 0;
@@ -612,6 +1135,10 @@ SessionAttachServer::AttachStatus SessionAttachServer::send_command(
             *error = "Failed writing session-attach command: " + win32_error_message(GetLastError());
         return AttachStatus::Error;
     }
+    DRAXUL_LOG_DEBUG(LogCategory::App,
+        "Session attach command '%s' sent to '%s'",
+        command_text(command),
+        actual_session_id.c_str());
     return AttachStatus::Attached;
 #else
     const std::string path = socket_path(session_id.empty() ? "default" : session_id);
@@ -657,22 +1184,15 @@ bool SessionAttachServer::query_live_session(
     PERF_MEASURE();
     std::string response;
 #ifdef _WIN32
-    const std::string name = pipe_name(session_id.empty() ? "default" : session_id);
-    if (!WaitNamedPipeA(name.c_str(), 50))
-    {
-        const DWORD wait_error = GetLastError();
-        if (wait_error == ERROR_FILE_NOT_FOUND)
-            return false;
-        if (error)
-            *error = "Failed waiting for session-attach pipe: " + win32_error_message(wait_error);
-        return false;
-    }
-
-    HANDLE pipe = CreateFileA(name.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+    DWORD open_error = ERROR_SUCCESS;
+    bool no_server = false;
+    HANDLE pipe = open_pipe_client(session_id, 5000, &open_error, &no_server);
     if (pipe == INVALID_HANDLE_VALUE)
     {
+        if (no_server)
+            return false;
         if (error)
-            *error = "Failed opening session-attach pipe: " + win32_error_message(GetLastError());
+            *error = "Failed opening session-attach pipe: " + win32_error_message(open_error);
         return false;
     }
 
@@ -765,26 +1285,19 @@ bool SessionAttachServer::rename_session(
     const std::string request = std::string(kRenameSessionPrefix) + std::string(session_name);
     std::string response;
 #ifdef _WIN32
-    const std::string name = pipe_name(session_id.empty() ? "default" : session_id);
-    if (!WaitNamedPipeA(name.c_str(), 50))
+    DWORD open_error = ERROR_SUCCESS;
+    bool no_server = false;
+    HANDLE pipe = open_pipe_client(session_id, 5000, &open_error, &no_server);
+    if (pipe == INVALID_HANDLE_VALUE)
     {
-        const DWORD wait_error = GetLastError();
-        if (wait_error == ERROR_FILE_NOT_FOUND)
+        if (no_server)
         {
             if (error)
                 *error = "No running session.";
             return false;
         }
         if (error)
-            *error = "Failed waiting for session-attach pipe: " + win32_error_message(wait_error);
-        return false;
-    }
-
-    HANDLE pipe = CreateFileA(name.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
-    if (pipe == INVALID_HANDLE_VALUE)
-    {
-        if (error)
-            *error = "Failed opening session-attach pipe: " + win32_error_message(GetLastError());
+            *error = "Failed opening session-attach pipe: " + win32_error_message(open_error);
         return false;
     }
 

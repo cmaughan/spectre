@@ -257,6 +257,9 @@ bool App::initialize()
     if (!ok)
         return false;
 
+    if (!time_step("Session Attach", [this]() { return initialize_session_attach(); }))
+        return false;
+
     if (!time_step("Window Create (SDL)", [this]() {
             if (window_factory_)
             {
@@ -334,9 +337,6 @@ bool App::initialize()
             }
             return true;
         }))
-        return false;
-
-    if (!time_step("Session Attach", [this]() { return initialize_session_attach(); }))
         return false;
 
     if (!time_step("Host", [this]() { return initialize_chrome_host(); }))
@@ -457,6 +457,11 @@ bool App::initialize_session_attach()
     if (!options_.enable_session_attach)
         return true;
 
+    DRAXUL_LOG_DEBUG(LogCategory::App,
+        "Initializing session attach server for '%s' (pid=%llu)",
+        options_.session_id.c_str(),
+        static_cast<unsigned long long>(current_process_id()));
+
     std::string error;
     if (!session_attach_server_.start(options_.session_id, [this](SessionAttachServer::Command command) {
                 if (command == SessionAttachServer::Command::Activate)
@@ -473,9 +478,17 @@ bool App::initialize_session_attach()
         last_init_error_ = error.empty()
             ? "Failed to start the session attach server."
             : error;
+        DRAXUL_LOG_WARN(LogCategory::App,
+            "Failed to initialize session attach server for '%s': %s",
+            options_.session_id.c_str(),
+            last_init_error_.c_str());
         return false;
     }
 
+    DRAXUL_LOG_DEBUG(LogCategory::App,
+        "Session attach server initialized for '%s' (pid=%llu)",
+        options_.session_id.c_str(),
+        static_cast<unsigned long long>(current_process_id()));
     return true;
 }
 
@@ -711,6 +724,17 @@ bool App::initialize_chrome_host()
                 DRAXUL_LOG_WARN(LogCategory::App,
                     "Failed to load saved shell session state: %s", session_error.c_str());
             }
+        }
+    }
+
+    if (!restored_session)
+    {
+        if (pending_window_activation_ && window_)
+        {
+            // Match the restore path: get Draxul in front before spawning the
+            // first shell host so any transient console windows stay behind it.
+            window_->activate();
+            pending_window_activation_ = false;
         }
     }
 
@@ -1490,9 +1514,22 @@ bool App::pump_once(std::optional<std::chrono::steady_clock::time_point> wait_de
     while (running_)
     {
         if (external_attach_requested_.exchange(false))
+        {
+            DRAXUL_LOG_DEBUG(LogCategory::App,
+                "Processing external attach request for '%s' (pid=%llu, detached=%d)",
+                options_.session_id.c_str(),
+                static_cast<unsigned long long>(current_process_id()),
+                detached_ ? 1 : 0);
             reattach_window();
+        }
         if (external_detach_requested_.exchange(false))
+        {
+            DRAXUL_LOG_DEBUG(LogCategory::App,
+                "Processing external detach request for '%s' (pid=%llu)",
+                options_.session_id.c_str(),
+                static_cast<unsigned long long>(current_process_id()));
             detach_window();
+        }
         {
             std::optional<std::string> renamed_session;
             {
@@ -1957,6 +1994,11 @@ void App::detach_window()
     if (detached_ || !can_detach_window())
         return;
 
+    DRAXUL_LOG_DEBUG(LogCategory::App,
+        "Detaching window for session '%s' (pid=%llu)",
+        options_.session_id.c_str(),
+        static_cast<unsigned long long>(current_process_id()));
+
     detached_ = true;
     mark_session_detached();
     persist_session_state();
@@ -1965,12 +2007,22 @@ void App::detach_window()
     pending_window_activation_ = false;
     frame_requested_ = false;
     window_->hide();
+    DRAXUL_LOG_DEBUG(LogCategory::App,
+        "Window detached and hidden for session '%s' (pid=%llu)",
+        options_.session_id.c_str(),
+        static_cast<unsigned long long>(current_process_id()));
 }
 
 void App::reattach_window()
 {
     PERF_MEASURE();
     const bool was_detached = detached_;
+    DRAXUL_LOG_DEBUG(LogCategory::App,
+        "Reattaching window for session '%s' (pid=%llu, was_detached=%d, visible=%d)",
+        options_.session_id.c_str(),
+        static_cast<unsigned long long>(current_process_id()),
+        was_detached ? 1 : 0,
+        window_ && window_->is_visible() ? 1 : 0);
     detached_ = false;
     mark_session_attached();
     pending_window_activation_ = true;
@@ -2003,6 +2055,11 @@ void App::reattach_window()
 
     persist_session_runtime_metadata(true);
     request_frame();
+    DRAXUL_LOG_DEBUG(LogCategory::App,
+        "Reattach finished for session '%s' (pid=%llu, visible=%d)",
+        options_.session_id.c_str(),
+        static_cast<unsigned long long>(current_process_id()),
+        window_ && window_->is_visible() ? 1 : 0);
 }
 
 void App::kill_session()

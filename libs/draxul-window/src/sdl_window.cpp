@@ -265,9 +265,15 @@ void SdlWindow::activate()
         if (foreground_thread && foreground_thread != current_thread)
             AttachThreadInput(foreground_thread, current_thread, TRUE);
 
+        // Briefly toggle topmost to keep transient child-console windows from
+        // surfacing in front of Draxul during startup host spawn.
+        SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
         BringWindowToTop(hwnd);
         SetForegroundWindow(hwnd);
         SetFocus(hwnd);
+        SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 
         if (foreground_thread && foreground_thread != current_thread)
             AttachThreadInput(foreground_thread, current_thread, FALSE);
