@@ -65,6 +65,65 @@ void restore_grid_snapshot(Grid& grid, int dst_cols, int dst_rows, const GridSna
     }
 }
 
+bool is_selection_copy_shortcut(const KeyEvent& event)
+{
+    if (!event.pressed || event.keycode != SDLK_C)
+        return false;
+    ModifierFlags normalized_mods = kModNone;
+    if (event.mod & kModShift)
+        normalized_mods |= kModShift;
+    if (event.mod & kModCtrl)
+        normalized_mods |= kModCtrl;
+    if (event.mod & kModAlt)
+        normalized_mods |= kModAlt;
+    if (event.mod & kModSuper)
+        normalized_mods |= kModSuper;
+    return normalized_mods == kModCtrl;
+}
+
+std::string describe_text_for_log(std::string_view text)
+{
+    static constexpr char kHex[] = "0123456789ABCDEF";
+    std::string out;
+    out.reserve(text.size() * 4 + 2);
+    out.push_back('"');
+    for (unsigned char ch : text)
+    {
+        switch (ch)
+        {
+        case '\\':
+            out += "\\\\";
+            break;
+        case '"':
+            out += "\\\"";
+            break;
+        case '\n':
+            out += "\\n";
+            break;
+        case '\r':
+            out += "\\r";
+            break;
+        case '\t':
+            out += "\\t";
+            break;
+        default:
+            if (ch >= 0x20 && ch <= 0x7E)
+            {
+                out.push_back(static_cast<char>(ch));
+            }
+            else
+            {
+                out += "\\x";
+                out.push_back(kHex[(ch >> 4) & 0xF]);
+                out.push_back(kHex[ch & 0xF]);
+            }
+            break;
+        }
+    }
+    out.push_back('"');
+    return out;
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -147,6 +206,7 @@ void LocalTerminalHost::pump()
         // closely-spaced bursts (e.g. fzf exit: cleanup then prompt redraw)
         // are coalesced into a single flush instead of rendering a partial
         // intermediate frame.
+        begin_output_cursor_batch();
         do
         {
             for (const auto& chunk : chunks)
@@ -154,6 +214,7 @@ void LocalTerminalHost::pump()
             // Re-drain: coalesces bursts that arrived during processing.
             chunks = do_process_drain();
         } while (!chunks.empty());
+        end_output_cursor_batch();
 
         // After a resize, the shell clears and redraws — but it may leave
         // rows blank that had content before (e.g. previous prompts that ZLE
@@ -218,11 +279,44 @@ void LocalTerminalHost::pump()
 void LocalTerminalHost::on_key(const KeyEvent& event)
 {
     PERF_MEASURE();
+    if (log_would_emit(LogLevel::Trace, LogCategory::Input))
+    {
+        log_printf(LogLevel::Trace, LogCategory::Input,
+            "input trace: local_terminal_host on_key key=%d mod=0x%X pressed=%d selection_active=%d suppress_text=%d copy_mode=%d",
+            event.keycode,
+            static_cast<unsigned int>(event.mod),
+            event.pressed ? 1 : 0,
+            selection_.is_active() ? 1 : 0,
+            suppress_next_selection_copy_text_input_ ? 1 : 0,
+            copy_mode_.active ? 1 : 0);
+    }
+    if (event.pressed && suppress_next_selection_copy_text_input_)
+    {
+        if (log_would_emit(LogLevel::Trace, LogCategory::Input))
+            log_printf(LogLevel::Trace, LogCategory::Input, "input trace: local_terminal_host clearing stale suppress flag before new key");
+        suppress_next_selection_copy_text_input_ = false;
+    }
+
     if (copy_mode_.active)
     {
+        if (log_would_emit(LogLevel::Trace, LogCategory::Input))
+            log_printf(LogLevel::Trace, LogCategory::Input, "input trace: local_terminal_host swallowing key because copy mode is active");
         // Always swallow keys in copy mode; never forward to the process,
         // whether or not handle_copy_mode_key consumed the binding.
         (void)handle_copy_mode_key(event);
+        return;
+    }
+
+    if (selection_.is_active() && is_selection_copy_shortcut(event))
+    {
+        copy_active_selection_to_clipboard();
+        selection_.clear();
+        suppress_next_selection_copy_text_input_ = true;
+        if (log_would_emit(LogLevel::Trace, LogCategory::Input))
+        {
+            log_printf(LogLevel::Trace, LogCategory::Input,
+                "input trace: local_terminal_host swallowed Ctrl+C for selection copy, cleared selection, and enabled suppress_next_selection_copy_text_input");
+        }
         return;
     }
 
@@ -253,14 +347,36 @@ void LocalTerminalHost::on_key(const KeyEvent& event)
 
     if (event.pressed && scrollback_.is_scrolled_back())
         scrollback_.scroll_to_live();
+    if (log_would_emit(LogLevel::Trace, LogCategory::Input))
+        log_printf(LogLevel::Trace, LogCategory::Input, "input trace: local_terminal_host forwarding key to TerminalHostBase");
     TerminalHostBase::on_key(event);
 }
 
 void LocalTerminalHost::on_text_input(const TextInputEvent& event)
 {
+    if (log_would_emit(LogLevel::Trace, LogCategory::Input))
+    {
+        const std::string described = describe_text_for_log(event.text);
+        log_printf(LogLevel::Trace, LogCategory::Input,
+            "input trace: local_terminal_host on_text_input text=%s len=%zu selection_active=%d suppress_text=%d",
+            described.c_str(),
+            event.text.size(),
+            selection_.is_active() ? 1 : 0,
+            suppress_next_selection_copy_text_input_ ? 1 : 0);
+    }
+    if (suppress_next_selection_copy_text_input_)
+    {
+        suppress_next_selection_copy_text_input_ = false;
+        if (log_would_emit(LogLevel::Trace, LogCategory::Input))
+            log_printf(LogLevel::Trace, LogCategory::Input, "input trace: local_terminal_host swallowed follow-up text_input after selection copy");
+        return;
+    }
+
     PERF_MEASURE();
     if (!event.text.empty() && scrollback_.is_scrolled_back())
         scrollback_.scroll_to_live();
+    if (log_would_emit(LogLevel::Trace, LogCategory::Input))
+        log_printf(LogLevel::Trace, LogCategory::Input, "input trace: local_terminal_host forwarding text_input to TerminalHostBase");
     TerminalHostBase::on_text_input(event);
 }
 
@@ -275,19 +391,44 @@ bool LocalTerminalHost::dispatch_action(std::string_view action)
             enter_copy_mode();
         return true;
     }
-    if (action == "copy" && selection_.is_active())
+    if (action == "copy")
     {
-        const std::string text = selection_.extract_text();
-        if (!text.empty())
-            window().set_clipboard_text(text);
-        selection_.clear();
+        copy_active_selection_to_clipboard();
         return true;
     }
-    if (action == "copy")
-        return true;
     if (action == "paste" && scrollback_.is_scrolled_back())
         scrollback_.scroll_to_live();
     return TerminalHostBase::dispatch_action(action);
+}
+
+bool LocalTerminalHost::copy_active_selection_to_clipboard()
+{
+    PERF_MEASURE();
+    if (!selection_.is_active())
+    {
+        if (log_would_emit(LogLevel::Trace, LogCategory::Input))
+            log_printf(LogLevel::Trace, LogCategory::Input, "input trace: local_terminal_host copy_active_selection_to_clipboard aborted because selection is inactive");
+        return false;
+    }
+
+    const std::string text = selection_.extract_text();
+    if (text.empty())
+    {
+        if (log_would_emit(LogLevel::Trace, LogCategory::Input))
+            log_printf(LogLevel::Trace, LogCategory::Input, "input trace: local_terminal_host copy_active_selection_to_clipboard aborted because extracted text is empty");
+        return false;
+    }
+    const bool ok = window().set_clipboard_text(text);
+    if (log_would_emit(LogLevel::Trace, LogCategory::Input))
+    {
+        const std::string described = describe_text_for_log(text);
+        log_printf(LogLevel::Trace, LogCategory::Input,
+            "input trace: local_terminal_host copied selection to clipboard ok=%d bytes=%zu text=%s",
+            ok ? 1 : 0,
+            text.size(),
+            described.c_str());
+    }
+    return ok;
 }
 
 // ---------------------------------------------------------------------------
@@ -298,47 +439,77 @@ void LocalTerminalHost::on_mouse_button(const MouseButtonEvent& event)
 {
     PERF_MEASURE();
     const GridPos pos = pixel_to_cell(event.pos.x, event.pos.y);
+    if (log_would_emit(LogLevel::Trace, LogCategory::Input))
+    {
+        log_printf(LogLevel::Trace, LogCategory::Input,
+            "input trace: local_terminal_host mouse_button button=%d pressed=%d clicks=%d mod=0x%X pixel=(%d,%d) cell=(%d,%d) selection_active=%d pending_copy_click=%d",
+            event.button,
+            event.pressed ? 1 : 0,
+            event.clicks,
+            static_cast<unsigned int>(event.mod),
+            event.pos.x,
+            event.pos.y,
+            pos.col,
+            pos.row,
+            selection_.is_active() ? 1 : 0,
+            pending_selection_copy_click_.has_value() ? 1 : 0);
+    }
 
     if (mouse_reporter_.on_button(event.button, event.pressed, event.mod, pos.col, pos.row))
         return;
 
     if (event.button == 1 && event.pressed)
     {
+        pending_selection_copy_click_.reset();
+
         // Double-click: word selection. Triple-click (and beyond): line selection.
         if (event.clicks == 2)
         {
             const bool became_active = selection_.select_word({ { pos.col, pos.row } });
             if (became_active && launch_options().copy_on_select && selection_.is_active())
-            {
-                const std::string text = selection_.extract_text();
-                if (!text.empty())
-                    window().set_clipboard_text(text);
-            }
+                copy_active_selection_to_clipboard();
             return;
         }
         if (event.clicks >= 3)
         {
             const bool became_active = selection_.select_line({ { pos.col, pos.row } });
             if (became_active && launch_options().copy_on_select && selection_.is_active())
-            {
-                const std::string text = selection_.extract_text();
-                if (!text.empty())
-                    window().set_clipboard_text(text);
-            }
+                copy_active_selection_to_clipboard();
+            return;
+        }
+        if (selection_.is_active() && selection_.contains({ { pos.col, pos.row } }))
+        {
+            pending_selection_copy_click_ = pos;
+            if (log_would_emit(LogLevel::Trace, LogCategory::Input))
+                log_printf(LogLevel::Trace, LogCategory::Input, "input trace: local_terminal_host armed click-to-copy inside active selection");
             return;
         }
         selection_.begin_drag({ { pos.col, pos.row } });
+        if (log_would_emit(LogLevel::Trace, LogCategory::Input))
+            log_printf(LogLevel::Trace, LogCategory::Input, "input trace: local_terminal_host began drag selection");
         return;
     }
     if (event.button == 1)
     {
-        const bool became_active = selection_.end_drag({ { pos.col, pos.row } });
-        if (became_active && launch_options().copy_on_select && selection_.is_active())
+        if (pending_selection_copy_click_.has_value())
         {
-            const std::string text = selection_.extract_text();
-            if (!text.empty())
-                window().set_clipboard_text(text);
+            pending_selection_copy_click_.reset();
+            copy_active_selection_to_clipboard();
+            selection_.clear();
+            if (log_would_emit(LogLevel::Trace, LogCategory::Input))
+                log_printf(LogLevel::Trace, LogCategory::Input, "input trace: local_terminal_host completed click-to-copy and cleared selection");
+            return;
         }
+        const bool became_active = selection_.end_drag({ { pos.col, pos.row } });
+        if (log_would_emit(LogLevel::Trace, LogCategory::Input))
+        {
+            log_printf(LogLevel::Trace, LogCategory::Input,
+                "input trace: local_terminal_host ended drag selection became_active=%d selection_active=%d",
+                became_active ? 1 : 0,
+                selection_.is_active() ? 1 : 0);
+        }
+        if (became_active && launch_options().copy_on_select && selection_.is_active())
+            copy_active_selection_to_clipboard();
     }
 }
 
@@ -346,9 +517,33 @@ void LocalTerminalHost::on_mouse_move(const MouseMoveEvent& event)
 {
     PERF_MEASURE();
     const GridPos pos = pixel_to_cell(event.pos.x, event.pos.y);
+    if (log_would_emit(LogLevel::Trace, LogCategory::Input)
+        && (pending_selection_copy_click_.has_value() || selection_.is_active()))
+    {
+        log_printf(LogLevel::Trace, LogCategory::Input,
+            "input trace: local_terminal_host mouse_move pixel=(%d,%d) cell=(%d,%d) selection_active=%d pending_copy_click=%d",
+            event.pos.x,
+            event.pos.y,
+            pos.col,
+            pos.row,
+            selection_.is_active() ? 1 : 0,
+            pending_selection_copy_click_.has_value() ? 1 : 0);
+    }
 
     if (mouse_reporter_.on_move(event.mod, pos.col, pos.row))
         return;
+
+    if (pending_selection_copy_click_.has_value())
+    {
+        const GridPos anchor = *pending_selection_copy_click_;
+        if (anchor.col == pos.col && anchor.row == pos.row)
+            return;
+
+        pending_selection_copy_click_.reset();
+        selection_.begin_drag({ { anchor.col, anchor.row } });
+        if (log_would_emit(LogLevel::Trace, LogCategory::Input))
+            log_printf(LogLevel::Trace, LogCategory::Input, "input trace: local_terminal_host converted pending click-to-copy into a drag selection");
+    }
 
     selection_.update_drag({ { pos.col, pos.row } });
 }
@@ -599,6 +794,8 @@ void LocalTerminalHost::remap_extra_highlight_ids(const std::function<uint16_t(u
 void LocalTerminalHost::enter_copy_mode()
 {
     PERF_MEASURE();
+    pending_selection_copy_click_.reset();
+    suppress_next_selection_copy_text_input_ = false;
     selection_.clear();
     copy_mode_.active = true;
     copy_mode_.selecting = false;
@@ -619,11 +816,9 @@ void LocalTerminalHost::exit_copy_mode(bool yank)
 {
     PERF_MEASURE();
     if (yank && selection_.is_active())
-    {
-        const std::string text = selection_.extract_text();
-        if (!text.empty())
-            window().set_clipboard_text(text);
-    }
+        copy_active_selection_to_clipboard();
+    pending_selection_copy_click_.reset();
+    suppress_next_selection_copy_text_input_ = false;
     selection_.clear();
     copy_mode_ = {};
     callbacks().request_frame();

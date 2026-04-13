@@ -215,6 +215,13 @@ TEST_CASE("app config parse reads keybindings table and preserves unspecified de
     REQUIRE(copy->modifiers == (kModCtrl | kModShift));
 }
 
+TEST_CASE("app config defaults enable terminal copy on select", "[config]")
+{
+    AppConfig config;
+    INFO("terminal copy_on_select defaults to enabled");
+    REQUIRE(config.terminal.copy_on_select);
+}
+
 TEST_CASE("app config parse removes a default keybinding when user config sets an empty string", "[config]")
 {
     ScopedLogCapture capture(LogLevel::Debug);

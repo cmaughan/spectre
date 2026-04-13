@@ -9,6 +9,7 @@
 #include <memory>
 #include <span>
 #include <string_view>
+#include <utility>
 
 namespace draxul
 {
@@ -104,8 +105,12 @@ protected:
     void mark_activity();
     bool advance_cursor_blink(std::chrono::steady_clock::time_point now);
     void set_cursor_position(int col, int row, CursorBlinkUpdate blink_update = CursorBlinkUpdate::Restart);
+    void set_cursor_display_override(std::optional<std::pair<int, int>> override);
     void set_cursor_style(const CursorStyle& style, const BlinkTiming& timing, bool busy = false);
     void set_cursor_busy(bool busy);
+    void suppress_cursor_until(std::chrono::steady_clock::time_point until);
+    void begin_cursor_publish_batch();
+    void end_cursor_publish_batch();
     void set_content_ready(bool ready)
     {
         content_ready_ = ready;
@@ -135,6 +140,13 @@ private:
     CursorStyle cursor_style_ = {};
     BlinkTiming blink_timing_ = {};
     bool cursor_busy_ = false;
+    int cursor_publish_batch_depth_ = 0;
+    bool cursor_publish_dirty_ = false;
+    bool text_input_area_dirty_ = false;
+    bool cursor_emission_valid_ = false;
+    int last_emitted_cursor_col_ = 0;
+    int last_emitted_cursor_row_ = 0;
+    CursorStyle last_emitted_cursor_style_ = {};
     int cursor_col_ = 0;
     int cursor_row_ = 0;
     int grid_cols_ = 0;
@@ -142,6 +154,8 @@ private:
     size_t last_flush_dirty_cells_ = 0;
     bool content_ready_ = false;
     std::chrono::steady_clock::time_point last_activity_time_ = std::chrono::steady_clock::now();
+    std::optional<std::chrono::steady_clock::time_point> cursor_suppressed_until_;
+    std::optional<std::pair<int, int>> cursor_display_override_;
     std::optional<Color> last_title_bar_color_;
 };
 

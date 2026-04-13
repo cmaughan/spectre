@@ -84,9 +84,7 @@ TEST_CASE("grid host: preserving blink on cursor move keeps hidden cursor hidden
     handle->reset();
     h.host.exercise_set_cursor_position_preserve_blink(5, 2);
     REQUIRE(h.host.next_deadline() == restore_deadline);
-    REQUIRE(handle->set_cursor_calls == 1);
-    REQUIRE(handle->last_cursor.x == -1);
-    REQUIRE(handle->last_cursor.y == -1);
+    REQUIRE(handle->set_cursor_calls == 0);
 
     handle->reset();
     REQUIRE(h.host.exercise_advance_cursor_blink(*restore_deadline));
