@@ -130,6 +130,7 @@ void WeatherService::worker_func(std::string location)
     double lat = 0.0, lon = 0.0;
 
     // Check if location looks like "lat,lon" (two numbers separated by comma).
+    bool have_coords = false;
     {
         auto comma = location.find(',');
         if (comma != std::string::npos)
@@ -142,12 +143,13 @@ void WeatherService::worker_func(std::string location)
             {
                 lat = a;
                 lon = b;
+                have_coords = true;
             }
         }
     }
 
     // If not numeric, geocode the location string.
-    if (lat == 0.0 && lon == 0.0)
+    if (!have_coords)
     {
         if (!try_geocode(location, lat, lon))
         {
@@ -357,7 +359,7 @@ bool WeatherService::fetch_temperature(double lat, double lon, double& temp_c, i
 
 std::string WeatherService::run_curl(const std::string& url)
 {
-    std::string cmd = "curl -s --max-time 5 --connect-timeout 3 \"";
+    std::string cmd = "curl -s --max-time 15 --connect-timeout 10 \"";
     cmd += url;
     cmd += "\" 2>";
     cmd += kNullDevice;

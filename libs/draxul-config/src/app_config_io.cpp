@@ -595,6 +595,8 @@ std::string AppConfig::serialize() const
     document.insert_or_assign("show_pane_status", show_pane_status);
     document.insert_or_assign("chord_timeout_ms", std::max(100, chord_timeout_ms));
     document.insert_or_assign("chord_indicator_fade_ms", std::max(100, chord_indicator_fade_ms));
+    if (!weather_location.empty())
+        document.insert_or_assign("weather_location", weather_location);
     if (!font_path.empty())
         document.insert_or_assign("font_path", font_path);
     if (!bold_font_path.empty())
