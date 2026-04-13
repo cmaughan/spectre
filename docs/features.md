@@ -77,7 +77,8 @@ A standalone GUI library for rendering UI items that do not depend on ImGui. It 
 - **OSC 52**: Clipboard read (`?` query) and write (base64 payload) for tmux/SSH/Neovim remote clipboard integration
 - **Selection**: Click-and-drag with system clipboard integration; configurable cell cap (`selection_max_cells`, default 65536)
 - **Word/line selection**: Double-click selects the word at the cursor (contiguous non-whitespace), triple-click selects the entire row
-- **Copy on select**: Optional `copy_on_select` automatically copies completed mouse selections (drag, double-click, or triple-click) to the system clipboard
+- **Selection copy gestures**: Clicking inside an existing mouse selection copies it to the system clipboard; `Ctrl+C` also copies when a shell-pane mouse selection is active, without sending SIGINT to the process
+- **Copy on select**: `copy_on_select` automatically copies completed mouse selections (drag, double-click, or triple-click) to the system clipboard; enabled by default
 - **Keyboard copy mode**: `toggle_copy_mode` (default `Ctrl+Shift+Space`) enters a vim/tmux-style cursor: `h/j/k/l` and arrows move, `0/Home/End` jump to line bounds, `g/Shift+G` jump to top/bottom, `v`/`V` start char/line selection, `y` yanks to clipboard and exits, `Esc`/`q` exits without copy. Available on shell hosts only (Neovim panes already provide their own visual mode)
 - **Terminal colors**: Configurable foreground/background via `[terminal]` config section
 
@@ -248,7 +249,7 @@ Customizable in `config.toml` under `[keybindings]`. Chord syntax: `"prefix, key
 | `fg` | `#eaeaea` | | Hex color (3 or 6 digit) |
 | `bg` | `#141617` | | Hex color (3 or 6 digit) |
 | `selection_max_cells` | 65536 | 256--1048576 | Maximum cells in a single selection before truncation |
-| `copy_on_select` | false | | Auto-copy completed selections to the system clipboard |
+| `copy_on_select` | true | | Auto-copy completed selections to the system clipboard |
 | `paste_confirm_lines` | 5 | 0--100000 | Pastes with this many lines or more require `confirm_paste`. `0` disables |
 
 ---
