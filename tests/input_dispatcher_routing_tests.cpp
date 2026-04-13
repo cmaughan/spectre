@@ -25,13 +25,6 @@ std::vector<GuiKeybinding> make_test_bindings()
     };
 }
 
-std::vector<GuiKeybinding> make_ctrl_c_copy_bindings()
-{
-    return {
-        { "copy", 0, kModNone, SDLK_C, kModCtrl },
-    };
-}
-
 // Minimal fake deps: no SDL, no UiPanel, no host
 // Just keybindings + null everything else
 InputDispatcher make_test_dispatcher(const std::vector<GuiKeybinding>& bindings)
@@ -207,7 +200,6 @@ struct E2ESetup
         // (like toggle_diagnostics) execute without crashing.
         GuiActionHandler::Deps ah_deps;
         ah_deps.ui_panel = &panel;
-        ah_deps.focused_host = [this]() -> IHost* { return &host; };
         action_handler = std::make_unique<GuiActionHandler>(std::move(ah_deps));
 
         InputDispatcher::Deps deps;
@@ -318,46 +310,6 @@ TEST_CASE("e2e: text-input event is forwarded to host when panel does not want k
 
     REQUIRE(setup.host.text_input_events.size() == 1);
     REQUIRE(setup.host.text_input_events[0].text == "hello");
-}
-
-TEST_CASE("e2e: Ctrl+C GUI copy suppresses the follow-up text input event",
-    "[input_dispatcher][e2e]")
-{
-    E2ESetup setup(make_ctrl_c_copy_bindings());
-
-    setup.window.on_key(KeyEvent{ 0, SDLK_C, kModCtrl, true });
-
-    REQUIRE(setup.host.dispatched_actions.size() == 1);
-    REQUIRE(setup.host.dispatched_actions[0] == "copy");
-    REQUIRE(setup.host.key_events.empty());
-
-    TextInputEvent input;
-    input.text = std::string(1, '\x03');
-    setup.window.on_text_input(input);
-
-    REQUIRE(setup.host.text_input_events.empty());
-}
-
-TEST_CASE("e2e: stale GUI text suppression is cleared before later normal typing",
-    "[input_dispatcher][e2e]")
-{
-    E2ESetup setup(make_ctrl_c_copy_bindings());
-
-    setup.window.on_key(KeyEvent{ 0, SDLK_C, kModCtrl, true });
-
-    REQUIRE(setup.host.dispatched_actions.size() == 1);
-    REQUIRE(setup.host.dispatched_actions[0] == "copy");
-
-    setup.window.on_key(KeyEvent{ 0, SDLK_A, kModNone, true });
-
-    TextInputEvent input;
-    input.text = "a";
-    setup.window.on_text_input(input);
-
-    REQUIRE(setup.host.key_events.size() == 1);
-    REQUIRE(setup.host.key_events[0].keycode == SDLK_A);
-    REQUIRE(setup.host.text_input_events.size() == 1);
-    REQUIRE(setup.host.text_input_events[0].text == "a");
 }
 
 TEST_CASE("e2e: mouse wheel with pixel_scale=2 uses physical coordinates",

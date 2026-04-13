@@ -5,8 +5,6 @@
 #include <draxul/selection_manager.h>
 #include <draxul/terminal_host_base.h>
 
-#include <optional>
-
 namespace draxul
 {
 
@@ -70,15 +68,12 @@ private:
     void enter_copy_mode();
     void exit_copy_mode(bool yank);
     bool handle_copy_mode_key(const KeyEvent& event);
-    bool copy_active_selection_to_clipboard();
     void update_copy_mode_overlay();
 
     MouseReporter mouse_reporter_;
     SelectionManager selection_;
     ScrollbackBuffer scrollback_;
     CopyMode copy_mode_;
-    std::optional<GridPos> pending_selection_copy_click_;
-    bool suppress_next_selection_copy_text_input_ = false;
 
     // Snapshot of the grid taken before SIGWINCH. After the shell redraws,
     // pump() restores rows that the shell left blank but had content before.

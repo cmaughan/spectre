@@ -4,8 +4,6 @@
 
 #include <catch2/catch_all.hpp>
 
-#include <SDL3/SDL_keycode.h>
-
 #include <string>
 #include <vector>
 
@@ -43,48 +41,6 @@ public:
         on_mouse_button(release_ev);
     }
 
-    void click_cell(int col, int row, int clicks = 1)
-    {
-        MouseButtonEvent press_ev;
-        press_ev.button = 1;
-        press_ev.pressed = true;
-        press_ev.clicks = clicks;
-        press_ev.pos = { col * 8, row * 16 };
-        on_mouse_button(press_ev);
-
-        MouseButtonEvent release_ev;
-        release_ev.button = 1;
-        release_ev.pressed = false;
-        release_ev.clicks = clicks;
-        release_ev.pos = { col * 8, row * 16 };
-        on_mouse_button(release_ev);
-    }
-
-    void press_ctrl_c()
-    {
-        on_key(KeyEvent{ 0, SDLK_C, kModCtrl, true });
-    }
-
-    void press_key(int keycode, ModifierFlags mod)
-    {
-        on_key(KeyEvent{ 0, keycode, mod, true });
-    }
-
-    void send_text_input(std::string text)
-    {
-        on_text_input(TextInputEvent{ std::move(text) });
-    }
-
-    std::string selected_text()
-    {
-        return selection().extract_text();
-    }
-
-    bool selection_active()
-    {
-        return selection().is_active();
-    }
-
     // Mirror of SelectionManager::kDefaultSelectionMaxCells — kept in sync manually.
     static constexpr int kLimit = SelectionManager::kDefaultSelectionMaxCells;
 };
@@ -98,13 +54,6 @@ struct SelectionSetup : TerminalHostFixture<SelectionTestTerminalHost>
     explicit SelectionSetup(int cols = 80, int rows = 30)
         : TerminalHostFixture(cols, rows)
     {
-    }
-
-    void set_copy_on_select(bool enabled)
-    {
-        HostReloadConfig reload;
-        reload.copy_on_select = enabled;
-        host.on_config_reloaded(reload);
     }
 
     // Fill the grid with a repeating ASCII character 'ch' so selections have content.
@@ -295,109 +244,4 @@ TEST_CASE("selection: UTF-8 multibyte content produces valid UTF-8 in clipboard"
     REQUIRE(!result.empty());
     INFO("clipboard content must be valid UTF-8 (no split codepoints)");
     REQUIRE(is_valid_utf8(result));
-}
-
-TEST_CASE("selection: double-click keeps the full word after button release", "[terminal]")
-{
-    SelectionSetup ss(20, 3);
-    INFO("host must initialize");
-    REQUIRE(ss.ok);
-    ss.host.feed("hello world\r\n");
-
-    ss.host.click_cell(7, 0, 2);
-
-    INFO("double-click should select the whole word, not just up to the cursor");
-    REQUIRE(ss.host.selected_text() == std::string("world"));
-}
-
-TEST_CASE("selection: triple-click keeps the full logical line after button release", "[terminal]")
-{
-    SelectionSetup ss(20, 3);
-    INFO("host must initialize");
-    REQUIRE(ss.ok);
-    ss.host.feed("hello world\r\n");
-
-    ss.host.click_cell(4, 0, 3);
-
-    INFO("triple-click should select the whole line, not truncate at the clicked column");
-    REQUIRE(ss.host.selected_text() == std::string("hello world"));
-}
-
-TEST_CASE("selection: clicking inside an active selection copies it to the clipboard", "[terminal]")
-{
-    SelectionSetup ss(20, 3);
-    INFO("host must initialize");
-    REQUIRE(ss.ok);
-    ss.set_copy_on_select(false);
-    ss.host.feed("abcdef\r\n");
-
-    ss.host.begin_selection(1, 0, 3, 0);
-    INFO("clipboard should still be empty before the follow-up click");
-    REQUIRE(ss.window.clipboard_.empty());
-
-    ss.host.click_cell(2, 0);
-
-    INFO("clicking inside the selected region should copy the current selection");
-    REQUIRE(ss.window.clipboard_ == std::string("bcd"));
-    INFO("mouse-copy click should dismiss the selection highlight afterward");
-    REQUIRE_FALSE(ss.host.selection_active());
-}
-
-TEST_CASE("selection: Ctrl+C copies an active selection without sending input to the process", "[terminal]")
-{
-    SelectionSetup ss(20, 3);
-    INFO("host must initialize");
-    REQUIRE(ss.ok);
-    ss.set_copy_on_select(false);
-    ss.host.feed("abcdef\r\n");
-    ss.host.begin_selection(1, 0, 3, 0);
-
-    ss.host.press_ctrl_c();
-
-    INFO("Ctrl+C should copy the selected text");
-    REQUIRE(ss.window.clipboard_ == std::string("bcd"));
-    INFO("Ctrl+C copy should dismiss the selection highlight afterward");
-    REQUIRE_FALSE(ss.host.selection_active());
-    INFO("Ctrl+C with an active selection should not forward SIGINT to the shell");
-    REQUIRE(ss.host.written.empty());
-}
-
-TEST_CASE("selection: swallowed Ctrl+C also suppresses the follow-up text input event", "[terminal]")
-{
-    SelectionSetup ss(20, 3);
-    INFO("host must initialize");
-    REQUIRE(ss.ok);
-    ss.set_copy_on_select(false);
-    ss.host.feed("abcdef\r\n");
-    ss.host.begin_selection(1, 0, 3, 0);
-
-    ss.host.press_ctrl_c();
-    ss.host.send_text_input(std::string(1, '\x03'));
-
-    INFO("the copied text should still land on the clipboard");
-    REQUIRE(ss.window.clipboard_ == std::string("bcd"));
-    INFO("Ctrl+C copy should still clear the selection before the follow-up text event arrives");
-    REQUIRE_FALSE(ss.host.selection_active());
-    INFO("the follow-up text input event must not leak the control character to the shell");
-    REQUIRE(ss.host.written.empty());
-}
-
-TEST_CASE("selection: raw left-control SDL modifier bits still trigger Ctrl+C copy", "[terminal]")
-{
-    SelectionSetup ss(20, 3);
-    INFO("host must initialize");
-    REQUIRE(ss.ok);
-    ss.set_copy_on_select(false);
-    ss.host.feed("abcdef\r\n");
-    ss.host.begin_selection(1, 0, 3, 0);
-
-    // Mirrors the real SDL log on Windows: left-ctrl bit plus an unrelated high bit.
-    ss.host.press_key(SDLK_C, 0x8040);
-
-    INFO("Ctrl+C copy should still work when SDL reports only the left-control bit");
-    REQUIRE(ss.window.clipboard_ == std::string("bcd"));
-    INFO("the raw SDL modifier shape should still dismiss the selection highlight");
-    REQUIRE_FALSE(ss.host.selection_active());
-    INFO("the raw SDL modifier shape must still be swallowed instead of reaching the shell");
-    REQUIRE(ss.host.written.empty());
 }

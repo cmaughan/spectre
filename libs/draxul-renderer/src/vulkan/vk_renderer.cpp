@@ -1011,18 +1011,6 @@ bool VkRenderer::draw_grid_handle_now(IGridHandle& handle)
     if (desc.pixel_size.x <= 0 || desc.pixel_size.y <= 0)
         return true;
 
-    if (log_would_emit(LogLevel::Trace, LogCategory::Input))
-    {
-        log_printf(LogLevel::Trace,
-            LogCategory::Input,
-            "cursor trace: vk draw_grid_handle frame=%u viewport_pos=(%d,%d) viewport_size=(%d,%d)",
-            current_frame_,
-            desc.pixel_pos.x,
-            desc.pixel_pos.y,
-            desc.pixel_size.x,
-            desc.pixel_size.y);
-    }
-
     vk_handle->state_.apply_cursor();
     if (!vk_handle->upload_state(current_frame_))
     {

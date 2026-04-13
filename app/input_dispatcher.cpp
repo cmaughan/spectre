@@ -9,69 +9,12 @@
 #include <draxul/events.h>
 #include <draxul/host.h>
 #include <draxul/keybinding_parser.h>
-#include <draxul/log.h>
 #include <draxul/perf_timing.h>
 #include <draxul/ui_panel.h>
 #include <draxul/window.h>
 
 namespace draxul
 {
-
-namespace
-{
-
-std::string describe_text_for_log(std::string_view text)
-{
-    static constexpr char kHex[] = "0123456789ABCDEF";
-    std::string out;
-    out.reserve(text.size() * 4 + 2);
-    out.push_back('"');
-    for (unsigned char ch : text)
-    {
-        switch (ch)
-        {
-        case '\\':
-            out += "\\\\";
-            break;
-        case '"':
-            out += "\\\"";
-            break;
-        case '\n':
-            out += "\\n";
-            break;
-        case '\r':
-            out += "\\r";
-            break;
-        case '\t':
-            out += "\\t";
-            break;
-        default:
-            if (ch >= 0x20 && ch <= 0x7E)
-            {
-                out.push_back(static_cast<char>(ch));
-            }
-            else
-            {
-                out += "\\x";
-                out.push_back(kHex[(ch >> 4) & 0xF]);
-                out.push_back(kHex[ch & 0xF]);
-            }
-            break;
-        }
-    }
-    out.push_back('"');
-    return out;
-}
-
-std::string host_trace_name(IHost* host)
-{
-    if (!host)
-        return "<none>";
-    const auto dbg = host->debug_state();
-    return dbg.name.empty() ? "<unnamed>" : dbg.name;
-}
-
-} // namespace
 
 InputDispatcher::InputDispatcher(Deps deps)
     : deps_(std::move(deps))
@@ -161,14 +104,6 @@ static bool is_modifier_only_key(const KeyEvent& event)
     }
 }
 
-static bool key_event_may_produce_text_input(const KeyEvent& event)
-{
-    if (!event.pressed)
-        return false;
-    return event.keycode == SDLK_SPACE
-        || (event.keycode >= 0x20 && event.keycode <= 0x7E);
-}
-
 std::optional<int> digit_from_keycode(int32_t keycode)
 {
     switch (keycode)
@@ -226,34 +161,6 @@ void InputDispatcher::on_key_event(const KeyEvent& event)
 {
     PERF_MEASURE();
     const auto now = std::chrono::steady_clock::now();
-    if (log_would_emit(LogLevel::Trace, LogCategory::Input))
-    {
-        const std::string combo = format_gui_keybinding_combo(event.keycode, event.mod);
-        const std::string host_name = host_trace_name(deps_.host);
-        log_printf(LogLevel::Trace, LogCategory::Input,
-            "input trace: dispatcher key combo=%s key=%d mod=0x%X pressed=%d host=%p(%s) suppress_text=%d prefix=%d pane_select=%d",
-            combo.c_str(),
-            event.keycode,
-            static_cast<unsigned int>(event.mod),
-            event.pressed ? 1 : 0,
-            static_cast<void*>(deps_.host),
-            host_name.c_str(),
-            suppress_next_text_input_ ? 1 : 0,
-            prefix_active_ ? 1 : 0,
-            pane_select_active_ ? 1 : 0);
-    }
-
-    // If a previously-consumed key never produced a text-input event, don't let
-    // the stale suppression flag eat an unrelated later character.
-    if (event.pressed && suppress_next_text_input_)
-    {
-        if (log_would_emit(LogLevel::Trace, LogCategory::Input))
-        {
-            log_printf(LogLevel::Trace, LogCategory::Input,
-                "input trace: dispatcher clearing stale suppress_next_text_input before handling new key");
-        }
-        suppress_next_text_input_ = false;
-    }
 
     // Inline tab rename (WI 128) intercepts all key input when active —
     // typed characters arrive via on_text_input, but Enter/Escape/Backspace
@@ -262,11 +169,6 @@ void InputDispatcher::on_key_event(const KeyEvent& event)
     {
         if (deps_.rename_key(event.keycode))
         {
-            if (log_would_emit(LogLevel::Trace, LogCategory::Input))
-            {
-                log_printf(LogLevel::Trace, LogCategory::Input,
-                    "input trace: dispatcher key consumed by rename_key");
-            }
             if (deps_.request_frame)
                 deps_.request_frame();
             return;
@@ -278,14 +180,6 @@ void InputDispatcher::on_key_event(const KeyEvent& event)
     {
         if (IHost* overlay = deps_.overlay_host())
         {
-            if (log_would_emit(LogLevel::Trace, LogCategory::Input))
-            {
-                const std::string overlay_name = host_trace_name(overlay);
-                log_printf(LogLevel::Trace, LogCategory::Input,
-                    "input trace: dispatcher key routed to overlay host=%p(%s)",
-                    static_cast<void*>(overlay),
-                    overlay_name.c_str());
-            }
             overlay->on_key(event);
             deps_.ui_panel->on_key(event);
             request_imgui_frame_if_needed(deps_);
@@ -301,11 +195,6 @@ void InputDispatcher::on_key_event(const KeyEvent& event)
             // the chord's second key may itself require a modifier (e.g. Shift+\ for |).
             if (is_modifier_only_key(event))
             {
-                if (log_would_emit(LogLevel::Trace, LogCategory::Input))
-                {
-                    log_printf(LogLevel::Trace, LogCategory::Input,
-                        "input trace: dispatcher key kept prefix mode alive with modifier-only key");
-                }
                 deps_.ui_panel->on_key(event);
                 request_imgui_frame_if_needed(deps_);
                 return;
@@ -322,11 +211,6 @@ void InputDispatcher::on_key_event(const KeyEvent& event)
                     digit.has_value() && normalize_modifiers(event.mod) == kModNone && deps_.activate_pane)
                 {
                     suppress_next_text_input_ = true;
-                    if (log_would_emit(LogLevel::Trace, LogCategory::Input))
-                    {
-                        log_printf(LogLevel::Trace, LogCategory::Input,
-                            "input trace: dispatcher pane-select consumed key and enabled suppress_next_text_input");
-                    }
                     indicator_text_ = final_text;
                     start_indicator_fade(now);
                     deps_.activate_pane(*digit);
@@ -361,13 +245,6 @@ void InputDispatcher::on_key_event(const KeyEvent& event)
                     if (binding.prefix_key != 0 && gui_keybinding_matches(binding, event))
                     {
                         suppress_next_text_input_ = true;
-                        if (log_would_emit(LogLevel::Trace, LogCategory::Input))
-                        {
-                            log_printf(LogLevel::Trace, LogCategory::Input,
-                                "input trace: dispatcher chord action=%.*s consumed key and enabled suppress_next_text_input",
-                                static_cast<int>(binding.action.size()),
-                                binding.action.data());
-                        }
                         indicator_text_ = prefix_text + " " + chord_step_display(event);
                         start_indicator_fade(now);
                         deps_.gui_action_handler->execute(binding.action);
@@ -398,16 +275,6 @@ void InputDispatcher::on_key_event(const KeyEvent& event)
                         indicator_text_ = format_gui_keybinding_combo(binding.prefix_key, binding.prefix_modifiers);
                         fade_started_at_.reset();
                         fade_ends_at_.reset();
-                        if (key_event_may_produce_text_input(event))
-                            suppress_next_text_input_ = true;
-                        if (log_would_emit(LogLevel::Trace, LogCategory::Input))
-                        {
-                            log_printf(LogLevel::Trace, LogCategory::Input,
-                                "input trace: dispatcher prefix action=%.*s consumed key prefix and suppress_next_text_input=%d",
-                                static_cast<int>(binding.action.size()),
-                                binding.action.data(),
-                                suppress_next_text_input_ ? 1 : 0);
-                        }
                         if (deps_.request_frame)
                             deps_.request_frame();
                         return; // swallow the prefix key
@@ -417,19 +284,7 @@ void InputDispatcher::on_key_event(const KeyEvent& event)
             // Check single-key (non-chord) GUI bindings.
             if (auto action = gui_action_for_key_event(event);
                 action && deps_.gui_action_handler && deps_.gui_action_handler->execute(*action))
-            {
-                if (key_event_may_produce_text_input(event))
-                    suppress_next_text_input_ = true;
-                if (log_would_emit(LogLevel::Trace, LogCategory::Input))
-                {
-                    log_printf(LogLevel::Trace, LogCategory::Input,
-                        "input trace: dispatcher gui action=%.*s consumed key and suppress_next_text_input=%d",
-                        static_cast<int>(action->size()),
-                        action->data(),
-                        suppress_next_text_input_ ? 1 : 0);
-                }
                 return;
-            }
         }
     }
     else
@@ -442,42 +297,17 @@ void InputDispatcher::on_key_event(const KeyEvent& event)
     deps_.ui_panel->on_key(event);
     request_imgui_frame_if_needed(deps_);
     if (!deps_.ui_panel->wants_keyboard() && deps_.host)
-    {
-        if (log_would_emit(LogLevel::Trace, LogCategory::Input))
-        {
-            const std::string host_name = host_trace_name(deps_.host);
-            log_printf(LogLevel::Trace, LogCategory::Input,
-                "input trace: dispatcher forwarding key to host=%p(%s)",
-                static_cast<void*>(deps_.host),
-                host_name.c_str());
-        }
         deps_.host->on_key(event);
-    }
 }
 
 void InputDispatcher::on_mouse_button_event(const MouseButtonEvent& event)
 {
     PERF_MEASURE();
-    if (log_would_emit(LogLevel::Trace, LogCategory::Input))
-    {
-        log_printf(LogLevel::Trace, LogCategory::Input,
-            "input trace: dispatcher mouse_button button=%d pressed=%d clicks=%d mod=0x%X logical=(%d,%d)",
-            event.button,
-            event.pressed ? 1 : 0,
-            event.clicks,
-            static_cast<unsigned int>(event.mod),
-            event.pos.x,
-            event.pos.y);
-    }
 
     // Overlay host consumes mouse button events — don't leak clicks to the
     // underlying host while e.g. the command palette is open.
     if (deps_.overlay_host && deps_.overlay_host())
-    {
-        if (log_would_emit(LogLevel::Trace, LogCategory::Input))
-            log_printf(LogLevel::Trace, LogCategory::Input, "input trace: dispatcher mouse_button swallowed by overlay");
         return;
-    }
 
     const int phys_x = deps_.pixel_scale.to_physical(event.pos.x);
     const int phys_y = deps_.pixel_scale.to_physical(event.pos.y);
@@ -527,8 +357,6 @@ void InputDispatcher::on_mouse_button_event(const MouseButtonEvent& event)
     // clicked on a chrome region that wasn't a tab.
     if (over_chrome)
     {
-        if (log_would_emit(LogLevel::Trace, LogCategory::Input))
-            log_printf(LogLevel::Trace, LogCategory::Input, "input trace: dispatcher mouse_button swallowed by chrome");
         if (event.pressed && deps_.is_editing_tab && deps_.is_editing_tab()
             && deps_.commit_tab_rename)
         {
@@ -700,33 +528,11 @@ void InputDispatcher::dispatch_mouse_to_host(
     if (deps_.ui_panel->wants_mouse() && deps_.request_frame)
         deps_.request_frame();
     if (deps_.ui_panel->wants_mouse())
-    {
-        if (log_would_emit(LogLevel::Trace, LogCategory::Input))
-            log_printf(LogLevel::Trace, LogCategory::Input, "input trace: dispatcher mouse event swallowed because ui_panel wants mouse");
         return;
-    }
     if (deps_.ui_panel->layout().contains_panel_point(phys_x, phys_y))
-    {
-        if (log_would_emit(LogLevel::Trace, LogCategory::Input))
-            log_printf(LogLevel::Trace, LogCategory::Input, "input trace: dispatcher mouse event swallowed because pointer is over ui panel");
         return;
-    }
     if (target)
-    {
-        if (log_would_emit(LogLevel::Trace, LogCategory::Input))
-        {
-            const std::string host_name = host_trace_name(target);
-            log_printf(LogLevel::Trace, LogCategory::Input,
-                "input trace: dispatcher forwarding mouse event logical=(%d,%d) phys=(%d,%d) to host=%p(%s)",
-                logical_x,
-                logical_y,
-                phys_x,
-                phys_y,
-                static_cast<void*>(target),
-                host_name.c_str());
-        }
         forward(*target, phys_x, phys_y);
-    }
 }
 
 void InputDispatcher::set_host(IHost* host)
@@ -742,23 +548,9 @@ void InputDispatcher::connect(IWindow& window)
     window.on_key = [this](const KeyEvent& e) { on_key_event(e); };
 
     window.on_text_input = [this](const TextInputEvent& event) {
-        if (log_would_emit(LogLevel::Trace, LogCategory::Input))
-        {
-            const std::string described = describe_text_for_log(event.text);
-            const std::string host_name = host_trace_name(deps_.host);
-            log_printf(LogLevel::Trace, LogCategory::Input,
-                "input trace: dispatcher text_input text=%s len=%zu host=%p(%s) suppress_text=%d",
-                described.c_str(),
-                event.text.size(),
-                static_cast<void*>(deps_.host),
-                host_name.c_str(),
-                suppress_next_text_input_ ? 1 : 0);
-        }
         if (suppress_next_text_input_)
         {
             suppress_next_text_input_ = false;
-            if (log_would_emit(LogLevel::Trace, LogCategory::Input))
-                log_printf(LogLevel::Trace, LogCategory::Input, "input trace: dispatcher swallowed text_input because suppress_next_text_input was set");
             return;
         }
         // Inline tab rename consumes typed characters before anything else.
@@ -766,8 +558,6 @@ void InputDispatcher::connect(IWindow& window)
         {
             if (deps_.rename_text_input(event.text))
             {
-                if (log_would_emit(LogLevel::Trace, LogCategory::Input))
-                    log_printf(LogLevel::Trace, LogCategory::Input, "input trace: dispatcher text_input consumed by rename_text_input");
                 if (deps_.request_frame)
                     deps_.request_frame();
                 return;
@@ -778,14 +568,6 @@ void InputDispatcher::connect(IWindow& window)
         {
             if (IHost* overlay = deps_.overlay_host())
             {
-                if (log_would_emit(LogLevel::Trace, LogCategory::Input))
-                {
-                    const std::string overlay_name = host_trace_name(overlay);
-                    log_printf(LogLevel::Trace, LogCategory::Input,
-                        "input trace: dispatcher text_input routed to overlay host=%p(%s)",
-                        static_cast<void*>(overlay),
-                        overlay_name.c_str());
-                }
                 overlay->on_text_input(event);
                 request_imgui_frame_if_needed(deps_);
                 return;
@@ -794,17 +576,7 @@ void InputDispatcher::connect(IWindow& window)
         deps_.ui_panel->on_text_input(event);
         request_imgui_frame_if_needed(deps_);
         if (!deps_.ui_panel->wants_keyboard() && deps_.host)
-        {
-            if (log_would_emit(LogLevel::Trace, LogCategory::Input))
-            {
-                const std::string host_name = host_trace_name(deps_.host);
-                log_printf(LogLevel::Trace, LogCategory::Input,
-                    "input trace: dispatcher forwarding text_input to host=%p(%s)",
-                    static_cast<void*>(deps_.host),
-                    host_name.c_str());
-            }
             deps_.host->on_text_input(event);
-        }
     };
 
     window.on_text_editing = [this](const TextEditingEvent& event) {

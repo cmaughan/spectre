@@ -41,7 +41,7 @@ struct HostLaunchOptions
     // Maximum cells in a single selection (0 = use SelectionManager default).
     int selection_max_cells = 0;
     // Auto-copy to clipboard when a click-drag selection completes.
-    bool copy_on_select = true;
+    bool copy_on_select = false;
     // Minimum line count in a paste payload to trigger user confirmation
     // (0 = no confirmation).
     int paste_confirm_lines = 0;
@@ -66,7 +66,7 @@ struct HostReloadConfig
     float scroll_speed = 1.0f;
     float palette_bg_alpha = 0.9f;
     int selection_max_cells = 65536;
-    bool copy_on_select = true;
+    bool copy_on_select = false;
     int paste_confirm_lines = 0;
 };
 

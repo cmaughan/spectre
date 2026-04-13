@@ -12,7 +12,6 @@
 #include <draxul/vt_parser.h>
 #include <draxul/window.h>
 #include <functional>
-#include <utility>
 #include <unordered_map>
 
 namespace draxul
@@ -21,55 +20,9 @@ namespace draxul
 namespace
 {
 
-constexpr auto kOutputCursorSettleDelay = std::chrono::milliseconds(12);
-constexpr auto kAltScreenCursorMoveSettleDelay = std::chrono::milliseconds(40);
-
 void set_grid_cell_for_alt_screen(Grid& grid, int col, int row, const Cell& cell)
 {
     grid.set_cell(col, row, std::string(cell.text.view()), cell.hl_attr_id, cell.double_width);
-}
-
-std::string describe_text_for_log(std::string_view text)
-{
-    static constexpr char kHex[] = "0123456789ABCDEF";
-    std::string out;
-    out.reserve(text.size() * 4 + 2);
-    out.push_back('"');
-    for (unsigned char ch : text)
-    {
-        switch (ch)
-        {
-        case '\\':
-            out += "\\\\";
-            break;
-        case '"':
-            out += "\\\"";
-            break;
-        case '\n':
-            out += "\\n";
-            break;
-        case '\r':
-            out += "\\r";
-            break;
-        case '\t':
-            out += "\\t";
-            break;
-        default:
-            if (ch >= 0x20 && ch <= 0x7E)
-            {
-                out.push_back(static_cast<char>(ch));
-            }
-            else
-            {
-                out += "\\x";
-                out.push_back(kHex[(ch >> 4) & 0xF]);
-                out.push_back(kHex[ch & 0xF]);
-            }
-            break;
-        }
-    }
-    out.push_back('"');
-    return out;
 }
 
 } // namespace
@@ -113,7 +66,6 @@ void TerminalHostBase::pump()
         // event loop — any remaining output is picked up on the next frame.
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(8);
         bool budget_exceeded = false;
-        begin_output_cursor_batch();
         do
         {
             for (const auto& chunk : chunks)
@@ -125,7 +77,6 @@ void TerminalHostBase::pump()
             }
             chunks = do_process_drain();
         } while (!chunks.empty());
-        end_output_cursor_batch();
 
         if (budget_exceeded)
         {
@@ -136,19 +87,7 @@ void TerminalHostBase::pump()
 
         flush_grid();
     }
-    const auto now = std::chrono::steady_clock::now();
-    apply_deferred_cursor_visibility_if_due(now);
-    advance_cursor_blink(now);
-}
-
-std::optional<std::chrono::steady_clock::time_point> TerminalHostBase::next_deadline() const
-{
-    const auto base_deadline = GridHostBase::next_deadline();
-    if (!deferred_cursor_visibility_deadline_)
-        return base_deadline;
-    if (!base_deadline || *deferred_cursor_visibility_deadline_ < *base_deadline)
-        return deferred_cursor_visibility_deadline_;
-    return base_deadline;
+    advance_cursor_blink(std::chrono::steady_clock::now());
 }
 
 void TerminalHostBase::on_key(const KeyEvent& event)
@@ -157,29 +96,12 @@ void TerminalHostBase::on_key(const KeyEvent& event)
     if (!event.pressed)
         return;
     const std::string sequence = encode_terminal_key(event, vt_);
-    if (log_would_emit(LogLevel::Trace, LogCategory::Input))
-    {
-        const std::string encoded = describe_text_for_log(sequence);
-        log_printf(LogLevel::Trace, LogCategory::Input,
-            "input trace: terminal_host_base on_key key=%d mod=0x%X encoded=%s",
-            event.keycode,
-            static_cast<unsigned int>(event.mod),
-            encoded.c_str());
-    }
     if (!sequence.empty())
         do_process_write(sequence);
 }
 
 void TerminalHostBase::on_text_input(const TextInputEvent& event)
 {
-    if (log_would_emit(LogLevel::Trace, LogCategory::Input))
-    {
-        const std::string described = describe_text_for_log(event.text);
-        log_printf(LogLevel::Trace, LogCategory::Input,
-            "input trace: terminal_host_base on_text_input text=%s len=%zu",
-            described.c_str(),
-            event.text.size());
-    }
     if (!event.text.empty())
         do_process_write(event.text);
 }
@@ -341,39 +263,12 @@ void TerminalHostBase::reset_terminal_state()
     vt_.cursor_shape = CursorShape::Block;
     vt_.cursor_blink = false;
     bracketed_paste_mode_ = false;
-    cursor_repaint_save_active_ = false;
-    cursor_repaint_display_frozen_ = false;
-    cursor_repaint_chunk_activity_ = false;
-    cursor_repaint_visibility_deferred_ = false;
-    deferred_cursor_visibility_deadline_.reset();
-    cursor_repaint_frozen_col_ = 0;
-    cursor_repaint_frozen_row_ = 0;
-    output_cursor_batch_active_ = false;
-    output_cursor_batch_activity_ = false;
-    output_cursor_batch_saw_repaint_scope_ = false;
-    output_cursor_batch_start_col_ = 0;
-    output_cursor_batch_start_row_ = 0;
-    output_cursor_batch_start_visible_ = true;
-    set_cursor_display_override(std::nullopt);
     alt_screen_.reset();
 }
 
 void TerminalHostBase::update_cursor_style()
 {
     PERF_MEASURE();
-    if (log_would_emit(LogLevel::Trace, LogCategory::Input))
-    {
-        log_printf(LogLevel::Trace,
-            LogCategory::Input,
-            "cursor trace: update_cursor_style vt_visible=%d shape=%d blink=%d logical=(%d,%d) repaint_scope=%d deferred_vis=%d",
-            vt_.cursor_visible ? 1 : 0,
-            static_cast<int>(vt_.cursor_shape),
-            vt_.cursor_blink ? 1 : 0,
-            vt_.col,
-            vt_.row,
-            cursor_repaint_save_active_ ? 1 : 0,
-            cursor_repaint_visibility_deferred_ ? 1 : 0);
-    }
     CursorStyle style = {};
     style.shape = vt_.cursor_shape;
     style.bg = highlights().default_fg();
@@ -391,174 +286,6 @@ void TerminalHostBase::update_cursor_style()
     set_cursor_style(style, blink, !vt_.cursor_visible);
 }
 
-void TerminalHostBase::begin_cursor_repaint_scope()
-{
-    PERF_MEASURE();
-    cursor_repaint_chunk_activity_ = true;
-    output_cursor_batch_saw_repaint_scope_ = true;
-    if (cursor_repaint_save_active_)
-        return;
-
-    cursor_repaint_save_active_ = true;
-    cursor_repaint_display_frozen_ = false;
-    if (deferred_cursor_visibility_deadline_)
-    {
-        deferred_cursor_visibility_deadline_.reset();
-        cursor_repaint_visibility_deferred_ = true;
-    }
-    else
-    {
-        cursor_repaint_visibility_deferred_ = false;
-    }
-    cursor_repaint_frozen_col_ = vt_.col;
-    cursor_repaint_frozen_row_ = vt_.row;
-    if (log_would_emit(LogLevel::Trace, LogCategory::Input))
-    {
-        log_printf(LogLevel::Trace,
-            LogCategory::Input,
-            "cursor trace: begin_repaint_scope freeze=(%d,%d) vt_visible=%d deferred_vis=%d",
-            cursor_repaint_frozen_col_,
-            cursor_repaint_frozen_row_,
-            vt_.cursor_visible ? 1 : 0,
-            cursor_repaint_visibility_deferred_ ? 1 : 0);
-    }
-}
-
-void TerminalHostBase::end_cursor_repaint_scope()
-{
-    PERF_MEASURE();
-    cursor_repaint_chunk_activity_ = true;
-    output_cursor_batch_saw_repaint_scope_ = true;
-    cursor_repaint_save_active_ = false;
-    cursor_repaint_display_frozen_ = false;
-    if (log_would_emit(LogLevel::Trace, LogCategory::Input))
-    {
-        log_printf(LogLevel::Trace,
-            LogCategory::Input,
-            "cursor trace: end_repaint_scope logical=(%d,%d) vt_visible=%d deferred_vis=%d",
-            vt_.col,
-            vt_.row,
-            vt_.cursor_visible ? 1 : 0,
-            cursor_repaint_visibility_deferred_ ? 1 : 0);
-    }
-    if (cursor_repaint_visibility_deferred_)
-    {
-        cursor_repaint_visibility_deferred_ = false;
-        update_cursor_style();
-    }
-}
-
-bool TerminalHostBase::apply_deferred_cursor_visibility_if_due(std::chrono::steady_clock::time_point now)
-{
-    PERF_MEASURE();
-    if (!deferred_cursor_visibility_deadline_ || now < *deferred_cursor_visibility_deadline_)
-        return false;
-
-    if (log_would_emit(LogLevel::Trace, LogCategory::Input))
-    {
-        log_printf(LogLevel::Trace,
-            LogCategory::Input,
-            "cursor trace: deferred_visibility_due logical=(%d,%d) vt_visible=%d",
-            vt_.col,
-            vt_.row,
-            vt_.cursor_visible ? 1 : 0);
-    }
-    deferred_cursor_visibility_deadline_.reset();
-    update_cursor_style();
-    return true;
-}
-
-void TerminalHostBase::refresh_cursor_repaint_freeze_state()
-{
-    PERF_MEASURE();
-    cursor_repaint_display_frozen_ = cursor_repaint_save_active_
-        && (vt_.col != cursor_repaint_frozen_col_ || vt_.row != cursor_repaint_frozen_row_);
-    if (log_would_emit(LogLevel::Trace, LogCategory::Input))
-    {
-        log_printf(LogLevel::Trace,
-            LogCategory::Input,
-            "cursor trace: refresh_freeze scope=%d frozen=%d logical=(%d,%d) freeze_anchor=(%d,%d)",
-            cursor_repaint_save_active_ ? 1 : 0,
-            cursor_repaint_display_frozen_ ? 1 : 0,
-            vt_.col,
-            vt_.row,
-            cursor_repaint_frozen_col_,
-            cursor_repaint_frozen_row_);
-    }
-}
-
-std::pair<int, int> TerminalHostBase::presented_cursor_position() const
-{
-    PERF_MEASURE();
-    const int max_col = std::max(0, grid_cols() - 1);
-    const int max_row = std::max(0, grid_rows() - 1);
-    if (cursor_repaint_display_frozen_)
-    {
-        return {
-            std::clamp(cursor_repaint_frozen_col_, 0, max_col),
-            std::clamp(cursor_repaint_frozen_row_, 0, max_row),
-        };
-    }
-    return {
-        std::clamp(vt_.col, 0, max_col),
-        std::clamp(vt_.row, 0, max_row),
-    };
-}
-
-void TerminalHostBase::begin_output_cursor_batch()
-{
-    PERF_MEASURE();
-    if (output_cursor_batch_active_)
-        return;
-    output_cursor_batch_active_ = true;
-    output_cursor_batch_activity_ = false;
-    output_cursor_batch_saw_repaint_scope_ = false;
-    output_cursor_batch_start_col_ = vt_.col;
-    output_cursor_batch_start_row_ = vt_.row;
-    output_cursor_batch_start_visible_ = vt_.cursor_visible;
-    begin_cursor_publish_batch();
-}
-
-void TerminalHostBase::end_output_cursor_batch()
-{
-    PERF_MEASURE();
-    if (!output_cursor_batch_active_)
-        return;
-    output_cursor_batch_active_ = false;
-    const bool alt_screen_cursor_moved = alt_screen_.in_alt_screen()
-        && output_cursor_batch_start_visible_
-        && vt_.cursor_visible
-        && (vt_.col != output_cursor_batch_start_col_ || vt_.row != output_cursor_batch_start_row_);
-    if (cursor_repaint_display_frozen_)
-        set_cursor_display_override(presented_cursor_position());
-    set_cursor_position(vt_.col, vt_.row, CursorBlinkUpdate::Preserve);
-    if (!cursor_repaint_display_frozen_)
-        set_cursor_display_override(std::nullopt);
-    if (alt_screen_cursor_moved
-        || !(output_cursor_batch_activity_ || cursor_repaint_display_frozen_ || cursor_repaint_save_active_))
-    {
-        if (log_would_emit(LogLevel::Trace, LogCategory::Input))
-        {
-            log_printf(LogLevel::Trace,
-                LogCategory::Input,
-                "cursor trace: output_batch scheduling settle suppression alt_screen_move=%d repaint_scope=%d start=(%d,%d) end=(%d,%d)",
-                alt_screen_cursor_moved ? 1 : 0,
-                output_cursor_batch_saw_repaint_scope_ ? 1 : 0,
-                output_cursor_batch_start_col_,
-                output_cursor_batch_start_row_,
-                vt_.col,
-                vt_.row);
-        }
-        const auto settle_delay = alt_screen_cursor_moved
-            ? kAltScreenCursorMoveSettleDelay
-            : kOutputCursorSettleDelay;
-        suppress_cursor_until(std::chrono::steady_clock::now() + settle_delay);
-    }
-    end_cursor_publish_batch();
-    output_cursor_batch_activity_ = false;
-    output_cursor_batch_saw_repaint_scope_ = false;
-}
-
 // ---------------------------------------------------------------------------
 // Alternate screen
 // ---------------------------------------------------------------------------
@@ -566,12 +293,6 @@ void TerminalHostBase::end_output_cursor_batch()
 void TerminalHostBase::enter_alt_screen()
 {
     PERF_MEASURE();
-    cursor_repaint_save_active_ = false;
-    cursor_repaint_display_frozen_ = false;
-    cursor_repaint_chunk_activity_ = false;
-    cursor_repaint_visibility_deferred_ = false;
-    deferred_cursor_visibility_deadline_.reset();
-    set_cursor_display_override(std::nullopt);
     alt_screen_.enter(vt_.col, vt_.row, vt_.scroll_top, vt_.scroll_bottom, vt_.pending_wrap);
     vt_.col = 0;
     vt_.row = 0;
@@ -580,12 +301,6 @@ void TerminalHostBase::enter_alt_screen()
 void TerminalHostBase::leave_alt_screen()
 {
     PERF_MEASURE();
-    cursor_repaint_save_active_ = false;
-    cursor_repaint_display_frozen_ = false;
-    cursor_repaint_chunk_activity_ = false;
-    cursor_repaint_visibility_deferred_ = false;
-    deferred_cursor_visibility_deadline_.reset();
-    set_cursor_display_override(std::nullopt);
     alt_screen_.leave(vt_.col, vt_.row, vt_.pending_wrap, vt_.scroll_top, vt_.scroll_bottom);
 }
 

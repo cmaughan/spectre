@@ -175,20 +175,6 @@ private:
     HostReloadConfig last_config_;
 };
 
-namespace
-{
-std::vector<FakeHost*> g_viewport_hosts;
-} // namespace
-
-class ViewportTrackingHost final : public SmokeTestHost
-{
-public:
-    ViewportTrackingHost()
-    {
-        set_debug_name("viewport-tracking");
-    }
-};
-
 // Constructs AppOptions for a fully-initializable App with all fakes.
 AppOptions make_smoke_options()
 {
@@ -677,85 +663,6 @@ TEST_CASE("app smoke: reload_config propagates to all split panes in the active 
     CHECK(pane_b->last_config().font_size == Catch::Approx(16.0f));
     CHECK(pane_a->last_config().enable_ligatures == false);
     CHECK(pane_b->last_config().enable_ligatures == false);
-
-    app.shutdown();
-}
-
-TEST_CASE("app smoke: restoring a multi-workspace session reapplies chrome offsets to inactive workspaces",
-    "[app_smoke][session][workspaces][layout]")
-{
-    TempDir temp("draxul-restore-multi-ws-viewports");
-    HomeDirRedirect redir(temp.path);
-
-    const auto make_workspace = [](int id, std::string_view name) {
-        SplitTree tree;
-        const LeafId leaf = tree.reset(800, 600);
-
-        WorkspaceSessionState workspace;
-        workspace.id = id;
-        workspace.name = std::string(name);
-        workspace.name_user_set = true;
-        workspace.host_manager.tree = tree.snapshot();
-        workspace.host_manager.panes.push_back({
-            .leaf_id = leaf,
-            .launch = {
-                .kind = HostKind::PowerShell,
-                .command = "pwsh",
-                .args = {},
-                .working_dir = "D:/tmp",
-                .source_path = "",
-                .startup_commands = {},
-            },
-            .pane_name = "shell",
-            .pane_id = "pane-" + std::to_string(id),
-        });
-        return workspace;
-    };
-
-    AppSessionState state;
-    state.session_id = "restore-multi-ws-viewports";
-    state.session_name = "restore-multi-ws-viewports";
-    state.active_workspace_id = 2;
-    state.next_workspace_id = 3;
-    state.workspaces.push_back(make_workspace(1, "one"));
-    state.workspaces.push_back(make_workspace(2, "two"));
-
-    std::string session_error;
-    REQUIRE(save_session_state(state, &session_error));
-    REQUIRE(session_error.empty());
-
-    g_viewport_hosts.clear();
-    FakeWindow* created_window = nullptr;
-
-    AppOptions opts = make_smoke_options();
-    opts.enable_session_attach = true;
-    opts.session_id = state.session_id;
-    opts.window_factory = [&created_window]() {
-        auto window = std::make_unique<FakeWindow>();
-        created_window = window.get();
-        return window;
-    };
-    opts.host_factory = [](HostKind) -> std::unique_ptr<IHost> {
-        auto host = std::make_unique<ViewportTrackingHost>();
-        g_viewport_hosts.push_back(host.get());
-        return host;
-    };
-
-    App app(std::move(opts));
-    REQUIRE(app.initialize());
-    REQUIRE(created_window != nullptr);
-    REQUIRE(g_last_fake_renderer != nullptr);
-    REQUIRE(g_viewport_hosts.size() == 2);
-
-    const int expected_tab_y = g_last_fake_renderer->cell_size_pixels().second + 2;
-
-    for (FakeHost* host : g_viewport_hosts)
-    {
-        INFO("each restored workspace should receive a post-startup viewport recompute");
-        REQUIRE(host->set_viewport_calls >= 2);
-        INFO("restored workspace viewport should start below the chrome strip");
-        REQUIRE(host->last_viewport.pixel_pos.y == expected_tab_y);
-    }
 
     app.shutdown();
 }

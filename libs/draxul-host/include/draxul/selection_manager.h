@@ -71,9 +71,6 @@ public:
     // last non-space cell). Returns true if a non-empty selection became active.
     bool select_line(GridPos pos);
 
-    // Returns true when `pos` falls inside the current selection bounds.
-    bool contains(GridPos pos) const;
-
     // Clear the selection (overlay removed from renderer).
     void clear();
 

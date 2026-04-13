@@ -47,11 +47,11 @@ public:
 
     int col() const
     {
-        return vt_state().col;
+        return cursor_col();
     }
     int row() const
     {
-        return vt_state().row;
+        return cursor_row();
     }
 
     std::string written;

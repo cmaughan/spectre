@@ -46,7 +46,7 @@ struct TerminalConfig
     int selection_max_cells = 65536;
     // When true, completing a click-drag selection in a terminal pane copies
     // the selected text to the system clipboard automatically.
-    bool copy_on_select = true;
+    bool copy_on_select = false;
     // Minimum line count in a pasted clipboard payload before the user is
     // prompted to confirm. Set to 0 to disable the confirmation prompt.
     int paste_confirm_lines = 5;

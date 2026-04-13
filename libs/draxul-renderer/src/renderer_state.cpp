@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cstring>
-#include <draxul/log.h>
 #include <draxul/perf_timing.h>
 
 namespace draxul
@@ -226,16 +225,6 @@ void RendererState::set_cursor(int col, int row, const CursorStyle& style)
     cursor_col_ = col;
     cursor_row_ = row;
     cursor_style_ = style;
-    if (log_would_emit(LogLevel::Trace, LogCategory::Input))
-    {
-        log_printf(LogLevel::Trace,
-            LogCategory::Input,
-            "cursor trace: renderer set_cursor col=%d row=%d shape=%d visible=%d",
-            cursor_col_,
-            cursor_row_,
-            static_cast<int>(cursor_style_.shape),
-            cursor_visible_ ? 1 : 0);
-    }
 }
 
 void RendererState::restore_cursor()
@@ -257,31 +246,11 @@ void RendererState::restore_cursor()
         cell = cursor_saved_cell_;
         mark_cell_dirty((size_t)idx);
     }
-    if (log_would_emit(LogLevel::Trace, LogCategory::Input))
-    {
-        log_printf(LogLevel::Trace,
-            LogCategory::Input,
-            "cursor trace: renderer restore_cursor col=%d row=%d",
-            cursor_col_,
-            cursor_row_);
-    }
 }
 
 void RendererState::apply_cursor()
 {
     PERF_MEASURE();
-    if (log_would_emit(LogLevel::Trace, LogCategory::Input))
-    {
-        log_printf(LogLevel::Trace,
-            LogCategory::Input,
-            "cursor trace: renderer apply_cursor visible=%d col=%d row=%d shape=%d grid=%dx%d",
-            cursor_visible_ ? 1 : 0,
-            cursor_col_,
-            cursor_row_,
-            static_cast<int>(cursor_style_.shape),
-            grid_cols_,
-            grid_rows_);
-    }
     if (!cursor_visible_)
         return;
     if (cursor_col_ < 0 || cursor_col_ >= grid_cols_ || cursor_row_ < 0 || cursor_row_ >= grid_rows_)
@@ -304,13 +273,6 @@ void RendererState::apply_cursor()
         cell.fg = { cursor_style_.fg.r, cursor_style_.fg.g, cursor_style_.fg.b, cursor_style_.fg.a };
         cell.bg = { cursor_style_.bg.r, cursor_style_.bg.g, cursor_style_.bg.b, cursor_style_.bg.a };
         mark_cell_dirty((size_t)idx);
-        if (log_would_emit(LogLevel::Trace, LogCategory::Input))
-        {
-            log_printf(LogLevel::Trace,
-                LogCategory::Input,
-                "cursor trace: renderer apply_cursor block idx=%d",
-                idx);
-        }
         return;
     }
 
@@ -335,17 +297,6 @@ void RendererState::apply_cursor()
 
     cursor_overlay_active_ = true;
     overlay_dirty_ = true;
-    if (log_would_emit(LogLevel::Trace, LogCategory::Input))
-    {
-        log_printf(LogLevel::Trace,
-            LogCategory::Input,
-            "cursor trace: renderer apply_cursor overlay idx=%d overlay_pos=(%.1f,%.1f) overlay_size=(%.1f,%.1f)",
-            idx,
-            overlay_cell_.pos.x,
-            overlay_cell_.pos.y,
-            overlay_cell_.size.x,
-            overlay_cell_.size.y);
-    }
 }
 
 void RendererState::copy_to(std::byte* dst) const
