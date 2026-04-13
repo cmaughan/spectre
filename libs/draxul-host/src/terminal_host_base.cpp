@@ -4,8 +4,12 @@
 #include <draxul/terminal_sgr.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
 #include <draxul/alt_screen_manager.h>
+#include <draxul/base64.h>
 #include <draxul/log.h>
 #include <draxul/perf_timing.h>
 #include <draxul/unicode.h>
@@ -103,6 +107,7 @@ TerminalHostBase::TerminalHostBase()
 void TerminalHostBase::pump()
 {
     PERF_MEASURE();
+    ensure_pty_capture_ready();
     auto chunks = do_process_drain();
     if (!chunks.empty())
     {
@@ -117,7 +122,10 @@ void TerminalHostBase::pump()
         do
         {
             for (const auto& chunk : chunks)
+            {
+                maybe_capture_pty_chunk(chunk);
                 consume_output(chunk);
+            }
             if (std::chrono::steady_clock::now() >= deadline)
             {
                 budget_exceeded = true;
@@ -134,7 +142,8 @@ void TerminalHostBase::pump()
                 "deferring remaining output to next frame");
         }
 
-        flush_grid();
+        if (!synchronized_output_active())
+            flush_grid();
     }
     const auto now = std::chrono::steady_clock::now();
     apply_deferred_cursor_visibility_if_due(now);
@@ -269,6 +278,85 @@ void TerminalHostBase::send_paste(std::string_view text)
     }
 }
 
+bool TerminalHostBase::ensure_pty_capture_ready()
+{
+    if (!pty_capture_config_loaded_)
+    {
+        pty_capture_config_loaded_ = true;
+        if (!launch_options().pty_capture_file.empty())
+            pty_capture_path_ = launch_options().pty_capture_file;
+        else if (const char* value = std::getenv("DRAXUL_CAPTURE_PTY_FILE"))
+            pty_capture_path_ = value;
+    }
+
+    if (pty_capture_path_.empty())
+        return false;
+
+    if (!pty_capture_header_checked_)
+    {
+        pty_capture_header_checked_ = true;
+
+        const std::filesystem::path capture_path(pty_capture_path_);
+        bool needs_header = true;
+        std::ifstream existing(capture_path, std::ios::binary);
+        if (existing)
+        {
+            std::string header_line;
+            if (std::getline(existing, header_line) && header_line == "draxul-pty-capture-v1")
+                needs_header = false;
+        }
+
+        if (needs_header)
+        {
+            std::ofstream out(capture_path, std::ios::binary | std::ios::trunc);
+            if (!out)
+            {
+                if (!pty_capture_failure_reported_)
+                {
+                    pty_capture_failure_reported_ = true;
+                    DRAXUL_LOG_WARN(LogCategory::App,
+                        "Failed to open PTY capture file '%s' for writing",
+                        pty_capture_path_.c_str());
+                }
+                return false;
+            }
+            out << "draxul-pty-capture-v1\n";
+        }
+
+        if (!pty_capture_announced_)
+        {
+            pty_capture_announced_ = true;
+            DRAXUL_LOG_INFO(LogCategory::App,
+                "PTY capture enabled for host '%.*s': %s",
+                static_cast<int>(host_name().size()),
+                host_name().data(),
+                pty_capture_path_.c_str());
+        }
+    }
+    return true;
+}
+
+void TerminalHostBase::maybe_capture_pty_chunk(std::string_view bytes)
+{
+    if (!ensure_pty_capture_ready())
+        return;
+
+    std::ofstream out(pty_capture_path_, std::ios::binary | std::ios::app);
+    if (!out)
+    {
+        if (!pty_capture_failure_reported_)
+        {
+            pty_capture_failure_reported_ = true;
+            DRAXUL_LOG_WARN(LogCategory::App,
+                "Failed to append PTY capture chunk to '%s'",
+                pty_capture_path_.c_str());
+        }
+        return;
+    }
+
+    out << "chunk " << base64_encode(host_name()) << ' ' << base64_encode(bytes) << '\n';
+}
+
 // ---------------------------------------------------------------------------
 // Viewport / font changes
 // ---------------------------------------------------------------------------
@@ -351,9 +439,11 @@ void TerminalHostBase::reset_terminal_state()
     output_cursor_batch_active_ = false;
     output_cursor_batch_activity_ = false;
     output_cursor_batch_saw_repaint_scope_ = false;
+    output_cursor_batch_ended_synchronized_output_ = false;
     output_cursor_batch_start_col_ = 0;
     output_cursor_batch_start_row_ = 0;
     output_cursor_batch_start_visible_ = true;
+    synchronized_output_mode_ = false;
     set_cursor_display_override(std::nullopt);
     alt_screen_.reset();
 }
@@ -448,6 +538,45 @@ void TerminalHostBase::end_cursor_repaint_scope()
     }
 }
 
+void TerminalHostBase::begin_synchronized_output()
+{
+    PERF_MEASURE();
+    if (synchronized_output_mode_)
+        return;
+
+    synchronized_output_mode_ = true;
+    begin_cursor_publish_batch();
+    if (log_would_emit(LogLevel::Trace, LogCategory::Input))
+    {
+        log_printf(LogLevel::Trace,
+            LogCategory::Input,
+            "cursor trace: begin_synchronized_output logical=(%d,%d) visible=%d",
+            vt_.col,
+            vt_.row,
+            vt_.cursor_visible ? 1 : 0);
+    }
+}
+
+void TerminalHostBase::end_synchronized_output()
+{
+    PERF_MEASURE();
+    if (!synchronized_output_mode_)
+        return;
+
+    synchronized_output_mode_ = false;
+    output_cursor_batch_ended_synchronized_output_ = true;
+    if (log_would_emit(LogLevel::Trace, LogCategory::Input))
+    {
+        log_printf(LogLevel::Trace,
+            LogCategory::Input,
+            "cursor trace: end_synchronized_output logical=(%d,%d) visible=%d",
+            vt_.col,
+            vt_.row,
+            vt_.cursor_visible ? 1 : 0);
+    }
+    end_cursor_publish_batch();
+}
+
 bool TerminalHostBase::apply_deferred_cursor_visibility_if_due(std::chrono::steady_clock::time_point now)
 {
     PERF_MEASURE();
@@ -513,6 +642,7 @@ void TerminalHostBase::begin_output_cursor_batch()
     output_cursor_batch_active_ = true;
     output_cursor_batch_activity_ = false;
     output_cursor_batch_saw_repaint_scope_ = false;
+    output_cursor_batch_ended_synchronized_output_ = false;
     output_cursor_batch_start_col_ = vt_.col;
     output_cursor_batch_start_row_ = vt_.row;
     output_cursor_batch_start_visible_ = vt_.cursor_visible;
@@ -534,15 +664,17 @@ void TerminalHostBase::end_output_cursor_batch()
     set_cursor_position(vt_.col, vt_.row, CursorBlinkUpdate::Preserve);
     if (!cursor_repaint_display_frozen_)
         set_cursor_display_override(std::nullopt);
+    const bool ended_synchronized_output = output_cursor_batch_ended_synchronized_output_;
     if (alt_screen_cursor_moved
-        || !(output_cursor_batch_activity_ || cursor_repaint_display_frozen_ || cursor_repaint_save_active_))
+        || (ended_synchronized_output && !alt_screen_.in_alt_screen() && vt_.cursor_visible))
     {
         if (log_would_emit(LogLevel::Trace, LogCategory::Input))
         {
             log_printf(LogLevel::Trace,
                 LogCategory::Input,
-                "cursor trace: output_batch scheduling settle suppression alt_screen_move=%d repaint_scope=%d start=(%d,%d) end=(%d,%d)",
+                "cursor trace: output_batch scheduling settle suppression alt_screen_move=%d ended_sync=%d repaint_scope=%d start=(%d,%d) end=(%d,%d)",
                 alt_screen_cursor_moved ? 1 : 0,
+                ended_synchronized_output ? 1 : 0,
                 output_cursor_batch_saw_repaint_scope_ ? 1 : 0,
                 output_cursor_batch_start_col_,
                 output_cursor_batch_start_row_,
@@ -557,6 +689,7 @@ void TerminalHostBase::end_output_cursor_batch()
     end_cursor_publish_batch();
     output_cursor_batch_activity_ = false;
     output_cursor_batch_saw_repaint_scope_ = false;
+    output_cursor_batch_ended_synchronized_output_ = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -572,6 +705,8 @@ void TerminalHostBase::enter_alt_screen()
     cursor_repaint_visibility_deferred_ = false;
     deferred_cursor_visibility_deadline_.reset();
     set_cursor_display_override(std::nullopt);
+    if (synchronized_output_mode_)
+        end_synchronized_output();
     alt_screen_.enter(vt_.col, vt_.row, vt_.scroll_top, vt_.scroll_bottom, vt_.pending_wrap);
     vt_.col = 0;
     vt_.row = 0;
@@ -586,6 +721,8 @@ void TerminalHostBase::leave_alt_screen()
     cursor_repaint_visibility_deferred_ = false;
     deferred_cursor_visibility_deadline_.reset();
     set_cursor_display_override(std::nullopt);
+    if (synchronized_output_mode_)
+        end_synchronized_output();
     alt_screen_.leave(vt_.col, vt_.row, vt_.pending_wrap, vt_.scroll_top, vt_.scroll_bottom);
 }
 

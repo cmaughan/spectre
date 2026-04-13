@@ -17,6 +17,11 @@ public:
         consume_output(bytes);
     }
 
+    void queue_drain(std::string bytes)
+    {
+        drained_chunks_.push_back(std::move(bytes));
+    }
+
     std::string written;
 
     int cols_ = 20;
@@ -46,7 +51,9 @@ protected:
 
     std::vector<std::string> do_process_drain() override
     {
-        return {};
+        auto out = std::move(drained_chunks_);
+        drained_chunks_.clear();
+        return out;
     }
 
     bool do_process_resize(int, int) override
@@ -60,6 +67,9 @@ protected:
     }
 
     void do_process_shutdown() override {}
+
+private:
+    std::vector<std::string> drained_chunks_;
 };
 
 } // namespace draxul::tests

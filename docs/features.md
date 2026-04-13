@@ -273,6 +273,7 @@ Customizable in `config.toml` under `[keybindings]`. Chord syntax: `"prefix, key
 | `--continuous-refresh` | Keep the MegaCity host rendering continuously and, on Vulkan, prefer unsynced presentation so frames do not wait for vblank |
 | `--log-file <path>` | Write logs to file |
 | `--log-level <level>` | Minimum level: error, warn, info, debug, trace |
+| `--pty-capture-file <path>` | Capture raw terminal drain chunks to a replayable PTY log for terminal debugging |
 | `--console` | (Windows) Allocate debug console window |
 | `--smoke-test` | Non-interactive startup test, exits after 3s |
 | `--render-test <file>` | Run render test scenario (requires DRAXUL_ENABLE_RENDER_TESTS) |

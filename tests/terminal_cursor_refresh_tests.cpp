@@ -4,12 +4,14 @@
 #include "support/fake_window.h"
 #include "support/test_host_callbacks.h"
 
+#include <draxul/base64.h>
 #include <draxul/terminal_host_base.h>
 #include <draxul/text_service.h>
 
 #include <chrono>
 #include <deque>
 #include <filesystem>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <utility>
@@ -37,6 +39,21 @@ public:
     void queue_drain(std::vector<std::string> chunks)
     {
         queued_drains_.push_back(std::move(chunks));
+    }
+
+    int vt_col() const
+    {
+        return vt_state().col;
+    }
+
+    int vt_row() const
+    {
+        return vt_state().row;
+    }
+
+    bool vt_cursor_visible() const
+    {
+        return vt_state().cursor_visible;
     }
 
     int cols_ = 20;
@@ -98,8 +115,11 @@ struct TerminalCursorRefreshHarness
     TestHostCallbacks callbacks;
     bool ok = false;
 
-    TerminalCursorRefreshHarness()
+    explicit TerminalCursorRefreshHarness(int cols = 20, int rows = 10)
     {
+        host.cols_ = cols;
+        host.rows_ = rows;
+
         TextServiceConfig ts_cfg;
         ts_cfg.font_path = bundled_font_path();
         REQUIRE(text_service.initialize(ts_cfg, TextService::DEFAULT_POINT_SIZE, 96.0f));
@@ -121,6 +141,33 @@ struct TerminalCursorRefreshHarness
     }
 };
 
+std::vector<std::string> decode_capture_chunks(std::initializer_list<std::string_view> encoded_chunks)
+{
+    std::vector<std::string> decoded;
+    decoded.reserve(encoded_chunks.size());
+    for (std::string_view encoded : encoded_chunks)
+    {
+        auto bytes = base64_decode(encoded);
+        REQUIRE(bytes.has_value());
+        decoded.push_back(std::move(*bytes));
+    }
+    return decoded;
+}
+
+std::string cursor_points_to_string(const std::vector<glm::ivec2>& points)
+{
+    std::ostringstream out;
+    bool first = true;
+    for (const auto& point : points)
+    {
+        if (!first)
+            out << " -> ";
+        first = false;
+        out << "(" << point.x << "," << point.y << ")";
+    }
+    return out.str();
+}
+
 } // namespace
 
 TEST_CASE("terminal cursor stays pinned across split status redraw bursts", "[terminal][cursor]")
@@ -131,13 +178,12 @@ TEST_CASE("terminal cursor stays pinned across split status redraw bursts", "[te
     auto* handle = h.renderer.last_handle;
     REQUIRE(handle != nullptr);
 
-    h.host.feed_immediate("PS> ");
-    std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    handle->reset();
+    h.host.queue_drain({ "PS> " });
     h.host.pump();
     INFO("baseline prompt cursor is visible before the split redraw");
     REQUIRE(handle->last_cursor.x == 4);
     REQUIRE(handle->last_cursor.y == 0);
+    handle->reset();
 
     h.host.queue_drain({ "\x1B"
                          "7\x1B[10;1HSTATUS" });
@@ -162,16 +208,16 @@ TEST_CASE("terminal cursor stays pinned when save-move-restore repaint arrives i
     auto* handle = h.renderer.last_handle;
     REQUIRE(handle != nullptr);
 
-    h.host.feed_immediate("PS> ");
-    std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    handle->reset();
+    h.host.queue_drain({ "PS> " });
     h.host.pump();
     REQUIRE(handle->last_cursor.x == 4);
     REQUIRE(handle->last_cursor.y == 0);
+    handle->reset();
 
-    h.host.feed_immediate("\x1B"
-                          "7\x1B[10;1HSTATUS\x1B"
-                          "8");
+    h.host.queue_drain({ "\x1B"
+                         "7\x1B[10;1HSTATUS\x1B"
+                         "8" });
+    h.host.pump();
 
     INFO("single-burst save/move/restore repaint should leave the visible cursor at the prompt");
     REQUIRE(handle->last_cursor.x == 4);
@@ -186,12 +232,11 @@ TEST_CASE("terminal cursor stays visible when repaint scope toggles cursor visib
     auto* handle = h.renderer.last_handle;
     REQUIRE(handle != nullptr);
 
-    h.host.feed_immediate("PS> ");
-    std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    handle->reset();
+    h.host.queue_drain({ "PS> " });
     h.host.pump();
     REQUIRE(handle->last_cursor.x == 4);
     REQUIRE(handle->last_cursor.y == 0);
+    handle->reset();
 
     h.host.queue_drain({ "\x1B"
                          "7\x1B[?25l\x1B[10;1HSTATUS" });
@@ -216,12 +261,11 @@ TEST_CASE("terminal cursor ignores a prelude hide before a save-restore repaint 
     auto* handle = h.renderer.last_handle;
     REQUIRE(handle != nullptr);
 
-    h.host.feed_immediate("PS> ");
-    std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    handle->reset();
+    h.host.queue_drain({ "PS> " });
     h.host.pump();
     REQUIRE(handle->last_cursor.x == 4);
     REQUIRE(handle->last_cursor.y == 0);
+    handle->reset();
 
     h.host.queue_drain({ "\x1B[?25l" });
     h.host.pump();
@@ -252,14 +296,14 @@ TEST_CASE("terminal cursor still hides after a standalone DECTCEM hide delay", "
     auto* handle = h.renderer.last_handle;
     REQUIRE(handle != nullptr);
 
-    h.host.feed_immediate("PS> ");
-    std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    handle->reset();
+    h.host.queue_drain({ "PS> " });
     h.host.pump();
     REQUIRE(handle->last_cursor.x == 4);
     REQUIRE(handle->last_cursor.y == 0);
+    handle->reset();
 
-    h.host.feed_immediate("\x1B[?25l");
+    h.host.queue_drain({ "\x1B[?25l" });
+    h.host.pump();
     INFO("standalone hide is deferred briefly to avoid repaint flicker");
     REQUIRE(handle->last_cursor.x == 4);
     REQUIRE(handle->last_cursor.y == 0);
@@ -280,14 +324,14 @@ TEST_CASE("terminal alternate screen hides cursor immediately on DECTCEM hide", 
     auto* handle = h.renderer.last_handle;
     REQUIRE(handle != nullptr);
 
-    h.host.feed_immediate("PS> ");
-    std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    handle->reset();
+    h.host.queue_drain({ "PS> " });
     h.host.pump();
     REQUIRE(handle->last_cursor.x == 4);
     REQUIRE(handle->last_cursor.y == 0);
+    handle->reset();
 
-    h.host.feed_immediate("\x1B[?1049h\x1B[?25l");
+    h.host.queue_drain({ "\x1B[?1049h\x1B[?25l" });
+    h.host.pump();
     INFO("alt-screen apps should hide the cursor immediately instead of inheriting prompt debounce");
     REQUIRE(handle->last_cursor.x == -1);
     REQUIRE(handle->last_cursor.y == -1);
@@ -301,14 +345,14 @@ TEST_CASE("terminal alternate screen defers visible cursor moves until redraw se
     auto* handle = h.renderer.last_handle;
     REQUIRE(handle != nullptr);
 
-    h.host.feed_immediate("\x1B[?1049h");
-    std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    handle->reset();
+    h.host.queue_drain({ "\x1B[?1049h" });
     h.host.pump();
     REQUIRE(handle->last_cursor.x == 0);
     REQUIRE(handle->last_cursor.y == 0);
+    handle->reset();
 
-    h.host.feed_immediate("\x1B[10;10H");
+    h.host.queue_drain({ "\x1B[10;10H" });
+    h.host.pump();
     INFO("alt-screen cursor moves should stay hidden while redraw output is still settling");
     REQUIRE(handle->last_cursor.x == -1);
     REQUIRE(handle->last_cursor.y == -1);
@@ -327,7 +371,8 @@ TEST_CASE("terminal alternate screen defers visible cursor moves until redraw se
     REQUIRE(handle->last_cursor.y == 9);
 }
 
-TEST_CASE("terminal cursor publishes once for a multi-chunk drain batch", "[terminal][cursor]")
+TEST_CASE("terminal cursor publishes the final position immediately for an ordinary multi-chunk drain batch",
+    "[terminal][cursor]")
 {
     TerminalCursorRefreshHarness h;
     REQUIRE(h.ok);
@@ -335,25 +380,114 @@ TEST_CASE("terminal cursor publishes once for a multi-chunk drain batch", "[term
     auto* handle = h.renderer.last_handle;
     REQUIRE(handle != nullptr);
 
-    h.host.feed_immediate("PS> ");
-    std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    handle->reset();
+    h.host.queue_drain({ "PS> " });
     h.host.pump();
     REQUIRE(handle->last_cursor.x == 4);
     REQUIRE(handle->last_cursor.y == 0);
-
     handle->reset();
     h.host.queue_drain({ "a", "b", "c" });
     h.host.pump();
 
-    INFO("renderer should only see one hidden cursor publish for the whole drain batch");
+    INFO("ordinary output batches should publish their settled final cursor without a synthetic hide pulse");
+    REQUIRE(handle->last_cursor.x == 7);
+    REQUIRE(handle->last_cursor.y == 0);
+}
+
+TEST_CASE("terminal synchronized output hides intermediate cursor churn until the batch settles",
+    "[terminal][cursor]")
+{
+    TerminalCursorRefreshHarness h(120, 30);
+    REQUIRE(h.ok);
+
+    auto* handle = h.renderer.last_handle;
+    REQUIRE(handle != nullptr);
+
+    h.host.queue_drain({ "PS> " });
+    h.host.pump();
+    REQUIRE(handle->last_cursor.x == 4);
+    REQUIRE(handle->last_cursor.y == 0);
+    handle->reset();
+
+    const auto chunks = decode_capture_chunks({
+        "G1s/MjAyNmg=",
+        "G1s/MjVsG1sxMTsySBtbSxtbMm0bWzEyOzE4SHJ2G1syMm1lG1sxbRtbM0MoMRtbMjJtLxtbNzBDG1tLG1sxMzsySBtbSwobW0sbWzE1OzI3SBtbSxtbMTY7MkgbW0sbWzE3OzMySBtbSxtbMTI7MjdIG1s/MjVo",
+        "G1s/MjAyNmw=",
+        "G1s/MjVsG1sxNTszSBtbPzI1aA==",
+    });
+
+    for (const auto& chunk : chunks)
+    {
+        h.host.queue_drain({ chunk });
+        h.host.pump();
+    }
+
+    INFO("status-row repaint chunks wrapped in synchronized output should not leak a visible cursor hop");
     REQUIRE(handle->last_cursor.x == -1);
     REQUIRE(handle->last_cursor.y == -1);
 
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
     handle->reset();
     h.host.pump();
-    INFO("once the settle delay expires, the cursor reappears at the final batch position");
-    REQUIRE(handle->last_cursor.x == 7);
-    REQUIRE(handle->last_cursor.y == 0);
+    INFO("once the synchronized batch settles, the prompt cursor should reappear at the final prompt position");
+    REQUIRE(handle->last_cursor.x == 2);
+    REQUIRE(handle->last_cursor.y == 14);
+}
+
+TEST_CASE("captured codex redraw burst reproduces model cursor hops without presenting the status-row cursor",
+    "[terminal][cursor][capture]")
+{
+    TerminalCursorRefreshHarness h(120, 30);
+    REQUIRE(h.ok);
+
+    auto* handle = h.renderer.last_handle;
+    REQUIRE(handle != nullptr);
+
+    const auto chunks = decode_capture_chunks({
+        "G1s/MjAyNmg=",
+        "G1s/MjVsG1sxMTsySBtbSxtbMm0bWzEyOzE4SHJ2G1syMm1lG1sxbRtbM0MoMRtbMjJtLxtbNzBDG1tLG1sxMzsySBtbSwobW0sbWzE1OzI3SBtbSxtbMTY7MkgbW0sbWzE3OzMySBtbSxtbMTI7MjdIG1s/MjVo",
+        "G1s/MjAyNmw=",
+        "G1s/MjVsG1sxNTszSBtbPzI1aA==",
+        "G1s/MjAyNmg=",
+        "G1s/MjVsG1sxMTsySBtbSxtbMm0bWzEyOzIwSGUbWzIybXIbWzFtG1s0Qy8bWzIybTUbWzY5QxtbSxtbMTM7MkgbW0sKG1tLG1sxNTsyN0gbW0sbWzE2OzJIG1tLG1sxNzszMkgbW0sbWzEyOzI4SBtbPzI1aA==",
+        "G1s/MjAyNmw=",
+        "G1s/MjVsG1sxNTszSBtbPzI1aA==",
+    });
+
+    std::vector<glm::ivec2> presented_cursors;
+    std::vector<glm::ivec2> vt_cursors;
+    std::vector<bool> vt_visibility;
+    presented_cursors.reserve(chunks.size());
+    vt_cursors.reserve(chunks.size());
+    vt_visibility.reserve(chunks.size());
+
+    for (const auto& chunk : chunks)
+    {
+        h.host.queue_drain({ chunk });
+        h.host.pump();
+        presented_cursors.push_back(handle->last_cursor);
+        vt_cursors.push_back({ h.host.vt_col(), h.host.vt_row() });
+        vt_visibility.push_back(h.host.vt_cursor_visible());
+    }
+
+    INFO("presented cursors: " << cursor_points_to_string(presented_cursors));
+    INFO("vt cursors: " << cursor_points_to_string(vt_cursors));
+
+    bool saw_status_row = false;
+    bool saw_prompt_row = false;
+    bool presented_prompt_row = false;
+    for (size_t i = 0; i < vt_cursors.size(); ++i)
+    {
+        if (!vt_visibility[i])
+            continue;
+        if (vt_cursors[i].y == 11)
+            saw_status_row = true;
+        if (vt_cursors[i].y == 14)
+            saw_prompt_row = true;
+        if (presented_cursors[i].y == 14)
+            presented_prompt_row = true;
+    }
+
+    REQUIRE(saw_status_row);
+    REQUIRE(saw_prompt_row);
+    REQUIRE(presented_prompt_row);
 }

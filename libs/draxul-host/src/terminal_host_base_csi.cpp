@@ -524,6 +524,12 @@ void TerminalHostBase::csi_mode(char final_char, bool private_mode, const std::v
         case 2004: // Bracketed paste mode
             bracketed_paste_mode_ = enable;
             break;
+        case 2026: // Synchronized output mode
+            if (enable)
+                begin_synchronized_output();
+            else
+                end_synchronized_output();
+            break;
         default:
             break;
         }

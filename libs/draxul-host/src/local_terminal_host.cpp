@@ -194,6 +194,7 @@ void LocalTerminalHost::on_config_reloaded(const HostReloadConfig& config)
 void LocalTerminalHost::pump()
 {
     PERF_MEASURE();
+    ensure_pty_capture_ready();
     auto chunks = do_process_drain();
     if (!chunks.empty())
     {
@@ -210,7 +211,10 @@ void LocalTerminalHost::pump()
         do
         {
             for (const auto& chunk : chunks)
+            {
+                maybe_capture_pty_chunk(chunk);
                 consume_output(chunk);
+            }
             // Re-drain: coalesces bursts that arrived during processing.
             chunks = do_process_drain();
         } while (!chunks.empty());
@@ -270,10 +274,12 @@ void LocalTerminalHost::pump()
         // When scrolled back, don't flush the live grid to the renderer —
         // the scrollback display is a static composite and flushing would
         // cause visible stepping as new lines arrive at the bottom.
-        if (!scrollback_.is_scrolled_back())
+        if (!scrollback_.is_scrolled_back() && !synchronized_output_active())
             flush_grid();
     }
-    advance_cursor_blink(std::chrono::steady_clock::now());
+    const auto now = std::chrono::steady_clock::now();
+    apply_deferred_cursor_visibility_if_due(now);
+    advance_cursor_blink(now);
 }
 
 void LocalTerminalHost::on_key(const KeyEvent& event)

@@ -32,6 +32,7 @@ struct HostLaunchOptions
     std::string source_path;
     std::vector<std::string> startup_commands;
     bool enable_ligatures = true;
+    std::string pty_capture_file;
 
     // Optional terminal foreground/background colors from config.
     // When set, terminal hosts use these instead of their hardcoded defaults.

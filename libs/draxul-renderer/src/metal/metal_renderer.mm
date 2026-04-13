@@ -610,9 +610,6 @@ IFrameContext* MetalRenderer::begin_frame()
         dispatch_semaphore_t sema = frame_semaphore_.get();
         dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
 
-        for (auto* handle : grid_handles_)
-            handle->state_.restore_cursor();
-
         id<CAMetalDrawable> drawable = [layer_.get() nextDrawable];
         if (!drawable)
             dispatch_semaphore_signal(sema);
@@ -862,7 +859,6 @@ bool MetalRenderer::draw_grid_handle_now(IGridHandle& handle)
     if (!metal_handle || !frame_active_)
         return false;
 
-    metal_handle->state_.apply_cursor();
     metal_handle->upload_state(current_frame_);
 
     if (!ensure_main_render_encoder(false))

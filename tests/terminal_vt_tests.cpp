@@ -33,7 +33,7 @@ TEST_CASE("terminal: plain text writes to grid cells", "[terminal]")
     REQUIRE(ts.host.col() == 5);
 }
 
-TEST_CASE("terminal: plain text batch coalesces cursor publication", "[terminal][cursor]")
+TEST_CASE("terminal: plain text batch publishes the final cursor immediately", "[terminal][cursor]")
 {
     VtTerminalSetup ts;
     INFO("host must initialize");
@@ -42,19 +42,10 @@ TEST_CASE("terminal: plain text batch coalesces cursor publication", "[terminal]
 
     ts.renderer.last_handle->reset();
 
-    ts.host.feed("Hello");
-
-    INFO("terminal output now publishes a single hidden cursor state for the whole drain batch");
-    REQUIRE(ts.renderer.last_handle->set_cursor_calls == 1);
-    INFO("cursor stays hidden until the redraw settle delay expires");
-    REQUIRE(ts.renderer.last_handle->last_cursor.x == -1);
-    REQUIRE(ts.renderer.last_handle->last_cursor.y == -1);
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    ts.renderer.last_handle->reset();
+    ts.host.queue_drain("Hello");
     ts.host.pump();
 
-    INFO("cursor ends after the written text once the redraw settles");
+    INFO("terminal output should publish the settled final cursor directly for ordinary batches");
     REQUIRE(ts.renderer.last_handle->set_cursor_calls == 1);
     REQUIRE(ts.renderer.last_handle->last_cursor.x == 5);
     REQUIRE(ts.renderer.last_handle->last_cursor.y == 0);

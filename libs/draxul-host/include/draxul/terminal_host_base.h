@@ -97,6 +97,13 @@ protected:
     }
     void begin_output_cursor_batch();
     void end_output_cursor_batch();
+    bool ensure_pty_capture_ready();
+    void maybe_capture_pty_chunk(std::string_view bytes);
+    bool apply_deferred_cursor_visibility_if_due(std::chrono::steady_clock::time_point now);
+    bool synchronized_output_active() const
+    {
+        return synchronized_output_mode_;
+    }
 
     // Hook called by newline() when a line scrolls off the top of the visible
     // area (full-screen scroll region, main screen only). Override in
@@ -165,7 +172,8 @@ private:
     void csi_margins(bool private_mode, const std::vector<int>& params);
     void begin_cursor_repaint_scope();
     void end_cursor_repaint_scope();
-    bool apply_deferred_cursor_visibility_if_due(std::chrono::steady_clock::time_point now);
+    void begin_synchronized_output();
+    void end_synchronized_output();
     void refresh_cursor_repaint_freeze_state();
     [[nodiscard]] std::pair<int, int> presented_cursor_position() const;
 
@@ -201,9 +209,16 @@ private:
     bool output_cursor_batch_active_ = false;
     bool output_cursor_batch_activity_ = false;
     bool output_cursor_batch_saw_repaint_scope_ = false;
+    bool output_cursor_batch_ended_synchronized_output_ = false;
     int output_cursor_batch_start_col_ = 0;
     int output_cursor_batch_start_row_ = 0;
     bool output_cursor_batch_start_visible_ = true;
+    bool synchronized_output_mode_ = false;
+    bool pty_capture_config_loaded_ = false;
+    bool pty_capture_header_checked_ = false;
+    bool pty_capture_failure_reported_ = false;
+    bool pty_capture_announced_ = false;
+    std::string pty_capture_path_;
 
     // Pending paste awaiting user confirmation. When non-empty, the next
     // confirm_paste action sends it; cancel_paste discards it. Populated by
