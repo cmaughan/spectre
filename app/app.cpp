@@ -751,7 +751,7 @@ bool App::initialize_chrome_host()
 
     {
         const int tab_y = chrome_host_->tab_bar_height();
-        active_host_manager().recompute_viewports(
+        recompute_all_viewports(
             0, tab_y, window_->width_pixels(), diagnostics_host_->layout().terminal_height - tab_y);
     }
 
@@ -812,7 +812,7 @@ void App::wire_gui_actions()
     gui_deps.on_panel_toggled = [this]() {
         refresh_window_layout();
         const int tab_y = chrome_host_->tab_bar_height();
-        active_host_manager().recompute_viewports(
+        recompute_all_viewports(
             0, tab_y, window_->width_pixels(), diagnostics_host_->layout().terminal_height - tab_y);
         update_diagnostics_panel();
         request_frame();
@@ -1262,7 +1262,7 @@ std::optional<CapturedFrame> App::run_render_test(std::chrono::milliseconds time
                     refresh_window_layout();
                     {
                         const int tab_y = chrome_host_->tab_bar_height();
-                        active_host_manager().recompute_viewports(
+                        recompute_all_viewports(
                             0, tab_y, window_->width_pixels(), diagnostics_host_->layout().terminal_height - tab_y);
                     }
                     update_diagnostics_panel();

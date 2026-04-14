@@ -35,6 +35,60 @@ extern bool has_system_tray_icon();
 extern void pump_tray_messages();
 #endif
 
+namespace
+{
+
+std::string describe_text_for_log(std::string_view text)
+{
+    static constexpr char kHex[] = "0123456789ABCDEF";
+    std::string out;
+    out.reserve(text.size() * 4 + 2);
+    out.push_back('"');
+    for (unsigned char ch : text)
+    {
+        switch (ch)
+        {
+        case '\\':
+            out += "\\\\";
+            break;
+        case '"':
+            out += "\\\"";
+            break;
+        case '\n':
+            out += "\\n";
+            break;
+        case '\r':
+            out += "\\r";
+            break;
+        case '\t':
+            out += "\\t";
+            break;
+        default:
+            if (ch >= 0x20 && ch <= 0x7E)
+            {
+                out.push_back(static_cast<char>(ch));
+            }
+            else
+            {
+                out += "\\x";
+                out.push_back(kHex[(ch >> 4) & 0xF]);
+                out.push_back(kHex[ch & 0xF]);
+            }
+            break;
+        }
+    }
+    out.push_back('"');
+    return out;
+}
+
+const char* safe_key_name(int keycode)
+{
+    const char* name = SDL_GetKeyName(static_cast<SDL_Keycode>(keycode));
+    return (name && *name) ? name : "<unknown>";
+}
+
+} // namespace
+
 #if defined(_WIN32) || defined(__APPLE__)
 static void log_display_info(SDL_Window* window)
 {
@@ -420,13 +474,36 @@ bool SdlWindow::handle_event(const SDL_Event& event)
     case SDL_EVENT_KEY_UP:
         if (on_key)
             if (auto e = sdl::translate_key(event))
+            {
+                if (log_would_emit(LogLevel::Trace, LogCategory::Input))
+                {
+                    log_printf(LogLevel::Trace, LogCategory::Input,
+                        "input trace: sdl key type=%s key=%s(%d) scancode=%d mod=0x%X pressed=%d",
+                        event.type == SDL_EVENT_KEY_DOWN ? "down" : "up",
+                        safe_key_name(e->keycode),
+                        e->keycode,
+                        e->scancode,
+                        static_cast<unsigned int>(e->mod),
+                        e->pressed ? 1 : 0);
+                }
                 on_key(*e);
+            }
         break;
 
     case SDL_EVENT_TEXT_INPUT:
         if (on_text_input)
             if (auto e = sdl::translate_text_input(event))
+            {
+                if (log_would_emit(LogLevel::Trace, LogCategory::Input))
+                {
+                    const std::string described = describe_text_for_log(e->text);
+                    log_printf(LogLevel::Trace, LogCategory::Input,
+                        "input trace: sdl text_input text=%s len=%zu",
+                        described.c_str(),
+                        e->text.size());
+                }
                 on_text_input(*e);
+            }
         break;
 
     case SDL_EVENT_TEXT_EDITING:
@@ -439,7 +516,20 @@ bool SdlWindow::handle_event(const SDL_Event& event)
     case SDL_EVENT_MOUSE_BUTTON_UP:
         if (on_mouse_button)
             if (auto e = sdl::translate_mouse_button(event))
+            {
+                if (log_would_emit(LogLevel::Trace, LogCategory::Input))
+                {
+                    log_printf(LogLevel::Trace, LogCategory::Input,
+                        "input trace: sdl mouse_button button=%d pressed=%d clicks=%d mod=0x%X pos=(%d,%d)",
+                        e->button,
+                        e->pressed ? 1 : 0,
+                        e->clicks,
+                        static_cast<unsigned int>(e->mod),
+                        e->pos.x,
+                        e->pos.y);
+                }
                 on_mouse_button(*e);
+            }
         break;
 
     case SDL_EVENT_MOUSE_MOTION:

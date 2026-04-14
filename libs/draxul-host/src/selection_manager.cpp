@@ -32,6 +32,8 @@ void SelectionManager::begin_drag(GridPos pos)
 bool SelectionManager::end_drag(GridPos pos)
 {
     PERF_MEASURE();
+    if (!sel_dragging_)
+        return false;
     sel_end_ = pos;
     sel_dragging_ = false;
     if (sel_start_.pos.x != sel_end_.pos.x || sel_start_.pos.y != sel_end_.pos.y)
@@ -69,6 +71,30 @@ bool is_word_char(const Cell& cell)
     // Multi-byte glyphs (UTF-8) are treated as word characters; only ASCII
     // whitespace and control codes break a word.
     return true;
+}
+
+struct SelectionBounds
+{
+    int r1 = 0;
+    int c1 = 0;
+    int r2 = 0;
+    int c2 = 0;
+};
+
+SelectionBounds normalized_bounds(SelectionManager::GridPos start, SelectionManager::GridPos end)
+{
+    SelectionBounds bounds{
+        .r1 = start.pos.y,
+        .c1 = start.pos.x,
+        .r2 = end.pos.y,
+        .c2 = end.pos.x,
+    };
+    if (bounds.r1 > bounds.r2 || (bounds.r1 == bounds.r2 && bounds.c1 > bounds.c2))
+    {
+        std::swap(bounds.r1, bounds.r2);
+        std::swap(bounds.c1, bounds.c2);
+    }
+    return bounds;
 }
 } // namespace
 
@@ -134,6 +160,28 @@ bool SelectionManager::select_line(GridPos pos)
     return true;
 }
 
+bool SelectionManager::contains(GridPos pos) const
+{
+    PERF_MEASURE();
+    if (!sel_active_)
+        return false;
+
+    const auto bounds = normalized_bounds(sel_start_, sel_end_);
+    const int row = pos.pos.y;
+    const int col = pos.pos.x;
+    if (row < bounds.r1 || row > bounds.r2)
+        return false;
+
+    const int cols = cbs_.grid_cols();
+    if (row == bounds.r1 && row == bounds.r2)
+        return col >= bounds.c1 && col <= bounds.c2;
+    if (row == bounds.r1)
+        return col >= bounds.c1 && col < cols;
+    if (row == bounds.r2)
+        return col >= 0 && col <= bounds.c2;
+    return col >= 0 && col < cols;
+}
+
 void SelectionManager::clear()
 {
     PERF_MEASURE();
@@ -151,13 +199,11 @@ std::string SelectionManager::extract_text()
     if (!sel_active_)
         return {};
 
-    int r1 = sel_start_.pos.y, c1 = sel_start_.pos.x;
-    int r2 = sel_end_.pos.y, c2 = sel_end_.pos.x;
-    if (r1 > r2 || (r1 == r2 && c1 > c2))
-    {
-        std::swap(r1, r2);
-        std::swap(c1, c2);
-    }
+    const auto bounds = normalized_bounds(sel_start_, sel_end_);
+    const int r1 = bounds.r1;
+    const int c1 = bounds.c1;
+    const int r2 = bounds.r2;
+    const int c2 = bounds.c2;
 
     // Compute total cells in the requested selection to detect truncation.
     const int cols = cbs_.grid_cols();
@@ -222,13 +268,11 @@ void SelectionManager::update_overlay()
         return;
     }
 
-    int r1 = sel_start_.pos.y, c1 = sel_start_.pos.x;
-    int r2 = sel_end_.pos.y, c2 = sel_end_.pos.x;
-    if (r1 > r2 || (r1 == r2 && c1 > c2))
-    {
-        std::swap(r1, r2);
-        std::swap(c1, c2);
-    }
+    const auto bounds = normalized_bounds(sel_start_, sel_end_);
+    const int r1 = bounds.r1;
+    const int c1 = bounds.c1;
+    const int r2 = bounds.r2;
+    const int c2 = bounds.c2;
 
     static const Color kSelBg(0.27f, 0.44f, 0.78f, 1.0f);
     static const Color kSelFg(1.0f, 1.0f, 1.0f, 1.0f);

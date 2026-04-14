@@ -7,6 +7,7 @@
 #include <draxul/vt_state.h>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <unordered_map>
 #include <vector>
 
@@ -47,6 +48,7 @@ public:
         do_process_request_close();
     }
     void pump() override;
+    std::optional<std::chrono::steady_clock::time_point> next_deadline() const override;
     void on_key(const KeyEvent& event) override;
     void on_text_input(const TextInputEvent& event) override;
     void on_config_reloaded(const HostReloadConfig& config) override;
@@ -93,6 +95,8 @@ protected:
     {
         return attr_cache_;
     }
+    void begin_output_cursor_batch();
+    void end_output_cursor_batch();
 
     // Hook called by newline() when a line scrolls off the top of the visible
     // area (full-screen scroll region, main screen only). Override in
@@ -159,6 +163,11 @@ private:
     void csi_dsr(bool private_mode, const std::vector<int>& params);
     void csi_da(bool private_mode, const std::vector<int>& params);
     void csi_margins(bool private_mode, const std::vector<int>& params);
+    void begin_cursor_repaint_scope();
+    void end_cursor_repaint_scope();
+    bool apply_deferred_cursor_visibility_if_due(std::chrono::steady_clock::time_point now);
+    void refresh_cursor_repaint_freeze_state();
+    [[nodiscard]] std::pair<int, int> presented_cursor_position() const;
 
     void enter_alt_screen();
     void leave_alt_screen();
@@ -179,6 +188,22 @@ private:
 
     // Bracketed paste
     bool bracketed_paste_mode_ = false;
+
+    // During save/move/repaint/restore bursts, keep the visible cursor pinned
+    // to the saved input position instead of publishing each intermediate hop.
+    bool cursor_repaint_save_active_ = false;
+    bool cursor_repaint_display_frozen_ = false;
+    bool cursor_repaint_chunk_activity_ = false;
+    bool cursor_repaint_visibility_deferred_ = false;
+    std::optional<std::chrono::steady_clock::time_point> deferred_cursor_visibility_deadline_;
+    int cursor_repaint_frozen_col_ = 0;
+    int cursor_repaint_frozen_row_ = 0;
+    bool output_cursor_batch_active_ = false;
+    bool output_cursor_batch_activity_ = false;
+    bool output_cursor_batch_saw_repaint_scope_ = false;
+    int output_cursor_batch_start_col_ = 0;
+    int output_cursor_batch_start_row_ = 0;
+    bool output_cursor_batch_start_visible_ = true;
 
     // Pending paste awaiting user confirmation. When non-empty, the next
     // confirm_paste action sends it; cancel_paste discards it. Populated by

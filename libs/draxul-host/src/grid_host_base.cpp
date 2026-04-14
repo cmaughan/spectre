@@ -11,6 +11,30 @@
 namespace draxul
 {
 
+namespace
+{
+
+long long millis_until(std::chrono::steady_clock::time_point target)
+{
+    return std::chrono::duration_cast<std::chrono::milliseconds>(target - std::chrono::steady_clock::now()).count();
+}
+
+bool same_color(const Color& a, const Color& b)
+{
+    return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a;
+}
+
+bool same_cursor_style(const CursorStyle& a, const CursorStyle& b)
+{
+    return a.shape == b.shape
+        && same_color(a.fg, b.fg)
+        && same_color(a.bg, b.bg)
+        && a.cell_percentage == b.cell_percentage
+        && a.use_explicit_colors == b.use_explicit_colors;
+}
+
+} // namespace
+
 bool GridHostBase::initialize(const HostContext& context, IHostCallbacks& callbacks)
 {
     PERF_MEASURE();
@@ -106,7 +130,12 @@ void GridHostBase::on_config_reloaded(const HostReloadConfig& config)
 
 std::optional<std::chrono::steady_clock::time_point> GridHostBase::next_deadline() const
 {
-    return cursor_blinker_.next_deadline();
+    const auto blink_deadline = cursor_blinker_.next_deadline();
+    if (!cursor_suppressed_until_)
+        return blink_deadline;
+    if (!blink_deadline || *cursor_suppressed_until_ < *blink_deadline)
+        return cursor_suppressed_until_;
+    return blink_deadline;
 }
 
 Color GridHostBase::default_background() const
@@ -211,10 +240,52 @@ void GridHostBase::mark_activity()
 bool GridHostBase::advance_cursor_blink(std::chrono::steady_clock::time_point now)
 {
     PERF_MEASURE();
-    if (!cursor_blinker_.advance(now))
+    bool suppression_changed = false;
+    if (cursor_suppressed_until_ && now >= *cursor_suppressed_until_)
+    {
+        if (log_would_emit(LogLevel::Trace, LogCategory::Input))
+            log_printf(LogLevel::Trace, LogCategory::Input, "cursor trace: suppression expired");
+        cursor_suppressed_until_.reset();
+        suppression_changed = true;
+    }
+
+    const bool blink_changed = cursor_blinker_.advance(now);
+    if (blink_changed && log_would_emit(LogLevel::Trace, LogCategory::Input))
+    {
+        log_printf(LogLevel::Trace,
+            LogCategory::Input,
+            "cursor trace: blink advance changed visibility=%d next_deadline=%lldms",
+            cursor_blinker_.visible() ? 1 : 0,
+            cursor_blinker_.next_deadline()
+                ? static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                             *cursor_blinker_.next_deadline() - now)
+                                             .count())
+                : -1LL);
+    }
+    if (!blink_changed && !suppression_changed)
         return false;
     apply_cursor_visibility();
     return true;
+}
+
+void GridHostBase::begin_cursor_publish_batch()
+{
+    PERF_MEASURE();
+    ++cursor_publish_batch_depth_;
+}
+
+void GridHostBase::end_cursor_publish_batch()
+{
+    PERF_MEASURE();
+    if (cursor_publish_batch_depth_ <= 0)
+        return;
+    --cursor_publish_batch_depth_;
+    if (cursor_publish_batch_depth_ != 0)
+        return;
+    if (cursor_publish_dirty_)
+        apply_cursor_visibility();
+    if (text_input_area_dirty_)
+        update_text_input_area();
 }
 
 void GridHostBase::set_cursor_position(int col, int row, CursorBlinkUpdate blink_update)
@@ -234,11 +305,34 @@ void GridHostBase::set_cursor_position(int col, int row, CursorBlinkUpdate blink
     update_text_input_area();
 }
 
+void GridHostBase::set_cursor_display_override(std::optional<std::pair<int, int>> override)
+{
+    PERF_MEASURE();
+    if (!dependencies_available("set_cursor_display_override"))
+        return;
+    if (cursor_display_override_ == override)
+        return;
+    cursor_display_override_ = override;
+    apply_cursor_visibility();
+    update_text_input_area();
+}
+
 void GridHostBase::set_cursor_style(const CursorStyle& style, const BlinkTiming& timing, bool busy)
 {
     PERF_MEASURE();
     if (!dependencies_available("set_cursor_style"))
         return;
+    if (log_would_emit(LogLevel::Trace, LogCategory::Input))
+    {
+        log_printf(LogLevel::Trace,
+            LogCategory::Input,
+            "cursor trace: set_cursor_style shape=%d busy=%d blinkwait=%d blinkon=%d blinkoff=%d",
+            static_cast<int>(style.shape),
+            busy ? 1 : 0,
+            timing.blinkwait,
+            timing.blinkon,
+            timing.blinkoff);
+    }
     cursor_style_ = style;
     blink_timing_ = timing;
     cursor_busy_ = busy;
@@ -250,8 +344,27 @@ void GridHostBase::set_cursor_busy(bool busy)
     PERF_MEASURE();
     if (!dependencies_available("set_cursor_busy"))
         return;
+    if (log_would_emit(LogLevel::Trace, LogCategory::Input))
+        log_printf(LogLevel::Trace, LogCategory::Input, "cursor trace: set_cursor_busy busy=%d", busy ? 1 : 0);
     cursor_busy_ = busy;
     restart_cursor_blink(std::chrono::steady_clock::now());
+}
+
+void GridHostBase::suppress_cursor_until(std::chrono::steady_clock::time_point until)
+{
+    PERF_MEASURE();
+    if (!dependencies_available("suppress_cursor_until"))
+        return;
+    if (!cursor_suppressed_until_ || until > *cursor_suppressed_until_)
+        cursor_suppressed_until_ = until;
+    if (log_would_emit(LogLevel::Trace, LogCategory::Input))
+    {
+        log_printf(LogLevel::Trace,
+            LogCategory::Input,
+            "cursor trace: suppress_cursor_until remaining=%lldms",
+            millis_until(*cursor_suppressed_until_));
+    }
+    apply_cursor_visibility();
 }
 
 bool GridHostBase::dependencies_available(std::string_view operation) const
@@ -272,17 +385,80 @@ void GridHostBase::apply_cursor_visibility()
     PERF_MEASURE();
     if (!dependencies_available("apply_cursor_visibility"))
         return;
-    const int visible_col = cursor_blinker_.visible() ? cursor_col_ : -1;
-    const int visible_row = cursor_blinker_.visible() ? cursor_row_ : -1;
+    if (cursor_publish_batch_depth_ > 0)
+    {
+        cursor_publish_dirty_ = true;
+        return;
+    }
+    cursor_publish_dirty_ = false;
+    const auto now = std::chrono::steady_clock::now();
+    if (cursor_suppressed_until_ && now >= *cursor_suppressed_until_)
+        cursor_suppressed_until_.reset();
+
+    const bool visible = cursor_blinker_.visible() && !cursor_suppressed_until_;
+    int display_col = cursor_col_;
+    int display_row = cursor_row_;
+    if (cursor_display_override_)
+    {
+        display_col = cursor_display_override_->first;
+        display_row = cursor_display_override_->second;
+    }
+    display_col = std::clamp(display_col, 0, std::max(0, grid_cols_ - 1));
+    display_row = std::clamp(display_row, 0, std::max(0, grid_rows_ - 1));
+
+    const int visible_col = visible ? display_col : -1;
+    const int visible_row = visible ? display_row : -1;
+    if (log_would_emit(LogLevel::Trace, LogCategory::Input))
+    {
+        log_printf(LogLevel::Trace,
+            LogCategory::Input,
+            "cursor trace: apply visible=%d blink_visible=%d suppressed=%d emitted=(%d,%d) logical=(%d,%d) display=(%d,%d) override=%d",
+            visible ? 1 : 0,
+            cursor_blinker_.visible() ? 1 : 0,
+            cursor_suppressed_until_ ? 1 : 0,
+            visible_col,
+            visible_row,
+            cursor_col_,
+            cursor_row_,
+            display_col,
+            display_row,
+            cursor_display_override_ ? 1 : 0);
+    }
     if (grid_handle_)
-        grid_handle_->set_cursor(visible_col, visible_row, cursor_style_);
-    callbacks().request_frame();
+    {
+        const bool changed = !cursor_emission_valid_
+            || last_emitted_cursor_col_ != visible_col
+            || last_emitted_cursor_row_ != visible_row
+            || !same_cursor_style(last_emitted_cursor_style_, cursor_style_);
+        if (changed)
+        {
+            grid_handle_->set_cursor(visible_col, visible_row, cursor_style_);
+            cursor_emission_valid_ = true;
+            last_emitted_cursor_col_ = visible_col;
+            last_emitted_cursor_row_ = visible_row;
+            last_emitted_cursor_style_ = cursor_style_;
+            callbacks().request_frame();
+        }
+    }
 }
 
 void GridHostBase::restart_cursor_blink(std::chrono::steady_clock::time_point now)
 {
     PERF_MEASURE();
     cursor_blinker_.restart(now, cursor_busy_, blink_timing_);
+    if (log_would_emit(LogLevel::Trace, LogCategory::Input))
+    {
+        log_printf(LogLevel::Trace,
+            LogCategory::Input,
+            "cursor trace: restart_blink busy=%d visible=%d next_deadline=%lldms",
+            cursor_busy_ ? 1 : 0,
+            cursor_blinker_.visible() ? 1 : 0,
+            cursor_blinker_.next_deadline()
+                ? static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                             *cursor_blinker_.next_deadline() - now)
+                                             .count())
+                : -1LL);
+    }
     apply_cursor_visibility();
 }
 
@@ -291,9 +467,24 @@ void GridHostBase::update_text_input_area() const
     PERF_MEASURE();
     if (!dependencies_available("update_text_input_area"))
         return;
+    if (cursor_publish_batch_depth_ > 0)
+    {
+        const_cast<GridHostBase*>(this)->text_input_area_dirty_ = true;
+        return;
+    }
+    const_cast<GridHostBase*>(this)->text_input_area_dirty_ = false;
     auto [cell_w, cell_h] = renderer_->cell_size_pixels();
-    const int x = viewport_.pixel_pos.x + renderer_->padding() + cursor_col_ * cell_w;
-    const int y = viewport_.pixel_pos.y + renderer_->padding() + cursor_row_ * cell_h;
+    int display_col = cursor_col_;
+    int display_row = cursor_row_;
+    if (cursor_display_override_)
+    {
+        display_col = cursor_display_override_->first;
+        display_row = cursor_display_override_->second;
+    }
+    display_col = std::clamp(display_col, 0, std::max(0, grid_cols_ - 1));
+    display_row = std::clamp(display_row, 0, std::max(0, grid_rows_ - 1));
+    const int x = viewport_.pixel_pos.x + renderer_->padding() + display_col * cell_w;
+    const int y = viewport_.pixel_pos.y + renderer_->padding() + display_row * cell_h;
     callbacks().set_text_input_area(x, y, cell_w, cell_h);
 }
 

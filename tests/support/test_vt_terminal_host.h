@@ -29,12 +29,12 @@ public:
 
     int col() const
     {
-        return cursor_col();
+        return vt_state().col;
     }
 
     int row() const
     {
-        return cursor_row();
+        return vt_state().row;
     }
 
     int scroll_top() const
