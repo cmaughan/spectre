@@ -101,6 +101,16 @@ ParseArgsResult parse_args(const std::vector<std::string>& args)
             ++i;
             parsed.log_level = args[i];
         }
+        else if (args[i] == "--pty-capture-file" && i + 1 < args.size())
+        {
+            ++i;
+            parsed.pty_capture_file = args[i];
+            if (parsed.pty_capture_file.empty())
+            {
+                result.error = "error: --pty-capture-file requires a non-empty path";
+                return result;
+            }
+        }
         else if (args[i] == "--screenshot" && i + 1 < args.size())
         {
             ++i;

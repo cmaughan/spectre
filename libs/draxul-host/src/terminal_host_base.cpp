@@ -4,8 +4,12 @@
 #include <draxul/terminal_sgr.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
 #include <draxul/alt_screen_manager.h>
+#include <draxul/base64.h>
 #include <draxul/log.h>
 #include <draxul/perf_timing.h>
 #include <draxul/unicode.h>
@@ -20,10 +24,6 @@ namespace draxul
 
 namespace
 {
-
-constexpr auto kOutputCursorSettleDelay = std::chrono::milliseconds(12);
-constexpr auto kAltScreenCursorMoveSettleDelay = std::chrono::milliseconds(40);
-
 void set_grid_cell_for_alt_screen(Grid& grid, int col, int row, const Cell& cell)
 {
     grid.set_cell(col, row, std::string(cell.text.view()), cell.hl_attr_id, cell.double_width);
@@ -103,7 +103,9 @@ TerminalHostBase::TerminalHostBase()
 void TerminalHostBase::pump()
 {
     PERF_MEASURE();
+    ensure_pty_capture_ready();
     auto chunks = do_process_drain();
+    const bool saw_output = !chunks.empty();
     if (!chunks.empty())
     {
         // Process all available output, re-draining after each batch so that
@@ -117,7 +119,10 @@ void TerminalHostBase::pump()
         do
         {
             for (const auto& chunk : chunks)
+            {
+                maybe_capture_pty_chunk(chunk);
                 consume_output(chunk);
+            }
             if (std::chrono::steady_clock::now() >= deadline)
             {
                 budget_exceeded = true;
@@ -134,21 +139,17 @@ void TerminalHostBase::pump()
                 "deferring remaining output to next frame");
         }
 
-        flush_grid();
+        if (!synchronized_output_active())
+            flush_grid();
     }
-    const auto now = std::chrono::steady_clock::now();
-    apply_deferred_cursor_visibility_if_due(now);
-    advance_cursor_blink(now);
+    reconcile_provisional_cursor_after_pump(saw_output);
+    trace_cursor_presentation_state("pump_end", saw_output);
+    advance_cursor_blink(std::chrono::steady_clock::now());
 }
 
 std::optional<std::chrono::steady_clock::time_point> TerminalHostBase::next_deadline() const
 {
-    const auto base_deadline = GridHostBase::next_deadline();
-    if (!deferred_cursor_visibility_deadline_)
-        return base_deadline;
-    if (!base_deadline || *deferred_cursor_visibility_deadline_ < *base_deadline)
-        return deferred_cursor_visibility_deadline_;
-    return base_deadline;
+    return GridHostBase::next_deadline();
 }
 
 void TerminalHostBase::on_key(const KeyEvent& event)
@@ -269,6 +270,85 @@ void TerminalHostBase::send_paste(std::string_view text)
     }
 }
 
+bool TerminalHostBase::ensure_pty_capture_ready()
+{
+    if (!pty_capture_config_loaded_)
+    {
+        pty_capture_config_loaded_ = true;
+        if (!launch_options().pty_capture_file.empty())
+            pty_capture_path_ = launch_options().pty_capture_file;
+        else if (const char* value = std::getenv("DRAXUL_CAPTURE_PTY_FILE"))
+            pty_capture_path_ = value;
+    }
+
+    if (pty_capture_path_.empty())
+        return false;
+
+    if (!pty_capture_header_checked_)
+    {
+        pty_capture_header_checked_ = true;
+
+        const std::filesystem::path capture_path(pty_capture_path_);
+        bool needs_header = true;
+        std::ifstream existing(capture_path, std::ios::binary);
+        if (existing)
+        {
+            std::string header_line;
+            if (std::getline(existing, header_line) && header_line == "draxul-pty-capture-v1")
+                needs_header = false;
+        }
+
+        if (needs_header)
+        {
+            std::ofstream out(capture_path, std::ios::binary | std::ios::trunc);
+            if (!out)
+            {
+                if (!pty_capture_failure_reported_)
+                {
+                    pty_capture_failure_reported_ = true;
+                    DRAXUL_LOG_WARN(LogCategory::App,
+                        "Failed to open PTY capture file '%s' for writing",
+                        pty_capture_path_.c_str());
+                }
+                return false;
+            }
+            out << "draxul-pty-capture-v1\n";
+        }
+
+        if (!pty_capture_announced_)
+        {
+            pty_capture_announced_ = true;
+            DRAXUL_LOG_INFO(LogCategory::App,
+                "PTY capture enabled for host '%.*s': %s",
+                static_cast<int>(host_name().size()),
+                host_name().data(),
+                pty_capture_path_.c_str());
+        }
+    }
+    return true;
+}
+
+void TerminalHostBase::maybe_capture_pty_chunk(std::string_view bytes)
+{
+    if (!ensure_pty_capture_ready())
+        return;
+
+    std::ofstream out(pty_capture_path_, std::ios::binary | std::ios::app);
+    if (!out)
+    {
+        if (!pty_capture_failure_reported_)
+        {
+            pty_capture_failure_reported_ = true;
+            DRAXUL_LOG_WARN(LogCategory::App,
+                "Failed to append PTY capture chunk to '%s'",
+                pty_capture_path_.c_str());
+        }
+        return;
+    }
+
+    out << "chunk " << base64_encode(host_name()) << ' ' << base64_encode(bytes) << '\n';
+}
+
 // ---------------------------------------------------------------------------
 // Viewport / font changes
 // ---------------------------------------------------------------------------
@@ -341,19 +421,21 @@ void TerminalHostBase::reset_terminal_state()
     vt_.cursor_shape = CursorShape::Block;
     vt_.cursor_blink = false;
     bracketed_paste_mode_ = false;
-    cursor_repaint_save_active_ = false;
-    cursor_repaint_display_frozen_ = false;
-    cursor_repaint_chunk_activity_ = false;
-    cursor_repaint_visibility_deferred_ = false;
-    deferred_cursor_visibility_deadline_.reset();
-    cursor_repaint_frozen_col_ = 0;
-    cursor_repaint_frozen_row_ = 0;
     output_cursor_batch_active_ = false;
-    output_cursor_batch_activity_ = false;
-    output_cursor_batch_saw_repaint_scope_ = false;
+    output_cursor_batch_saw_hide_ = false;
+    output_cursor_batch_saw_show_ = false;
+    output_cursor_batch_ended_synchronized_output_ = false;
     output_cursor_batch_start_col_ = 0;
     output_cursor_batch_start_row_ = 0;
     output_cursor_batch_start_visible_ = true;
+    provisional_cursor_active_ = false;
+    provisional_cursor_quiet_pumps_ = 0;
+    stable_cursor_known_ = false;
+    stable_cursor_col_ = 0;
+    stable_cursor_row_ = 0;
+    synchronized_output_mode_ = false;
+    synchronized_output_saw_hide_ = false;
+    synchronized_output_saw_show_ = false;
     set_cursor_display_override(std::nullopt);
     alt_screen_.reset();
 }
@@ -365,14 +447,12 @@ void TerminalHostBase::update_cursor_style()
     {
         log_printf(LogLevel::Trace,
             LogCategory::Input,
-            "cursor trace: update_cursor_style vt_visible=%d shape=%d blink=%d logical=(%d,%d) repaint_scope=%d deferred_vis=%d",
+            "cursor trace: update_cursor_style vt_visible=%d shape=%d blink=%d logical=(%d,%d)",
             vt_.cursor_visible ? 1 : 0,
             static_cast<int>(vt_.cursor_shape),
             vt_.cursor_blink ? 1 : 0,
             vt_.col,
-            vt_.row,
-            cursor_repaint_save_active_ ? 1 : 0,
-            cursor_repaint_visibility_deferred_ ? 1 : 0);
+            vt_.row);
     }
     CursorStyle style = {};
     style.shape = vt_.cursor_shape;
@@ -391,118 +471,114 @@ void TerminalHostBase::update_cursor_style()
     set_cursor_style(style, blink, !vt_.cursor_visible);
 }
 
-void TerminalHostBase::begin_cursor_repaint_scope()
+void TerminalHostBase::trace_cursor_presentation_state(std::string_view stage, bool saw_output) const
 {
     PERF_MEASURE();
-    cursor_repaint_chunk_activity_ = true;
-    output_cursor_batch_saw_repaint_scope_ = true;
-    if (cursor_repaint_save_active_)
+    if (!log_would_emit(LogLevel::Trace, LogCategory::Input))
         return;
-
-    cursor_repaint_save_active_ = true;
-    cursor_repaint_display_frozen_ = false;
-    if (deferred_cursor_visibility_deadline_)
-    {
-        deferred_cursor_visibility_deadline_.reset();
-        cursor_repaint_visibility_deferred_ = true;
-    }
-    else
-    {
-        cursor_repaint_visibility_deferred_ = false;
-    }
-    cursor_repaint_frozen_col_ = vt_.col;
-    cursor_repaint_frozen_row_ = vt_.row;
-    if (log_would_emit(LogLevel::Trace, LogCategory::Input))
-    {
-        log_printf(LogLevel::Trace,
-            LogCategory::Input,
-            "cursor trace: begin_repaint_scope freeze=(%d,%d) vt_visible=%d deferred_vis=%d",
-            cursor_repaint_frozen_col_,
-            cursor_repaint_frozen_row_,
-            vt_.cursor_visible ? 1 : 0,
-            cursor_repaint_visibility_deferred_ ? 1 : 0);
-    }
+    log_printf(LogLevel::Trace,
+        LogCategory::Input,
+        "cursor trace: %.*s saw_output=%d sync_output=%d alt_screen=%d vt=(%d,%d,v=%d) published=(%d,%d)",
+        static_cast<int>(stage.size()),
+        stage.data(),
+        saw_output ? 1 : 0,
+        synchronized_output_mode_ ? 1 : 0,
+        alt_screen_.in_alt_screen() ? 1 : 0,
+        vt_.col,
+        vt_.row,
+        vt_.cursor_visible ? 1 : 0,
+        cursor_col(),
+        cursor_row());
 }
 
-void TerminalHostBase::end_cursor_repaint_scope()
+void TerminalHostBase::reconcile_provisional_cursor_after_pump(bool saw_output)
 {
     PERF_MEASURE();
-    cursor_repaint_chunk_activity_ = true;
-    output_cursor_batch_saw_repaint_scope_ = true;
-    cursor_repaint_save_active_ = false;
-    cursor_repaint_display_frozen_ = false;
+    if (!provisional_cursor_active_)
+        return;
+    if (saw_output)
+    {
+        provisional_cursor_quiet_pumps_ = 0;
+        return;
+    }
+
+    ++provisional_cursor_quiet_pumps_;
     if (log_would_emit(LogLevel::Trace, LogCategory::Input))
     {
         log_printf(LogLevel::Trace,
             LogCategory::Input,
-            "cursor trace: end_repaint_scope logical=(%d,%d) vt_visible=%d deferred_vis=%d",
+            "cursor trace: provisional_cursor quiet_pumps=%d logical=(%d,%d,v=%d) stable=(%d,%d)",
+            provisional_cursor_quiet_pumps_,
             vt_.col,
             vt_.row,
             vt_.cursor_visible ? 1 : 0,
-            cursor_repaint_visibility_deferred_ ? 1 : 0);
+            stable_cursor_col_,
+            stable_cursor_row_);
     }
-    if (cursor_repaint_visibility_deferred_)
+    if (provisional_cursor_quiet_pumps_ < 2)
+        return;
+
+    provisional_cursor_active_ = false;
+    provisional_cursor_quiet_pumps_ = 0;
+    set_cursor_display_override(std::nullopt);
+    if (vt_.cursor_visible)
     {
-        cursor_repaint_visibility_deferred_ = false;
-        update_cursor_style();
+        stable_cursor_known_ = true;
+        stable_cursor_col_ = vt_.col;
+        stable_cursor_row_ = vt_.row;
     }
-}
-
-bool TerminalHostBase::apply_deferred_cursor_visibility_if_due(std::chrono::steady_clock::time_point now)
-{
-    PERF_MEASURE();
-    if (!deferred_cursor_visibility_deadline_ || now < *deferred_cursor_visibility_deadline_)
-        return false;
-
     if (log_would_emit(LogLevel::Trace, LogCategory::Input))
     {
         log_printf(LogLevel::Trace,
             LogCategory::Input,
-            "cursor trace: deferred_visibility_due logical=(%d,%d) vt_visible=%d",
+            "cursor trace: provisional_cursor released logical=(%d,%d,v=%d)",
             vt_.col,
             vt_.row,
             vt_.cursor_visible ? 1 : 0);
     }
-    deferred_cursor_visibility_deadline_.reset();
-    update_cursor_style();
-    return true;
 }
 
-void TerminalHostBase::refresh_cursor_repaint_freeze_state()
+void TerminalHostBase::begin_synchronized_output()
 {
     PERF_MEASURE();
-    cursor_repaint_display_frozen_ = cursor_repaint_save_active_
-        && (vt_.col != cursor_repaint_frozen_col_ || vt_.row != cursor_repaint_frozen_row_);
+    if (synchronized_output_mode_)
+        return;
+
+    synchronized_output_mode_ = true;
+    synchronized_output_saw_hide_ = false;
+    synchronized_output_saw_show_ = false;
+    begin_cursor_publish_batch();
     if (log_would_emit(LogLevel::Trace, LogCategory::Input))
     {
         log_printf(LogLevel::Trace,
             LogCategory::Input,
-            "cursor trace: refresh_freeze scope=%d frozen=%d logical=(%d,%d) freeze_anchor=(%d,%d)",
-            cursor_repaint_save_active_ ? 1 : 0,
-            cursor_repaint_display_frozen_ ? 1 : 0,
+            "cursor trace: begin_synchronized_output logical=(%d,%d) visible=%d",
             vt_.col,
             vt_.row,
-            cursor_repaint_frozen_col_,
-            cursor_repaint_frozen_row_);
+            vt_.cursor_visible ? 1 : 0);
     }
 }
 
-std::pair<int, int> TerminalHostBase::presented_cursor_position() const
+void TerminalHostBase::end_synchronized_output()
 {
     PERF_MEASURE();
-    const int max_col = std::max(0, grid_cols() - 1);
-    const int max_row = std::max(0, grid_rows() - 1);
-    if (cursor_repaint_display_frozen_)
+    if (!synchronized_output_mode_)
+        return;
+
+    synchronized_output_mode_ = false;
+    output_cursor_batch_ended_synchronized_output_ = true;
+    if (log_would_emit(LogLevel::Trace, LogCategory::Input))
     {
-        return {
-            std::clamp(cursor_repaint_frozen_col_, 0, max_col),
-            std::clamp(cursor_repaint_frozen_row_, 0, max_row),
-        };
+        log_printf(LogLevel::Trace,
+            LogCategory::Input,
+            "cursor trace: end_synchronized_output logical=(%d,%d) visible=%d hide=%d show=%d",
+            vt_.col,
+            vt_.row,
+            vt_.cursor_visible ? 1 : 0,
+            synchronized_output_saw_hide_ ? 1 : 0,
+            synchronized_output_saw_show_ ? 1 : 0);
     }
-    return {
-        std::clamp(vt_.col, 0, max_col),
-        std::clamp(vt_.row, 0, max_row),
-    };
+    end_cursor_publish_batch();
 }
 
 void TerminalHostBase::begin_output_cursor_batch()
@@ -511,11 +587,23 @@ void TerminalHostBase::begin_output_cursor_batch()
     if (output_cursor_batch_active_)
         return;
     output_cursor_batch_active_ = true;
-    output_cursor_batch_activity_ = false;
-    output_cursor_batch_saw_repaint_scope_ = false;
+    output_cursor_batch_saw_hide_ = false;
+    output_cursor_batch_saw_show_ = false;
+    output_cursor_batch_ended_synchronized_output_ = false;
     output_cursor_batch_start_col_ = vt_.col;
     output_cursor_batch_start_row_ = vt_.row;
     output_cursor_batch_start_visible_ = vt_.cursor_visible;
+    if (log_would_emit(LogLevel::Trace, LogCategory::Input))
+    {
+        log_printf(LogLevel::Trace,
+            LogCategory::Input,
+            "cursor trace: begin_output_cursor_batch start=(%d,%d,v=%d) sync_output=%d alt_screen=%d",
+            output_cursor_batch_start_col_,
+            output_cursor_batch_start_row_,
+            output_cursor_batch_start_visible_ ? 1 : 0,
+            synchronized_output_mode_ ? 1 : 0,
+            alt_screen_.in_alt_screen() ? 1 : 0);
+    }
     begin_cursor_publish_batch();
 }
 
@@ -525,38 +613,58 @@ void TerminalHostBase::end_output_cursor_batch()
     if (!output_cursor_batch_active_)
         return;
     output_cursor_batch_active_ = false;
-    const bool alt_screen_cursor_moved = alt_screen_.in_alt_screen()
-        && output_cursor_batch_start_visible_
+    const bool batch_had_cursor_churn = output_cursor_batch_saw_hide_ && output_cursor_batch_saw_show_;
+    const bool sync_frame_had_cursor_churn = output_cursor_batch_ended_synchronized_output_
+        && synchronized_output_saw_hide_
+        && synchronized_output_saw_show_;
+    const bool should_consider_provisional = !synchronized_output_mode_;
+    const bool keep_previous_cursor_visible = should_consider_provisional
+        && !alt_screen_.in_alt_screen()
         && vt_.cursor_visible
-        && (vt_.col != output_cursor_batch_start_col_ || vt_.row != output_cursor_batch_start_row_);
-    if (cursor_repaint_display_frozen_)
-        set_cursor_display_override(presented_cursor_position());
+        && stable_cursor_known_
+        && vt_.row != stable_cursor_row_;
     set_cursor_position(vt_.col, vt_.row, CursorBlinkUpdate::Preserve);
-    if (!cursor_repaint_display_frozen_)
-        set_cursor_display_override(std::nullopt);
-    if (alt_screen_cursor_moved
-        || !(output_cursor_batch_activity_ || cursor_repaint_display_frozen_ || cursor_repaint_save_active_))
+    if (keep_previous_cursor_visible && (batch_had_cursor_churn || sync_frame_had_cursor_churn))
     {
-        if (log_would_emit(LogLevel::Trace, LogCategory::Input))
+        provisional_cursor_active_ = true;
+        provisional_cursor_quiet_pumps_ = 0;
+        set_cursor_display_override(std::pair<int, int>{ stable_cursor_col_, stable_cursor_row_ });
+    }
+    else if (should_consider_provisional)
+    {
+        provisional_cursor_active_ = false;
+        provisional_cursor_quiet_pumps_ = 0;
+        set_cursor_display_override(std::nullopt);
+        if (vt_.cursor_visible)
         {
-            log_printf(LogLevel::Trace,
-                LogCategory::Input,
-                "cursor trace: output_batch scheduling settle suppression alt_screen_move=%d repaint_scope=%d start=(%d,%d) end=(%d,%d)",
-                alt_screen_cursor_moved ? 1 : 0,
-                output_cursor_batch_saw_repaint_scope_ ? 1 : 0,
-                output_cursor_batch_start_col_,
-                output_cursor_batch_start_row_,
-                vt_.col,
-                vt_.row);
+            stable_cursor_known_ = true;
+            stable_cursor_col_ = vt_.col;
+            stable_cursor_row_ = vt_.row;
         }
-        const auto settle_delay = alt_screen_cursor_moved
-            ? kAltScreenCursorMoveSettleDelay
-            : kOutputCursorSettleDelay;
-        suppress_cursor_until(std::chrono::steady_clock::now() + settle_delay);
+    }
+    if (log_would_emit(LogLevel::Trace, LogCategory::Input))
+    {
+        log_printf(LogLevel::Trace,
+            LogCategory::Input,
+            "cursor trace: end_output_cursor_batch start=(%d,%d,v=%d) end=(%d,%d,v=%d) sync_output=%d ended_sync=%d alt_screen=%d hide=%d show=%d sync_hide=%d sync_show=%d provisional=%d stable=(%d,%d)",
+            output_cursor_batch_start_col_,
+            output_cursor_batch_start_row_,
+            output_cursor_batch_start_visible_ ? 1 : 0,
+            vt_.col,
+            vt_.row,
+            vt_.cursor_visible ? 1 : 0,
+            synchronized_output_mode_ ? 1 : 0,
+            output_cursor_batch_ended_synchronized_output_ ? 1 : 0,
+            alt_screen_.in_alt_screen() ? 1 : 0,
+            output_cursor_batch_saw_hide_ ? 1 : 0,
+            output_cursor_batch_saw_show_ ? 1 : 0,
+            synchronized_output_saw_hide_ ? 1 : 0,
+            synchronized_output_saw_show_ ? 1 : 0,
+            (keep_previous_cursor_visible && (batch_had_cursor_churn || sync_frame_had_cursor_churn)) ? 1 : 0,
+            stable_cursor_col_,
+            stable_cursor_row_);
     }
     end_cursor_publish_batch();
-    output_cursor_batch_activity_ = false;
-    output_cursor_batch_saw_repaint_scope_ = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -566,11 +674,10 @@ void TerminalHostBase::end_output_cursor_batch()
 void TerminalHostBase::enter_alt_screen()
 {
     PERF_MEASURE();
-    cursor_repaint_save_active_ = false;
-    cursor_repaint_display_frozen_ = false;
-    cursor_repaint_chunk_activity_ = false;
-    cursor_repaint_visibility_deferred_ = false;
-    deferred_cursor_visibility_deadline_.reset();
+    if (synchronized_output_mode_)
+        end_synchronized_output();
+    provisional_cursor_active_ = false;
+    provisional_cursor_quiet_pumps_ = 0;
     set_cursor_display_override(std::nullopt);
     alt_screen_.enter(vt_.col, vt_.row, vt_.scroll_top, vt_.scroll_bottom, vt_.pending_wrap);
     vt_.col = 0;
@@ -580,11 +687,10 @@ void TerminalHostBase::enter_alt_screen()
 void TerminalHostBase::leave_alt_screen()
 {
     PERF_MEASURE();
-    cursor_repaint_save_active_ = false;
-    cursor_repaint_display_frozen_ = false;
-    cursor_repaint_chunk_activity_ = false;
-    cursor_repaint_visibility_deferred_ = false;
-    deferred_cursor_visibility_deadline_.reset();
+    if (synchronized_output_mode_)
+        end_synchronized_output();
+    provisional_cursor_active_ = false;
+    provisional_cursor_quiet_pumps_ = 0;
     set_cursor_display_override(std::nullopt);
     alt_screen_.leave(vt_.col, vt_.row, vt_.pending_wrap, vt_.scroll_top, vt_.scroll_bottom);
 }

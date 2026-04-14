@@ -68,6 +68,7 @@ struct AppOptions
     std::string host_source_path;
     std::vector<std::string> startup_commands;
     std::string host_working_dir;
+    std::string pty_capture_file;
 
     // Optional factory overrides for testing -- leave null in production.
     // window_factory: returns a fully-initialized IWindow. Return nullptr to simulate failure.

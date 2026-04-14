@@ -108,32 +108,33 @@ TEST_CASE("renderer state projects cell updates into gpu cells", "[renderer]")
     REQUIRE(gpu[1].style_flags == static_cast<uint32_t>(5));
 }
 
-TEST_CASE("block cursor saves the cell under the cursor for later restore", "[renderer]")
+TEST_CASE("block cursor is emitted as a committed overlay without mutating the base cell", "[renderer]")
 {
     RendererState state;
     state.set_grid_size(1, 1, 1);
 
     CellUpdate update = make_cell_update(0, 0, 0.2f, 0.8f);
+    update.glyph = { { 0.1f, 0.2f, 0.3f, 0.4f }, { 2, 3 }, { 6, 7 } };
     state.update_cells({ &update, 1 });
 
     state.set_cursor(0, 0, make_block_cursor());
-    state.apply_cursor();
 
     auto gpu = snapshot(state);
-    INFO("block cursor overrides background");
-    REQUIRE(gpu[0].bg.r == 0.0f);
-    INFO("block cursor overrides foreground");
-    REQUIRE(gpu[0].fg.r == 1.0f);
-
-    state.restore_cursor();
-    gpu = snapshot(state);
-    INFO("restoring cursor restores background");
+    INFO("base cell background remains unchanged");
     REQUIRE(gpu[0].bg.r == 0.2f);
-    INFO("restoring cursor restores foreground");
+    INFO("base cell foreground remains unchanged");
     REQUIRE(gpu[0].fg.r == 0.8f);
+    INFO("block cursor adds one background instance in the cursor slot");
+    REQUIRE(state.bg_instances() == 2);
+    INFO("block cursor also contributes one foreground instance for the glyph");
+    REQUIRE(state.fg_instances() == 2);
+    INFO("cursor overlay background uses cursor colors");
+    REQUIRE(gpu[state.total_cells()].bg.r == 0.0f);
+    INFO("cursor overlay foreground uses cursor colors");
+    REQUIRE(gpu[state.total_cells()].fg.r == 1.0f);
 }
 
-TEST_CASE("block cursor restores the previous cell when the cursor moves", "[renderer]")
+TEST_CASE("moving a block cursor only changes the committed cursor overlay", "[renderer]")
 {
     RendererState state;
     state.set_grid_size(2, 1, 1);
@@ -146,22 +147,22 @@ TEST_CASE("block cursor restores the previous cell when the cursor moves", "[ren
 
     const CursorStyle cursor = make_block_cursor();
     state.set_cursor(0, 0, cursor);
-    state.apply_cursor();
     state.set_cursor(1, 0, cursor);
-    state.apply_cursor();
 
     const auto gpu = snapshot(state);
-    INFO("moving the cursor restores the old cell background");
+    INFO("moving the cursor leaves the old cell background untouched");
     REQUIRE(gpu[0].bg.r == 0.2f);
-    INFO("moving the cursor restores the old cell foreground");
+    INFO("moving the cursor leaves the old cell foreground untouched");
     REQUIRE(gpu[0].fg.r == 0.8f);
-    INFO("the new cursor location receives the cursor background");
-    REQUIRE(gpu[1].bg.r == 0.0f);
-    INFO("the new cursor location receives the cursor foreground");
-    REQUIRE(gpu[1].fg.r == 1.0f);
+    INFO("moving the cursor leaves the new cell content unchanged too");
+    REQUIRE(gpu[1].bg.r == 0.4f);
+    INFO("cursor overlay is relocated to the new cell position");
+    REQUIRE(gpu[state.total_cells()].pos.x == gpu[1].pos.x);
+    INFO("relocated cursor overlay keeps the cursor background");
+    REQUIRE(gpu[state.total_cells()].bg.r == 0.0f);
 }
 
-TEST_CASE("block cursor restores the saved cell when hidden", "[renderer]")
+TEST_CASE("hiding a block cursor clears the committed cursor overlay", "[renderer]")
 {
     RendererState state;
     state.set_grid_size(1, 1, 1);
@@ -171,42 +172,42 @@ TEST_CASE("block cursor restores the saved cell when hidden", "[renderer]")
 
     const CursorStyle cursor = make_block_cursor();
     state.set_cursor(0, 0, cursor);
-    state.apply_cursor();
-    state.set_cursor(-1, -1, cursor);
+    state.set_cursor_visible(false);
 
     const auto gpu = snapshot(state);
-    INFO("hiding the cursor restores the original background");
+    INFO("base cell background remains intact");
     REQUIRE(gpu[0].bg.r == 0.3f);
-    INFO("hiding the cursor restores the original foreground");
+    INFO("base cell foreground remains intact");
     REQUIRE(gpu[0].fg.r == 0.7f);
+    INFO("hidden cursor removes the extra background instance");
+    REQUIRE(state.bg_instances() == 1);
+    INFO("hidden cursor removes the extra foreground instance");
+    REQUIRE(state.fg_instances() == 1);
+    INFO("cursor slot is cleared when hidden");
+    REQUIRE(gpu[state.total_cells()].bg.a == 0.0f);
 }
 
-TEST_CASE("adjacent cell updates do not corrupt block cursor restore", "[renderer]")
+TEST_CASE("updating the cursor cell rebuilds the committed block cursor overlay", "[renderer]")
 {
     RendererState state;
-    state.set_grid_size(2, 1, 1);
+    state.set_grid_size(1, 1, 1);
 
-    CellUpdate original_updates[] = {
-        make_cell_update(0, 0, 0.2f, 0.8f),
-        make_cell_update(1, 0, 0.4f, 0.6f),
-    };
-    state.update_cells(original_updates);
-
+    CellUpdate blank = make_cell_update(0, 0, 0.2f, 0.8f);
+    state.update_cells({ &blank, 1 });
     state.set_cursor(0, 0, make_block_cursor());
-    state.apply_cursor();
 
-    CellUpdate adjacent = make_cell_update(1, 0, 0.9f, 0.1f);
-    state.update_cells({ &adjacent, 1 });
+    INFO("block cursor over a blank cell does not add a glyph instance");
+    REQUIRE(state.fg_instances() == 1);
+
+    CellUpdate glyph = make_cell_update(0, 0, 0.2f, 0.8f);
+    glyph.glyph = { { 0.1f, 0.2f, 0.3f, 0.4f }, { 2, 3 }, { 6, 7 } };
+    state.update_cells({ &glyph, 1 });
 
     const auto gpu = snapshot(state);
-    INFO("restoring the cursor keeps the original cell content");
-    REQUIRE(gpu[0].bg.r == 0.2f);
-    INFO("restoring the cursor keeps the original foreground");
-    REQUIRE(gpu[0].fg.r == 0.8f);
-    INFO("adjacent updates are preserved");
-    REQUIRE(gpu[1].bg.r == 0.9f);
-    INFO("adjacent foreground updates are preserved");
-    REQUIRE(gpu[1].fg.r == 0.1f);
+    INFO("updating the cursor cell rebuilds the overlay with a glyph");
+    REQUIRE(state.fg_instances() == 2);
+    INFO("cursor overlay now carries the glyph dimensions from the updated cell");
+    REQUIRE(gpu[state.total_cells()].glyph_size.x == 6.0f);
 }
 
 TEST_CASE("renderer state appends overlay geometry for line cursors", "[renderer]")
@@ -226,13 +227,14 @@ TEST_CASE("renderer state appends overlay geometry for line cursors", "[renderer
     cursor.cell_percentage = 30;
 
     state.set_cursor(0, 0, cursor);
-    state.apply_cursor();
 
     std::vector<GpuCell> gpu(state.total_cells() + RendererState::OVERLAY_CELL_CAPACITY + 1);
     state.copy_to(reinterpret_cast<std::byte*>(gpu.data()));
 
     INFO("line cursor adds one overlay background instance");
     REQUIRE(state.bg_instances() == 2);
+    INFO("line cursor does not add a glyph foreground instance");
+    REQUIRE(state.fg_instances() == 1);
     INFO("overlay cell carries cursor background");
     REQUIRE(gpu[state.total_cells()].bg.r == 1.0f);
     INFO("overlay width uses cell percentage");
@@ -311,7 +313,6 @@ TEST_CASE("renderer state tracks dirty ranges for incremental uploads", "[render
     cursor.bg = { 1.0f, 0.0f, 0.0f, 1.0f };
     cursor.cell_percentage = 25;
     state.set_cursor(1, 0, cursor);
-    state.apply_cursor();
 
     INFO("overlay cursor dirties the overlay region");
     REQUIRE(state.overlay_region_dirty());

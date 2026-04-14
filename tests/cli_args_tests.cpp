@@ -105,6 +105,13 @@ TEST_CASE("cli: --smoke-test sets the flag", "[cli]")
     REQUIRE(r.args.smoke_test);
 }
 
+TEST_CASE("cli: --pty-capture-file stores the requested capture path", "[cli]")
+{
+    auto r = parse({ "--pty-capture-file", "D:/tmp/capture.log" });
+    REQUIRE_FALSE(r.error.has_value());
+    REQUIRE(r.args.pty_capture_file == "D:/tmp/capture.log");
+}
+
 TEST_CASE("cli: --session stores the requested session id", "[cli]")
 {
     auto r = parse({ "--session", "workbench" });

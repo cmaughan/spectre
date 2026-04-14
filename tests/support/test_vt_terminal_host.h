@@ -17,6 +17,11 @@ public:
         consume_output(bytes);
     }
 
+    void queue_drain(std::string bytes)
+    {
+        drained_chunks_.push_back(std::move(bytes));
+    }
+
     std::string cell_text(int col, int row)
     {
         return std::string(grid().get_cell(col, row).text.view());
@@ -76,7 +81,9 @@ protected:
 
     std::vector<std::string> do_process_drain() override
     {
-        return {};
+        auto out = std::move(drained_chunks_);
+        drained_chunks_.clear();
+        return out;
     }
 
     bool do_process_resize(int, int) override
@@ -90,6 +97,9 @@ protected:
     }
 
     void do_process_shutdown() override {}
+
+private:
+    std::vector<std::string> drained_chunks_;
 };
 
 } // namespace draxul::tests

@@ -8,6 +8,16 @@
 namespace draxul
 {
 
+namespace
+{
+
+bool cell_has_glyph(const GpuCell& cell)
+{
+    return cell.glyph_size.x > 0.0f && cell.glyph_size.y > 0.0f;
+}
+
+} // namespace
+
 bool RendererState::has_dirty_cells() const
 {
     return dirty_cell_begin_ < dirty_cell_end_;
@@ -84,8 +94,6 @@ void RendererState::set_grid_size(int cols, int rows, int padding)
     grid_cols_ = cols;
     grid_rows_ = rows;
     padding_ = padding;
-    cursor_applied_ = false;
-    cursor_overlay_active_ = false;
     overlay_cell_count_ = 0;
 
     // When the grid dimensions actually change, preserve existing cell content
@@ -125,6 +133,7 @@ void RendererState::set_grid_size(int cols, int rows, int padding)
         std::ranges::fill(overlay_cells_, GpuCell{});
         mark_all_cells_dirty();
         overlay_dirty_ = true;
+        rebuild_cursor_overlay();
     }
     else
     {
@@ -189,12 +198,13 @@ void RendererState::relayout()
 
     mark_all_cells_dirty();
     overlay_dirty_ = true;
+    rebuild_cursor_overlay();
 }
 
 void RendererState::update_cells(std::span<const CellUpdate> updates)
 {
     PERF_MEASURE();
-    restore_cursor();
+    bool cursor_cell_updated = false;
 
     for (const auto& u : updates)
     {
@@ -204,7 +214,12 @@ void RendererState::update_cells(std::span<const CellUpdate> updates)
         auto& cell = gpu_cells_[(size_t)u.row * grid_cols_ + u.col];
         apply_update_to_cell(cell, u);
         mark_cell_dirty((size_t)u.row * grid_cols_ + u.col);
+        cursor_cell_updated = cursor_cell_updated
+            || (cursor_position_known_ && u.col == cursor_col_ && u.row == cursor_row_);
     }
+
+    if (cursor_cell_updated)
+        rebuild_cursor_overlay();
 }
 
 void RendererState::set_overlay_cells(std::span<const CellUpdate> updates)
@@ -222,10 +237,11 @@ void RendererState::set_overlay_cells(std::span<const CellUpdate> updates)
 void RendererState::set_cursor(int col, int row, const CursorStyle& style)
 {
     PERF_MEASURE();
-    restore_cursor();
     cursor_col_ = col;
     cursor_row_ = row;
     cursor_style_ = style;
+    cursor_position_known_ = true;
+    rebuild_cursor_overlay();
     if (log_would_emit(LogLevel::Trace, LogCategory::Input))
     {
         log_printf(LogLevel::Trace,
@@ -238,43 +254,38 @@ void RendererState::set_cursor(int col, int row, const CursorStyle& style)
     }
 }
 
-void RendererState::restore_cursor()
+void RendererState::set_cursor_visible(bool visible)
 {
     PERF_MEASURE();
-    if (!cursor_applied_)
+    if (cursor_visible_ == visible)
         return;
 
-    cursor_applied_ = false;
-    cursor_overlay_active_ = false;
-
-    if (cursor_col_ < 0 || cursor_col_ >= grid_cols_ || cursor_row_ < 0 || cursor_row_ >= grid_rows_)
-        return;
-
-    int idx = cursor_row_ * grid_cols_ + cursor_col_;
-    auto& cell = gpu_cells_[(size_t)idx];
-    if (!(cell == cursor_saved_cell_))
-    {
-        cell = cursor_saved_cell_;
-        mark_cell_dirty((size_t)idx);
-    }
+    cursor_visible_ = visible;
+    rebuild_cursor_overlay();
     if (log_would_emit(LogLevel::Trace, LogCategory::Input))
     {
         log_printf(LogLevel::Trace,
             LogCategory::Input,
-            "cursor trace: renderer restore_cursor col=%d row=%d",
+            "cursor trace: renderer set_cursor_visible visible=%d col=%d row=%d",
+            cursor_visible_ ? 1 : 0,
             cursor_col_,
             cursor_row_);
     }
 }
 
-void RendererState::apply_cursor()
+void RendererState::rebuild_cursor_overlay()
 {
     PERF_MEASURE();
+    cursor_overlay_active_ = false;
+    cursor_overlay_has_glyph_ = false;
+    overlay_cell_ = {};
+    overlay_dirty_ = true;
+
     if (log_would_emit(LogLevel::Trace, LogCategory::Input))
     {
         log_printf(LogLevel::Trace,
             LogCategory::Input,
-            "cursor trace: renderer apply_cursor visible=%d col=%d row=%d shape=%d grid=%dx%d",
+            "cursor trace: renderer rebuild_cursor_overlay visible=%d col=%d row=%d shape=%d grid=%dx%d",
             cursor_visible_ ? 1 : 0,
             cursor_col_,
             cursor_row_,
@@ -284,32 +295,28 @@ void RendererState::apply_cursor()
     }
     if (!cursor_visible_)
         return;
+    if (!cursor_position_known_)
+        return;
     if (cursor_col_ < 0 || cursor_col_ >= grid_cols_ || cursor_row_ < 0 || cursor_row_ >= grid_rows_)
         return;
 
     int idx = cursor_row_ * grid_cols_ + cursor_col_;
-    auto& cell = gpu_cells_[(size_t)idx];
-
-    cursor_saved_cell_ = cell;
-    cursor_applied_ = true;
-    cursor_overlay_active_ = false;
+    const auto& cell = gpu_cells_[(size_t)idx];
 
     if (cursor_style_.shape == CursorShape::Block)
     {
-        // Always use the cursor style colors for a consistent, visible block cursor.
-        // Swapping the cell's fg/bg causes the cursor color to follow the character color
-        // underneath (red cursor on a red keyword, etc.). cursor_style_.bg is guaranteed to
-        // contrast with the background: either a properly-resolved cursor highlight (reverse
-        // or explicit fg/bg), or the default_fg() fallback set in refresh_cursor_style().
-        cell.fg = { cursor_style_.fg.r, cursor_style_.fg.g, cursor_style_.fg.b, cursor_style_.fg.a };
-        cell.bg = { cursor_style_.bg.r, cursor_style_.bg.g, cursor_style_.bg.b, cursor_style_.bg.a };
-        mark_cell_dirty((size_t)idx);
+        overlay_cell_ = cell;
+        overlay_cell_.fg = { cursor_style_.fg.r, cursor_style_.fg.g, cursor_style_.fg.b, cursor_style_.fg.a };
+        overlay_cell_.bg = { cursor_style_.bg.r, cursor_style_.bg.g, cursor_style_.bg.b, cursor_style_.bg.a };
+        cursor_overlay_active_ = true;
+        cursor_overlay_has_glyph_ = cell_has_glyph(overlay_cell_);
         if (log_would_emit(LogLevel::Trace, LogCategory::Input))
         {
             log_printf(LogLevel::Trace,
                 LogCategory::Input,
-                "cursor trace: renderer apply_cursor block idx=%d",
-                idx);
+                "cursor trace: renderer cursor_overlay block idx=%d glyph=%d",
+                idx,
+                cursor_overlay_has_glyph_ ? 1 : 0);
         }
         return;
     }
@@ -334,12 +341,11 @@ void RendererState::apply_cursor()
     }
 
     cursor_overlay_active_ = true;
-    overlay_dirty_ = true;
     if (log_would_emit(LogLevel::Trace, LogCategory::Input))
     {
         log_printf(LogLevel::Trace,
             LogCategory::Input,
-            "cursor trace: renderer apply_cursor overlay idx=%d overlay_pos=(%.1f,%.1f) overlay_size=(%.1f,%.1f)",
+            "cursor trace: renderer cursor_overlay line idx=%d overlay_pos=(%.1f,%.1f) overlay_size=(%.1f,%.1f)",
             idx,
             overlay_cell_.pos.x,
             overlay_cell_.pos.y,

@@ -57,12 +57,7 @@ public:
     void update_cells(std::span<const CellUpdate> updates);
     void set_overlay_cells(std::span<const CellUpdate> updates);
     void set_cursor(int col, int row, const CursorStyle& style);
-    void set_cursor_visible(bool visible)
-    {
-        cursor_visible_ = visible;
-    }
-    void restore_cursor();
-    void apply_cursor();
+    void set_cursor_visible(bool visible);
 
     int grid_cols() const
     {
@@ -86,7 +81,7 @@ public:
 
     int fg_instances() const
     {
-        return total_cells() + static_cast<int>(overlay_cell_count_);
+        return total_cells() + static_cast<int>(overlay_cell_count_) + (cursor_overlay_has_glyph_ ? 1 : 0);
     }
 
     size_t buffer_size_bytes() const
@@ -111,6 +106,7 @@ public:
 
 private:
     void apply_update_to_cell(GpuCell& cell, const CellUpdate& update) const;
+    void rebuild_cursor_overlay();
     void relayout();
     void mark_all_cells_dirty();
     void mark_cell_dirty(size_t index);
@@ -127,15 +123,15 @@ private:
     int cursor_col_ = 0;
     int cursor_row_ = 0;
     CursorStyle cursor_style_ = {};
+    bool cursor_position_known_ = false;
 
     std::vector<GpuCell> gpu_cells_;
     std::vector<GpuCell> overlay_cells_ = std::vector<GpuCell>(OVERLAY_CELL_CAPACITY);
     size_t overlay_cell_count_ = 0;
     GpuCell overlay_cell_ = {};
-    GpuCell cursor_saved_cell_ = {};
     bool cursor_visible_ = true;
-    bool cursor_applied_ = false;
     bool cursor_overlay_active_ = false;
+    bool cursor_overlay_has_glyph_ = false;
     size_t dirty_cell_begin_ = 0;
     size_t dirty_cell_end_ = 0;
     bool overlay_dirty_ = false;

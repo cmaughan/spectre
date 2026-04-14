@@ -845,9 +845,6 @@ IFrameContext* VkRenderer::begin_frame()
             vkWaitForFences(ctx_.device(), 1, &in_flight_fences_[current_frame_], VK_TRUE, UINT64_MAX);
         reclaim_retired_grid_slot_resources(current_frame_);
 
-        for (auto* handle : grid_handles_)
-            handle->state_.restore_cursor();
-
         bool had_pending_atlas_uploads = false;
         VkCommandBufferBeginInfo begin_info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
         VkResult result = VK_NOT_READY;
@@ -1023,7 +1020,6 @@ bool VkRenderer::draw_grid_handle_now(IGridHandle& handle)
             desc.pixel_size.y);
     }
 
-    vk_handle->state_.apply_cursor();
     if (!vk_handle->upload_state(current_frame_))
     {
         runtime_perf_collector().cancel_frame();

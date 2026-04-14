@@ -61,6 +61,7 @@ void apply_global_host_options(HostLaunchOptions& launch, const AppOptions& opti
 {
     launch.request_continuous_refresh = options.request_continuous_refresh;
     launch.show_host_ui_panels = !options.hide_host_ui_panels;
+    launch.pty_capture_file = options.pty_capture_file;
 }
 
 HostManager::SavedLaunchOptions save_launch_options(const HostLaunchOptions& launch)
@@ -72,6 +73,7 @@ HostManager::SavedLaunchOptions save_launch_options(const HostLaunchOptions& lau
     saved.working_dir = launch.working_dir;
     saved.source_path = launch.source_path;
     saved.startup_commands = launch.startup_commands;
+    saved.pty_capture_file = launch.pty_capture_file;
     return saved;
 }
 
@@ -85,6 +87,7 @@ HostLaunchOptions restore_launch_options(const HostManager::SavedLaunchOptions& 
     launch.working_dir = saved.working_dir;
     launch.source_path = saved.source_path;
     launch.startup_commands = saved.startup_commands;
+    launch.pty_capture_file = saved.pty_capture_file;
     launch.enable_ligatures = deps.config ? deps.config->enable_ligatures : true;
     if (deps.config)
         apply_terminal_config(launch, *deps.config);

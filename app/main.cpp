@@ -833,6 +833,8 @@ static int draxul_main(std::vector<std::string> args)
         options.host_command = parsed.host_command;
     if (!parsed.host_source_path.empty())
         options.host_source_path = parsed.host_source_path.string();
+    if (!parsed.pty_capture_file.empty())
+        options.pty_capture_file = parsed.pty_capture_file;
     if (parsed.continuous_refresh)
         options.request_continuous_refresh = true;
     if (parsed.no_vblank)

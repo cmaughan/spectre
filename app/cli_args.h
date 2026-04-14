@@ -38,6 +38,7 @@ struct ParsedArgs
     std::string session_name;
     std::string log_file;
     std::string log_level;
+    std::string pty_capture_file;
     std::filesystem::path screenshot_path;
     int screenshot_delay_ms = 6000;
     int screenshot_width = 0;
