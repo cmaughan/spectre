@@ -15,8 +15,6 @@
 namespace
 {
 
-constexpr auto kCursorSettleDelay = std::chrono::milliseconds(12);
-
 // Return params[index] when present and positive, otherwise return fallback.
 // Shared helper used by all CSI dispatch functions that interpret numeric parameters.
 static int param_or(const std::vector<int>& params, size_t index, int fallback)
@@ -60,7 +58,6 @@ void TerminalHostBase::handle_esc(char ch)
     {
         vt_.saved_col = vt_.col;
         vt_.saved_row = vt_.row;
-        begin_cursor_repaint_scope();
         DRAXUL_LOG_TRACE(draxul::LogCategory::App, "DECSC save row=%d col=%d", vt_.row, vt_.col);
     }
     else if (ch == '8') // DECRC - Restore Cursor
@@ -68,7 +65,6 @@ void TerminalHostBase::handle_esc(char ch)
         vt_.col = vt_.saved_col;
         vt_.row = vt_.saved_row;
         vt_.pending_wrap = false;
-        end_cursor_repaint_scope();
         DRAXUL_LOG_TRACE(draxul::LogCategory::App, "DECRC restore row=%d col=%d", vt_.row, vt_.col);
     }
     else if (ch == 'D') // IND - Index: move cursor down, scroll up at scroll_bottom
@@ -314,13 +310,11 @@ void TerminalHostBase::csi_cursor_move(char final_char, const std::vector<int>& 
     case 's': // SCOSC - Save Cursor
         vt_.saved_col = vt_.col;
         vt_.saved_row = vt_.row;
-        begin_cursor_repaint_scope();
         break;
     case 'u': // SCORC - Restore Cursor
         vt_.col = vt_.saved_col;
         vt_.row = vt_.saved_row;
         vt_.pending_wrap = false;
-        end_cursor_repaint_scope();
         break;
     default:
         break;
@@ -471,41 +465,31 @@ void TerminalHostBase::csi_mode(char final_char, bool private_mode, const std::v
             break;
         case 25: // DECTCEM - Cursor Visible
             vt_.cursor_visible = enable;
+            if (output_cursor_batch_active_)
+            {
+                if (enable)
+                    output_cursor_batch_saw_show_ = true;
+                else
+                    output_cursor_batch_saw_hide_ = true;
+            }
+            if (synchronized_output_active())
+            {
+                if (enable)
+                    synchronized_output_saw_show_ = true;
+                else
+                    synchronized_output_saw_hide_ = true;
+            }
             if (log_would_emit(LogLevel::Trace, LogCategory::Input))
             {
                 log_printf(LogLevel::Trace,
                     LogCategory::Input,
-                    "cursor trace: dectcem enable=%d repaint_scope=%d frozen=%d alt_screen=%d",
+                    "cursor trace: dectcem enable=%d alt_screen=%d logical=(%d,%d)",
                     enable ? 1 : 0,
-                    cursor_repaint_save_active_ ? 1 : 0,
-                    cursor_repaint_display_frozen_ ? 1 : 0,
-                    alt_screen_.in_alt_screen() ? 1 : 0);
+                    alt_screen_.in_alt_screen() ? 1 : 0,
+                    vt_.col,
+                    vt_.row);
             }
-            if (cursor_repaint_save_active_)
-            {
-                cursor_repaint_chunk_activity_ = true;
-                deferred_cursor_visibility_deadline_.reset();
-                cursor_repaint_visibility_deferred_ = true;
-            }
-            else if (alt_screen_.in_alt_screen())
-            {
-                cursor_repaint_chunk_activity_ = true;
-                deferred_cursor_visibility_deadline_.reset();
-                cursor_repaint_visibility_deferred_ = false;
-                update_cursor_style();
-            }
-            else if (!enable)
-            {
-                cursor_repaint_chunk_activity_ = true;
-                cursor_repaint_visibility_deferred_ = false;
-                deferred_cursor_visibility_deadline_ = std::chrono::steady_clock::now() + kCursorSettleDelay;
-            }
-            else
-            {
-                deferred_cursor_visibility_deadline_.reset();
-                cursor_repaint_visibility_deferred_ = false;
-                update_cursor_style();
-            }
+            update_cursor_style();
             break;
         case 47:
         case 1047:
@@ -750,22 +734,17 @@ void TerminalHostBase::consume_output(std::string_view bytes)
     if (scoped_batch)
         begin_output_cursor_batch();
     mark_activity();
-    cursor_repaint_chunk_activity_ = false;
     vt_parser_.feed(bytes);
-    refresh_cursor_repaint_freeze_state();
-    output_cursor_batch_activity_ = output_cursor_batch_activity_ || cursor_repaint_chunk_activity_;
     if (log_would_emit(LogLevel::Trace, LogCategory::Input))
     {
         log_printf(LogLevel::Trace,
             LogCategory::Input,
-            "cursor trace: consume_output len=%zu logical=(%d,%d) repaint_scope=%d frozen=%d chunk_activity=%d vt_visible=%d",
+            "cursor trace: consume_output len=%zu logical=(%d,%d) vt_visible=%d sync_output=%d",
             bytes.size(),
             vt_.col,
             vt_.row,
-            cursor_repaint_save_active_ ? 1 : 0,
-            cursor_repaint_display_frozen_ ? 1 : 0,
-            cursor_repaint_chunk_activity_ ? 1 : 0,
-            vt_.cursor_visible ? 1 : 0);
+            vt_.cursor_visible ? 1 : 0,
+            synchronized_output_active() ? 1 : 0);
     }
     if (scoped_batch)
         end_output_cursor_batch();

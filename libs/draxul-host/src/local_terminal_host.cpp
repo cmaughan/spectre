@@ -196,6 +196,7 @@ void LocalTerminalHost::pump()
     PERF_MEASURE();
     ensure_pty_capture_ready();
     auto chunks = do_process_drain();
+    const bool saw_output = !chunks.empty();
     if (!chunks.empty())
     {
         // Don't snap to live view on output — only on user input (handled
@@ -277,9 +278,9 @@ void LocalTerminalHost::pump()
         if (!scrollback_.is_scrolled_back() && !synchronized_output_active())
             flush_grid();
     }
-    const auto now = std::chrono::steady_clock::now();
-    apply_deferred_cursor_visibility_if_due(now);
-    advance_cursor_blink(now);
+    reconcile_provisional_cursor_after_pump(saw_output);
+    trace_cursor_presentation_state("local_pump_end", saw_output);
+    advance_cursor_blink(std::chrono::steady_clock::now());
 }
 
 void LocalTerminalHost::on_key(const KeyEvent& event)

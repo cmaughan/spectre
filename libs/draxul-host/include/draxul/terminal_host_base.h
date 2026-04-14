@@ -99,7 +99,8 @@ protected:
     void end_output_cursor_batch();
     bool ensure_pty_capture_ready();
     void maybe_capture_pty_chunk(std::string_view bytes);
-    bool apply_deferred_cursor_visibility_if_due(std::chrono::steady_clock::time_point now);
+    void trace_cursor_presentation_state(std::string_view stage, bool saw_output) const;
+    void reconcile_provisional_cursor_after_pump(bool saw_output);
     bool synchronized_output_active() const
     {
         return synchronized_output_mode_;
@@ -170,12 +171,8 @@ private:
     void csi_dsr(bool private_mode, const std::vector<int>& params);
     void csi_da(bool private_mode, const std::vector<int>& params);
     void csi_margins(bool private_mode, const std::vector<int>& params);
-    void begin_cursor_repaint_scope();
-    void end_cursor_repaint_scope();
     void begin_synchronized_output();
     void end_synchronized_output();
-    void refresh_cursor_repaint_freeze_state();
-    [[nodiscard]] std::pair<int, int> presented_cursor_position() const;
 
     void enter_alt_screen();
     void leave_alt_screen();
@@ -197,23 +194,21 @@ private:
     // Bracketed paste
     bool bracketed_paste_mode_ = false;
 
-    // During save/move/repaint/restore bursts, keep the visible cursor pinned
-    // to the saved input position instead of publishing each intermediate hop.
-    bool cursor_repaint_save_active_ = false;
-    bool cursor_repaint_display_frozen_ = false;
-    bool cursor_repaint_chunk_activity_ = false;
-    bool cursor_repaint_visibility_deferred_ = false;
-    std::optional<std::chrono::steady_clock::time_point> deferred_cursor_visibility_deadline_;
-    int cursor_repaint_frozen_col_ = 0;
-    int cursor_repaint_frozen_row_ = 0;
     bool output_cursor_batch_active_ = false;
-    bool output_cursor_batch_activity_ = false;
-    bool output_cursor_batch_saw_repaint_scope_ = false;
+    bool output_cursor_batch_saw_hide_ = false;
+    bool output_cursor_batch_saw_show_ = false;
     bool output_cursor_batch_ended_synchronized_output_ = false;
     int output_cursor_batch_start_col_ = 0;
     int output_cursor_batch_start_row_ = 0;
     bool output_cursor_batch_start_visible_ = true;
+    bool provisional_cursor_active_ = false;
+    int provisional_cursor_quiet_pumps_ = 0;
+    bool stable_cursor_known_ = false;
+    int stable_cursor_col_ = 0;
+    int stable_cursor_row_ = 0;
     bool synchronized_output_mode_ = false;
+    bool synchronized_output_saw_hide_ = false;
+    bool synchronized_output_saw_show_ = false;
     bool pty_capture_config_loaded_ = false;
     bool pty_capture_header_checked_ = false;
     bool pty_capture_failure_reported_ = false;
