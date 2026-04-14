@@ -174,7 +174,7 @@ def main() -> int:
         print("Command     : " + " ".join(command))
         return 0
 
-    print(f"Running GPT helper with model {args.model}", flush=True)
+    print(f"Running Codex helper with model {args.model}", flush=True)
     completed = subprocess.run(
         command,
         input=prompt_text,

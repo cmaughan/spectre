@@ -31,7 +31,7 @@ def derive_output_paths(output_file: Path) -> tuple[Path, Path, Path]:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run ask_agent_gpt.py and ask_agent_claude.py in parallel from one prompt file. Gemini is optional."
+        description="Run Codex, Claude, and optionally Gemini helpers from one prompt file."
     )
     parser.add_argument("--prompt-file", required=True, help="Path to the prompt markdown/text file.")
     parser.add_argument(
@@ -40,7 +40,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Base output file. The wrapper writes sibling files with .gpt and .claude suffixes, plus .gemini when enabled.",
     )
     parser.add_argument("--working-dir", help="Working directory for all agents. Defaults to repo root.")
-    parser.add_argument("--gpt-model", default="gpt-5.4", help="GPT model name. Default: gpt-5.4")
+    parser.add_argument(
+        "--codex-model",
+        "--gpt-model",
+        dest="codex_model",
+        default="gpt-5.4",
+        help="Codex model name. Default: gpt-5.4",
+    )
     parser.add_argument(
         "--claude-model",
         default="claude-sonnet-4-6",
@@ -56,27 +62,35 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Also run ask_agent_gemini.py in parallel. Disabled by default.",
     )
-    parser.add_argument("--profile", help="Optional Codex profile name for the GPT helper.")
+    parser.add_argument("--profile", help="Optional Codex profile name for the Codex helper.")
     parser.add_argument(
+        "--codex-sandbox",
         "--gpt-sandbox",
+        dest="codex_sandbox",
         choices=["read-only", "workspace-write", "danger-full-access"],
-        help="Override the GPT helper sandbox mode.",
+        help="Override the Codex helper sandbox mode.",
     )
     parser.add_argument(
+        "--codex-approval-policy",
         "--gpt-approval-policy",
+        dest="codex_approval_policy",
         choices=["untrusted", "on-request", "never"],
-        help="Override the Codex approval policy used by the GPT helper.",
+        help="Override the Codex approval policy used by the Codex helper.",
     )
     parser.add_argument(
+        "--codex-review-safe",
         "--gpt-review-safe",
+        dest="codex_review_safe",
         action="store_true",
-        help="Force the GPT helper into read-only unattended review mode.",
+        help="Force the Codex helper into read-only unattended review mode.",
     )
     parser.add_argument(
+        "--codex-prepend-file",
         "--gpt-prepend-file",
+        dest="codex_prepend_file",
         action="append",
         default=[],
-        help="Extra file to append into the GPT helper prompt as startup context. Repeatable.",
+        help="Extra file to append into the Codex helper prompt as startup context. Repeatable.",
     )
     parser.add_argument(
         "--claude-prepend-file",
@@ -94,18 +108,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--add-dir",
         action="append",
         default=[],
-        help="Extra writable directory for the GPT helper. Repeatable.",
+        help="Extra writable directory for the Codex helper. Repeatable.",
     )
     parser.add_argument(
         "--image",
         action="append",
         default=[],
-        help="Image to attach to the GPT helper prompt. Repeatable.",
+        help="Image to attach to the Codex helper prompt. Repeatable.",
     )
     parser.add_argument(
         "--ephemeral",
         action="store_true",
-        help="Run the GPT helper without persisting session files.",
+        help="Run the Codex helper without persisting session files.",
     )
     parser.add_argument(
         "--no-full-auto",
@@ -155,7 +169,7 @@ def build_gpt_command(
         "--output-file",
         str(output_file),
         "--model",
-        args.gpt_model,
+        args.codex_model,
         "--working-dir",
         str(working_dir),
     ]
@@ -163,11 +177,11 @@ def build_gpt_command(
     if args.profile:
         command.extend(["--profile", args.profile])
 
-    if args.gpt_sandbox:
-        command.extend(["--sandbox", args.gpt_sandbox])
+    if args.codex_sandbox:
+        command.extend(["--sandbox", args.codex_sandbox])
 
-    if args.gpt_approval_policy:
-        command.extend(["--approval-policy", args.gpt_approval_policy])
+    if args.codex_approval_policy:
+        command.extend(["--approval-policy", args.codex_approval_policy])
 
     for add_dir in args.add_dir:
         command.extend(["--add-dir", str(resolve_path(add_dir, must_exist=True))])
@@ -181,10 +195,10 @@ def build_gpt_command(
     if args.no_full_auto:
         command.append("--no-full-auto")
 
-    if args.gpt_review_safe:
+    if args.codex_review_safe:
         command.append("--review-safe")
 
-    for prepend_file in args.gpt_prepend_file:
+    for prepend_file in args.codex_prepend_file:
         command.extend(["--prepend-file", str(resolve_path(prepend_file, must_exist=True))])
 
     return command
@@ -298,9 +312,9 @@ def main() -> int:
     if args.dry_run:
         print(f"Prompt file   : {prompt_file}")
         print(f"Working dir   : {working_dir}")
-        print(f"GPT output    : {gpt_output}")
+        print(f"Codex output  : {gpt_output}")
         print(f"Claude output : {claude_output}")
-        print("GPT command   : " + " ".join(gpt_command))
+        print("Codex command : " + " ".join(gpt_command))
         print("Claude command: " + " ".join(claude_command))
         if gemini_command is not None:
             print(f"Gemini output : {gemini_output}")
@@ -310,7 +324,7 @@ def main() -> int:
 
     serial_mode = args.interactive or args.no_full_auto
     labels_and_commands = [
-        ("gpt", gpt_command),
+        ("codex", gpt_command),
         ("claude", claude_command),
     ]
     if gemini_command is not None:
@@ -337,7 +351,7 @@ def main() -> int:
     if failed:
         return 1
 
-    print(f"GPT output    : {gpt_output}")
+    print(f"Codex output  : {gpt_output}")
     print(f"Claude output : {claude_output}")
     if gemini_command is not None:
         print(f"Gemini output : {gemini_output}")

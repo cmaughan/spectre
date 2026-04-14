@@ -311,6 +311,9 @@ Customizable in `config.toml` under `[keybindings]`. Chord syntax: `"prefix, key
 - `do run relwithdebinfo` / `do build relwithdebinfo` use `RelWithDebInfo` on Windows for optimized builds with PDB symbols
 - `do run --vs` falls back to the Visual Studio generator if you want the existing `build/` workflow
 - `do run --ninja` forces the Ninja local-iteration path explicitly
+- `do review` / `do review-bugs` run Codex + Claude review passes by default, add Gemini on macOS, and use Codex for the final consensus pass
+- `do consensus` / `do consensus-bugs` default to Codex; `claude`, `gemini`, and legacy `gpt` selector arguments are also accepted
+- `do review-codex` runs just the Codex review helper; `do review-gpt` remains as a compatibility alias
 
 ### CMake Options
 

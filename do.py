@@ -370,17 +370,18 @@ Single-word shortcuts:
   shot         Regenerate the README hero screenshot
   api          Build local Doxygen API docs
   docs         Build all docs artifacts
-  review       Run AI code review (GPT + Claude; Gemini added on macOS), then
+  review       Run AI code review (Codex + Claude; Gemini added on macOS), then
                synthesise a consensus — all in one shot
-  review-bugs  Run bug-focused AI review (GPT + Claude; Gemini on macOS), then
+  review-bugs  Run bug-focused AI review (Codex + Claude; Gemini on macOS), then
                synthesise a bug triage consensus — all in one shot
+  review-codex Run only the Codex reviewer
   review-gemini  Run only the Gemini reviewer
   review-claude  Run only the Claude reviewer
-  review-gpt     Run only the GPT reviewer
-  consensus [claude|gpt|gemini]
-               Run consensus synthesis on the latest reviews (default: claude)
-  consensus-bugs [claude|gpt|gemini]
-               Run bug triage consensus on the latest bug reviews (default: claude)
+  review-gpt     Alias for review-codex
+  consensus [codex|claude|gemini|gpt]
+               Run consensus synthesis on the latest reviews (default: codex)
+  consensus-bugs [codex|claude|gemini|gpt]
+               Run bug triage consensus on the latest bug reviews (default: codex)
   coverage     macOS: build with LLVM coverage, export build/coverage.lcov, copy to db/coverage.lcov
   syncboard    Sync work-items and icebox to the GitHub project board
 
@@ -449,10 +450,9 @@ def main() -> int:
         output_file = root / "plans" / "reviews" / "review-consensus.md"
         return run([
             sys.executable,
-            str(root / "scripts" / "ask_agent_claude.py"),
+            str(root / "scripts" / "ask_agent_gpt.py"),
             "--prompt-file", str(prompt_file),
             "--output-file", str(output_file),
-            "--full-auto",
         ], root)
 
     if command == "review-bugs":
@@ -463,17 +463,17 @@ def main() -> int:
         output_file = root / "plans" / "reviews" / "review-bugs-consensus.md"
         return run([
             sys.executable,
-            str(root / "scripts" / "ask_agent_claude.py"),
+            str(root / "scripts" / "ask_agent_gpt.py"),
             "--prompt-file", str(prompt_file),
             "--output-file", str(output_file),
-            "--full-auto",
         ], root)
 
-    if command in {"review-gemini", "review-claude", "review-gpt"}:
+    if command in {"review-gemini", "review-claude", "review-gpt", "review-codex"}:
         agent = command.split("-", 1)[1]
         script_map = {
             "gemini": ("ask_agent_gemini.py", "review-latest.gemini.md", ["--full-auto"]),
             "claude": ("ask_agent_claude.py", "review-latest.claude.md", ["--full-auto"]),
+            "codex":  ("ask_agent_gpt.py",    "review-latest.gpt.md",    ["--review-safe"]),
             "gpt":    ("ask_agent_gpt.py",    "review-latest.gpt.md",    ["--review-safe"]),
         }
         script_name, output_name, extra_flags = script_map[agent]
@@ -491,12 +491,13 @@ def main() -> int:
 
     if command == "consensus":
         agent_scripts = {
+            "codex": "ask_agent_gpt.py",
             "claude": "ask_agent_claude.py",
             "gpt": "ask_agent_gpt.py",
             "gemini": "ask_agent_gemini.py",
         }
         extra = args[1:]
-        agent = "claude"
+        agent = "codex"
         if extra and extra[0] in agent_scripts:
             agent = extra[0]
             extra = extra[1:]
@@ -507,19 +508,19 @@ def main() -> int:
             str(root / "scripts" / agent_scripts[agent]),
             "--prompt-file", str(prompt_file),
             "--output-file", str(output_file),
-            "--full-auto",
             *extra,
         ]
         return run(cmd, root)
 
     if command == "consensus-bugs":
         agent_scripts = {
+            "codex": "ask_agent_gpt.py",
             "claude": "ask_agent_claude.py",
             "gpt": "ask_agent_gpt.py",
             "gemini": "ask_agent_gemini.py",
         }
         extra = args[1:]
-        agent = "claude"
+        agent = "codex"
         if extra and extra[0] in agent_scripts:
             agent = extra[0]
             extra = extra[1:]
@@ -530,7 +531,6 @@ def main() -> int:
             str(root / "scripts" / agent_scripts[agent]),
             "--prompt-file", str(prompt_file),
             "--output-file", str(output_file),
-            "--full-auto",
             *extra,
         ]
         return run(cmd, root)

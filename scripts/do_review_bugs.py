@@ -26,8 +26,8 @@ def main() -> int:
     if platform.system() == "Darwin" and "--with-gemini" not in forwarded_args:
         forwarded_args = ["--with-gemini", *forwarded_args]
 
-    if "--gpt-review-safe" not in forwarded_args:
-        forwarded_args = ["--gpt-review-safe", *forwarded_args]
+    if "--codex-review-safe" not in forwarded_args and "--gpt-review-safe" not in forwarded_args:
+        forwarded_args = ["--codex-review-safe", *forwarded_args]
 
     command = [
         sys.executable,
