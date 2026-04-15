@@ -5,6 +5,9 @@
 #include <draxul/log.h>
 #include <draxul/nanovg_demo_host.h>
 
+#include <cstdlib>
+#include <string_view>
+
 #ifndef _WIN32
 #include <csignal>
 #endif
@@ -19,7 +22,24 @@ int main(int argc, char* argv[])
     // don't kill the entire test binary when a pipe breaks.
     signal(SIGPIPE, SIG_IGN);
 #endif
-    draxul::configure_logging();
+    draxul::LogOptions log_options;
+    log_options.enable_stderr = false;
+
+    if (const char* stderr_env = std::getenv("DRAXUL_TEST_STDERR_LOGS"))
+    {
+        const std::string_view value(stderr_env);
+        if (value == "1" || value == "true" || value == "TRUE" || value == "yes" || value == "on")
+            log_options.enable_stderr = true;
+    }
+
+    if (const char* file_env = std::getenv("DRAXUL_TEST_LOG_FILE");
+        file_env && *file_env != '\0')
+    {
+        log_options.enable_file = true;
+        log_options.file_path = file_env;
+    }
+
+    draxul::configure_logging(log_options);
 
     // Tests share the same provider registry as the app. Register the same
     // set the executable would so HostManager can create real hosts.

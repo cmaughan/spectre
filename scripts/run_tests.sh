@@ -3,6 +3,7 @@ set -eu
 
 MODE="debug"
 FORCE_RECONFIGURE=0
+VERBOSE=0
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -12,8 +13,11 @@ while [ "$#" -gt 0 ]; do
     --reconfigure)
       FORCE_RECONFIGURE=1
       ;;
+    --verbose)
+      VERBOSE=1
+      ;;
     *)
-      echo "Usage: $(basename "$0") [debug|release|both] [--reconfigure]" >&2
+      echo "Usage: $(basename "$0") [debug|release|both] [--reconfigure] [--verbose]" >&2
       exit 2
       ;;
   esac
@@ -79,7 +83,11 @@ run_config() {
     echo "> using existing CMake cache: build/CMakeCache.txt"
   fi
   run cmake --build build --parallel
-  run ctest --test-dir build --verbose --timeout 120
+  if [ "$VERBOSE" -eq 1 ]; then
+    run ctest --test-dir build --verbose --timeout 120
+  else
+    run ctest --test-dir build --progress --output-on-failure --timeout 120
+  fi
 }
 
 case "$MODE" in

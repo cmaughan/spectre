@@ -244,6 +244,7 @@ Other modes:
 scripts\run_tests.bat release
 scripts\run_tests.bat both
 scripts\run_tests.bat --reconfigure
+scripts\run_tests.bat --verbose
 ```
 
 ### macOS
@@ -260,9 +261,10 @@ Other modes:
 ./scripts/run_tests.sh release
 ./scripts/run_tests.sh both
 ./scripts/run_tests.sh --reconfigure
+./scripts/run_tests.sh --verbose
 ```
 
-The test scripts reuse the existing CMake cache when possible and only reconfigure when needed.
+The test scripts reuse the existing CMake cache when possible and only reconfigure when needed. By default they use failure-only CTest output so CI logs stay readable; pass `--verbose` when you want full per-test output locally.
 
 The CTest suite also includes:
 
@@ -432,4 +434,3 @@ Why this is useful:
 - the `diff` artifact makes it obvious what changed and roughly how much changed
 - the `report` gives a mechanical pass/fail threshold instead of relying on guesswork
 - `--bless-render-test` gives a controlled way to accept intentional visual changes
-

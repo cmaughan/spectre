@@ -3,6 +3,7 @@ setlocal EnableDelayedExpansion
 
 set "MODE=debug"
 set "FORCE_RECONFIGURE=0"
+set "VERBOSE=0"
 
 :parse_args
 if "%~1"=="" goto :args_done
@@ -26,7 +27,12 @@ if /i "%~1"=="--reconfigure" (
     shift
     goto :parse_args
 )
-echo Usage: %~nx0 [debug^|release^|both] [--reconfigure]
+if /i "%~1"=="--verbose" (
+    set "VERBOSE=1"
+    shift
+    goto :parse_args
+)
+echo Usage: %~nx0 [debug^|release^|both] [--reconfigure] [--verbose]
 exit /b 2
 
 :args_done
@@ -73,7 +79,11 @@ if "%FORCE_RECONFIGURE%"=="1" (
 )
 call :run cmake --build build --config %CONFIG% --parallel
 if errorlevel 1 exit /b !errorlevel!
-call :run ctest --test-dir build --build-config %CONFIG% --verbose
+if "%VERBOSE%"=="1" (
+    call :run ctest --test-dir build --build-config %CONFIG% --verbose
+) else (
+    call :run ctest --test-dir build --build-config %CONFIG% --progress --output-on-failure
+)
 if errorlevel 1 exit /b !errorlevel!
 exit /b 0
 
