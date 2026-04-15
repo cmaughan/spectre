@@ -27,6 +27,7 @@ public:
     void on_mouse_button(const MouseButtonEvent& event) override;
     void on_mouse_move(const MouseMoveEvent& event) override;
     void on_mouse_wheel(const MouseWheelEvent& event) override;
+    void set_scroll_offset(float px) override;
     bool dispatch_action(std::string_view action) override;
     std::string status_text() const override;
 

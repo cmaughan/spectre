@@ -69,6 +69,15 @@ TEST_CASE("app config parse returns defaults for empty content", "[config]")
     REQUIRE(config.fallback_paths.empty());
     INFO("default GUI keybindings are present");
     REQUIRE(static_cast<int>(config.keybindings.size()) == 40);
+    const GuiKeybinding* copy_mode = find_keybinding(config, "toggle_copy_mode");
+    INFO("toggle_copy_mode default binding exists");
+    REQUIRE(copy_mode != nullptr);
+    INFO("toggle_copy_mode uses Ctrl+S as the chord prefix");
+    REQUIRE(copy_mode->prefix_key == static_cast<int32_t>(SDLK_S));
+    REQUIRE(copy_mode->prefix_modifiers == kModCtrl);
+    INFO("toggle_copy_mode uses Return as the action key");
+    REQUIRE(copy_mode->key == static_cast<int32_t>(SDLK_RETURN));
+    REQUIRE(copy_mode->modifiers == kModNone);
 }
 
 TEST_CASE("app config parse reads all fields", "[config]")

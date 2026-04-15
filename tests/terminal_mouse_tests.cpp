@@ -112,6 +112,19 @@ TEST_CASE("mouse: no mode — release produces no output", "[terminal]")
     REQUIRE(ts.host.written.empty());
 }
 
+TEST_CASE("mouse: local terminal host ignores fractional renderer scroll offsets", "[terminal]")
+{
+    MouseTerminalSetup ts;
+    INFO("host must initialize");
+    REQUIRE(ts.ok);
+    REQUIRE(ts.renderer.last_handle != nullptr);
+
+    ts.host.set_scroll_offset(7.5f);
+
+    INFO("shell hosts render at whole-cell positions to avoid touchpad jitter");
+    REQUIRE(ts.renderer.last_handle->last_scroll_offset == Catch::Approx(0.0f));
+}
+
 TEST_CASE("mouse: DECSET 1000 — button press emits X10 report", "[terminal]")
 {
     MouseTerminalSetup ts;

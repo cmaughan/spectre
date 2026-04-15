@@ -62,6 +62,7 @@ font_reset         = "Ctrl+0"
 | `font_increase` | `Ctrl+=` | Increase font size by 1 point |
 | `font_decrease` | `Ctrl+-` | Decrease font size by 1 point |
 | `font_reset` | `Ctrl+0` | Reset font size to the configured default |
+| `toggle_copy_mode` | `Ctrl+S, Return` | Enter shell-host copy mode for keyboard scrollback/selection |
 
 ### Key Syntax
 

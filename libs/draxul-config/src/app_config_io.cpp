@@ -500,8 +500,9 @@ AppConfig::AppConfig()
         // confirm_paste = Enter (only meaningful when a paste-confirmation toast is up)
         { "confirm_paste", 0, kModNone, static_cast<int32_t>(SDLK_RETURN), kModCtrl | kModShift },
         { "cancel_paste", 0, kModNone, static_cast<int32_t>(SDLK_ESCAPE), kModCtrl | kModShift },
-        // toggle_copy_mode: tmux-style copy mode (Ctrl+Shift+Space)
-        { "toggle_copy_mode", 0, kModNone, static_cast<int32_t>(SDLK_SPACE), kModCtrl | kModShift },
+        // toggle_copy_mode: tmux-style copy mode (Ctrl+S, Return)
+        { "toggle_copy_mode", static_cast<int32_t>(SDLK_S), kModCtrl,
+            static_cast<int32_t>(SDLK_RETURN), kModNone },
         { "font_increase", 0, kModNone, static_cast<int32_t>(SDLK_EQUALS), kModCtrl },
         { "font_decrease", 0, kModNone, static_cast<int32_t>(SDLK_MINUS), kModCtrl },
         { "font_reset", 0, kModNone, static_cast<int32_t>(SDLK_0), kModCtrl },

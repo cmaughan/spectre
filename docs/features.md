@@ -79,7 +79,7 @@ A standalone GUI library for rendering UI items that do not depend on ImGui. It 
 - **Word/line selection**: Double-click selects the word at the cursor (contiguous non-whitespace), triple-click selects the entire row
 - **Selection copy gestures**: Clicking inside an existing mouse selection copies it to the system clipboard; `Ctrl+C` also copies when a shell-pane mouse selection is active, without sending SIGINT to the process
 - **Copy on select**: `copy_on_select` automatically copies completed mouse selections (drag, double-click, or triple-click) to the system clipboard; enabled by default
-- **Keyboard copy mode**: `toggle_copy_mode` (default `Ctrl+Shift+Space`) enters a vim/tmux-style cursor: `h/j/k/l` and arrows move, `0/Home/End` jump to line bounds, `g/Shift+G` jump to top/bottom, `v`/`V` start char/line selection, `y` yanks to clipboard and exits, `Esc`/`q` exits without copy. Available on shell hosts only (Neovim panes already provide their own visual mode)
+- **Keyboard copy mode**: `toggle_copy_mode` (default `Ctrl+S, Return`) enters a vim/tmux-style cursor: `h/j/k/l` and arrows move, `0/Home/End` jump to line bounds, `g/Shift+G` jump to top/bottom, `v`/`V` start char/line selection, `y` yanks to clipboard and exits, `Esc`/`q` exits without copy. Available on shell hosts only (Neovim panes already provide their own visual mode)
 - **Terminal colors**: Configurable foreground/background via `[terminal]` config section
 
 ---
@@ -186,7 +186,7 @@ Toggle with F12. Shows:
 | `rename_pane` | `Ctrl + S, .` |
 | `confirm_paste` | `Ctrl + Shift + Enter` |
 | `cancel_paste` | `Ctrl + Shift + Escape` |
-| `toggle_copy_mode` | `Ctrl + Shift + Space` |
+| `toggle_copy_mode` | `Ctrl + S, Return` |
 | `test_toast` | (unbound) |
 
 Customizable in `config.toml` under `[keybindings]`. Chord syntax: `"prefix, key"`. Set to empty string to unbind.

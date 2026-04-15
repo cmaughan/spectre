@@ -150,6 +150,20 @@ TEST_CASE("keybinding dispatch: F12 fires toggle_diagnostics", "[config]")
     REQUIRE(dispatcher.count("toggle_diagnostics") == 1);
 }
 
+TEST_CASE("keybinding dispatch: toggle_copy_mode default uses Ctrl+S, Return chord", "[config]")
+{
+    AppConfig cfg;
+    const GuiKeybinding* binding = find_binding(cfg, "toggle_copy_mode");
+    INFO("toggle_copy_mode binding present");
+    REQUIRE(binding != nullptr);
+    INFO("toggle_copy_mode uses Ctrl+S as the prefix");
+    REQUIRE(binding->prefix_key == static_cast<int32_t>(SDLK_S));
+    REQUIRE(binding->prefix_modifiers == kModCtrl);
+    INFO("toggle_copy_mode uses Return as the action key");
+    REQUIRE(binding->key == static_cast<int32_t>(SDLK_RETURN));
+    REQUIRE(binding->modifiers == kModNone);
+}
+
 TEST_CASE("keybinding dispatch: font_increase Ctrl+= fires font_increase action", "[config]")
 {
     AppConfig cfg;

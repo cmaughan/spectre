@@ -272,6 +272,27 @@ TEST_CASE("terminal: CSI 2J clears entire screen", "[terminal]")
         }
 }
 
+TEST_CASE("terminal: synchronized output near home does not implicitly erase untouched cells", "[terminal]")
+{
+    VtTerminalSetup ts(80, 24);
+    INFO("host must initialize");
+    REQUIRE(ts.ok);
+
+    ts.host.feed("ABCDE");
+    ts.host.feed("\r\n");
+    ts.host.feed("FGHIJ");
+    ts.host.feed("\x1B[?2026h");
+    ts.host.feed("\x1B[1;1H");
+    ts.host.feed("xy");
+    ts.host.feed("\x1B[?2026l");
+
+    INFO("sync-output batching should not clear unrelated cells on the main screen");
+    REQUIRE(ts.host.cell_text(2, 0) == std::string("C"));
+    INFO("rows outside the explicitly rewritten area should remain intact");
+    REQUIRE(ts.host.cell_text(0, 1) == std::string("F"));
+    REQUIRE(ts.host.cell_text(4, 1) == std::string("J"));
+}
+
 TEST_CASE("terminal: SGR colors produce distinct hl_attr_ids", "[terminal]")
 {
     VtTerminalSetup ts;

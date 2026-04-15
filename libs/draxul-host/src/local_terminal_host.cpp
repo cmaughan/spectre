@@ -570,6 +570,14 @@ void LocalTerminalHost::on_mouse_wheel(const MouseWheelEvent& event)
     scrollback_.scroll(event.delta.y > 0 ? lines : -lines);
 }
 
+void LocalTerminalHost::set_scroll_offset(float /*px*/)
+{
+    // Shell-host scrollback is line-based. Applying the renderer's fractional
+    // smooth-scroll offset on top of discrete scrollback updates causes visible
+    // jitter on touchpads, especially on macOS trackpads.
+    GridHostBase::set_scroll_offset(0.0f);
+}
+
 // ---------------------------------------------------------------------------
 // Viewport / state reset
 // ---------------------------------------------------------------------------
