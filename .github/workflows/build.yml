@@ -106,7 +106,7 @@ jobs:
 
       - name: Run tests under TSan
         env:
-          TSAN_OPTIONS: "suppressions=tsan.supp"
+          TSAN_OPTIONS: "suppressions=${{ github.workspace }}/tsan.supp"
         run: ctest --test-dir build -R draxul-tests --output-on-failure
 
       - name: Build app
@@ -114,5 +114,5 @@ jobs:
 
       - name: Smoke test under TSan
         env:
-          TSAN_OPTIONS: "suppressions=tsan.supp"
+          TSAN_OPTIONS: "suppressions=${{ github.workspace }}/tsan.supp"
         run: ./build/draxul.app/Contents/MacOS/draxul --console --smoke-test

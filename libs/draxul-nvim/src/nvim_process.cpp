@@ -4,7 +4,10 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
+#include <cstring>
 #include <sstream>
+#include <string_view>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -82,6 +85,64 @@ std::string quote_windows_arg(const std::string& value)
     return quoted;
 }
 
+bool ascii_iequals(std::string_view lhs, std::string_view rhs)
+{
+    if (lhs.size() != rhs.size())
+        return false;
+    for (size_t i = 0; i < lhs.size(); ++i)
+    {
+        const unsigned char a = static_cast<unsigned char>(lhs[i]);
+        const unsigned char b = static_cast<unsigned char>(rhs[i]);
+        if (std::tolower(a) != std::tolower(b))
+            return false;
+    }
+    return true;
+}
+
+std::vector<char> build_windows_environment_block_with_term_dumb()
+{
+    LPCH inherited_block = GetEnvironmentStringsA();
+    if (!inherited_block)
+        return { 'T', 'E', 'R', 'M', '=', 'd', 'u', 'm', 'b', '\0', '\0' };
+
+    std::vector<std::string> entries;
+    bool term_overridden = false;
+    for (const char* cursor = inherited_block; *cursor != '\0'; cursor += std::strlen(cursor) + 1)
+    {
+        std::string entry(cursor);
+        if (!entry.empty() && entry[0] != '=')
+        {
+            const size_t equals = entry.find('=');
+            if (equals != std::string::npos
+                && ascii_iequals(std::string_view(entry.data(), equals), "TERM"))
+            {
+                entry = "TERM=dumb";
+                term_overridden = true;
+            }
+        }
+        entries.push_back(std::move(entry));
+    }
+    FreeEnvironmentStringsA(inherited_block);
+
+    if (!term_overridden)
+        entries.emplace_back("TERM=dumb");
+
+    size_t total_bytes = 1; // trailing NUL
+    for (const auto& entry : entries)
+        total_bytes += entry.size() + 1;
+
+    std::vector<char> environment_block(total_bytes, '\0');
+    char* out = environment_block.data();
+    for (const auto& entry : entries)
+    {
+        std::memcpy(out, entry.data(), entry.size());
+        out += entry.size();
+        *out++ = '\0';
+    }
+    *out = '\0';
+    return environment_block;
+}
+
 } // namespace
 
 Result<void, Error> NvimProcess::spawn(const std::string& nvim_path, const std::vector<std::string>& extra_args, const std::string& working_dir)
@@ -125,6 +186,7 @@ Result<void, Error> NvimProcess::spawn(const std::string& nvim_path, const std::
     for (const auto& arg : extra_args)
         command << ' ' << quote_windows_arg(arg);
     std::string cmd = command.str();
+    std::vector<char> env_block = build_windows_environment_block_with_term_dumb();
 
     const char* cwd = working_dir.empty() ? nullptr : working_dir.c_str();
     if (!CreateProcessA(
@@ -133,7 +195,7 @@ Result<void, Error> NvimProcess::spawn(const std::string& nvim_path, const std::
             nullptr, nullptr,
             TRUE,
             CREATE_NO_WINDOW,
-            nullptr, cwd,
+            env_block.empty() ? nullptr : env_block.data(), cwd,
             &si, &impl_->proc_info_))
     {
         const DWORD err = GetLastError();
