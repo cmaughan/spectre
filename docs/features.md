@@ -75,6 +75,7 @@ A standalone GUI library for rendering UI items that do not depend on ImGui. It 
 - **Paste confirmation**: Pastes ≥ `paste_confirm_lines` newlines stash the payload and surface a toast; `confirm_paste` (default `Ctrl+Shift+Enter`) sends it, `cancel_paste` (default `Ctrl+Shift+Escape`) discards it. Set `paste_confirm_lines = 0` to disable
 - **OSC 7**: Current working directory tracking from shell
 - **OSC 52**: Clipboard read (`?` query) and write (base64 payload) for tmux/SSH/Neovim remote clipboard integration
+- **Shell TERM identity**: Unix PTY shell hosts currently inherit `TERM` from the launch environment (or leave it unset) for compatibility; full explicit `xterm-256color` parity is deferred
 - **Selection**: Click-and-drag with system clipboard integration; configurable cell cap (`selection_max_cells`, default 65536)
 - **Word/line selection**: Double-click selects the word at the cursor (contiguous non-whitespace), triple-click selects the entire row
 - **Selection copy gestures**: Clicking inside an existing mouse selection copies it to the system clipboard; `Ctrl+C` also copies when a shell-pane mouse selection is active, without sending SIGINT to the process

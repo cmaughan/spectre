@@ -8,6 +8,10 @@
 #include <draxul/nvim_rpc.h>
 #include <draxul/result.h>
 
+#include "support/scoped_env_var.h"
+
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <utility>
 
@@ -125,4 +129,33 @@ TEST_CASE("NvimProcess::spawn ok path against fake server", "[result][nvim_proce
     REQUIRE(r);
     REQUIRE(r.has_value());
     process.shutdown();
+}
+
+TEST_CASE("NvimProcess::spawn forces TERM=dumb for embedded nvim", "[result][nvim_process]")
+{
+    const std::string fake = fake_server_path();
+    if (fake.empty())
+        return;
+
+    const auto dump_path
+        = std::filesystem::temp_directory_path() / "draxul-nvim-process-term-dump.txt";
+    std::filesystem::remove(dump_path);
+
+    draxul::tests::ScopedEnvVar fake_mode("DRAXUL_RPC_FAKE_MODE", "dump_term_and_exit");
+    draxul::tests::ScopedEnvVar dump_target("DRAXUL_RPC_FAKE_TERM_DUMP", dump_path.string().c_str());
+    draxul::tests::ScopedEnvVar parent_term("TERM", "xterm-256color");
+
+    NvimProcess process;
+    auto r = process.spawn(fake);
+    REQUIRE(r);
+    REQUIRE(r.has_value());
+    process.shutdown();
+
+    std::ifstream in(dump_path);
+    REQUIRE(in.good());
+    std::string term;
+    std::getline(in, term);
+    REQUIRE(term == "dumb");
+
+    std::filesystem::remove(dump_path);
 }

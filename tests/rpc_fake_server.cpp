@@ -89,9 +89,24 @@ int main()
     _setmode(_fileno(stdout), _O_BINARY);
 #endif
 
+    const std::string current_mode = mode();
+    if (current_mode == "dump_term_and_exit")
+    {
+        if (const char* path = std::getenv("DRAXUL_RPC_FAKE_TERM_DUMP"))
+        {
+            if (FILE* out = std::fopen(path, "wb"))
+            {
+                const char* term = std::getenv("TERM");
+                if (term != nullptr)
+                    std::fputs(term, out);
+                std::fclose(out);
+            }
+        }
+        return 0;
+    }
+
     if (!wait_for_request_byte())
         return 2;
-    const std::string current_mode = mode();
     constexpr uint32_t msgid = 1;
 
     if (current_mode == "abort_after_read")

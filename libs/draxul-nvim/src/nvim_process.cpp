@@ -346,6 +346,12 @@ Result<void, Error> NvimProcess::spawn(const std::string& nvim_path, const std::
         // on broken pipes. The parent GUI may have set SIG_IGN.
         signal(SIGPIPE, SIG_DFL);
 
+        // Embedded Neovim is an RPC child, not a terminal UI attached to our
+        // PTY emulator. Advertising a real terminal type here can trigger TUI-
+        // specific startup paths in user config and plugins, which is both
+        // unnecessary and actively harmful for --embed.
+        setenv("TERM", "dumb", 1);
+
         if (!working_dir.empty() && chdir(working_dir.c_str()) != 0)
         {
             int chdir_errno = errno;
