@@ -31,6 +31,8 @@ std::vector<std::string> default_fallback_font_candidates()
 #elif defined(__APPLE__)
     return {
         "/System/Library/Fonts/Apple Color Emoji.ttc",
+        "/System/Library/Fonts/Apple Symbols.ttf",
+        "/System/Library/Fonts/Apple Braille.ttf",
         "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
         "/System/Library/Fonts/Hiragino Sans GB.ttc",
         "/System/Library/Fonts/Supplemental/Songti.ttc",

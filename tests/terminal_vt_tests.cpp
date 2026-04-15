@@ -217,6 +217,56 @@ TEST_CASE("terminal: tab advances to next 8-column boundary", "[terminal]")
     REQUIRE(ts.host.col() == 16);
 }
 
+TEST_CASE("terminal: DEC special graphics maps line-drawing characters", "[terminal]")
+{
+    VtTerminalSetup ts;
+    INFO("host must initialize");
+    REQUIRE(ts.ok);
+
+    ts.host.feed("\x1B(0lqk\x1B(Bx");
+
+    REQUIRE(ts.host.cell_text(0, 0) == std::string("\xE2\x94\x8C")); // ┌
+    REQUIRE(ts.host.cell_text(1, 0) == std::string("\xE2\x94\x80")); // ─
+    REQUIRE(ts.host.cell_text(2, 0) == std::string("\xE2\x94\x90")); // ┐
+    INFO("ESC ( B restores ASCII");
+    REQUIRE(ts.host.cell_text(3, 0) == std::string("x"));
+}
+
+TEST_CASE("terminal: G1 special graphics can be toggled with SO and SI", "[terminal]")
+{
+    VtTerminalSetup ts;
+    INFO("host must initialize");
+    REQUIRE(ts.ok);
+
+    ts.host.feed("\x1B)0\x0Eq\x0Fq");
+
+    REQUIRE(ts.host.cell_text(0, 0) == std::string("\xE2\x94\x80")); // ─
+    INFO("SI returns GL to G0 ASCII");
+    REQUIRE(ts.host.cell_text(1, 0) == std::string("q"));
+}
+
+TEST_CASE("terminal: focus reporting emits xterm focus in and out replies", "[terminal]")
+{
+    VtTerminalSetup ts;
+    INFO("host must initialize");
+    REQUIRE(ts.ok);
+
+    ts.host.feed("\x1B[?1004h");
+    ts.host.written.clear();
+
+    ts.host.on_focus_gained();
+    ts.host.on_focus_lost();
+
+    REQUIRE(ts.host.written == std::string("\x1B[I\x1B[O"));
+
+    ts.host.written.clear();
+    ts.host.feed("\x1B[?1004l");
+    ts.host.on_focus_gained();
+    ts.host.on_focus_lost();
+    INFO("focus reporting is silent once disabled");
+    REQUIRE(ts.host.written.empty());
+}
+
 TEST_CASE("terminal: CSI d VPA sets row directly", "[terminal]")
 {
     VtTerminalSetup ts(10, 5);

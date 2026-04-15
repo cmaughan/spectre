@@ -2,8 +2,11 @@
 
 #include <algorithm>
 #include <array>
+#include <cerrno>
 #include <chrono>
 #include <csignal>
+#include <cstdlib>
+#include <cstring>
 #include <draxul/perf_timing.h>
 #include <fcntl.h>
 #include <poll.h>
@@ -19,8 +22,77 @@
 #include <pty.h>
 #endif
 
+extern char** environ;
+
 namespace draxul
 {
+
+namespace
+{
+
+bool starts_with(std::string_view text, std::string_view prefix)
+{
+    return text.size() >= prefix.size() && text.substr(0, prefix.size()) == prefix;
+}
+
+std::vector<std::string> build_child_environment()
+{
+    std::vector<std::string> env;
+    for (char** current = environ; current != nullptr && *current != nullptr; ++current)
+    {
+        const std::string_view entry(*current);
+        if (starts_with(entry, "TERM=")
+            || starts_with(entry, "COLORTERM=")
+            || starts_with(entry, "TERM_PROGRAM="))
+        {
+            continue;
+        }
+        env.emplace_back(entry);
+    }
+
+    env.emplace_back("TERM=xterm-256color");
+    env.emplace_back("COLORTERM=truecolor");
+    env.emplace_back("TERM_PROGRAM=draxul");
+    return env;
+}
+
+std::vector<std::string> resolve_exec_paths(const std::string& command)
+{
+    if (command.find('/') != std::string::npos)
+        return { command };
+
+    const char* raw_path = std::getenv("PATH");
+    const std::string_view path
+        = (raw_path != nullptr && *raw_path != '\0')
+        ? std::string_view(raw_path)
+        : std::string_view("/usr/bin:/bin:/usr/sbin:/sbin");
+
+    std::vector<std::string> candidates;
+    size_t start = 0;
+    while (start <= path.size())
+    {
+        const size_t end = path.find(':', start);
+        std::string_view dir = (end == std::string_view::npos)
+            ? path.substr(start)
+            : path.substr(start, end - start);
+        if (dir.empty())
+            dir = ".";
+
+        std::string candidate(dir);
+        if (!candidate.empty() && candidate.back() != '/')
+            candidate.push_back('/');
+        candidate += command;
+        candidates.push_back(std::move(candidate));
+
+        if (end == std::string_view::npos)
+            break;
+        start = end + 1;
+    }
+
+    return candidates;
+}
+
+} // namespace
 
 UnixPtyProcess::~UnixPtyProcess()
 {
@@ -48,6 +120,8 @@ bool UnixPtyProcess::spawn(const std::string& command, const std::vector<std::st
     struct winsize ws = {};
     ws.ws_col = static_cast<unsigned short>(std::clamp(initial_cols, 1, 320));
     ws.ws_row = static_cast<unsigned short>(std::clamp(initial_rows, 1, 200));
+    std::vector<std::string> child_env = build_child_environment();
+    std::vector<std::string> exec_paths = resolve_exec_paths(command);
 
     int slave_fd = -1;
     if (openpty(&master_fd_, &slave_fd, nullptr, nullptr, &ws) < 0)
@@ -118,7 +192,22 @@ bool UnixPtyProcess::spawn(const std::string& command, const std::vector<std::st
             argv.push_back(a.c_str());
         argv.push_back(nullptr);
 
-        execvp(command.c_str(), const_cast<char**>(argv.data())); // NOSONAR — POSIX execvp takes char*const*; argv holds c_str() pointers that are not modified
+        std::vector<char*> envp;
+        envp.reserve(child_env.size() + 1);
+        for (auto& entry : child_env)
+            envp.push_back(entry.data());
+        envp.push_back(nullptr);
+
+        int exec_errno = ENOENT;
+        for (const auto& path : exec_paths)
+        {
+            execve(path.c_str(),
+                const_cast<char* const*>(argv.data()),
+                envp.data());
+            if (errno != ENOENT && errno != ENOTDIR)
+                exec_errno = errno;
+        }
+        errno = exec_errno;
         _exit(127);
     }
 

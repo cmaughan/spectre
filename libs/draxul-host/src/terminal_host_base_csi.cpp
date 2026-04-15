@@ -49,6 +49,16 @@ void TerminalHostBase::handle_control(char ch)
         vt_.col = std::min(std::max(0, grid_cols() - 1), ((vt_.col / 8) + 1) * 8);
         vt_.pending_wrap = false;
     }
+    else if (ch == '\x0E') // SO - Shift Out (select G1 into GL)
+    {
+        gl_uses_g1_charset_ = true;
+        vt_.pending_wrap = false;
+    }
+    else if (ch == '\x0F') // SI - Shift In (select G0 into GL)
+    {
+        gl_uses_g1_charset_ = false;
+        vt_.pending_wrap = false;
+    }
 }
 
 void TerminalHostBase::handle_esc(char ch)
@@ -97,6 +107,10 @@ void TerminalHostBase::handle_esc(char ch)
             --vt_.row;
         }
         DRAXUL_LOG_TRACE(draxul::LogCategory::App, "RI row=%d stbm=[%d..%d]", vt_.row, vt_.scroll_top, vt_.scroll_bottom);
+    }
+    else if (ch == '(' || ch == ')') // SCS - designate G0/G1 charset
+    {
+        pending_charset_designation_ = ch;
     }
     else
     {
@@ -222,7 +236,6 @@ void TerminalHostBase::handle_csi(char final_char, std::string_view body)
     default:
         break;
     }
-
 }
 
 void TerminalHostBase::csi_cursor_move(char final_char, const std::vector<int>& params)
@@ -502,8 +515,12 @@ void TerminalHostBase::csi_mode(char final_char, bool private_mode, const std::v
         case 1000: // X10/Normal tracking
         case 1002: // Button motion
         case 1003: // Any motion
+        case 1004: // Focus reporting
         case 1006: // SGR extended format
-            on_mouse_mode_changed(mode, enable);
+            if (mode == 1004)
+                focus_reporting_mode_ = enable;
+            else
+                on_mouse_mode_changed(mode, enable);
             break;
         case 2004: // Bracketed paste mode
             bracketed_paste_mode_ = enable;

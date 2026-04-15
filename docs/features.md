@@ -67,15 +67,17 @@ A standalone GUI library for rendering UI items that do not depend on ImGui. It 
 
 ## Terminal Emulation (shell hosts)
 
-- **VT100+** escape sequence support (SGR colors, cursor control, DECSTBM scroll regions)
+- **VT100+** escape sequence support (ANSI/256/24-bit SGR colors, cursor control, DECSTBM scroll regions)
 - **Scrollback**: 2000-row ring buffer with viewport offset
 - **Alt screen**: Main/alt switching with snapshot restore
 - **Mouse modes**: None, button-click, drag, all-motion (SGR encoding)
+- **xterm focus reporting**: DECSET `?1004` emits `CSI I` / `CSI O` on pane focus gain/loss
+- **DEC special graphics / ACS**: `ESC ( 0`, `ESC ) 0`, `SO`, and `SI` map VT line-drawing characters to Unicode box-drawing glyphs
 - **Bracketed paste**: VT-wrapped clipboard paste
 - **Paste confirmation**: Pastes ≥ `paste_confirm_lines` newlines stash the payload and surface a toast; `confirm_paste` (default `Ctrl+Shift+Enter`) sends it, `cancel_paste` (default `Ctrl+Shift+Escape`) discards it. Set `paste_confirm_lines = 0` to disable
 - **OSC 7**: Current working directory tracking from shell
 - **OSC 52**: Clipboard read (`?` query) and write (base64 payload) for tmux/SSH/Neovim remote clipboard integration
-- **Shell TERM identity**: Unix PTY shell hosts currently inherit `TERM` from the launch environment (or leave it unset) for compatibility; full explicit `xterm-256color` parity is deferred
+- **Shell TERM identity**: Unix PTY shell hosts advertise `TERM=xterm-256color`, `COLORTERM=truecolor`, and `TERM_PROGRAM=draxul`
 - **Selection**: Click-and-drag with system clipboard integration; configurable cell cap (`selection_max_cells`, default 65536)
 - **Word/line selection**: Double-click selects the word at the cursor (contiguous non-whitespace), triple-click selects the entire row
 - **Selection copy gestures**: Clicking inside an existing mouse selection copies it to the system clipboard; `Ctrl+C` also copies when a shell-pane mouse selection is active, without sending SIGINT to the process

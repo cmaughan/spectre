@@ -10,9 +10,11 @@
 
 #include "support/scoped_env_var.h"
 
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <thread>
 #include <utility>
 
 using namespace draxul;
@@ -149,6 +151,15 @@ TEST_CASE("NvimProcess::spawn forces TERM=dumb for embedded nvim", "[result][nvi
     auto r = process.spawn(fake);
     REQUIRE(r);
     REQUIRE(r.has_value());
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (!std::filesystem::exists(dump_path)
+        && process.is_running()
+        && std::chrono::steady_clock::now() < deadline)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
     process.shutdown();
 
     std::ifstream in(dump_path);

@@ -7,8 +7,8 @@
 #include <draxul/vt_state.h>
 #include <string>
 #include <string_view>
-#include <utility>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace draxul
@@ -49,6 +49,8 @@ public:
     }
     void pump() override;
     std::optional<std::chrono::steady_clock::time_point> next_deadline() const override;
+    void on_focus_gained() override;
+    void on_focus_lost() override;
     void on_key(const KeyEvent& event) override;
     void on_text_input(const TextInputEvent& event) override;
     void on_config_reloaded(const HostReloadConfig& config) override;
@@ -148,6 +150,12 @@ public:
 
 protected:
 private:
+    enum class CharsetMode
+    {
+        Ascii,
+        DecSpecialGraphics,
+    };
+
     uint16_t attr_id();
     void compact_attr_ids();
     void clear_cell(int col, int row);
@@ -209,6 +217,11 @@ private:
     bool synchronized_output_mode_ = false;
     bool synchronized_output_saw_hide_ = false;
     bool synchronized_output_saw_show_ = false;
+    CharsetMode g0_charset_ = CharsetMode::Ascii;
+    CharsetMode g1_charset_ = CharsetMode::Ascii;
+    bool gl_uses_g1_charset_ = false;
+    char pending_charset_designation_ = '\0';
+    bool focus_reporting_mode_ = false;
     bool pty_capture_config_loaded_ = false;
     bool pty_capture_header_checked_ = false;
     bool pty_capture_failure_reported_ = false;

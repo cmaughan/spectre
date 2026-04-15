@@ -1,10 +1,14 @@
 
 #include <catch2/catch_all.hpp>
 
+#include <draxul/text_service.h>
+
+#include "../libs/draxul-font/src/font_resolver.h"
+#include "../libs/draxul-font/src/font_selector.h"
+
 #include <algorithm>
 #include <array>
 #include <cstdlib>
-#include <draxul/text_service.h>
 #include <filesystem>
 
 using namespace draxul;
@@ -239,6 +243,32 @@ TEST_CASE("wide japanese text resolves through CJK fallback fonts", "[font]")
     REQUIRE(region.size.y > 0);
     service.shutdown();
 }
+
+#if defined(__APPLE__)
+TEST_CASE("default macOS fallbacks resolve braille graph glyphs through a fallback face", "[font]")
+{
+    auto primary_font_path = repo_root() / "fonts" / "JetBrainsMonoNerdFont-Regular.ttf";
+    INFO("bundled font exists");
+    REQUIRE(std::filesystem::exists(primary_font_path));
+
+    TextServiceConfig config;
+    config.font_path = primary_font_path.string();
+
+    FontResolver resolver;
+    INFO("font resolver initializes with default fallbacks");
+    REQUIRE(resolver.initialize(config, 11, 96.0f));
+
+    FontSelector selector;
+    const std::string braille_graph = "\xE2\xA0\x81"; // U+2801
+    const auto selection = selector.select(braille_graph, resolver);
+
+    INFO("braille graph glyph should not fall back to the primary .notdef glyph");
+    REQUIRE(selection.face != nullptr);
+    REQUIRE(selection.face != resolver.primary().face());
+
+    resolver.shutdown();
+}
+#endif
 
 TEST_CASE("ligature shaping can be disabled from text service config", "[font]")
 {

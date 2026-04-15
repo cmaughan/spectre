@@ -4,10 +4,8 @@
 #include <draxul/terminal_sgr.h>
 
 #include <algorithm>
-#include <cstdlib>
 #include <cstdio>
-#include <filesystem>
-#include <fstream>
+#include <cstdlib>
 #include <draxul/alt_screen_manager.h>
 #include <draxul/base64.h>
 #include <draxul/log.h>
@@ -15,9 +13,11 @@
 #include <draxul/unicode.h>
 #include <draxul/vt_parser.h>
 #include <draxul/window.h>
+#include <filesystem>
+#include <fstream>
 #include <functional>
-#include <utility>
 #include <unordered_map>
+#include <utility>
 
 namespace draxul
 {
@@ -27,6 +27,72 @@ namespace
 void set_grid_cell_for_alt_screen(Grid& grid, int col, int row, const Cell& cell)
 {
     grid.set_cell(col, row, std::string(cell.text.view()), cell.hl_attr_id, cell.double_width);
+}
+
+std::string dec_special_graphics(std::string_view cluster)
+{
+    if (cluster.size() != 1)
+        return std::string(cluster);
+
+    switch (cluster[0])
+    {
+    case '`':
+        return "\xE2\x97\x86"; // ◆
+    case 'a':
+        return "\xE2\x96\x92"; // ▒
+    case 'f':
+        return "\xC2\xB0"; // °
+    case 'g':
+        return "\xC2\xB1"; // ±
+    case 'h':
+        return "\xE2\x90\xA4"; // ␤
+    case 'i':
+        return "\xE2\x90\x8B"; // ␋
+    case 'j':
+        return "\xE2\x94\x98"; // ┘
+    case 'k':
+        return "\xE2\x94\x90"; // ┐
+    case 'l':
+        return "\xE2\x94\x8C"; // ┌
+    case 'm':
+        return "\xE2\x94\x94"; // └
+    case 'n':
+        return "\xE2\x94\xBC"; // ┼
+    case 'o':
+        return "\xE2\x8E\xBA"; // ⎺
+    case 'p':
+        return "\xE2\x8E\xBB"; // ⎻
+    case 'q':
+        return "\xE2\x94\x80"; // ─
+    case 'r':
+        return "\xE2\x8E\xBC"; // ⎼
+    case 's':
+        return "\xE2\x8E\xBD"; // ⎽
+    case 't':
+        return "\xE2\x94\x9C"; // ├
+    case 'u':
+        return "\xE2\x94\xA4"; // ┤
+    case 'v':
+        return "\xE2\x94\xB4"; // ┴
+    case 'w':
+        return "\xE2\x94\xAC"; // ┬
+    case 'x':
+        return "\xE2\x94\x82"; // │
+    case 'y':
+        return "\xE2\x89\xA4"; // ≤
+    case 'z':
+        return "\xE2\x89\xA5"; // ≥
+    case '{':
+        return "\xCF\x80"; // π
+    case '|':
+        return "\xE2\x89\xA0"; // ≠
+    case '}':
+        return "\xC2\xA3"; // £
+    case '~':
+        return "\xC2\xB7"; // ·
+    default:
+        return std::string(cluster);
+    }
 }
 
 std::string describe_text_for_log(std::string_view text)
@@ -150,6 +216,20 @@ void TerminalHostBase::pump()
 std::optional<std::chrono::steady_clock::time_point> TerminalHostBase::next_deadline() const
 {
     return GridHostBase::next_deadline();
+}
+
+void TerminalHostBase::on_focus_gained()
+{
+    GridHostBase::on_focus_gained();
+    if (focus_reporting_mode_)
+        do_process_write("\x1B[I");
+}
+
+void TerminalHostBase::on_focus_lost()
+{
+    GridHostBase::on_focus_lost();
+    if (focus_reporting_mode_)
+        do_process_write("\x1B[O");
 }
 
 void TerminalHostBase::on_key(const KeyEvent& event)
@@ -421,6 +501,11 @@ void TerminalHostBase::reset_terminal_state()
     vt_.cursor_shape = CursorShape::Block;
     vt_.cursor_blink = false;
     bracketed_paste_mode_ = false;
+    g0_charset_ = CharsetMode::Ascii;
+    g1_charset_ = CharsetMode::Ascii;
+    gl_uses_g1_charset_ = false;
+    pending_charset_designation_ = '\0';
+    focus_reporting_mode_ = false;
     output_cursor_batch_active_ = false;
     output_cursor_batch_saw_hide_ = false;
     output_cursor_batch_saw_show_ = false;
@@ -782,7 +867,22 @@ void TerminalHostBase::newline(bool carriage_return)
 void TerminalHostBase::write_cluster(const std::string& cluster)
 {
     PERF_MEASURE();
-    int width = cluster_cell_width(cluster);
+    if (pending_charset_designation_ != '\0')
+    {
+        const CharsetMode mode = (cluster == "0") ? CharsetMode::DecSpecialGraphics : CharsetMode::Ascii;
+        if (pending_charset_designation_ == '(')
+            g0_charset_ = mode;
+        else if (pending_charset_designation_ == ')')
+            g1_charset_ = mode;
+        pending_charset_designation_ = '\0';
+        return;
+    }
+
+    const CharsetMode active_charset = gl_uses_g1_charset_ ? g1_charset_ : g0_charset_;
+    const std::string rendered_cluster = active_charset == CharsetMode::DecSpecialGraphics
+        ? dec_special_graphics(cluster)
+        : cluster;
+    int width = cluster_cell_width(rendered_cluster);
 
     if (vt_.pending_wrap && vt_.auto_wrap_mode)
     {
@@ -806,7 +906,7 @@ void TerminalHostBase::write_cluster(const std::string& cluster)
         }
     }
 
-    grid().set_cell(vt_.col, vt_.row, cluster, attr_id(), width == 2);
+    grid().set_cell(vt_.col, vt_.row, rendered_cluster, attr_id(), width == 2);
     const int new_col = vt_.col + width;
 
     if (new_col >= grid_cols())
