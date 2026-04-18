@@ -113,7 +113,7 @@ A standalone GUI library for rendering UI items that do not depend on ImGui. It 
 - **Close pane**: Closes the focused pane and its host; if last pane, exits the app
 - **Shell session detach/reattach**: On normal desktop launches, closing the main window hides Draxul and keeps shell-pane workspaces alive in a dedicated session-owner process; launching Draxul again reattaches to that existing session instead of starting a second instance.
 - **Shell session restore from saved topology**: Clean shutdowns and detach store shell-session tabs, split layout, focus, pane names, tab names, launch commands, and working directories in a local session-state file. If no live background instance exists on the next launch, Draxul restores that saved shell layout by respawning the panes. This is still shell-host only and not full crash recovery yet.
-- **Session-scoped shell restore CLI**: `--session <id>` selects which persistent shell session Draxul should attach to or restore, `--new-session` starts a fresh persistent session (generating a unique id when `--session` is omitted), `--session-name <name>` sets the saved display name for a newly launched or restored session, `--rename-session --session-name <name>` renames a running or saved session, `--list-sessions` prints known sessions with live/detached/saved status and workspace/pane counts (preferring live owner summaries when available), `--attach-session` explicitly activates a running session, `--detach-session` explicitly detaches a running session without killing it, and `--kill-session` explicitly kills a live session or deletes its saved topology.
+- **Session-scoped shell restore CLI**: `--session <id>` selects which persistent shell session Draxul should attach to or restore, `--new-session` starts a fresh persistent shell session (generating a unique id when `--session` is omitted), `--session-name <name>` sets the saved display name for a newly launched or restored session, `--rename-session --session-name <name>` renames a running or saved session, `--list-sessions` prints known sessions with live/detached/saved status and workspace/pane counts (preferring live owner summaries when available), `--attach-session` explicitly activates a running session, `--detach-session` explicitly detaches a running session without killing it, and `--kill-session` explicitly kills a live session or deletes its saved topology.
 - **Session picker UI**: `--pick-session` opens a keyboard-driven session picker that lists known sessions, lets Enter attach or restore the selected session, lets Delete kill one, and keeps a `new-session` row at the top so typing a query becomes the name of a fresh session.
 - **Abnormally exited shell panes stay inspectable**: If a shell pane dies unexpectedly, Draxul keeps the pane and its last rendered output visible instead of immediately tearing it down. The pane status pill shows `[exited]`, a toast points you at `restart_host`, and the existing restart action respawns the host in place. Clean shell exits still close the pane normally.
 - **Session startup messaging**: Persistent shell sessions surface a toast when Draxul starts a brand-new session, restores a saved topology, or reattaches to a live detached session, so the user can tell which kind of magic just happened.
@@ -350,12 +350,12 @@ If `ccache` (or `sccache`) is found on `PATH`, the build automatically routes ev
 
 | Workflow | Description |
 |----------|-------------|
-| `build.yml` | Windows + macOS build/test pipeline; uploads config-matched app artifacts and render-test outputs. Includes a `tsan-macos` job (non-gating, `continue-on-error: true`) that runs unit tests and the smoke test under ThreadSanitizer with `tsan.supp` suppressions |
-| `asan.yml` | AddressSanitizer builds (macOS) |
-| `coverage.yml` | LLVM coverage collection (macOS), uploads `build/coverage.lcov` as an artifact and to Codecov |
-| `format.yml` | clang-format lint |
-| `sonar.yml` | SonarCloud code quality |
-| `docs.yml` | Documentation generation |
+| `build.yml` | Manual-only (`workflow_dispatch`) Windows + macOS build/test pipeline; uploads config-matched app artifacts and render-test outputs. Accepts a `run_tsan` boolean input that optionally enables the non-gating `tsan-macos` job to run unit tests and the smoke test under ThreadSanitizer with `tsan.supp` suppressions |
+| `asan.yml` | Manual-only (`workflow_dispatch`) AddressSanitizer builds (macOS) |
+| `coverage.yml` | Manual-only (`workflow_dispatch`) LLVM coverage collection (macOS), uploads `build/coverage.lcov` as an artifact and to Codecov |
+| `format.yml` | Manual-only (`workflow_dispatch`) clang-format lint |
+| `sonar.yml` | Manual-only (`workflow_dispatch`) SonarCloud code quality |
+| `docs.yml` | Manual-only (`workflow_dispatch`) documentation generation |
 
 Both CI platforms install Neovim and run with `DRAXUL_RUN_SLOW_TESTS=1`.
 
