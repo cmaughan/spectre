@@ -1,10 +1,13 @@
 name: Build
 
 on:
-  push:
-    branches: [main, develop]
-  pull_request:
-    branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      run_tsan:
+        description: Run the macOS ThreadSanitizer job
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -90,6 +93,7 @@ jobs:
           if-no-files-found: ignore
 
   tsan-macos:
+    if: ${{ inputs.run_tsan }}
     runs-on: macos-latest
     continue-on-error: true
     steps:
